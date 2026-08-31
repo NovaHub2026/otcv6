@@ -84,6 +84,7 @@ packages/lab               Adversarial predictability battery, realism metrics, 
 packages/runtime           Framework-free market runtime: hosted markets, scheduling, persistence
 packages/trading           Contracts and deterministic settlement against the published record
 packages/distribution      Sequence-addressed tick distribution and the consistency contract
+packages/chart             The rendering contract: extreme-preserving reduction to columns
 tools/sim                  Offline simulation runner and statistical evidence generator
 apps/api                   NestJS runtime service hosting the catalogue continuously
 apps/web                   Next.js frontend (created in the phase that needs it)

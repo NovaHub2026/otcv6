@@ -185,6 +185,20 @@ resetting or redrawing a keystream position it has already spent.
 Later subphases are provisional: sealed persistence and the recovery policy, then
 the NestJS service and a real process-boundary restart.
 
+### PH-8 — Observer Frontend and Trading Chart Experience
+
+The first layer that _renders_ the market rather than verifying it. Rendering is
+lossy by necessity, and every natural way to discard information invents
+something: interpolation invents prices, sampling hides spikes, a flat bar
+asserts a trade that did not happen.
+
+| Subphase | Title                  | State    |
+| -------- | ---------------------- | -------- |
+| PH-8.1   | The rendering contract | APPROVED |
+
+Later subphases are provisional: Next.js scaffolding and the streaming client,
+then the chart and phase integration.
+
 ### PH-7 — Public Market Distribution and Multi-User Consistency
 
 INV-002 has been true so far for an uninteresting reason: one observer, one
@@ -219,7 +233,7 @@ empirical demonstration that economic state cannot influence price generation.
 | Phase | Title                                                             |
 | ----- | ----------------------------------------------------------------- |
 | PH-7  | Public market distribution and multi-user consistency             | **APPROVED** |
-| PH-8  | Observer frontend and trading chart experience                    |
+| PH-8  | Observer frontend and trading chart experience                    | **ACTIVE**   |
 | PH-9  | Continuous integrity assurance and independent red-team hardening |
 
 PH-8 is where Next.js and React are first scaffolded. PH-9 converts a one-time
