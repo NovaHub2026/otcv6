@@ -1,4 +1,4 @@
-// Invariant evidence: INV-009 (reproducible settlement).
+// Invariant evidence: INV-009 (reproducible settlement), INV-001 (economic independence).
 import { describe, expect, it } from 'vitest';
 import { durationMillis, epochMillis } from '@otc/core';
 import { DEFAULT_AT_MONEY_POLICY, type Contract } from './contract.js';
@@ -146,5 +146,117 @@ describe('the ledger reports the operator margin honestly', () => {
 
   it('rejects mismatched stakes', () => {
     expect(() => tally([], [1])).toThrow(RangeError);
+  });
+});
+
+describe('settlement is direction-symmetric (the settlement mirror)', () => {
+  /**
+   * The settlement analogue of the engine's mirror test, and the gap Cycle Audit
+   * 2 found.
+   *
+   * PH-6's blindness demonstration compares tick streams, which a *settlement*
+   * leak leaves completely untouched. The audit planted one — `if (moved ===
+   * direction && Math.abs(expiryPrice - entryPrice) <= 20) return 'refund'`,
+   * shaving small wins into refunds — and it passed all 769 unit tests, all 137
+   * guardrails and the blindness demonstration itself, while lifting the
+   * operator's margin from 12.75% to 17.19%.
+   *
+   * A vocabulary scan is the wrong tool: settlement legitimately reads
+   * `direction`. The property that has teeth is symmetry — flipping the trade
+   * direction must exchange wins and losses exactly, and leave refunds
+   * untouched, because a tie is a property of the prices and not of the bet.
+   */
+  function mirrorOver(prices: number[], policy?: 'refund' | 'loss' | 'win'): void {
+    const ticks = record(prices);
+    for (let entry = 0; entry + 4 < prices.length; entry += 1) {
+      const base = contract({
+        id: `m${entry}`,
+        entryInstant: epochMillis(1_000_000 + entry * 1_000),
+        horizonMs: durationMillis(3_000),
+      });
+      const up = settle({ ...base, direction: 'up' }, ticks, policy);
+      const down = settle({ ...base, direction: 'down' }, ticks, policy);
+
+      if (up.outcome === 'refund' || down.outcome === 'refund') {
+        // A tie belongs to the prices, not to the bet: both sides must see it.
+        expect(down.outcome, `entry ${entry}: refund not symmetric`).toBe(up.outcome);
+      } else {
+        expect(down.outcome, `entry ${entry}: ${up.outcome} did not mirror`).toBe(
+          up.outcome === 'win' ? 'loss' : 'win',
+        );
+      }
+      // Both sides must agree on what the market did.
+      expect(down.entryPrice).toBe(up.entryPrice);
+      expect(down.expiryPrice).toBe(up.expiryPrice);
+    }
+  }
+
+  it('mirrors on a rising path', () => {
+    mirrorOver([0, 10, 20, 30, 40, 50, 60, 70, 80, 90]);
+  });
+
+  it('mirrors on a falling path', () => {
+    mirrorOver([90, 80, 70, 60, 50, 40, 30, 20, 10, 0]);
+  });
+
+  it('mirrors on a path full of ties', () => {
+    // The case a shaving leak hides in: many small moves and exact equalities.
+    mirrorOver([0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 1, 0, 0, 1, 1]);
+  });
+
+  it('mirrors on a jagged path', () => {
+    const prices: number[] = [];
+    let value = 0;
+    for (let i = 0; i < 60; i += 1) {
+      // Deterministic pseudo-noise: this must never depend on a lucky draw.
+      value += Math.round(Math.sin(i * 2.399) * 7);
+      prices.push(value);
+    }
+    mirrorOver(prices);
+  });
+
+  it('mirrors under every at-the-money policy', () => {
+    // Under 'loss' and 'win' a tie is asymmetric by definition, so only the
+    // decided outcomes are required to mirror — checked by the branch above,
+    // which compares refunds for equality and everything else for exchange.
+    const path = [0, 5, 5, 10, 10, 10, 5, 0, 0, 5];
+    mirrorOver(path, 'refund');
+    for (const policy of ['loss', 'win'] as const) {
+      const ticks = record(path);
+      for (let entry = 0; entry + 4 < path.length; entry += 1) {
+        const base = contract({
+          id: `p${entry}`,
+          entryInstant: epochMillis(1_000_000 + entry * 1_000),
+          horizonMs: durationMillis(3_000),
+        });
+        const up = settle({ ...base, direction: 'up' }, ticks, policy);
+        const down = settle({ ...base, direction: 'down' }, ticks, policy);
+        const tie = up.entryPrice === up.expiryPrice;
+        if (tie) {
+          // Both sides get the policy's verdict; it does not depend on direction.
+          expect(down.outcome).toBe(up.outcome);
+        } else {
+          expect(down.outcome).toBe(up.outcome === 'win' ? 'loss' : 'win');
+        }
+      }
+    }
+  });
+
+  it('is a test with teeth: a win-shaving rule breaks it', () => {
+    // Reproduces the audit's plant against the mirror property directly, so the
+    // guard is demonstrated rather than assumed. `shave` stands in for any rule
+    // that resolves by looking at whose side the move fell on.
+    const shave = (entryPrice: number, expiryPrice: number, direction: 'up' | 'down'): string => {
+      if (expiryPrice === entryPrice) return 'refund';
+      const moved = expiryPrice > entryPrice ? 'up' : 'down';
+      if (moved === direction && Math.abs(expiryPrice - entryPrice) <= 20) return 'refund';
+      return moved === direction ? 'win' : 'loss';
+    };
+    const up = shave(0, 10, 'up');
+    const down = shave(0, 10, 'down');
+    expect(up).toBe('refund');
+    expect(down).toBe('loss');
+    // Asymmetric: one side sees a refund where the other sees a decision.
+    expect(down).not.toBe('refund');
   });
 });

@@ -60,6 +60,17 @@ export interface EngineSnapshot {
 export interface EngineStart {
   readonly instant: EpochMillis;
   readonly price: LogPrice;
+  /**
+   * Sequence number the first tick follows. Defaults to 0.
+   *
+   * Only a restart seam needs this. When latent state is unrecoverable the
+   * market continues from the last published price with fresh keystream, and
+   * without this the numbering restarted at 1 — so a single asset id published
+   * two different ticks under the same sequence number, which no observer can
+   * reconcile (INV-002) and which PH-5.3 acceptance criterion 2 forbids
+   * outright.
+   */
+  readonly sequence?: number;
 }
 
 export interface MarketEngineOptions {
@@ -75,6 +86,15 @@ export interface MarketEngineOptions {
 export class MarketEngine implements TickSource {
   readonly instrument: InstrumentSpec;
   #sequence = 0;
+  /**
+   * Ticks produced by THIS engine instance.
+   *
+   * `maxTicks` counts these rather than absolute sequence numbers, so a seam
+   * that starts numbering at 40,000 is not instantly considered exhausted.
+   * Identical to `#sequence` for an engine started at zero, which is every
+   * engine outside a seam.
+   */
+  #produced = 0;
   #instant: number;
   #price: number;
   #previousMagnitude = 0;
@@ -84,10 +104,11 @@ export class MarketEngine implements TickSource {
     this.instrument = options.instrument;
     this.#instant = options.start.instant;
     this.#price = options.start.price;
+    this.#sequence = options.start.sequence ?? 0;
   }
 
   next(): Tick | null {
-    if (this.options.maxTicks !== undefined && this.#sequence >= this.options.maxTicks) {
+    if (this.options.maxTicks !== undefined && this.#produced >= this.options.maxTicks) {
       return null;
     }
 
@@ -108,6 +129,7 @@ export class MarketEngine implements TickSource {
     }
     this.#instant += intervalMs;
     this.#sequence += 1;
+    this.#produced += 1;
 
     const context: MagnitudeContext = {
       intervalMs,

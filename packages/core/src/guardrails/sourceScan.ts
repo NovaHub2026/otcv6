@@ -106,6 +106,15 @@ export const AMBIENT_RULES: readonly Rule[] = [
     reason:
       'Ambient randomness cannot be replayed or isolated per asset. Draw from a RandomStream instead.',
   },
+  {
+    name: 'no-ambient-state',
+    pattern: /\b(?:globalThis|process\s*\.\s*env)\b/,
+    reason:
+      'Ambient mutable state is an unguarded channel into the price path. Cycle Audit 2 planted ' +
+      'a backdoor reading operator exposure through `globalThis` and armed by `process.env`, and ' +
+      'every import-based and vocabulary-based guardrail passed it. Environment also makes a ' +
+      'module unreplayable, for the same reason ambient time does (INV-001, INV-009).',
+  },
 ];
 
 /**
@@ -158,11 +167,16 @@ export const ECONOMIC_BLINDNESS_RULES: readonly Rule[] = [
   {
     name: 'no-contract-inputs',
     pattern:
-      /(?:expiration|expiryMs|expiresAt|contractHorizon|selectedHorizon|binaryHorizon|contractId|tradeDirection|positionDirection)/i,
+      /(?:expiration|expiryMs|expiresAt|contractHorizon|selectedHorizon|binaryHorizon|contractId|tradeDirection|positionDirection|entryInstant|payoutRatio|stakeSize|atMoneyPolicy|settlementOutcome)/i,
     reason:
       'Selecting an expiration must never change the market (INV-005). The price path may not ' +
       'name a contract, an expiration or a trade direction: if it can see one, a user choosing a ' +
-      'different expiry could move the price.',
+      'different expiry could move the price.\n\n' +
+      'Deliberately NOT listed: bare `horizonMs`. Calibration legitimately measures a ' +
+      "30-second horizon at registration time to choose an asset's lattice, which is a " +
+      'design-time constant rather than a per-contract input. Listing it produced a false ' +
+      'positive on CalibrationEvidence, and a guardrail that cries wolf gets weakened rather ' +
+      'than obeyed.',
   },
 ];
 

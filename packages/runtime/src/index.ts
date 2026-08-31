@@ -4,11 +4,18 @@ export {
   HostedMarket,
   type HostedMarketOptions,
 } from './hosted.js';
-export { Venue, type AssetTicks, type VenueOptions } from './venue.js';
+export {
+  Venue,
+  type AssetFailure,
+  type AssetTicks,
+  type VenueAdvance,
+  type VenueOptions,
+} from './venue.js';
 export { FileStateStore, MemoryStateStore } from './fileStore.js';
 export {
   assertUsableRecord,
   CorruptRecordError,
+  DEFAULT_SEQUENCE_LEASE,
   findSecretShapedValues,
   STATE_RECORD_VERSION,
   UnusableRecordError,

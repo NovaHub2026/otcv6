@@ -79,6 +79,11 @@ describe('guardrail scanner', () => {
     expect(found[0]!.rule).toBe('no-ambient-time');
   });
 
+  it('finds ambient mutable state', () => {
+    expect(scanSource('x.ts', 'const x = globalThis.leak;', AMBIENT_RULES)).toHaveLength(1);
+    expect(scanSource('x.ts', 'const e = process.env.MODE;', AMBIENT_RULES)).toHaveLength(1);
+  });
+
   it('finds ambient randomness', () => {
     expect(scanSource('x.ts', 'const r = Math.random();', AMBIENT_RULES)).toHaveLength(1);
     expect(scanSource('x.ts', 'const r = randomBytes(32);', AMBIENT_RULES)).toHaveLength(1);
@@ -177,6 +182,17 @@ describe('generation code is replayable', () => {
     expect(describeViolations(violations)).toBe('');
   });
 
+  it('never reads ambient mutable state', () => {
+    // Added by Cycle Audit 2, which planted a backdoor reading operator exposure
+    // through `globalThis`, armed by `process.env`, and watched every
+    // import-based and vocabulary-based guardrail pass it. Ambient state is a
+    // channel into the price path that names nothing and imports nothing.
+    const violations = sources.flatMap(({ file, source }) =>
+      scanSource(file, source, AMBIENT_RULES).filter((v) => v.rule === 'no-ambient-state'),
+    );
+    expect(describeViolations(violations)).toBe('');
+  });
+
   it('confines ambient time to exactly one file', () => {
     const readers = sources
       .filter(({ file, source }) =>
@@ -208,10 +224,16 @@ describe('generation code is economically blind', () => {
 describe('dependency direction', () => {
   const IMPORT_PATTERN = /(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g;
 
-  // Import specifiers live inside string literals, which the comment stripper
-  // erases, so specifiers are read from the raw text.
+  // Import specifiers live inside string literals, which `stripCommentsAndStrings`
+  // erases — so strings must be kept and only comments removed. Without that,
+  // prose in another guardrail describing `import('@otc/engine')` counted as a
+  // real dependency of @otc/core.
+  function stripCommentsOnly(source: string): string {
+    return source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  }
+
   function workspaceImports(source: string): string[] {
-    return [...source.matchAll(IMPORT_PATTERN)]
+    return [...stripCommentsOnly(source).matchAll(IMPORT_PATTERN)]
       .map((m) => m[1]!)
       .filter((s) => s.startsWith('@otc/'));
   }

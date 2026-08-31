@@ -95,16 +95,53 @@ function sourceFiles(dir: string): string[] {
   return found;
 }
 
-/** Bare module specifiers imported by a file, excluding relative paths. */
-function importedModules(file: string): string[] {
-  const source = readFileSync(file, 'utf8');
+/** Remove line and block comments, so prose about imports is not an import. */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+}
+
+/**
+ * Every module specifier a file references, static or dynamic.
+ *
+ * The `\(?` matters. Cycle Audit 2 showed that the original pattern saw only
+ * static forms, so `await import('@nestjs/common')` inside the engine and
+ * `await import('@otc/engine')` inside trading both passed every check here —
+ * the guardrail could be stepped around by writing the import differently.
+ */
+function allSpecifiers(file: string): string[] {
+  // Comments are stripped first. Without that, this file's own prose about
+  // `import('@nestjs/common')` flagged @otc/core as importing a framework —
+  // a guardrail failing on its own explanation of itself.
+  const source = stripComments(readFileSync(file, 'utf8'));
   const specifiers: string[] = [];
-  for (const match of source.matchAll(/(?:from|import)\s*['"]([^'"]+)['"]/g)) {
-    const specifier = match[1]!;
-    if (specifier.startsWith('.')) continue;
-    specifiers.push(specifier);
+  for (const match of source.matchAll(/(?:from|import|require)\s*\(?\s*['"]([^'"]+)['"]/g)) {
+    specifiers.push(match[1]!);
   }
   return specifiers;
+}
+
+/** Bare specifiers only: package names, not relative paths. */
+function importedModules(file: string): string[] {
+  return allSpecifiers(file).filter((specifier) => !specifier.startsWith('.'));
+}
+
+/**
+ * Relative specifiers that leave their own package.
+ *
+ * `../../trading/dist/index.js` is a dependency by any honest reading, and it
+ * bypassed the allowlist, the TypeScript project graph and lint simultaneously
+ * because none of them treat a relative path as a dependency edge.
+ */
+function escapingRelativeImports(file: string, packageDir: string): string[] {
+  const offenders: string[] = [];
+  for (const specifier of allSpecifiers(file)) {
+    if (!specifier.startsWith('.')) continue;
+    const resolved = path.resolve(path.dirname(file), specifier);
+    if (!resolved.startsWith(packageDir + path.sep)) {
+      offenders.push(`${path.relative(repoRoot, file)} imports ${specifier}`);
+    }
+  }
+  return offenders;
 }
 
 const all = workspaces();
@@ -163,6 +200,20 @@ describe('dependencies only point down', () => {
       expect(
         offenders,
         `${name} is below apps/ and must stay drivable from a plain Node process`,
+      ).toEqual([]);
+    },
+  );
+
+  it.each(all.map((w) => [w.name, w] as const))(
+    '%s never reaches into another package by relative path',
+    (name, workspace) => {
+      const offenders = sourceFiles(workspace.dir).flatMap((file) =>
+        escapingRelativeImports(file, workspace.dir),
+      );
+      expect(
+        offenders,
+        `${name} reaches outside itself without declaring a dependency — a relative path into ` +
+          `another package's dist/ satisfies none of the allowlist, the build graph or lint`,
       ).toEqual([]);
     },
   );

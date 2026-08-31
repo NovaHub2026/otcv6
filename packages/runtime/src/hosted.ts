@@ -86,9 +86,20 @@ export class HostedMarket {
   #lastPublishedPrice: LogPrice | null = null;
   #exhausted = false;
 
+  /**
+   * Where "behind" is measured from before anything has been published.
+   *
+   * Without it the catch-up bound was inert until the first tick: a fresh market
+   * whose genesis sat a day in the past published 68,160 ticks against a
+   * one-second bound without complaint, and a resumed market carrying a degraded
+   * record published 19,018 ticks over a six-hour gap under the one-hour bound.
+   */
+  readonly #floorInstant: EpochMillis;
+
   constructor(options: HostedMarketOptions) {
     this.#engine = options.engine;
     this.#clock = options.clock;
+    this.#floorInstant = options.engine.snapshot().instant;
     this.#pending = options.resumePending ?? null;
     const resumed = options.resumeLastPublished ?? null;
     if (resumed !== null) {
@@ -167,12 +178,13 @@ export class HostedMarket {
   /** Publish every tick due at or before `now`. */
   advanceTo(now: EpochMillis): Tick[] {
     const published: Tick[] = [];
-    const lastInstant = this.#lastPublished?.instant ?? this.#lastPublishedInstant;
-    if (lastInstant !== null && lastInstant !== undefined) {
-      const behind = now - lastInstant;
-      if (behind > this.#maxCatchUpMs) {
-        throw new CatchUpTooLargeError(behind, this.#maxCatchUpMs);
-      }
+    // Always defined: falls back to where the engine itself starts, so the bound
+    // applies from the first call rather than from the first publication.
+    const lastInstant =
+      this.#lastPublished?.instant ?? this.#lastPublishedInstant ?? this.#floorInstant;
+    const behind = now - lastInstant;
+    if (behind > this.#maxCatchUpMs) {
+      throw new CatchUpTooLargeError(behind, this.#maxCatchUpMs);
     }
 
     for (;;) {

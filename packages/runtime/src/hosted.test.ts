@@ -114,7 +114,10 @@ describe('catch-up is bounded', () => {
 
   it('reports how far behind it was', () => {
     const clock = new SteppableClock(START);
-    const market = new HostedMarket({ engine: engineFor(), clock, maxCatchUpMs: 10_000 });
+    // The bound must exceed the first advance: it now applies from the engine's
+    // start instant rather than from the first publication, so a 30s step under
+    // a 10s bound is itself a refusal.
+    const market = new HostedMarket({ engine: engineFor(), clock, maxCatchUpMs: 45_000 });
     // Far enough in that ticks have certainly been published: the arrival
     // process starts with no excitation, so the first intervals run near the
     // 3000ms baseline rather than the 1295ms stationary mean.
@@ -126,9 +129,21 @@ describe('catch-up is bounded', () => {
       expect.unreachable('should have refused');
     } catch (error) {
       expect(error).toBeInstanceOf(CatchUpTooLargeError);
-      expect((error as CatchUpTooLargeError).limitMs).toBe(10_000);
-      expect((error as CatchUpTooLargeError).behindMs).toBeGreaterThan(10_000);
+      expect((error as CatchUpTooLargeError).limitMs).toBe(45_000);
+      expect((error as CatchUpTooLargeError).behindMs).toBeGreaterThan(45_000);
     }
+  });
+
+  it('applies the bound before anything has been published', () => {
+    // The defect this closes: the bound read only what THIS process had
+    // published, so it was inert until the first tick. A fresh market whose
+    // genesis sat a day in the past published 68,160 ticks against a
+    // one-second bound without complaint.
+    const clock = new SteppableClock(START);
+    const market = new HostedMarket({ engine: engineFor(), clock, maxCatchUpMs: 60_000 });
+    clock.advance(durationMillis(86_400_000));
+    expect(() => market.advance()).toThrow(CatchUpTooLargeError);
+    expect(market.lastPublished).toBeNull();
   });
 
   it('rejects a nonsensical bound', () => {
@@ -176,6 +191,67 @@ describe('a venue hosts the catalogue', () => {
     for (const id of v.assetIds) {
       const perMarket = v.marketFor(id).msUntilNextTick(clock.now());
       if (perMarket !== null) expect(wait!).toBeLessThanOrEqual(perMarket);
+    }
+  });
+
+  it('gives an asset exactly the market it would have alone', () => {
+    // Equality, not shape. Cross-asset independence is the property the venue
+    // docstring calls out as the obvious route for one asset's state to reach
+    // another's prices, and Cycle Audit 2 found it had zero test enforcement: a
+    // planted defect that shifted each asset's effective clock by the earlier
+    // assets' tick counts passed all 769 unit tests. None of the venue tests
+    // compared an asset hosted in a venue against the same asset hosted alone.
+    //
+    // What this detects, stated honestly: any coupling that changes which ticks
+    // are published. A skew bounded below the fastest asset's tick interval
+    // (~334ms) shifts only which advance() call a tick arrives on, not the set —
+    // and a coupling that cannot change the published set has not changed the
+    // market. Scaling that same plant to 500ms per earlier tick fails this
+    // assertion at 3,298 ticks against 3,211.
+    const soloClock = new SteppableClock(START);
+    const solo = new HostedMarket({ engine: engineFor(2), clock: soloClock });
+
+    const { venue: v, clock } = venue();
+
+    const soloTicks: Tick[] = [];
+    const venueTicks: Tick[] = [];
+    for (let step = 0; step < 120; step += 1) {
+      soloClock.advance(durationMillis(5_000));
+      soloTicks.push(...solo.advance());
+      clock.advance(durationMillis(5_000));
+      for (const entry of v.advanceTo(clock.now())) {
+        if (entry.assetId === ASSET_CATALOGUE[2]!.definition.id) venueTicks.push(...entry.ticks);
+      }
+    }
+
+    expect(venueTicks.length).toBeGreaterThan(500);
+    expect(venueTicks, 'hosting changed the market').toEqual(soloTicks);
+  });
+
+  it('does not let one asset failing take the others down', () => {
+    // A throw from one market used to discard ticks the earlier markets had
+    // already consumed and skip every later market — on every call after, so a
+    // single asset breaching its bound froze the venue permanently.
+    const clock = new SteppableClock(START);
+    const markets = ASSET_CATALOGUE.slice(0, 3).map((asset, index) => ({
+      asset,
+      market: new HostedMarket({
+        engine: engineFor(index),
+        clock,
+        // The middle asset is given a bound it will breach immediately.
+        ...(index === 1 ? { maxCatchUpMs: 5_000 } : {}),
+      }),
+    }));
+    const v = new Venue({ clock, markets });
+
+    clock.advance(durationMillis(600_000));
+    const result = v.advanceDetailed(clock.now());
+
+    expect(result.failures.map((f) => f.assetId)).toEqual([ASSET_CATALOGUE[1]!.definition.id]);
+    // The healthy assets still published, and their ticks reached the caller.
+    expect(result.published.length).toBe(2);
+    for (const entry of result.published) {
+      expect(entry.ticks.length, entry.assetId).toBeGreaterThan(10);
     }
   });
 

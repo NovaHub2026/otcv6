@@ -38,7 +38,6 @@ async function bootstrap(): Promise<void> {
 }
 
 void bootstrap().catch((error: unknown) => {
-  // eslint-disable-next-line no-console -- the process is about to die; this is the only channel left
   console.error(error);
   process.exit(1);
 });

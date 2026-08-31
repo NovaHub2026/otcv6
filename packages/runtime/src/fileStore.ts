@@ -15,6 +15,29 @@ import { CorruptRecordError, type MarketStateRecord, type StateStore } from './s
  * inform the choice. What matters now is that the *boundary* is right, so that
  * swap is a new implementation rather than a change to the runtime.
  */
+/**
+ * Narrow parsed JSON to a record, or refuse.
+ *
+ * `JSON.parse('null')` succeeds and yields `null`, which `resumeMarket` reads as
+ * "nothing ever ran" — so a file containing four bytes of `null` restarted the
+ * market at genesis and re-consumed keystream from block zero. That is the exact
+ * failure PH-5.2 says has no safe automatic recovery, reached by the one
+ * malformed shape that parses cleanly. Arrays and primitives are refused for the
+ * same reason.
+ */
+function asRecord(assetId: string, parsed: unknown): MarketStateRecord {
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new CorruptRecordError(assetId, `record parsed to ${describe(parsed)}, not an object`);
+  }
+  return parsed as MarketStateRecord;
+}
+
+function describe(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'an array';
+  return typeof value;
+}
+
 export class FileStateStore implements StateStore {
   constructor(private readonly directory: string) {}
 
@@ -33,13 +56,15 @@ export class FileStateStore implements StateStore {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw error;
     }
+    let parsed: unknown;
     try {
-      return JSON.parse(text) as MarketStateRecord;
+      parsed = JSON.parse(text);
     } catch (error) {
       // Not `null`. Reporting a corrupt record as absent would restart the
       // market at genesis and re-consume keystream from block zero.
       throw new CorruptRecordError(assetId, (error as Error).message);
     }
+    return asRecord(assetId, parsed);
   }
 
   async save(record: MarketStateRecord): Promise<void> {
@@ -71,12 +96,20 @@ export class MemoryStateStore implements StateStore {
   load(assetId: string): Promise<MarketStateRecord | null> {
     const text = this.#records.get(assetId);
     if (text === undefined) return Promise.resolve(null);
+    let parsed: unknown;
     try {
       // Serialised on the way in and out, so a test cannot accidentally share a
       // mutable object with the runtime and hide an aliasing bug.
-      return Promise.resolve(JSON.parse(text) as MarketStateRecord);
+      parsed = JSON.parse(text);
     } catch (error) {
       return Promise.reject(new CorruptRecordError(assetId, (error as Error).message));
+    }
+    try {
+      return Promise.resolve(asRecord(assetId, parsed));
+    } catch (error) {
+      return Promise.reject(
+        error instanceof Error ? error : new CorruptRecordError(assetId, String(error)),
+      );
     }
   }
 
@@ -89,8 +122,13 @@ export class MemoryStateStore implements StateStore {
     return Promise.resolve([...this.#records.keys()].sort());
   }
 
-  /** Corrupt a stored record, to exercise the seam path. */
+  /** Corrupt a stored record, to exercise the refusal path. */
   corrupt(assetId: string): void {
     this.#records.set(assetId, '{ this is not json');
+  }
+
+  /** Replace the stored bytes verbatim, to exercise shapes that parse cleanly. */
+  replaceRaw(assetId: string, payload: string): void {
+    this.#records.set(assetId, payload);
   }
 }

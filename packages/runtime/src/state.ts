@@ -48,7 +48,29 @@ export interface MarketStateRecord {
    * the snapshot cannot be trusted.
    */
   readonly leasedBlocks: Readonly<Record<string, string>>;
+  /**
+   * Sequence number reserved ahead of use, for the same reason as the keystream.
+   *
+   * After an unclean crash the record lags what was actually published: it knows
+   * the sequence at the last checkpoint, while observers saw everything up to
+   * the crash. A seam that resumed from the recorded number would therefore
+   * reissue numbers already used — the same failure cursor leasing was built to
+   * prevent, one field over, and nobody had applied the idea here.
+   *
+   * So a checkpoint reserves a block of sequence numbers, and a seam starts
+   * beyond it. The gap is visible and free; a duplicate is neither.
+   */
+  readonly leasedSequence: number;
 }
+
+/**
+ * Sequence numbers reserved per checkpoint.
+ *
+ * Must exceed the ticks publishable between checkpoints. At the 5s cadence the
+ * fastest asset produces about fifteen; a hundred thousand covers roughly nine
+ * hours of it, which is far past the point where the catch-up bound refuses.
+ */
+export const DEFAULT_SEQUENCE_LEASE = 100_000;
 
 /**
  * Durable storage for market state.
@@ -110,13 +132,28 @@ export function assertUsableRecord(record: MarketStateRecord, expectedAssetId: s
     reject(`version ${record.version}, expected ${STATE_RECORD_VERSION}`);
   }
   if (record.assetId !== expectedAssetId) {
-    reject(`records asset ${record.assetId}`);
+    // Not a seam. A record belonging to another asset tells us nothing about
+    // THIS asset's leases, which is the definition of "refuse to start": seaming
+    // on it re-issued 5,377 already-consumed blocks in an audit probe and
+    // adopted the foreign asset's last price as the starting price.
+    throw new CorruptRecordError(
+      expectedAssetId,
+      `record belongs to asset ${record.assetId}, so this asset's lease marks are unknown`,
+    );
   }
   if (typeof record.snapshot !== 'object' || record.snapshot === null) {
     reject('no snapshot');
   }
   if (Object.keys(record.leasedBlocks).length === 0) {
     reject('no leased cursors');
+  }
+  if (record.pending !== null && record.lastPublished === null && record.pending.sequence > 1) {
+    // Self-contradictory: an outstanding tick numbered above the first, with no
+    // published history at all. Produced by the HOSTED-002 write-path defect,
+    // and trusted by this function until an audit measured what it caused.
+    reject(
+      `pending tick ${record.pending.sequence} with no published history — the record is degraded`,
+    );
   }
   if (record.pending !== null && record.lastPublished !== null) {
     // The pending tick is by construction the one after the last published.

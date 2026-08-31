@@ -8,6 +8,18 @@ export interface AssetTicks {
   readonly ticks: readonly Tick[];
 }
 
+/** A market that could not be advanced, and why. */
+export interface AssetFailure {
+  readonly assetId: string;
+  readonly error: Error;
+}
+
+/** The result of advancing every market once. */
+export interface VenueAdvance {
+  readonly published: readonly AssetTicks[];
+  readonly failures: readonly AssetFailure[];
+}
+
 export interface VenueOptions {
   readonly clock: Clock;
   readonly markets: readonly { asset: RegisteredAsset; market: HostedMarket }[];
@@ -74,14 +86,39 @@ export class Venue {
     return this.advanceTo(this.#clock.now());
   }
 
-  /** Advance every market to `now`, in a stable asset order. */
+  /**
+   * Advance every market to `now`, in a stable asset order.
+   *
+   * Markets are isolated from each other. They were not: a single loop with no
+   * per-market handling meant a throw from one asset discarded the ticks every
+   * earlier asset had *already consumed* — gone from the return value but
+   * consumed from their engines — and skipped every later asset entirely, on
+   * every subsequent call. One asset breaching its catch-up bound froze the
+   * whole venue permanently, which is the coupling this class's own docstring
+   * says must not exist.
+   */
   advanceTo(now: EpochMillis): readonly AssetTicks[] {
-    const out: AssetTicks[] = [];
+    return this.advanceDetailed(now).published;
+  }
+
+  /** Advance every market, reporting per-asset failures instead of throwing. */
+  advanceDetailed(now: EpochMillis = this.#clock.now()): VenueAdvance {
+    const published: AssetTicks[] = [];
+    const failures: AssetFailure[] = [];
     for (const [assetId, market] of this.#markets) {
-      const ticks = market.advanceTo(now);
-      if (ticks.length > 0) out.push({ assetId, ticks });
+      try {
+        const ticks = market.advanceTo(now);
+        if (ticks.length > 0) published.push({ assetId, ticks });
+      } catch (error) {
+        // Isolated deliberately: a fault in one asset must not lose another
+        // asset's already-consumed ticks, and must not stop the rest advancing.
+        failures.push({
+          assetId,
+          error: error instanceof Error ? error : new Error(String(error)),
+        });
+      }
     }
-    return out;
+    return { published, failures };
   }
 
   /**

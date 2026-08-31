@@ -175,12 +175,69 @@ describe('the market cannot see that it is being traded', () => {
     expect(ledger.operatorMargin).toBeGreaterThan(-0.35);
     expect(ledger.operatorMargin).toBeLessThan(0.45);
 
-    // eslint-disable-next-line no-console -- recorded evidence for the phase
     console.info(
       `blindness ledger: ${ledger.contracts} contracts, ` +
         `${ledger.refunds} refunded (${((100 * ledger.refunds) / ledger.contracts).toFixed(2)}%), ` +
         `win rate of decided ${(100 * ledger.winRateOfDecided).toFixed(2)}%, ` +
         `operator margin ${(100 * ledger.operatorMargin).toFixed(2)}%`,
     );
+  });
+});
+
+describe('settlement is blind too, on real market data', () => {
+  /**
+   * Cycle Audit 2 found that the demonstration above has a blind spot exactly
+   * where it matters: it compares tick streams, and a leak in *settlement*
+   * leaves the ticks untouched. A rule shaving small wins into refunds passed
+   * all 769 unit tests, all 137 guardrails and this very file, while lifting the
+   * operator's margin from 12.75% to 17.19%.
+   *
+   * Ticks alone were never going to catch that. The property that does is
+   * symmetry: over a real generated record, flipping the trade direction must
+   * exchange wins and losses exactly and leave ties untouched, because a tie
+   * belongs to the prices and not to the bet.
+   */
+  it('exchanges wins and losses exactly when the direction is flipped', () => {
+    const traded = tradedRun(0);
+    const record: TickRecord = {
+      instants: new Float64Array(traded.ticks.map((t) => t.instant)),
+      prices: Int32Array.from(traded.ticks.map((t) => t.price)),
+    };
+
+    let mirrored = 0;
+    let ties = 0;
+    for (let i = 0; i < traded.ticks.length - 60; i += 7) {
+      const base: Contract = {
+        id: `mirror-${i}`,
+        assetId: ASSET_CATALOGUE[0]!.definition.id,
+        direction: 'up',
+        stake: 100,
+        entryInstant: traded.ticks[i]!.instant,
+        horizonMs: durationMillis(30_000),
+        payoutRatio: 0.85,
+      };
+      let up: Settlement;
+      let down: Settlement;
+      try {
+        up = settle(base, record);
+        down = settle({ ...base, direction: 'down' }, record);
+      } catch {
+        continue; // beyond the record
+      }
+      if (up.outcome === 'refund' || down.outcome === 'refund') {
+        expect(down.outcome, `contract ${i}: a tie must be seen by both sides`).toBe(up.outcome);
+        ties += 1;
+      } else {
+        expect(down.outcome, `contract ${i}: ${up.outcome} did not mirror`).toBe(
+          up.outcome === 'win' ? 'loss' : 'win',
+        );
+        mirrored += 1;
+      }
+    }
+
+    // Cannot pass vacuously.
+    expect(mirrored, 'no decided contracts were compared').toBeGreaterThan(500);
+    // eslint-disable-next-line no-console -- recorded evidence for the audit
+    console.info(`settlement mirror: ${mirrored} decided pairs exchanged, ${ties} ties symmetric`);
   });
 });

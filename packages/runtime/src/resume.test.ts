@@ -7,7 +7,12 @@ import { durationMillis, epochMillis, MasterKeyring, SteppableClock, type Tick }
 import { ASSET_CATALOGUE } from '@otc/engine';
 import { FileStateStore, MemoryStateStore } from './fileStore.js';
 import { checkpointMarket, resumeMarket } from './resume.js';
-import { CorruptRecordError, findSecretShapedValues, STATE_RECORD_VERSION } from './state.js';
+import {
+  CorruptRecordError,
+  findSecretShapedValues,
+  STATE_RECORD_VERSION,
+  UnusableRecordError,
+} from './state.js';
 
 const GENESIS = epochMillis(1_776_000_000_000);
 const keyring = MasterKeyring.forTesting('persistence-spec');
@@ -179,6 +184,9 @@ describe('an unusable record takes the seam, and says so', () => {
 
     const laterClock = new SteppableClock(epochMillis(clock.now() + 60_000));
     const second = await resumeMarket(base(store, laterClock));
+    // The seam opens AT the clock, so nothing is due until time moves on. The
+    // gap stays a gap, which is honest: the venue really was down.
+    laterClock.advance(durationMillis(60_000));
     const after = second.market.advance();
     expect(after.length).toBeGreaterThan(0);
     expect(Math.abs(after[0]!.price - lastPrice)).toBeLessThan(5_000);
@@ -248,5 +256,180 @@ describe('the file store survives a real filesystem', () => {
     await expect(new FileStateStore(directory).load('../escape')).rejects.toThrow(
       /Unsafe asset id/,
     );
+  });
+});
+
+describe('records that parse but are not records', () => {
+  // Found by Cycle Audit 2. Every other malformed shape threw; only the JSON
+  // literal `null` parsed cleanly and read as "nothing ever ran", restarting the
+  // market at genesis and re-consuming keystream from block zero — the exact
+  // failure PH-5.2 says has no safe automatic recovery.
+  it.each([
+    ['null', 'null'],
+    ['a bare number', '42'],
+    ['a string', '"eurusd"'],
+    ['an array', '[]'],
+  ])('refuses to start on %s', async (_label, payload) => {
+    const store = new MemoryStateStore();
+    const clock = new SteppableClock(GENESIS);
+    const first = await resumeMarket(base(store, clock));
+    clock.advance(durationMillis(120_000));
+    first.market.advance();
+    await store.save(checkpointMarket(first.market, asset.definition.id, clock.now()));
+    store.replaceRaw(asset.definition.id, payload);
+
+    await expect(resumeMarket(base(store, new SteppableClock(clock.now())))).rejects.toThrow(
+      CorruptRecordError,
+    );
+  });
+});
+
+describe('the seam never starts inside spent keystream', () => {
+  async function seedRecord(store: MemoryStateStore, clock: SteppableClock) {
+    const first = await resumeMarket(base(store, clock));
+    clock.advance(durationMillis(600_000));
+    first.market.advance();
+    return checkpointMarket(first.market, asset.definition.id, clock.now());
+  }
+
+  it('floors each cursor at the record own snapshot, not only at its leases', async () => {
+    // A damaged lease entry silently became startAt = 0, restarting the sign
+    // stream — the one line in the engine that touches direction — at cursor 0:0
+    // against positions already spent.
+    const store = new MemoryStateStore();
+    const clock = new SteppableClock(GENESIS);
+    const record = await seedRecord(store, clock);
+    const damaged = {
+      ...record,
+      version: STATE_RECORD_VERSION + 1,
+      leasedBlocks: { ...record.leasedBlocks },
+    };
+    delete (damaged.leasedBlocks as Record<string, string>).sign;
+    await store.save(damaged);
+
+    const resumed = await resumeMarket(base(store, new SteppableClock(clock.now())));
+    expect(resumed.outcome.kind).toBe('seam');
+    const after = resumed.market.snapshotEngine();
+    for (const [purpose, cursor] of Object.entries(record.snapshot.cursors)) {
+      const consumed = BigInt(cursor.split(':')[0]!);
+      const startsAt = BigInt(after.cursors[purpose]!.split(':')[0]!);
+      expect(startsAt, `${purpose} restarted inside spent keystream`).toBeGreaterThan(consumed);
+    }
+  });
+
+  it('treats a record belonging to another asset as corrupt, not as a seam', async () => {
+    // Seaming on a foreign record re-issued 5,377 already-consumed blocks and
+    // adopted the other asset's last price. A foreign record says nothing about
+    // THIS asset's leases, which is the definition of refusing to start.
+    const store = new MemoryStateStore();
+    const clock = new SteppableClock(GENESIS);
+    const record = await seedRecord(store, clock);
+    await store.save({ ...record, assetId: asset.definition.id });
+    store.replaceRaw(
+      asset.definition.id,
+      JSON.stringify({ ...record, assetId: 'some-other-asset' }),
+    );
+
+    await expect(resumeMarket(base(store, new SteppableClock(clock.now())))).rejects.toThrow(
+      CorruptRecordError,
+    );
+  });
+
+  it('refuses a record with no evidence at all for a stream', async () => {
+    const store = new MemoryStateStore();
+    const clock = new SteppableClock(GENESIS);
+    const record = await seedRecord(store, clock);
+    const stripped = {
+      ...record,
+      version: STATE_RECORD_VERSION + 1,
+      leasedBlocks: { sign: record.leasedBlocks.sign! },
+      snapshot: { ...record.snapshot, cursors: { sign: record.snapshot.cursors.sign! } },
+    };
+    await store.save(stripped);
+    await expect(resumeMarket(base(store, new SteppableClock(clock.now())))).rejects.toThrow(
+      UnusableRecordError,
+    );
+  });
+});
+
+describe('a checkpoint never erases published history', () => {
+  it('records the inherited position when a resumed market has not published yet', async () => {
+    // checkpointMarket used the process-local getter, so a resumed market
+    // checkpointing before its first tick wrote lastPublished: null. Measured
+    // consequences: a disabled catch-up bound, and a 1,347-step price reset on a
+    // later seam.
+    const store = new MemoryStateStore();
+    const clock = new SteppableClock(GENESIS);
+    const first = await resumeMarket(base(store, clock));
+    clock.advance(durationMillis(120_000));
+    const published = first.market.advance();
+    const lastSeen = published[published.length - 1]!;
+    await store.save(checkpointMarket(first.market, asset.definition.id, clock.now()));
+
+    // Second boot: resume and checkpoint immediately, publishing nothing.
+    const secondClock = new SteppableClock(clock.now());
+    const second = await resumeMarket(base(store, secondClock));
+    expect(second.market.lastPublished).toBeNull();
+    const rewritten = checkpointMarket(second.market, asset.definition.id, secondClock.now());
+
+    expect(rewritten.lastPublished, 'history erased by an idle checkpoint').not.toBeNull();
+    expect(rewritten.lastPublished!.sequence).toBe(lastSeen.sequence);
+    expect(rewritten.lastPublished!.price).toBe(lastSeen.price);
+  });
+});
+
+describe('a seam moves forward, never back', () => {
+  async function seamed() {
+    const store = new MemoryStateStore();
+    const clock = new SteppableClock(GENESIS);
+    const first = await resumeMarket(base(store, clock));
+    clock.advance(durationMillis(120_000));
+    first.market.advance();
+    const record = checkpointMarket(first.market, asset.definition.id, clock.now());
+
+    // Observers keep seeing ticks after the checkpoint — this is the window the
+    // old seam rewound into and republished with different prices.
+    clock.advance(durationMillis(300_000));
+    const observed = first.market.advance();
+    const lastObserved = observed[observed.length - 1]!;
+
+    await store.save({ ...record, version: STATE_RECORD_VERSION + 1 });
+    const resumeClock = new SteppableClock(clock.now());
+    const second = await resumeMarket(base(store, resumeClock));
+    return { second, resumeClock, lastObserved, record };
+  }
+
+  it('never republishes an instant an observer has already seen', async () => {
+    // The defect: the seam restarted from the record's stale lastPublished and
+    // regenerated 146 ticks inside the observed window, one instant carrying two
+    // prices 935 lattice steps apart.
+    const { second, resumeClock, lastObserved } = await seamed();
+    expect(second.outcome.kind).toBe('seam');
+    resumeClock.advance(durationMillis(120_000));
+    for (const tick of second.market.advance()) {
+      expect(tick.instant, 'republished an already-observed instant').toBeGreaterThan(
+        lastObserved.instant,
+      );
+    }
+  });
+
+  it('never reuses a sequence number under one asset id', async () => {
+    // It restarted numbering at 1, so a single asset published two different
+    // ticks under the same sequence — irreconcilable for any observer, and
+    // forbidden by PH-5.3 acceptance criterion 2.
+    const { second, resumeClock, lastObserved } = await seamed();
+    resumeClock.advance(durationMillis(120_000));
+    const after = second.market.advance();
+    expect(after.length).toBeGreaterThan(0);
+    expect(after[0]!.sequence, 'sequence went backwards across the seam').toBeGreaterThan(
+      lastObserved.sequence,
+    );
+  });
+
+  it('still carries the price across, so the market does not jump', async () => {
+    const { second, resumeClock, record } = await seamed();
+    resumeClock.advance(durationMillis(120_000));
+    const after = second.market.advance();
+    expect(Math.abs(after[0]!.price - record.lastPublished!.price)).toBeLessThan(20_000);
   });
 });

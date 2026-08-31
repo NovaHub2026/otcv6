@@ -1,6 +1,6 @@
 import {
   CursorLease,
-  type epochMillis,
+  epochMillis,
   formatCursor,
   logPrice,
   parseCursor,
@@ -17,6 +17,7 @@ import {
 import { HostedMarket } from './hosted.js';
 import {
   assertUsableRecord,
+  DEFAULT_SEQUENCE_LEASE,
   STATE_RECORD_VERSION,
   UnusableRecordError,
   type MarketStateRecord,
@@ -194,16 +195,55 @@ function seamFrom(
 ): ResumeResult {
   const cursors: Record<string, string> = {};
   for (const purpose of ENGINE_STREAM_PURPOSES) {
-    const persisted = record.leasedBlocks[purpose];
-    const highWater = persisted === undefined ? null : parseCursor(persisted).blockIndex;
-    const lease = CursorLease.resume(highWater, leaseBlocks);
+    // Floored at the record's OWN snapshot cursors, not merely at its leases.
+    // The leases are part of the record we have just declared untrustworthy, and
+    // a missing or damaged entry silently became `startAt = 0` — restarting the
+    // sign stream, the one line in the engine that touches direction, at cursor
+    // 0:0 against positions already spent.
+    const leased = record.leasedBlocks[purpose];
+    const consumed = record.snapshot?.cursors?.[purpose];
+    if (leased === undefined && consumed === undefined) {
+      throw new UnusableRecordError(
+        record.assetId,
+        `no lease or cursor evidence for stream "${purpose}", so a safe seam position is unknown`,
+      );
+    }
+    const fromLease = leased === undefined ? 0n : parseCursor(leased).blockIndex;
+    const fromSnapshot =
+      consumed === undefined ? 0n : parseCursor(consumed).blockIndex + leaseBlocks;
+    const floor = fromLease > fromSnapshot ? fromLease : fromSnapshot;
+    const lease = CursorLease.resume(floor, leaseBlocks);
     cursors[purpose] = formatCursor({ blockIndex: lease.startAt, byteOffset: 0 });
   }
 
+  // Forward only, in both time and sequence.
+  //
+  // Starting from the record's own `lastPublished.instant` rewound the clock to
+  // the last checkpoint and regenerated the interval that had already been
+  // published — with different prices, because the latent state is gone. An
+  // audit probe measured 146 republished ticks landing inside the observed
+  // window, one instant carrying two prices 935 lattice steps apart, and the
+  // sequence restarting at 1. Two observers either side of that restart hold
+  // irreconcilable histories, which is INV-002 broken outright.
+  //
+  // So the seam opens at the clock, not at the checkpoint: the gap stays a gap,
+  // which is honest, because the venue really was down. The price carries over
+  // so the market does not jump, and the sequence continues so no number is ever
+  // published twice under one asset id.
+  const now = options.clock.now();
   const start =
     record.lastPublished === null
       ? { instant: options.genesisInstant, price: logPrice(0) }
-      : { instant: record.lastPublished.instant, price: record.lastPublished.price };
+      : {
+          instant: epochMillis(Math.max(record.lastPublished.instant, now)),
+          price: record.lastPublished.price,
+          // The reserved number, not the recorded one: the record is stale by
+          // construction after an unclean crash.
+          sequence: Math.max(
+            record.leasedSequence ?? 0,
+            record.lastPublished.sequence + DEFAULT_SEQUENCE_LEASE,
+          ),
+        };
 
   const engine = createMarketEngine({
     config: configFor(options.asset),
@@ -244,7 +284,13 @@ export function checkpointMarket(
       byteOffset: 0,
     });
   }
-  const last = market.lastPublished;
+  // `lastPublishedState`, not `lastPublished`. The latter is only what THIS
+  // process emitted, so a resumed market checkpointing before its first publish
+  // wrote `lastPublished: null` and erased the durable history — the read path
+  // was fixed in PH-5.3 and the write path was not. The measured consequences
+  // were a disabled catch-up bound and a 1,347-step price reset on a later seam.
+  const last = market.lastPublishedState;
+  const highestKnown = Math.max(last?.sequence ?? 0, market.pending?.sequence ?? 0);
   return {
     version: STATE_RECORD_VERSION,
     assetId,
@@ -254,5 +300,6 @@ export function checkpointMarket(
     lastPublished:
       last === null ? null : { sequence: last.sequence, instant: last.instant, price: last.price },
     leasedBlocks,
+    leasedSequence: highestKnown + DEFAULT_SEQUENCE_LEASE,
   };
 }

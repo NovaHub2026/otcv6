@@ -50,6 +50,45 @@ function unitTestFiles(): string[] {
   return found.sort();
 }
 
+/**
+ * Iterations a loop header performs, or `null` when the line opens no loop.
+ *
+ * Cycle Audit 2 measured the original detector against seven loop shapes and it
+ * caught one. The six it missed included `i++` — which the audit then showed
+ * costs 4,214ms against vitest's 5s default, the identical failure that broke two
+ * phase gates — and a `const SAMPLES = 100_000` bound, and a nested 300 x 300
+ * pair whose 90,000 assertions hid behind two bounds each under the limit.
+ *
+ * A guardrail that catches a seventh of its subject is worse than none, because
+ * the record then claims the class is closed.
+ */
+function loopIterations(line: string, constants: ReadonlyMap<string, number>): number | null {
+  const counted =
+    /\bfor \(\s*(?:let|var)\s+\w+\s*=\s*(\d[\d_]*)\s*;\s*\w+\s*(<=?)\s*([\w_]+)\s*;\s*\w+\s*(?:(\+\+)|\+=\s*([\d_]+))/.exec(
+      line,
+    );
+  if (counted === null) return null;
+  const from = Number.parseInt(counted[1]!.replace(/_/g, ''), 10);
+  const rawTo = counted[3]!.replace(/_/g, '');
+  const to = /^\d+$/.test(rawTo) ? Number.parseInt(rawTo, 10) : constants.get(counted[3]!);
+  // A bound this file does not define as a literal is unknown, and unknown is
+  // treated as suspect: that shape is one of the six the audit planted.
+  if (to === undefined) return Number.POSITIVE_INFINITY;
+  const step = counted[5] === undefined ? 1 : Number.parseInt(counted[5].replace(/_/g, ''), 10);
+  if (step <= 0) return null;
+  const span = counted[2] === '<=' ? to - from + 1 : to - from;
+  return Math.max(0, Math.ceil(span / step));
+}
+
+/** `const NAME = <literal>` declarations, so a named bound can be resolved. */
+function literalConstants(source: string): Map<string, number> {
+  const found = new Map<string, number>();
+  for (const match of source.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*(\d[\d_]*)\s*;/g)) {
+    found.set(match[1]!, Number.parseInt(match[2]!.replace(/_/g, ''), 10));
+  }
+  return found;
+}
+
 interface Offence {
   readonly file: string;
   readonly line: number;
@@ -57,43 +96,39 @@ interface Offence {
 }
 
 /**
- * Assertions inside a large loop.
+ * Assertions executed inside large loops.
  *
- * Brace-depth tracking rather than a fixed window, so a single-line loop
- * followed by unrelated assertions is not flagged — that false positive cost a
- * real investigation the first time this was measured by hand.
+ * Walks the file keeping a stack of open counting loops and multiplies their
+ * counts, so nested loops are measured by the assertions they actually perform
+ * rather than by either bound alone.
  */
 function offences(file: string): Offence[] {
-  const lines = readFileSync(file, 'utf8').split('\n');
+  const source = readFileSync(file, 'utf8');
+  const constants = literalConstants(source);
+  const lines = source.split('\n');
   const found: Offence[] = [];
-  for (let i = 0; i < lines.length; i += 1) {
-    // Iterations, not the bound. `interval <= 60_000; interval += 137` runs 438
-    // times, and flagging it would be a false positive — one that cost a real
-    // investigation when this was first measured by hand.
-    const match = /\bfor \(let \w+ = (\d[\d_]*); \w+ <=? ([\d_]+); \w+ \+= ([\d_]+)/.exec(
-      lines[i]!,
-    );
-    if (match === null) continue;
-    const from = Number.parseInt(match[1]!.replace(/_/g, ''), 10);
-    const to = Number.parseInt(match[2]!.replace(/_/g, ''), 10);
-    const step = Number.parseInt(match[3]!.replace(/_/g, ''), 10);
-    if (step <= 0) continue;
-    const bound = Math.ceil((to - from) / step);
-    if (bound < LOOP_BOUND_LIMIT) continue;
-    if (!lines[i]!.includes('{')) continue; // single-line body: nothing inside
+  const stack: { iterations: number; depth: number }[] = [];
+  let depth = 0;
 
-    let depth = 0;
-    for (let j = i; j < lines.length; j += 1) {
-      const text = lines[j]!;
-      for (const character of text) {
-        if (character === '{') depth += 1;
-        else if (character === '}') depth -= 1;
-      }
-      if (j > i && text.includes('expect(') && depth > 0) {
-        found.push({ file: path.relative(repoRoot, file), line: j + 1, bound });
-      }
-      if (depth <= 0 && j > i) break;
+  for (let i = 0; i < lines.length; i += 1) {
+    const text = lines[i]!;
+    const iterations = loopIterations(text, constants);
+    const opensBlock = text.includes('{');
+
+    let product = 1;
+    for (const frame of stack) product *= frame.iterations;
+    if (product >= LOOP_BOUND_LIMIT && text.includes('expect(')) {
+      found.push({ file: path.relative(repoRoot, file), line: i + 1, bound: product });
     }
+
+    for (const character of text) {
+      if (character === '{') depth += 1;
+      else if (character === '}') {
+        depth -= 1;
+        while (stack.length > 0 && stack[stack.length - 1]!.depth > depth) stack.pop();
+      }
+    }
+    if (iterations !== null && opensBlock) stack.push({ iterations, depth });
   }
   return found;
 }
@@ -107,7 +142,10 @@ describe('the fast suite stays fast', () => {
 
   it('never asserts inside a large loop', () => {
     const all = files.flatMap(offences);
-    const rendered = all.map((o) => `${o.file}:${o.line} (${o.bound} iterations)`);
+    const rendered = all.map(
+      (o) =>
+        `${o.file}:${o.line} (${Number.isFinite(o.bound) ? `${String(o.bound)} iterations` : 'unbounded or non-literal loop'})`,
+    );
     expect(
       rendered,
       'count inside the loop and assert once after it — a matcher call is ~25us, ' +
