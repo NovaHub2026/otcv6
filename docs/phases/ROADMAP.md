@@ -142,7 +142,7 @@ the same data.
 
 | Phase | Title                                                                   | State       |
 | ----- | ----------------------------------------------------------------------- | ----------- |
-| PH-4  | Asset personality system and multi-asset instantiation                  | **NEXT**    |
+| PH-4  | Asset personality system and multi-asset instantiation                  | **ACTIVE**  |
 | PH-5  | Continuous runtime, sealed state persistence and restart continuity     | Not started |
 | PH-6  | Trading boundary: contracts, settlement and verified economic blindness | Not started |
 

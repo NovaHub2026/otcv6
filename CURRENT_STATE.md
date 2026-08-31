@@ -23,8 +23,8 @@ Last synchronized: 2026-08-31
 
 | Field                  | Value                                                                |
 | ---------------------- | -------------------------------------------------------------------- |
-| Active phase           | None — PH-4 is the next to be created                                |
-| Phase lifecycle        | n/a                                                                  |
+| Active phase           | PH-4 — Asset Personality System and Multi-Asset Instantiation        |
+| Phase lifecycle        | ACTIVE — decomposing into subphases                                  |
 | Active subphase        | None                                                                 |
 | Subphase lifecycle     | n/a                                                                  |
 | Last approved phase    | PH-3 — Core Generative Market Process Under Continuous Falsification |
@@ -120,11 +120,15 @@ fourteen resolved within the audit; the record is
 [`docs/audits/CYCLE-AUDIT-001.md`](docs/audits/CYCLE-AUDIT-001.md). The cycle
 counter has been reset and Cycle 2 has begun.
 
-**Create the PH-4 Phase Context Document** — _Asset personality system and
-multi-asset instantiation_ — on branch `feature/ph-4-asset-personalities`, then
-decompose it into subphases and begin autonomous development. PH-4 discharges
-INV-007, the only invariant
+**PH-4 is ACTIVE** on branch `feature/ph-4-asset-personalities`. Its Phase
+Context Document is
+[`docs/phases/PH-4-asset-personalities.md`](docs/phases/PH-4-asset-personalities.md).
+
+Create the **PH-4.1 Subphase Technical Document** — personality model, parameter
+space and safe bounds — then implement, test, run a targeted gate, and approve
+from evidence. PH-4 discharges INV-007, the only invariant
 [`docs/architecture/INVARIANTS.md`](docs/architecture/INVARIANTS.md) still
-records as pending.
+records as pending; `traceability.test.ts` will fail if that table is promoted
+before the evidence exists.
 
 No Human authorization is required to proceed (`GOVERNANCE.md` §32).

@@ -9,10 +9,10 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Field              | Value                                         |
 | ------------------ | --------------------------------------------- |
 | Last clean session | 2026-08-31                                    |
-| Branch             | `main`                                        |
+| Branch             | `feature/ph-4-asset-personalities`            |
 | Remote             | `origin` → NovaHub2026/otcv6 (private, empty) |
 | Active cycle       | Cycle 2, **0 of 3** phases approved           |
-| Active phase       | none — PH-4 is next to be created             |
+| Active phase       | **PH-4** — asset personalities (ACTIVE)       |
 | Active subphase    | none                                          |
 | Cycle Audit        | 001 **APPROVED** — next due after PH-4/5/6    |
 | Blockers           | none                                          |
@@ -41,7 +41,8 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ## Incomplete
 
-Nothing is in progress. PH-4 has not been created yet.
+**PH-4 is active and undecomposed.** Its Phase Context Document exists; no
+subphase document has been written yet.
 
 ## Last executed verification
 
@@ -61,9 +62,12 @@ Read `CURRENT_STATE.md`. Cycle 1 is closed and its audit is approved, so
 development continues **without further Human authorization**
 (`GOVERNANCE.md` §32).
 
-Create the PH-4 Phase Context Document — _Asset personality system and
-multi-asset instantiation_ — on `feature/ph-4-asset-personalities`, decompose it
-into subphases, and begin. PH-4 discharges INV-007, the only invariant
-`docs/architecture/INVARIANTS.md` still records as pending.
+Write the **PH-4.1 Subphase Technical Document** (personality model, parameter
+space and safe bounds), then implement, test, run a targeted gate and approve
+from evidence. The phase document's §9 carries the provisional decomposition.
+
+PH-4 discharges INV-007, the only invariant `docs/architecture/INVARIANTS.md`
+still records as pending. Do not promote it in that table until the evidence
+exists — `traceability.test.ts` enforces this in both directions.
 
 Before changing anything in the engine, read the last section of `CLAUDE.md`.
