@@ -8,6 +8,9 @@ import {
 } from '@otc/core';
 import { PoissonArrivalModel } from './arrival.js';
 import { CascadeMagnitudeModel, DEFAULT_CASCADE } from './cascade.js';
+import { ModulatedMagnitudeModel } from './modulator.js';
+import { DEFAULT_REGIMES, VolatilityRegimeModulator } from './regime.js';
+import { DEFAULT_STRUCTURE, StructurePhaseModulator } from './structure.js';
 import { MarketEngine } from './engine.js';
 import type { MagnitudeContext, MagnitudeModel } from './magnitude.js';
 import { runMirrorTest, SignInvertingStream } from './mirror.js';
@@ -85,6 +88,56 @@ describe('the mirror test passes on the real engine', () => {
     expect(() => runMirrorTest(build, source, { burnInTicks: 10, compareTicks: 0 })).toThrow(
       RangeError,
     );
+  });
+});
+
+describe('the mirror test passes with every layer active', () => {
+  /** The full PH-3.2 stack: cascade, volatility regime, structure phase. */
+  function layeredEngine(signSource: RandomSource): MarketEngine {
+    const cascade = derive('cascade');
+    const shock = derive('shock');
+    const arrival = derive('arrival');
+    const regimeStream = derive('regime');
+    const structureStream = derive('structure');
+    const magnitude = new ModulatedMagnitudeModel(
+      new CascadeMagnitudeModel(1e-5, DEFAULT_CASCADE, cascade, shock),
+      [
+        new VolatilityRegimeModulator(DEFAULT_REGIMES, regimeStream),
+        new StructurePhaseModulator(DEFAULT_STRUCTURE, structureStream),
+      ],
+    );
+    return new MarketEngine({
+      instrument,
+      magnitude,
+      arrival: new PoissonArrivalModel(1_000, arrival),
+      streams: {
+        sign: signSource,
+        rounding: derive('rounding'),
+        models: { cascade, shock, arrival, regime: regimeStream, structure: structureStream },
+      },
+      start: { instant: epochMillis(1_776_000_000_000), price: logPrice(0) },
+    });
+  }
+
+  it('regimes and structure phases do not break the symmetry', () => {
+    // The structure layer's transition hazard depends on path length per unit
+    // time. That is a reflection-invariant quantity, and this is what proves it.
+    const result = runMirrorTest(layeredEngine, () => derive('sign'), {
+      burnInTicks: 30_000,
+      compareTicks: 5_000,
+    });
+    expect(result.divergences).toEqual([]);
+    expect(result.mirrored).toBe(true);
+  });
+
+  it('holds from several interior points with the full stack', () => {
+    for (const burnInTicks of [500, 12_000, 60_000]) {
+      const result = runMirrorTest(layeredEngine, () => derive('sign'), {
+        burnInTicks,
+        compareTicks: 300,
+      });
+      expect(result.divergences, `burn-in ${burnInTicks}`).toEqual([]);
+    }
   });
 });
 

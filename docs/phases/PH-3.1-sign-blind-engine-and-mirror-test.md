@@ -264,3 +264,21 @@ _directional_ regimes cannot be generated states, and exist only as realized
 excursions of the walk. The displacement-heterogeneity figure of 13.7 shows those
 excursions are abundant — a viewer sees trends because trends happen, not because
 the engine decides on one.
+
+---
+
+## 11. Superseded figures
+
+The realism measurements above were taken with the cascade's `lowMultiplier` at
+0.6 and are recorded as they stood at approval.
+
+PH-3.2 recalibrated that parameter to 0.7. Kurtosis of a normal scale mixture is
+`3 · prod(E[M⁴] / E[M²]²)` across independent multiplicative factors, so the
+cascade, the volatility regime and the structure phase **multiply** their
+contributions rather than adding them. With all three layers active at the
+original setting, measured excess kurtosis was 1366 against a target ceiling of
+200 — an order of magnitude past any real market.
+
+After recalibration the cascade alone measures 39.5 excess kurtosis and the full
+stack 164.4, both inside the band. The conclusion PH-3.1 drew is unchanged: the
+cascade alone is clean under attack and passes every realism metric.

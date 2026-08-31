@@ -16,6 +16,28 @@ export {
   type MarketEngineOptions,
 } from './engine.js';
 export type { ArrivalModel, MagnitudeContext, MagnitudeModel } from './magnitude.js';
+export { ModulatedMagnitudeModel, type Modulator } from './modulator.js';
+export {
+  assertRegimeConfig,
+  DEFAULT_REGIMES,
+  VOLATILITY_REGIMES,
+  VolatilityRegimeModulator,
+  weibullSample,
+  type RegimeConfig,
+  type RegimeSnapshot,
+  type RegimeSpec,
+  type VolatilityRegime,
+} from './regime.js';
+export {
+  assertStructureConfig,
+  DEFAULT_STRUCTURE,
+  STRUCTURE_PHASES,
+  StructurePhaseModulator,
+  type PhaseSpec,
+  type StructureConfig,
+  type StructurePhase,
+  type StructureSnapshot,
+} from './structure.js';
 export {
   runMirrorTest,
   SignInvertingStream,

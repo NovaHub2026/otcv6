@@ -42,12 +42,22 @@ export interface CascadeConfig {
   readonly lowMultiplier: number;
 }
 
+/**
+ * Ten components spanning roughly six hours down to a few seconds.
+ *
+ * `lowMultiplier` is 0.7 rather than a more dramatic 0.6 because the cascade is
+ * not the only layer widening the volatility distribution. Kurtosis of a normal
+ * scale mixture is `3 * prod(E[M^4] / E[M^2]^2)` across independent
+ * multiplicative factors, so the cascade, the volatility regime and the
+ * structure phase *multiply* their contributions. At 0.6 with all three layers
+ * active, measured excess kurtosis was 1366 against a target ceiling of 200 —
+ * far past any real market.
+ */
 export const DEFAULT_CASCADE: CascadeConfig = {
-  // Ten components spanning roughly six hours down to a few seconds.
   components: 10,
   slowestHazardPerMs: 1 / (6 * 3_600_000),
   hazardRatio: 2.6,
-  lowMultiplier: 0.6,
+  lowMultiplier: 0.7,
 };
 
 export function assertCascadeConfig(config: CascadeConfig): void {

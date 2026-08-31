@@ -105,9 +105,15 @@ describe('switching behaviour', () => {
       maximum = Math.max(maximum, value);
       minimum = Math.min(minimum, value);
     }
-    // Bounded by the extreme all-low and all-high products.
-    const lowest = Math.pow(DEFAULT_CASCADE.lowMultiplier, DEFAULT_CASCADE.components);
-    const highest = Math.pow(high, DEFAULT_CASCADE.components);
+    // Bounded by the extreme all-low and all-high products, computed by the same
+    // repeated multiplication the cascade uses. `Math.pow` rounds differently
+    // and can sit an ulp below the achievable maximum.
+    let lowest = 1;
+    let highest = 1;
+    for (let k = 0; k < DEFAULT_CASCADE.components; k += 1) {
+      lowest *= DEFAULT_CASCADE.lowMultiplier;
+      highest *= high;
+    }
     expect(minimum).toBeGreaterThanOrEqual(lowest);
     expect(maximum).toBeLessThanOrEqual(highest);
   });
