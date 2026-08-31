@@ -10,13 +10,17 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
-    "@otc/core": "*",
-    "@otc/engine": "*",
-    "@otc/runtime": "*",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
+    "@otc/core": "*",
+    "@otc/distribution": "*",
+    "@otc/engine": "*",
+    "@otc/runtime": "*",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6"
   }
 }

@@ -10,6 +10,7 @@ import {
 } from '@otc/core';
 import { ASSET_CATALOGUE, configFor, createMarketEngine } from '@otc/engine';
 import { HostedMarket, Venue } from '@otc/runtime';
+import { priceAtOrBefore } from '@otc/core';
 import { EvictedError, TickFeed, type FeedSink } from '@otc/distribution';
 
 /**
@@ -242,5 +243,76 @@ describe('the market does not know it is being watched', () => {
     }
 
     expect(fromVenue).toEqual(solo);
+  });
+});
+
+describe('two nodes with skewed clocks agree exactly where it matters', () => {
+  /**
+   * The contract in `docs/architecture/CONSISTENCY_CONTRACT.md`, tested.
+   *
+   * A market is a pure function of key, genesis and elapsed time, so two nodes
+   * holding the same key agree about what tick N *is*. They do not automatically
+   * agree about whether it has happened yet, because their clocks differ. The
+   * claim is that the disagreement is always a **prefix** relationship — one
+   * node is behind, never divergent — and that anything addressed by instant or
+   * sequence is exact.
+   */
+  const SKEW_MS = 400;
+
+  function node(offsetMs: number): { ticks: Tick[]; clock: SteppableClock } {
+    const clock = new SteppableClock(epochMillis(GENESIS + offsetMs));
+    const hosted = market(clock);
+    const ticks: Tick[] = [];
+    for (let step = 0; step < 200; step += 1) {
+      clock.advance(durationMillis(STEP_MS));
+      ticks.push(...hosted.advance());
+    }
+    return { ticks, clock };
+  }
+
+  it('never disagrees about what a tick is', () => {
+    const ahead = node(SKEW_MS);
+    const behind = node(0);
+
+    const shared = Math.min(ahead.ticks.length, behind.ticks.length);
+    expect(shared).toBeGreaterThan(1_000);
+    for (let i = 0; i < shared; i += 1) {
+      expect(ahead.ticks[i], `tick ${i} differs between nodes`).toEqual(behind.ticks[i]);
+    }
+  });
+
+  it('leaves the lagging node holding a prefix, never a divergence', () => {
+    const ahead = node(SKEW_MS);
+    const behind = node(0);
+    const shorter = ahead.ticks.length <= behind.ticks.length ? ahead.ticks : behind.ticks;
+    const longer = shorter === ahead.ticks ? behind.ticks : ahead.ticks;
+    expect(longer.slice(0, shorter.length)).toEqual(shorter);
+    // And the lag is bounded by the skew, not unbounded.
+    const lag = longer.length - shorter.length;
+    expect(lag).toBeLessThan(SKEW_MS / 100);
+  });
+
+  it('answers "the price at instant T" identically on both nodes', () => {
+    // The question that actually matters: settlement is defined this way, so it
+    // must not depend on which node a client happened to reach.
+    const ahead = node(SKEW_MS);
+    const behind = node(0);
+    const shared = Math.min(ahead.ticks.length, behind.ticks.length);
+    const common = behind.ticks.slice(0, shared);
+
+    const aInstants = new Float64Array(ahead.ticks.slice(0, shared).map((t) => t.instant));
+    const aPrices = Int32Array.from(ahead.ticks.slice(0, shared).map((t) => t.price));
+    const bInstants = new Float64Array(common.map((t) => t.instant));
+    const bPrices = Int32Array.from(common.map((t) => t.price));
+
+    let compared = 0;
+    for (let i = 10; i < shared - 10; i += 37) {
+      const instant = epochMillis(common[i]!.instant + 13);
+      const onAhead = priceAtOrBefore(aInstants, aPrices, instant);
+      const onBehind = priceAtOrBefore(bInstants, bPrices, instant);
+      expect(onAhead!.price, `nodes disagreed about the price at ${instant}`).toBe(onBehind!.price);
+      compared += 1;
+    }
+    expect(compared).toBeGreaterThan(20);
   });
 });

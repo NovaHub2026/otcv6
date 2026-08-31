@@ -195,6 +195,7 @@ path, where breaking it looks like performance work.
 | -------- | ------------------------------------------------------------ | -------- |
 | PH-7.1   | The tick feed: ordering, resumption, backpressure            | APPROVED |
 | PH-7.2   | Multi-observer consistency and blindness across the boundary | APPROVED |
+| PH-7.3   | The transport, and the consistency contract written down     | APPROVED |
 
 Later subphases are provisional: multi-observer consistency and the blindness
 demonstration across the boundary, then service integration.
@@ -217,7 +218,7 @@ empirical demonstration that economic state cannot influence price generation.
 
 | Phase | Title                                                             |
 | ----- | ----------------------------------------------------------------- |
-| PH-7  | Public market distribution and multi-user consistency             | **ACTIVE** |
+| PH-7  | Public market distribution and multi-user consistency             | **APPROVED** |
 | PH-8  | Observer frontend and trading chart experience                    |
 | PH-9  | Continuous integrity assurance and independent red-team hardening |
 

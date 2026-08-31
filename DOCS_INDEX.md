@@ -46,15 +46,16 @@ documents disagree, the canonical one wins and the other is a defect.
 
 ## Architecture documents
 
-| Document                                                                               | Subject                                                                                                                        |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| [`docs/architecture/OVERVIEW.md`](docs/architecture/OVERVIEW.md)                       | System decomposition, layers, dependency rules, and how the invariants are enforced structurally.                              |
-| [`docs/architecture/MARKET_MODEL.md`](docs/architecture/MARKET_MODEL.md)               | The generative market model: the sign boundary, the layer stack, how structure emerges without a level, and what was measured. |
-| [`docs/architecture/ENTROPY.md`](docs/architecture/ENTROPY.md)                         | Deterministic randomness architecture: stream derivation, isolation, replay, secret handling.                                  |
-| [`docs/architecture/TIME_AND_TICKS.md`](docs/architecture/TIME_AND_TICKS.md)           | Canonical time model, tick identity, candle aggregation and cross-timeframe coherence.                                         |
-| [`docs/architecture/VALIDATION.md`](docs/architecture/VALIDATION.md)                   | The predictability and realism batteries: observer boundary, feature taxonomy, harness discipline, and achieved sensitivity.   |
-| [`docs/architecture/INVARIANTS.md`](docs/architecture/INVARIANTS.md)                   | Which executable evidence discharges each of the ten invariants, and what is still pending                                     |
-| [`docs/architecture/RUNTIME_AND_TRADING.md`](docs/architecture/RUNTIME_AND_TRADING.md) | Hosting, scheduling, sealed persistence, the recovery policy, and where economic blindness is enforced                         |
+| Document                                                                                 | Subject                                                                                                                        |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| [`docs/architecture/OVERVIEW.md`](docs/architecture/OVERVIEW.md)                         | System decomposition, layers, dependency rules, and how the invariants are enforced structurally.                              |
+| [`docs/architecture/MARKET_MODEL.md`](docs/architecture/MARKET_MODEL.md)                 | The generative market model: the sign boundary, the layer stack, how structure emerges without a level, and what was measured. |
+| [`docs/architecture/ENTROPY.md`](docs/architecture/ENTROPY.md)                           | Deterministic randomness architecture: stream derivation, isolation, replay, secret handling.                                  |
+| [`docs/architecture/TIME_AND_TICKS.md`](docs/architecture/TIME_AND_TICKS.md)             | Canonical time model, tick identity, candle aggregation and cross-timeframe coherence.                                         |
+| [`docs/architecture/VALIDATION.md`](docs/architecture/VALIDATION.md)                     | The predictability and realism batteries: observer boundary, feature taxonomy, harness discipline, and achieved sensitivity.   |
+| [`docs/architecture/INVARIANTS.md`](docs/architecture/INVARIANTS.md)                     | Which executable evidence discharges each of the ten invariants, and what is still pending                                     |
+| [`docs/architecture/RUNTIME_AND_TRADING.md`](docs/architecture/RUNTIME_AND_TRADING.md)   | Hosting, scheduling, sealed persistence, the recovery policy, and where economic blindness is enforced                         |
+| [`docs/architecture/CONSISTENCY_CONTRACT.md`](docs/architecture/CONSISTENCY_CONTRACT.md) | What the venue promises observers about agreement: exact by instant and sequence, approximate only for "now"                   |
 
 Documents listed above are created by the phase that first makes them true. A
 missing architecture document means that layer does not exist yet — not that it

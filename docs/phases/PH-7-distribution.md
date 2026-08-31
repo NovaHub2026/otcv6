@@ -2,7 +2,7 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-7
-Status: ACTIVE
+Status: APPROVED
 Cycle: 3 (phase 1 of 3)
 Created: 2026-08-31
 Branch: `feature/ph-7-distribution`
@@ -159,3 +159,67 @@ slowly they read.
 | A replay window that quietly truncates                                              | Real. Retention must be explicit and asking for something evicted must be an error, not a shrug. |
 | Client behaviour reaching price generation                                          | Re-established from scratch; the single-process demonstration does not transfer.                 |
 | Two-node "price now" divergence being discovered by a user rather than stated by us | Live. §2.4 requires the contract to be written down in this phase.                               |
+
+---
+
+## 12. Phase approval record
+
+**APPROVED** from executed evidence, 2026-08-31.
+
+### The result the phase existed to produce
+
+Many people can watch the same market, and it can be shown they are watching the
+same market. 25 concurrent in-process observers hold byte-identical arrays over
+4,008 ticks; concurrent clients over real sockets agree on their overlap; a client
+that disconnects resumes contiguously; and the tick stream is unchanged by how
+many clients watch, when they subscribe, or how slowly they read.
+
+| Subphase | Title                                                        | State    |
+| -------- | ------------------------------------------------------------ | -------- |
+| PH-7.1   | The tick feed: ordering, resumption, backpressure            | APPROVED |
+| PH-7.2   | Multi-observer consistency and blindness across the boundary | APPROVED |
+| PH-7.3   | The transport, and the consistency contract written down     | APPROVED |
+
+### Phase invariants
+
+- **INV-002** re-established across concurrent observers, a real transport, and
+  two nodes under clock skew — not inherited from "there is only one observer".
+- **INV-001** re-established across the boundary. Client behaviour is a new input
+  reaching a running server, and the demonstration was rebuilt on this side of it.
+- INV-008 and INV-009 re-checked: a client's reconstruction from the feed matches
+  the server's record exactly, and settlement remains node-independent.
+
+### What the phase learned
+
+**The dangerous defect at this layer disguises itself as performance work.**
+Dropping, coalescing, or fast-forwarding a slow client are the three natural
+things to do about backpressure, and all three hand that client a different
+market — invisibly, because a client cannot know what it never received. The only
+acceptable answers are ordered delivery or disconnection. This is not a
+performance trade-off that happens to touch correctness; it _is_ the correctness
+boundary, and it lives in the file a performance-minded reviewer would optimise.
+
+**A guard was written, looked reasonable, and could not catch its own defect.**
+The first version of the backpressure suite planted the fast-forward leak and
+**passed**: its only slow sink refused cumulatively, so it refused the skip-ahead
+too and the subscription cancelled anyway. The test measured the wrong shape of
+backpressure. A sink refusing large batches but accepting single ticks — what real
+backpressure looks like, and precisely the client a skip-ahead feed corrupts —
+fails three tests on the same plant.
+
+That is Cycle Audit 2's standing rule earning itself within a day of being
+written, and it is worth stating in its sharpest form: _writing the planted-defect
+test is not enough; the plant has to actually succeed against the unfixed code, or
+the test is measuring something else._
+
+**Distribution is where PH-5's sequence leasing pays off.** It was introduced in
+the runtime to stop a seam reusing numbers. This is the layer where the reuse
+would have surfaced — as two clients holding irreconcilable reconstructions, with
+no way to detect the disagreement.
+
+### Known limitations carried forward
+
+- Multiple nodes are characterised and their contract published; running more than
+  one is unclaimed by any phase.
+- The stream is anonymous; accounts and entitlement are unscoped.
+- No frontend. PH-8.

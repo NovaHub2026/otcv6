@@ -15,20 +15,20 @@ Last synchronized: 2026-08-31
 | Field                            | Value                                                                   |
 | -------------------------------- | ----------------------------------------------------------------------- |
 | Active development cycle         | Cycle 3                                                                 |
-| Approved phases in current cycle | **0 of 3**                                                              |
+| Approved phases in current cycle | **1 of 3** (PH-7)                                                       |
 | Cycle Audit state                | None active — next due after three more phases                          |
 | Last Cycle Audit                 | [Cycle Audit 002](docs/audits/CYCLE-AUDIT-002.md) — APPROVED 2026-08-31 |
 
 ## Phase and subphase
 
-| Field                  | Value                                                              |
-| ---------------------- | ------------------------------------------------------------------ |
-| Active phase           | None — PH-7 is next to be created                                  |
-| Phase lifecycle        | n/a                                                                |
-| Active subphase        | None                                                               |
-| Subphase lifecycle     | n/a                                                                |
-| Last approved phase    | PH-6 — Trading Boundary: contracts, settlement, economic blindness |
-| Last approved subphase | PH-6.2 — The trading boundary and verified economic blindness      |
+| Field                  | Value                                                        |
+| ---------------------- | ------------------------------------------------------------ |
+| Active phase           | None — PH-8 is next to be created                            |
+| Phase lifecycle        | n/a                                                          |
+| Active subphase        | None                                                         |
+| Subphase lifecycle     | n/a                                                          |
+| Last approved phase    | PH-7 — Public Market Distribution and Multi-User Consistency |
+| Last approved subphase | PH-7.3 — The transport, and the consistency contract         |
 
 ## Cycle 1 result
 
@@ -148,15 +148,21 @@ the most serious process failure in the project's history, and the rule it
 produced is standing: **never `git add -A` while subagents are running, and keep
 audit plants in an isolated clone.**
 
-**Create the PH-7 Phase Context Document** — public market distribution and
-multi-user consistency — on branch `feature/ph-7-distribution`. It opens Cycle 3.
+**PH-7 is APPROVED.** Many people can watch the same market, and it can be shown
+they are watching the same market: 25 concurrent observers byte-identical over
+4,008 ticks, real sockets agreeing on their overlap, exact resumption across a
+disconnect, and a tick stream unchanged by client behaviour. The two-node question
+is answered in
+[`docs/architecture/CONSISTENCY_CONTRACT.md`](docs/architecture/CONSISTENCY_CONTRACT.md).
 
-Two things Cycle 2 hands it directly:
+**Create the PH-8 Phase Context Document** — observer frontend and trading chart
+experience — on branch `feature/ph-8-frontend`. It is where Next.js and React are
+first scaffolded.
 
-- The economic-blindness demonstration covers a **single process**. PH-7 separates
-  trading and price generation across a network boundary, and the claim has to be
-  re-established there.
-- The venue is single-node and read-only; clients poll. A tick feed, fan-out and
-  multi-user consistency semantics are PH-7's subject.
+What PH-8 inherits: the frontend is the first consumer that will _render_ the
+market rather than verify it, and the temptation there is the mirror image of
+PH-7's — smoothing, interpolating, or animating between ticks invents prices the
+market never visited. `query.ts` has forbidden that since PH-1.3 for the same
+reason a candle is never synthesised for an empty bucket.
 
 No Human authorization is required to proceed (`GOVERNANCE.md` §32).
