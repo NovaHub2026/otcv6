@@ -14,21 +14,21 @@ Last synchronized: 2026-08-31
 
 | Field                            | Value                                                                   |
 | -------------------------------- | ----------------------------------------------------------------------- |
-| Active development cycle         | Cycle 3                                                                 |
-| Approved phases in current cycle | **2 of 3** (PH-7, PH-8)                                                 |
+| Active development cycle         | Cycle 4                                                                 |
+| Approved phases in current cycle | **0 of 3**                                                              |
 | Cycle Audit state                | None active — next due after three more phases                          |
-| Last Cycle Audit                 | [Cycle Audit 002](docs/audits/CYCLE-AUDIT-002.md) — APPROVED 2026-08-31 |
+| Last Cycle Audit                 | [Cycle Audit 003](docs/audits/CYCLE-AUDIT-003.md) — APPROVED 2026-08-31 |
 
 ## Phase and subphase
 
-| Field                  | Value                                                 |
-| ---------------------- | ----------------------------------------------------- |
-| Active phase           | None — PH-9 is next, and it closes Cycle 3            |
-| Phase lifecycle        | n/a                                                   |
-| Active subphase        | None                                                  |
-| Subphase lifecycle     | n/a                                                   |
-| Last approved phase    | PH-8 — Observer Frontend and Trading Chart Experience |
-| Last approved subphase | PH-8.3 — The join, and timeframe switching            |
+| Field                  | Value                                                        |
+| ---------------------- | ------------------------------------------------------------ |
+| Active phase           | None — PH-10 is next to be created                           |
+| Phase lifecycle        | n/a                                                          |
+| Active subphase        | None                                                         |
+| Subphase lifecycle     | n/a                                                          |
+| Last approved phase    | PH-9 — Continuous Integrity Assurance and Red-Team Hardening |
+| Last approved subphase | PH-9.3 — Assurance a counterparty can recompute              |
 
 ## Cycle 1 result
 
@@ -148,28 +148,27 @@ the most serious process failure in the project's history, and the rule it
 produced is standing: **never `git add -A` while subagents are running, and keep
 audit plants in an isolated clone.**
 
-**PH-8 is APPROVED.** A chart that shows what happened: every drawn value is a
-price that was actually observed, every extreme survives at every resolution, a
-quiet period produces no bar, and a client reconstructs the server's record
-exactly across a disconnection — verified against a running API process.
+**Cycle Audit 003 is APPROVED and closed.** One material finding, fixed. The
+record is [`docs/audits/CYCLE-AUDIT-003.md`](docs/audits/CYCLE-AUDIT-003.md), and
+its §1 should be read before its findings: the audit was conducted by the agent
+that wrote the code rather than by independent agents, found one finding against
+Cycle Audit 2's thirty-one, and says plainly that the difference is probably
+method rather than quality. **Cycle 4's audit should use independent agents.**
 
-**Create PH-9 — continuous integrity assurance and independent red-team
-hardening.** It closes Cycle 3, so on its approval the Three-Phase Human Gate
-applies: STOP and request `EJECUTA` for the third Cycle Audit.
+Cycle 3 delivered distribution with a stated consistency contract, a frontend
+that renders only what happened, and — in PH-9 — an assurance layer independent
+of the party making the claim: attack families withheld from all tuning, a
+guardrail suite audited by mutation, and a verdict a counterparty can recompute
+from the published record with no key.
 
-PH-9 is where a one-time proof becomes a standing guarantee, and the roadmap
-already fixes its hardest requirement: **a red-team round using attack families
-deliberately withheld from all prior tuning.** Everything the battery currently
-knows how to look for has, by construction, been used to shape the engine — so it
-can no longer be surprised by it.
+**Create the PH-10 Phase Context Document** and continue. The roadmap does not
+yet name Cycle 4's phases; deriving them is the first task, and
+`docs/BACKLOG.md` carries the open candidates — B-004 (personalise the cascade so
+assets differ in rhythm, not only pace and scale) is the largest.
 
-Two things Cycle 3 hands PH-9 directly:
-
-- Both Cycle Audits found the same class: guards that existed, were documented as
-  sufficient, and had never been tested against what they guarded. PH-9 should
-  treat the _guardrail suite itself_ as a subject, not only the engine.
-- Real boundaries in this project have only ever been found by crossing them —
-  PH-5.3's process restart, PH-8.2's browser build. A red team that only reasons
-  will find less than one that runs things.
+The standing Human item is unchanged and now sharper: **GitHub Actions has
+refused eleven consecutive runs on account billing.** PH-9's entire subject is
+assurance that does not rest on the operator's word, and every one of its results
+is currently attested only by the operator running them locally.
 
 No Human authorization is required to proceed (`GOVERNANCE.md` §32).

@@ -1,6 +1,7 @@
 export {
   DEFAULT_RETAIN_TICKS,
   EvictedError,
+  UnknownSequenceError,
   TickFeed,
   type FeedSink,
   type Subscription,
