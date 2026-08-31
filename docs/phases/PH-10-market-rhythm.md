@@ -2,7 +2,7 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-10
-Status: ACTIVE
+Status: APPROVED
 Cycle: 4 (phase 1 of 3)
 Created: 2026-08-31
 Branch: `feature/ph-10-market-rhythm`
@@ -186,3 +186,107 @@ the realism band — with the lattices recalibrated to the new process.
 | Differentiation still lands near the null          | Possible. Then the phase reports the measurement honestly and records which features remain common. A number that did not move is a result, not a failure to be tuned away. |
 | Revalidation cost                                  | Real: five assets through the battery is the expensive part of the statistical suite. Budgeted as its own subphase rather than smuggled into PH-10.2's gate.                |
 | Recalibrated lattices invalidate recorded evidence | Certain. Every recorded tie rate and quantum is re-derived and re-recorded; the old figures stay in the phase records that produced them, per `GOVERNANCE.md` §47.          |
+
+---
+
+## 12. Phase approval record
+
+**APPROVED** from executed evidence, 2026-08-31.
+
+| Check          | Result                                             |
+| -------------- | -------------------------------------------------- |
+| `npm run gate` | **exit 0** — 1108 passed, 71 files, 0 errors, 198s |
+
+### The result the phase existed to produce
+
+**Assets that differ in rhythm, not only in pace and scale.**
+
+| Measurement                                 | PH-4  | PH-10     |
+| ------------------------------------------- | ----- | --------- |
+| Full-signature differentiation              | 53.0% | 59.5%     |
+| **Shape-only** (pace and scale divided out) | 30.0% | **40.5%** |
+| Identical-personality control               | 21.0% | 23.5%     |
+
+Permutation p = 0.005 — the floor at 199 shuffles — and no relabelling of the
+same windows reached 28.0%.
+
+| Subphase | Title                                             | State    |
+| -------- | ------------------------------------------------- | -------- |
+| PH-10.1  | The cascade's time structure becomes personality  | APPROVED |
+| PH-10.2  | A catalogue authored to differ in rhythm          | APPROVED |
+| PH-10.3  | Revalidation: every asset, every guarantee, again | APPROVED |
+
+### Phase invariants
+
+- **INV-007** strengthened from "the assets differ in size" to "the assets differ
+  in character", with the difference measured against a reachable null and the
+  gain attributed to the mechanism that caused it.
+- **INV-006** re-established per asset against the main battery _and_ against the
+  withheld families, on a changed market process. 90 hypotheses clean, 106 across
+  a real seam.
+- **INV-003, INV-008, INV-009** re-checked rather than assumed: the lattices moved,
+  so snapshot/restore, seam continuity and settlement reproducibility were all
+  re-run.
+
+### What the phase learned
+
+**B-004 was never a tuning problem, and three phases of tuning could not have
+fixed it.** PH-4.3 tried trait spread, regime tempo and cascade memory span, and
+reported that all three moved differentiation by less than realisation noise. The
+reason was not that the levers were weak. Two of the three **were not wired to
+anything** — `personalityConfig` inherited every cascade hazard, every regime
+sojourn scale and the Hawkes decay from shared defaults, so the entire time
+structure of the market was one configuration common to the catalogue. Five of
+the seven scale-free shape features an observer can measure were therefore
+identical across all five assets by construction.
+
+A measurement that will not move under three different levers is evidence about
+the _model_, not about the calibration. It took a cycle to read it that way.
+
+**The hardest part of raising a number is making it mean something.** Shape
+differentiation is trivially purchasable: spread the assets further apart in tail
+weight and it rises without any of them becoming a more distinct market. So the
+phase pinned every asset's realised tick amplitude to its PH-4 value to fifteen
+decimal places and its tail weight to within 6%, and then split the measurement
+by feature group — rhythm features alone score 39.5%, the frozen tail features
+28.0%, inside the control's own noise. The constraint and the split are worth
+more than the headline, because without them the headline is unfalsifiable.
+
+**Depth is an exponent, and that shaped the whole design.** Making cascade
+component count per-asset puts an exponent in the personality vector: an asset
+authored with a deeper cascade and unchanged clustering does not get slightly
+fatter tails, it gets exponentially fatter ones. What made this tractable was
+discovering that the _other four_ rhythm traits are exactly kurtosis-neutral —
+three by absence, one by a cancellation between a stationary weight and its own
+normalising total. Rhythm can therefore be varied freely, and only depth needs to
+be co-varied, which `solveClustering` does analytically in microseconds.
+
+**A recorded measurement that nothing reads is a comment.**
+`MEASURED_LATTICE_TIE_RATES` records the rate at which stakes are refunded under
+ADR-0007. It was measured by Cycle Audit 2, exported, documented as evidence, and
+read by no code and no test. Re-authoring the cascade moved every value in it and
+nothing failed. Giving it a test then found a second defect underneath: the rates
+did not reproduce across seeds, because a binomial standard error is wrong for
+20,000 consecutive horizons of one realisation.
+
+**Every statistic of this market is limited by simulated duration, not by sample
+count.** The volatility process has memory measured in days, so consecutive
+observations are not independent draws no matter how many are taken. This is the
+third face of one fact: Cycle Audit 2 found it behind INV-007's p-value, B-002
+records it for the long-horizon detection floor, and PH-10.2 met it again in the
+tie rates. Naming it as a property of the engine — rather than as three separate
+statistical mistakes — is what PH-11 should start from.
+
+### Known limitations carried forward
+
+- Assets remain much easier to tell apart by size than by character: 40.5% on
+  shape against a near-perfect full-signature figure. True of real markets too,
+  and stated at the strength the measurement supports.
+- Realised mean tick interval moved up to 5.2% despite `tempoMs` being unchanged,
+  because excitation memory interacts with the Hawkes intensity ceiling. "Only
+  rhythm changed" is true of the traits, not of realised pace.
+- The trait space is geometrically constrained in a way no single bound
+  expresses: `(depth − 1) · ln(spacing) ≤ ln(span / (tempo/2))`. The error message
+  names the three traits; an author still solves it by hand.
+- **B-010** — the gate's event-loop starvation failure is standing, not closed,
+  and no static guard can see it.

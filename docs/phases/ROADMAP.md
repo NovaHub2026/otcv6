@@ -267,12 +267,12 @@ closes an entry that a prior phase or audit wrote down and deferred, so the
 cycle's success criterion is unusually concrete — `docs/BACKLOG.md` should end it
 holding nothing but the one item that needs the Human Owner.
 
-| Phase | Title                                                         | State       |
-| ----- | ------------------------------------------------------------- | ----------- |
-| PH-10 | Per-asset market rhythm                                       | **ACTIVE**  |
-| PH-11 | Detection power across every horizon the product sells        | not started |
-| PH-12 | Verifiable publication and the journal in the running service | not started |
-| —     | **Cycle Audit 4** — Human gate, requires `EJECUTA`            | not started |
+| Phase | Title                                                         | State        |
+| ----- | ------------------------------------------------------------- | ------------ |
+| PH-10 | Per-asset market rhythm                                       | **APPROVED** |
+| PH-11 | Detection power across every horizon the product sells        | **ACTIVE**   |
+| PH-12 | Verifiable publication and the journal in the running service | not started  |
+| —     | **Cycle Audit 4** — Human gate, requires `EJECUTA`            | not started  |
 
 | Phase | Closes                                                                     |
 | ----- | -------------------------------------------------------------------------- |
@@ -286,15 +286,19 @@ authoring agent and found one. The method is the variable being controlled.
 
 ### PH-10 — Per-Asset Market Rhythm
 
-The catalogue's five assets are separable by amplitude and pace, which is true by
-construction and means nothing. On scale-free _shape_ features they classify at
-30.0% against a 20% null. PH-10 makes the observable dynamics differ.
+The catalogue's five assets were separable by amplitude and pace, which is true
+by construction and means nothing. On scale-free _shape_ features they classified
+at 30.0% against a 20% null.
+
+**Result: 40.5%**, permutation p = 0.005, best of 199 label shuffles 28.0% — with
+every asset's tail weight and realised amplitude pinned to its PH-4 value, so the
+gain came from time structure and nothing else. B-004 closed.
 
 | Subphase | Title                                             | State    |
 | -------- | ------------------------------------------------- | -------- |
 | PH-10.1  | The cascade's time structure becomes personality  | APPROVED |
 | PH-10.2  | A catalogue authored to differ in rhythm          | APPROVED |
-| PH-10.3  | Revalidation: every asset, every guarantee, again | ACTIVE   |
+| PH-10.3  | Revalidation: every asset, every guarantee, again | APPROVED |
 
 ### PH-11 — Detection Power Across Every Horizon the Product Sells
 

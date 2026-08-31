@@ -188,25 +188,20 @@ describe('depth enters the cascade inflation as an exponent', () => {
 });
 
 describe('the co-varied solve', () => {
-  it('hits its target at every admissible depth', () => {
+  it('hits its target across the admissible depth range', () => {
+    // A spot check, not the sweep. Every depth from 4 to 18 is exercised in
+    // `rhythm.stat.test.ts`; each solve runs two 400k-step structure
+    // simulations, and fifteen of them overran the unit project's 5s timeout
+    // under full-suite load. Moving the exhaustive claim rather than weakening
+    // it keeps the claim.
     const misses: string[] = [];
-    for (
-      let depth = TRAIT_BOUNDS.cascadeDepth.min;
-      depth <= TRAIT_BOUNDS.cascadeDepth.max;
-      depth += 1
-    ) {
+    for (const depth of [4, 11, 18]) {
       const target = 40;
-      // Spacing tightened and span widened so the ladder still fits between the
-      // slowest component and the tick rate at depth 18. Both are tail-neutral,
-      // so neither can flatter the solve.
       const base = withTraits({
         cascadeDepth: depth,
         cascadeSpanMs: 40 * 3_600_000,
         cascadeSpacing: 1.9,
       });
-      // The same stream label on both sides. `structureInflation` is a
-      // simulation, so "the solve hits its target" is a statement about one
-      // stream; the test below measures what happens across two.
       const clustering = solveClustering(base, target, derive('structure-probe'));
       const achieved = kurtosisOf({ ...base, clustering });
       const relative = Math.abs(achieved - target) / target;

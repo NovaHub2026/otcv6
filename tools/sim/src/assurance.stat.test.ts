@@ -130,7 +130,7 @@ describe('a verdict is derivable from the published record alone', () => {
       families: withheldFamilies({ sequenceModulus: 7 }),
       trainingFraction: 0.3,
     });
-    // eslint-disable-next-line no-console -- recorded evidence for PH-9.3
+
     console.info(
       `assurance: ${verdict.coverage.hypothesesTested} hypotheses from the journal alone, ` +
         `${verdict.clean ? 'CLEAN' : 'EXPLOITABLE'}, fingerprint ${journalFingerprint(restored)}`,

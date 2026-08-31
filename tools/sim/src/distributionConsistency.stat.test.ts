@@ -31,7 +31,33 @@ const GENESIS = epochMillis(1_776_000_000_000);
 const keyring = MasterKeyring.forTesting('distribution-consistency');
 const ASSET = ASSET_CATALOGUE[0]!;
 const STEP_MS = 5_000;
-const STEPS = 400;
+const STEPS = 800;
+/** Steps each node runs in the clock-skew comparison. */
+const SKEW_STEPS = 400;
+
+/**
+ * Ticks the standard span should produce, from the asset's own recorded pace.
+ *
+ * Derived rather than written down. These guards exist to prove the comparison
+ * actually ran over a lot of data, and PH-10 showed what happens when the number
+ * is a literal: re-authoring the catalogue's rhythm moved this asset's realised
+ * pace and four consistency tests failed for a reason that had nothing to do
+ * with consistency.
+ */
+const EXPECTED_TICKS = Math.floor((STEPS * STEP_MS) / ASSET.evidence.meanIntervalMs);
+const EXPECTED_SKEW_TICKS = Math.floor((SKEW_STEPS * STEP_MS) / ASSET.evidence.meanIntervalMs);
+
+/**
+ * Half the expected count, because a hosted run measures a transient.
+ *
+ * `meanIntervalMs` is a stationary figure from a ten-day calibration. A hosted
+ * market starts with zero Hawkes excitation and takes several excitation
+ * memories to reach that rate — and `arrivalMemoryMs` is now a per-asset trait,
+ * so how long "several" is differs by asset. The floor is deliberately loose:
+ * its job is to catch a market that stopped publishing, not to re-measure pace.
+ */
+const MIN_TICKS = Math.floor(EXPECTED_TICKS * 0.5);
+const MIN_SKEW_TICKS = Math.floor(EXPECTED_SKEW_TICKS * 0.5);
 
 function market(clock: SteppableClock): HostedMarket {
   return new HostedMarket({
@@ -90,7 +116,7 @@ describe('every observer holds the same market', () => {
     for (const sink of observers) feed.subscribe(ASSET.definition.id, sink);
 
     const server = run(feed, hosted, clock);
-    expect(server.length).toBeGreaterThan(2_000);
+    expect(server.length).toBeGreaterThan(MIN_TICKS);
 
     console.info(
       `consistency: ${observers.length} observers, ${server.length} ticks each, identical`,
@@ -205,7 +231,7 @@ describe('the market does not know it is being watched', () => {
     }
 
     expect(sinks.length).toBeGreaterThan(100);
-    expect(watched.length).toBeGreaterThan(2_000);
+    expect(watched.length).toBeGreaterThan(MIN_TICKS);
     expect(watched, 'watching the market changed it').toEqual(quiet);
   });
 
@@ -263,7 +289,7 @@ describe('two nodes with skewed clocks agree exactly where it matters', () => {
     const clock = new SteppableClock(epochMillis(GENESIS + offsetMs));
     const hosted = market(clock);
     const ticks: Tick[] = [];
-    for (let step = 0; step < 200; step += 1) {
+    for (let step = 0; step < SKEW_STEPS; step += 1) {
       clock.advance(durationMillis(STEP_MS));
       ticks.push(...hosted.advance());
     }
@@ -275,7 +301,7 @@ describe('two nodes with skewed clocks agree exactly where it matters', () => {
     const behind = node(0);
 
     const shared = Math.min(ahead.ticks.length, behind.ticks.length);
-    expect(shared).toBeGreaterThan(1_000);
+    expect(shared).toBeGreaterThan(MIN_SKEW_TICKS);
     for (let i = 0; i < shared; i += 1) {
       expect(ahead.ticks[i], `tick ${i} differs between nodes`).toEqual(behind.ticks[i]);
     }

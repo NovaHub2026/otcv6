@@ -66,7 +66,7 @@ describe('the withheld families find nothing in the real engine', () => {
     });
 
     const shortest = verdict.sensitivity[0];
-    // eslint-disable-next-line no-console -- recorded evidence for PH-9
+
     console.info(
       `red team: ${verdict.coverage.hypothesesTested} hypotheses across ` +
         `${verdict.coverage.families} withheld families, ` +
@@ -147,7 +147,6 @@ describe('the withheld families find nothing in the real engine', () => {
       minimumBucketSamples: 200,
     });
 
-    // eslint-disable-next-line no-console -- recorded evidence for PH-9
     console.info(
       `red team seam: ${verdict.coverage.hypothesesTested} hypotheses, ` +
         `${verdict.clean ? 'CLEAN' : 'EXPLOITABLE'}, seam at tick ${before.length}`,

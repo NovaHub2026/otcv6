@@ -2,7 +2,7 @@
 // settlement).
 import { describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, MasterKeyring } from '@otc/core';
-import { MEASURED_LATTICE_TIE_RATES, TARGET_TIE_RATE } from './asset.js';
+import { CALIBRATION_CHUNK_TICKS, MEASURED_LATTICE_TIE_RATES, TARGET_TIE_RATE } from './asset.js';
 import { ASSET_CATALOGUE, configFor } from './catalogue.js';
 import { createMarketEngine } from './factory.js';
 
@@ -53,7 +53,22 @@ const REPLICATES = 12;
  */
 const TOLERANCE = 0.002;
 
-function tieRate(index: number, label: string): number {
+/**
+ * Yield to the event loop.
+ *
+ * B-005, and the reason this is not optional. A test body that drives the engine
+ * for tens of seconds without an await point starves the worker's own RPC
+ * channel, and Vitest fails the run with `Timeout calling "onTaskUpdate"` while
+ * reporting every test as passed. The gate then exits non-zero with a green
+ * summary, which is the most confusing failure this project has produced.
+ *
+ * `calibrateAssetAsync` and `runBatteryAsync` follow the same convention. This
+ * file reintroduced the defect in PH-10.3 by driving btcusd for 25 seconds
+ * synchronously, and the full gate caught it.
+ */
+const breathe = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
+
+async function tieRate(index: number, label: string): Promise<number> {
   const asset = ASSET_CATALOGUE[index]!;
   const keyring = MasterKeyring.forTesting(label);
   const start = 1_776_000_000_000;
@@ -72,6 +87,7 @@ function tieRate(index: number, label: string): number {
 
   // No assertion inside the loop: this runs into the millions of ticks, and an
   // `expect` per iteration is the cost defect `testCost.test.ts` exists to catch.
+  let ticks = 0;
   while (counted < HORIZONS_PER_REPLICATE) {
     const tick = engine.next();
     if (tick === null) break;
@@ -82,6 +98,8 @@ function tieRate(index: number, label: string): number {
       boundary += HORIZON_MS;
     }
     last = tick.price;
+    ticks += 1;
+    if (ticks % CALIBRATION_CHUNK_TICKS === 0) await breathe();
   }
   return counted === 0 ? Number.NaN : ties / counted;
 }
@@ -89,13 +107,14 @@ function tieRate(index: number, label: string): number {
 describe('the recorded lattice tie rates reproduce', () => {
   it.each(ASSET_CATALOGUE.map((a, i) => [a.definition.id, i] as const))(
     '%s settles at the money at its recorded rate',
-    (id, index) => {
+    async (id, index) => {
       const recorded = MEASURED_LATTICE_TIE_RATES[id as keyof typeof MEASURED_LATTICE_TIE_RATES];
       expect(recorded, `${id} has no recorded lattice tie rate`).toBeGreaterThan(0);
 
       const rates: number[] = [];
       for (let replicate = 0; replicate < REPLICATES; replicate += 1) {
-        rates.push(tieRate(index, `ties-verify-${id}-${replicate}`));
+        rates.push(await tieRate(index, `ties-verify-${id}-${replicate}`));
+        await breathe();
       }
       const mean = rates.reduce((sum, r) => sum + r, 0) / rates.length;
       const variance =

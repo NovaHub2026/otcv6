@@ -42,7 +42,7 @@ is maximally precise.
 | INV-004 Timeframe observer independence                | Enforced | `timeframe.test.ts`, `candle.test.ts` — aggregation is a pure fold; refolding a coarser timeframe from a finer one agrees                                                                                                                                                                                                                                                                                                                                  |
 | INV-005 Expiration independence                        | Enforced | `guardrails.test.ts` — source scan rejects contract, expiration and direction vocabulary in the generation path                                                                                                                                                                                                                                                                                                                                            |
 | INV-006 No deterministic exploitable directional rules | Enforced | `mirror.test.ts` (sign symmetry is structural), `battery.test.ts`, `calibration.stat.test.ts`, `engineValidation.stat.test.ts`, `phaseAcceptance.stat.test.ts`                                                                                                                                                                                                                                                                                             |
-| INV-007 Asset differentiation                          | Enforced | `multiAsset.stat.test.ts` — leave-one-out classification of windows to assets scores 53.0% against a 20% null, with a **permutation** p of 0.005 (its floor at 199 shuffles; the best relabelling reached only 30.5%). An identical-personality control scores 21.0%, p = 0.395. Separation is driven mostly by pace and scale; the shape-only figure of 30.0% is asserted as a ceiling so a genuine improvement forces the claim to be rewritten (B-004). |
+| INV-007 Asset differentiation                          | Enforced | `multiAsset.stat.test.ts` — leave-one-out classification of windows to assets scores 59.5% against a 20% null, with a **permutation** p of 0.005 (its floor at 199 shuffles; the best relabelling reached 30.0%). An identical-personality control scores 23.5%, p = 0.195. Scale-free **shape** alone scores 40.5%, p = 0.005, best shuffle 28.0% — asserted as a floor since PH-10. Attribution: rhythm features alone 39.5%, tail features alone 28.0%. |
 | INV-008 Continuous market state                        | Enforced | `factory.test.ts` (restart across a lease seam, and snapshot/restore of the composed model), `engine.test.ts`, `seamReplay.test.ts`, `lease.test.ts`                                                                                                                                                                                                                                                                                                       |
 | INV-009 Reproducible settlement                        | Enforced | `seamReplay.test.ts`, `replay.test.ts` — a recorded run replays to identical prices                                                                                                                                                                                                                                                                                                                                                                        |
 | INV-010 Private generator state                        | Enforced | `keyring.test.ts` (key material is redacted in JSON, string and inspect forms), `engine.test.ts` (a snapshot carries no key material), `lease.test.ts`                                                                                                                                                                                                                                                                                                     |
@@ -85,8 +85,23 @@ from a permutation null, which carries the dependence structure automatically an
 cannot report below its own resolution. The separation is still real — no
 relabelling of 199 came within 22 points of it — but it is significant at 0.005,
 not at 1e-25. The metric it rests on has a reachable null, and that
-null was measured: five copies of one personality score at chance. What the metric
-does **not** establish is that the assets differ in _shape_ once pace and amplitude
-are divided out — that signal is real but weak (30.0% against 20%), because the
-volatility cascade dominates the observable dynamics and every asset shares it. The
-table says "Enforced" for the claim that is evidenced, and B-004 carries the rest.
+null was measured: five copies of one personality score at chance.
+
+Until PH-10 the metric did **not** establish that the assets differ in _shape_
+once pace and amplitude are divided out. That signal was real but weak — 30.0%
+against 20% — because the volatility cascade dominated the observable dynamics
+and every asset shared one. PH-10 made the cascade's time structure per-asset and
+the figure is now 40.5%, with a permutation p at its 0.005 floor and no
+relabelling of 199 reaching it.
+
+The shape figure is worth guarding, because it is trivially purchasable: spread
+the assets further apart in tail weight and it rises without any of them becoming
+a more distinct market. So PH-10.2 pinned every asset's realised tick amplitude
+to its PH-4 value to fifteen decimal places and its tail weight to within 6%, and
+`catalogue.test.ts` enforces both. The attribution then falls out: the five
+features PH-10 made per-asset score 39.5% on their own, while the two it held
+fixed score 28.0% — inside the identical-personality control's own noise band.
+
+Assets are still much easier to tell apart by size than by character. That is
+true of real markets too, and the claim is now stated at the strength the
+measurement supports rather than at the strength the full signature suggests.
