@@ -16,7 +16,7 @@ Last synchronized: 2026-08-31
 | -------------------------------- | ----------------------------------------------------------------------- |
 | Active development cycle         | Cycle 4                                                                 |
 | Approved phases in current cycle | **1 of 3**                                                              |
-| Cycle Audit state                | None active — next due after three more phases                          |
+| Cycle Audit state                | None active — runs automatically after PH-12 (ADR-0008)                 |
 | Last Cycle Audit                 | [Cycle Audit 003](docs/audits/CYCLE-AUDIT-003.md) — APPROVED 2026-08-31 |
 
 ## Phase and subphase
@@ -47,41 +47,61 @@ both?
 
 ## Blockers
 
-None. Development is paused at the Governance Human Gate (`GOVERNANCE.md` §28),
-not blocked.
+**None, and none are possible from the Human side.** As of 2026-08-31 the
+three-phase gate is removed and every code and product decision is the
+Development Agent's ([ADR-0008](docs/decisions/ADR-0008-full-delegation.md)).
+Development neither stops nor waits.
 
-## Pending protected Human decisions
+## Decision authority
 
-None blocking. One remains open:
+Delegated in full: product purpose, business model, payout and settlement rules,
+architecture, roadmap, and what is not built. Decisions are **recorded, not
+escalated** — an ADR for something durable,
+[`DECISION-LOG.md`](docs/decisions/DECISION-LOG.md) for everything else worth
+finding later.
 
-1. **Fairness-proof mechanism** — whether the product publishes verifiable
-   settlement proofs, and in what form. Due at PH-12. Recommendation: Merkle
-   roots of the tick journal with inclusion proofs, never disclosure of generator
-   keys — revealing a key hands an observer a latent-state snapshot with hours of
-   forward validity. PH-9.3 built the recomputable half; what is missing is
-   authenticity, and that needs a publishing key and a publication policy (B-009).
+Two things remain the Human Owner's (`GOVERNANCE.md` §5.1): **amendments to
+Governance itself**, and **commitments that bind them outside the repository**
+(legal, contractual, real-money, custody, paid services).
 
-**At-the-money settlement** was decided by the Human Owner and is recorded in
+The **fairness-proof mechanism** — whether the product publishes verifiable
+settlement proofs and in what form — is therefore no longer escalated. It is due
+at PH-12 and will be decided and recorded there. Direction: Merkle roots of the
+tick journal with inclusion proofs, never disclosure of generator keys, since
+revealing a key hands an observer a latent-state snapshot with hours of forward
+validity. PH-9.3 built the recomputable half; authenticity needs a publishing key
+and a publication policy (B-009).
+
+**At-the-money settlement** was decided by the Human Owner before delegation and
+is recorded in
 [ADR-0007](docs/decisions/ADR-0007-at-the-money-settlement.md): a tie is refunded.
 The realised at-the-money rate on the published lattice is 0.42%-0.53% per asset,
 re-measured in PH-10.2 over 15 replicates.
 
-Infrastructure item requiring the Human Owner: `main` was pushed to
-`origin → https://github.com/NovaHub2026/otcv6` on 2026-08-31 (commit `6766b8a`,
-20 commits). The CI workflow triggered correctly and **could not run**:
+## Hosted CI: removed, not blocked
 
-> The job was not started because recent account payments have failed or your
-> spending limit needs to be increased.
+GitHub Actions refused eleven consecutive runs — the repository is private and
+the account has no paid allowance. Rather than carry that as a blocker on someone
+who could not clear it, hosted CI was **removed from the verification model**
+(ADR-0008). `npm run gate` is the verification authority.
 
-So hosted CI still has not executed, and the reason is now an account billing
-state rather than a missing push. This is the one thing a local gate cannot
-substitute for — PH-4 lost a phase gate to a failing lint that two subphase
-approvals had recorded as passing, precisely because no independent check ever
-ran (`docs/BACKLOG.md` B-001).
+The cost is recorded rather than mitigated: **every quality claim in this
+repository is attested by the operator running it locally.** Nothing independent
+executes anything. That is the weakness PH-9 built an assurance layer to address,
+and it cost PH-4 a phase gate — a failing `npm run lint` survived two subphase
+approvals because nothing outside the session ever ran it.
 
-Cycle Audit 001 found this stated as "no remote configured" throughout PH-1, PH-2
-and PH-3. The remote existed the whole time; the claim was asserted repeatedly
-without ever running `git remote -v`. See [Cycle Audit 001](docs/audits/CYCLE-AUDIT-001.md).
+What makes it acceptable is structural, not procedural: the gate is deterministic
+and seeded so anyone can reproduce it, evidence is executed rather than asserted
+(`GOVERNANCE.md` §68), and the guardrail suite fails the build on documentation
+drift, state inconsistency, dependency direction, economic blindness and test
+cost. The reader's assurance comes from being able to re-run the work, not from
+anyone having already done so.
+
+**The cheapest route back to independent verification is one word from the Human
+Owner:** making the repository public restores free GitHub Actions immediately.
+It is a positioning decision, so it stays with them (§5.1). Recorded in
+[`DECISION-LOG.md`](docs/decisions/DECISION-LOG.md).
 
 ## Verification state
 
@@ -166,9 +186,9 @@ B-002's hundred-fold history requirement at the 15-minute horizon, and behind th
 lattice tie rates PH-10.2 had to re-measure over 15 replicates. Simulating longer
 is one answer; an estimator that respects the dependence is probably a better one.
 
-The standing Human item is unchanged: **GitHub Actions has refused eleven
-consecutive runs on account billing.** Every quality claim in this repository is
-attested only by the operator running it locally, which is precisely what PH-9
-built an assurance layer to avoid.
-
-No Human authorization is required to proceed (`GOVERNANCE.md` §32).
+**There is no longer a Human item and no longer a gate.** Cycle Audit 4 runs
+automatically once PH-12 is approved, and every code and product decision belongs
+to the Development Agent (ADR-0008). The audit must state its own method
+limitation and, where independent agents are available, use them (B-008) — with
+the gate removed, the audit's adversarial discipline is the only external check
+that remains.

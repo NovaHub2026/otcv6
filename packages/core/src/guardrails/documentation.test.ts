@@ -57,6 +57,27 @@ describe('the documentation index is complete', () => {
     expect(missing).toEqual([]);
   });
 
+  // The same rule for the two directories it was never extended to.
+  //
+  // PH-11.3 found the index asserting `docs/audits/` was "Empty: no Cycle Audit
+  // has run yet" with three audit records on disk, and `docs/evidence/`
+  // "Currently unused" with Cycle 1's verification sitting in it. Both claims
+  // went stale the moment the first file landed, and nothing failed, because the
+  // completeness check covered decisions and architecture and stopped there.
+  //
+  // GOVERNANCE.md §71 requires a fresh agent to determine the project's state
+  // from the repository alone. An index that says no audit has run is worse than
+  // no index.
+  it('references every cycle audit on disk', () => {
+    const missing = listMarkdown('docs/audits').filter((name) => !index.includes(name));
+    expect(missing).toEqual([]);
+  });
+
+  it('references every recorded evidence document on disk', () => {
+    const missing = listMarkdown('docs/evidence').filter((name) => !index.includes(name));
+    expect(missing).toEqual([]);
+  });
+
   it('lists at least the canonical documents Governance names', () => {
     for (const document of [
       'GOVERNANCE.md',

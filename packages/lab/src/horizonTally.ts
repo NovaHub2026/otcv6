@@ -52,6 +52,10 @@ export interface HorizonOutcome {
   readonly upRate: number;
   /** `ties / windows`, the realised at-the-money rate. */
   readonly tieRate: number;
+  /** Sum of |close − open| over completed windows. */
+  readonly sumAbsoluteReturn: number;
+  /** Sum of (close − open)² over completed windows: the path's total variance. */
+  readonly sumSquaredReturn: number;
 }
 
 interface HorizonState {
@@ -61,6 +65,8 @@ interface HorizonState {
   ups: number;
   downs: number;
   ties: number;
+  sumAbs: number;
+  sumSquared: number;
 }
 
 export class HorizonAccumulator {
@@ -86,7 +92,29 @@ export class HorizonAccumulator {
       ups: 0,
       downs: 0,
       ties: 0,
+      sumAbs: 0,
+      sumSquared: 0,
     }));
+    this.#startPrice = startPrice;
+  }
+
+  readonly #startPrice: number;
+
+  /**
+   * Net displacement of the whole path so far, in lattice steps.
+   *
+   * Load-bearing for interpreting a multi-horizon result. Non-overlapping window
+   * returns **telescope**: at every horizon they sum to this one number. So a
+   * path that happens to end up displaced biases the up-rate at *every* horizon
+   * in the same direction, and the eight horizon tests on one path are close to
+   * one test rather than eight.
+   *
+   * PH-11.2 found btcusd positive at all eight horizons and needed to know
+   * whether that was a leak or a property of measuring one realisation. See
+   * {@link HorizonOutcome.sumAbsoluteReturn} for the quantitative version.
+   */
+  get netDisplacement(): number {
+    return this.#last - this.#startPrice;
   }
 
   /**
@@ -105,9 +133,12 @@ export class HorizonAccumulator {
     }
     for (const state of this.#states) {
       while (instant >= state.boundary) {
-        if (this.#last > state.open) state.ups += 1;
-        else if (this.#last < state.open) state.downs += 1;
+        const move = this.#last - state.open;
+        if (move > 0) state.ups += 1;
+        else if (move < 0) state.downs += 1;
         else state.ties += 1;
+        state.sumAbs += Math.abs(move);
+        state.sumSquared += move * move;
         state.open = this.#last;
         state.boundary += state.spec.durationMs;
       }
@@ -145,6 +176,8 @@ export class HorizonAccumulator {
         windows,
         upRate: decided === 0 ? Number.NaN : state.ups / decided,
         tieRate: windows === 0 ? Number.NaN : state.ties / windows,
+        sumAbsoluteReturn: state.sumAbs,
+        sumSquaredReturn: state.sumSquared,
       };
     });
   }

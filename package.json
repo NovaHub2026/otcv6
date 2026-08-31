@@ -21,6 +21,7 @@
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "test:stat": "vitest run --project statistical",
+    "evidence:horizons": "npm run build && node tools/sim/dist/horizonEvidence.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

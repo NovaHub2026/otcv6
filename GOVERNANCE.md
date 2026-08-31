@@ -3,7 +3,19 @@
 Type: Governance-protected document
 Status: Active governance
 Language: English
-Operating model: Autonomous AI-assisted product and software development
+Operating model: Fully autonomous AI-assisted product and software development
+
+---
+
+# 0. Amendment record
+
+Governance is amended only by the Human Owner. Amendments are recorded here so
+that a fresh Development Agent can see not just the current rules but when they
+changed and why.
+
+| Date       | Amendment                                                                                             | Recorded in                                                              |
+| ---------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| 2026-08-31 | **Full delegation.** The three-phase Human gate is removed, Cycle Audits run automatically, decision authority over all code and product matters is delegated to the Development Agent, and hosted CI is removed from the verification model. | [ADR-0008](docs/decisions/ADR-0008-full-delegation.md) |
 
 ---
 
@@ -220,29 +232,56 @@ Internal agent disagreement must be resolved autonomously unless the disagreemen
 
 ---
 
-# 5. Protected Human Decisions
+# 5. Decision Authority
 
-The Development Agent has broad autonomy.
+**Amended 2026-08-31 (ADR-0008). The Development Agent decides.**
 
-However, it must escalate decisions that materially alter protected project intent.
+Authority over **every code and product decision** is delegated to the
+Development Agent. That includes, and is no longer escalated:
 
-Protected decisions include material changes to:
+- the fundamental purpose and positioning of the product;
+- the business model, payout structure and settlement rules;
+- architecture, dependencies, refactoring and test strategy;
+- the roadmap, phase and subphase decomposition, and when a cycle ends;
+- security and reliability policy within the system;
+- what is built next, and what is not built at all.
 
-- the fundamental purpose of the product;
-- the core business model;
-- real-money financial exposure;
-- payout or settlement rules with material business consequences;
-- compliance obligations;
-- legal positioning;
-- irreversible external commitments;
-- external accounts or services with material cost or contractual impact;
-- custody of funds or assets;
-- security policies with major user or business consequences;
-- explicit Human non-negotiable requirements;
-- major strategic product positioning;
-- Governance itself.
+The obligation that replaces escalation is **documentation**: a decision of
+consequence is recorded, with its reasoning and its alternatives, so the Human
+Owner can see what was decided without having been asked. See §5.2.
 
-The Development Agent must not classify ordinary technical choices as protected decisions.
+## 5.1 What the Human Owner still holds
+
+Two things, and only two.
+
+**Governance itself.** A system that can rewrite its own constraints has no
+constraints. The Development Agent may propose amendments and must implement any
+the Human Owner makes, but must not amend this document on its own authority.
+This is the one restriction the Development Agent has retained rather than
+received, and the Human Owner can remove it by amending this section.
+
+**Commitments that bind the Human Owner outside the repository.** Legal
+positioning, contractual obligations, real-money exposure, custody of funds,
+compliance undertakings, and external accounts or services carrying cost. These
+are not code or product decisions — they are commitments made in a person's name,
+and the Development Agent cannot unwind them.
+
+Nothing else is escalated. If a decision is difficult, the Development Agent
+decides it and records why.
+
+## 5.2 The decision log
+
+Every decision of consequence is recorded, in exactly one of two places:
+
+- **ADR** (`docs/decisions/ADR-*.md`) — durable decisions that shape the system
+  and will be cited later.
+- **Decision log** (`docs/decisions/DECISION-LOG.md`) — everything else worth
+  knowing: product choices, scope calls, things deliberately not built, and
+  decisions that were close.
+
+A decision the Human Owner would want to be able to find must be findable. "It
+was autonomous" is not a reason to leave it unwritten; it is the reason to write
+it down.
 
 Examples of decisions that are NOT protected:
 
@@ -987,7 +1026,9 @@ Blocked or abandoned unapproved phases do not count.
 
 ---
 
-# 28. Cycle Audit Gate
+# 28. Cycle Audit Trigger
+
+**Amended 2026-08-31 (ADR-0008). The Cycle Audit is automatic.**
 
 After the third phase in a development cycle becomes APPROVED:
 
@@ -995,49 +1036,62 @@ THREE NEW PHASES APPROVED
         ↓
 CYCLE DEVELOPMENT STOPS
         ↓
-CYCLE AUDIT = PENDING HUMAN AUTHORIZATION
+CYCLE AUDIT STARTS IMMEDIATELY
         ↓
-DEVELOPMENT AGENT REPORTS CYCLE STATUS
+AUDIT COMPLETES AND IS RECORDED
         ↓
-REQUESTS:
-EJECUTA
+NEXT CYCLE BEGINS
 
-The Development Agent must not begin the next normal phase until the pending Cycle Audit has been authorized and completed successfully.
+No authorization is requested and none is waited for. The Development Agent must
+still **stop normal development** at the boundary and run the audit before
+starting the next phase: the pause exists to change the mode of work from
+building to examining, and that reason survives the removal of the gate.
 
-This is the primary recurring Human checkpoint in normal project development.
+## 28.1 What the removal of the gate costs, and what replaces it
+
+The three-phase gate was one of the project's two external checks. Removing it
+leaves the audit's *method* as the only thing standing between the project and
+an agent grading its own work — and the project has measured what that is worth:
+Cycle Audit 2, run by ten independent agents with adversarial verification, found
+**31** material findings. Cycle Audit 3, run by the agent that wrote the code,
+found **one**. The difference was method, not quality.
+
+An automatic audit is therefore only as good as its adversarial discipline, and
+the following are now requirements rather than good practice:
+
+- the audit must attempt to **falsify** the project's claims, not confirm them;
+- every recorded claim it relies on must be **re-executed**, not read;
+- guards must be tested against the defects they name, by planting them;
+- audit findings are recorded whether or not they are convenient, including
+  findings about the audit's own weakness.
+
+Where independent agents are available, the audit must use them (`docs/BACKLOG.md`
+B-008). Where they are not, the audit must record that it was conducted by the
+authoring agent and treat its own clean result with corresponding suspicion.
 
 ---
 
 # 29. EJECUTA Command
 
-Canonical command:
+**Amended 2026-08-31 (ADR-0008). No longer required.**
 
-EJECUTA
+Cycle Audits run automatically (§28). `EJECUTA` is retained only as a way for the
+Human Owner to **request an audit out of band** — before a cycle has completed,
+or of a specific area of concern.
 
-In this Governance, EJECUTA means:
+Meaning, when used:
 
-AUTHORIZE THE CURRENTLY PENDING CYCLE AUDIT.
+RUN A CYCLE AUDIT NOW.
 
-It no longer means:
+It does not mean, and must never be reinterpreted as:
 
 - authorize a subphase;
 - authorize routine implementation;
 - authorize a phase;
 - authorize the next phase.
 
-Precondition:
-
-Exactly one Cycle Audit must be pending.
-
-Transition:
-
-CYCLE AUDIT PENDING
-        ↓
-HUMAN: EJECUTA
-        ↓
-CYCLE AUDIT ACTIVE
-
-If no Cycle Audit is pending, the Development Agent must not reinterpret EJECUTA as unrelated authorization.
+The Development Agent must never wait for `EJECUTA`, and must never report a
+cycle as blocked pending it.
 
 ---
 
@@ -1369,22 +1423,39 @@ Detailed implementation history may remain available through commits and Pull Re
 
 # 40. Hosted CI
 
-Hosted CI is a verification layer, not a substitute for executed evidence.
+**Amended 2026-08-31 (ADR-0008). Hosted CI is out of the verification model.**
 
-Failure to execute because of:
+The repository is private and the account has no paid GitHub Actions allowance,
+so hosted CI cannot run. This is a deliberate accepted position, not a blocker,
+and it must not be reported as one.
 
-- billing;
-- quota;
-- platform outage;
-- account state;
-- spending limit;
-- unavailable runner;
+**The local quality gate is the verification authority.** `npm run gate` — format,
+lint, build, and both test suites — is what a claim of "verified" means in this
+project, and it is the only thing that may be cited as such.
 
-must not be reported as an implementation failure.
+## 40.1 What this costs, stated plainly
 
-However, if CI actually executes and reveals a substantive failure, that failure is valid evidence and must be addressed.
+Every quality claim in this repository is attested by the operator running it on
+their own machine. There is no independent execution. That is precisely the
+weakness PH-9 built an assurance layer to address, and the project has already
+paid for it once: a failing `npm run lint` survived two subphase approvals in
+PH-4 because nothing outside the session ever ran it.
 
-Never report CI as passing if it never ran.
+The mitigations are structural rather than procedural, and they are the reason
+this is an acceptable position:
+
+- **The gate is deterministic and reproducible.** Every statistical test is
+  seeded; anyone with the repository can re-run it and get the same numbers.
+- **Evidence is executed, never asserted** (§68). An approval records exit codes
+  and counts from a run that happened, and the Cycle Audits re-execute recorded
+  claims rather than reading them.
+- **Guardrails run inside the gate.** Documentation completeness, state
+  consistency, dependency direction, economic blindness and test cost are checked
+  by tests, so drift fails the build rather than waiting for a reviewer.
+
+If a paid allowance or a public repository later makes Actions available, hosted
+CI returns as a **corroborating** layer. It never becomes a substitute for the
+local gate, and CI must never be reported as passing if it did not run.
 
 ---
 
@@ -1793,8 +1864,8 @@ The following principles are Governance-protected:
 - automatic next-subphase continuation;
 - phase-level integrated verification;
 - automatic next-phase continuation inside a three-phase cycle;
-- Cycle Audit after every three approved phases;
-- EJECUTA as Cycle Audit authorization;
+- Cycle Audit after every three approved phases, run automatically;
+- EJECUTA retained only as an optional out-of-band audit request;
 - no extra routine full-project audits;
 - Memory Audit and Cold Start Audit at Cycle Audit;
 - canonical project memory;
@@ -1825,7 +1896,8 @@ Reconstruct the project and begin/resume autonomous work.
 
 Meaning:
 
-Authorize the currently pending three-phase Cycle Audit.
+Run a Cycle Audit now. **Optional** — audits run automatically at every cycle
+boundary (§28). Use it to request one early or out of band.
 
 ## GUARDAR
 
@@ -1870,11 +1942,8 @@ Creates PH-3.
 Completes PH-3.
 
 CLAUDE:
-Stops and reports:
-"Three phases are complete. Cycle Audit is pending. Send EJECUTA to authorize the audit."
-
-HUMAN:
-EJECUTA
+Stops normal development and reports:
+"Three phases are complete. Running the Cycle Audit."
 
 CLAUDE:
 Runs full Cycle Audit.
@@ -2132,9 +2201,8 @@ Examples:
 - Continue autonomous implementation of PH-4.2.
 - Create the next subphase for PH-5.
 - Run PH-6 phase integration verification.
-- Cycle Audit pending Human EJECUTA.
-- Protected Human decision required on settlement exposure policy.
-- Resume Cycle Audit after protected decision.
+- Run the Cycle Audit for the completed cycle.
+- Resume the next phase after the completed Cycle Audit.
 - Start PH-7 automatically after completed Cycle Audit.
 
 A fresh agent should not need conversation history to know what to do next.
@@ -2182,10 +2250,6 @@ CREATE PH-3 AUTOMATICALLY
 PH-3 APPROVED
         ↓
 STOP NORMAL DEVELOPMENT
-        ↓
-CYCLE AUDIT PENDING
-        ↓
-HUMAN: EJECUTA
         ↓
 FULL CYCLE AUDIT
         ↓
@@ -2241,12 +2305,12 @@ Governance succeeds when:
 20. it performs integrated phase verification;
 21. it automatically continues to the next phase inside the current three-phase cycle;
 22. it stops after the third approved phase;
-23. it requests EJECUTA only for the pending Cycle Audit;
-24. it performs a comprehensive Cycle Audit when authorized;
+23. it starts the Cycle Audit itself, without waiting for authorization;
+24. it performs a comprehensive, adversarial Cycle Audit;
 25. it performs Memory Audit and Cold Start Audit at the Cycle Audit;
 26. it fixes in-scope audit findings autonomously;
 27. it resumes the next phase automatically after the audit passes;
-28. it escalates only genuine protected Human decisions;
+28. it decides every code and product question itself, and records the decision;
 29. it safely preserves session continuity;
 30. it does not depend on undocumented historical conversations.
 
@@ -2318,10 +2382,6 @@ INTEGRATED PHASE VERIFICATION
 
 EVERY THREE APPROVED PHASES
 =
-HUMAN GATE
-+
-EJECUTA
-+
 FULL CYCLE AUDIT
 +
 MEMORY AUDIT
@@ -2338,9 +2398,9 @@ CREATE NEXT PHASE AUTOMATICALLY
 
 THIRD PHASE APPROVED
 =
-STOP
+STOP NORMAL DEVELOPMENT
 +
-REQUEST EJECUTA FOR CYCLE AUDIT
+RUN THE CYCLE AUDIT
 
 CYCLE AUDIT APPROVED
 =
@@ -2358,7 +2418,7 @@ RECONSTRUCT AND RESUME
 
 EJECUTA
 =
-AUTHORIZE PENDING CYCLE AUDIT
+RUN A CYCLE AUDIT NOW (optional; audits are automatic)
 
 GUARDAR
 =
