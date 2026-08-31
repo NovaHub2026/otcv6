@@ -76,3 +76,16 @@ export {
   TRAIT_BOUNDS,
   type PersonalityTraits,
 } from './personality.js';
+export {
+  calibrateAsset,
+  CALIBRATION_HORIZON_MS,
+  CALIBRATION_SPAN_MS,
+  CALIBRATION_STREAM_PURPOSES,
+  TARGET_TIE_RATE,
+  type AssetDefinition,
+  type CalibratedAsset,
+  type CalibrationEvidence,
+  type CalibrationOptions,
+} from './asset.js';
+export { personalityConfig } from './personality.js';
+export { ASSET_CATALOGUE, assetById, configFor, type RegisteredAsset } from './catalogue.js';

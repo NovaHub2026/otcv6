@@ -25,10 +25,10 @@ Last synchronized: 2026-08-31
 | ---------------------- | -------------------------------------------------------------------- |
 | Active phase           | PH-4 — Asset Personality System and Multi-Asset Instantiation        |
 | Phase lifecycle        | ACTIVE — decomposing into subphases                                  |
-| Active subphase        | None — PH-4.1 approved, PH-4.2 next                                  |
+| Active subphase        | None — PH-4.2 approved, PH-4.3 next                                  |
 | Subphase lifecycle     | n/a                                                                  |
 | Last approved phase    | PH-3 — Core Generative Market Process Under Continuous Falsification |
-| Last approved subphase | PH-4.1 — Personality model, parameter space and safe bounds          |
+| Last approved subphase | PH-4.2 — Asset registry, quantum calibration and registration        |
 
 ## Cycle 1 result
 
@@ -124,21 +124,30 @@ counter has been reset and Cycle 2 has begun.
 Context Document is
 [`docs/phases/PH-4-asset-personalities.md`](docs/phases/PH-4-asset-personalities.md).
 
-**PH-4.1 is APPROVED.** A personality is now seven bounded traits that expand
-into a `MarketEngineConfig`, with an analytic gate that rejects combinations
-whose volatility layers would compound outside the realism band.
+**PH-4.2 is APPROVED.** The product has an asset list: five assets across four
+families (`eurusd`, `gbpjpy`, `btcusd`, `spx`, `xauusd`), each with a lattice
+derived from its own simulated behaviour so that exactly 1% of 30-second
+contracts settle at the money, and each carrying the evidence that derivation
+produced.
 
-Create the **PH-4.2 Subphase Technical Document** — asset registry, per-asset
-`logQuantum` calibration and the registration procedure. The quantum must be
-derived from the first percentile of each asset's own simulated volatility, never
-chosen: too coarse a quantum relative to an asset's quiet state makes
-quantisation itself a signal, and the `displayQuantization` fixture shows the
-battery detects that at z = -85.
+Create the **PH-4.3 Subphase Technical Document** — multi-asset validation and
+the differentiation metric. Two things must hold, per asset and not per family:
 
-PH-4 discharges INV-007, the only invariant
-[`docs/architecture/INVARIANTS.md`](docs/architecture/INVARIANTS.md) still
-records as pending. Do not promote it before PH-4.3 produces the evidence —
+- every registered asset independently passes the predictability battery and the
+  realism battery, at the materiality threshold the promotional payout implies;
+- the assets are **measurably** distinguishable from one another, by a metric
+  that would fail if the personalities were secretly identical. INV-007 is the
+  invariant most easily faked, and differing parameters are not evidence of
+  differing markets.
+
+Only then may INV-007 be promoted in
+[`docs/architecture/INVARIANTS.md`](docs/architecture/INVARIANTS.md).
 `traceability.test.ts` rejects a premature claim, and did so once already during
 PH-4.1.
+
+Note for PH-4.3, recorded in PH-4.1: the realism battery's excess-kurtosis metric
+measured on a single run is weak evidence — realisations of the same
+configuration span an order of magnitude. Compare against the analytic
+prediction.
 
 No Human authorization is required to proceed (`GOVERNANCE.md` §32).

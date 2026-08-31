@@ -159,9 +159,10 @@ leak an edge whatever the parameters â€” that argument is indifferent to them â€
 the risk lives in the two places where parameters meet the published series: the
 per-asset lattice quantum, and degenerate regions of the parameter space.
 
-| Subphase | Title                                              | State    |
-| -------- | -------------------------------------------------- | -------- |
-| PH-4.1   | Personality model, parameter space and safe bounds | APPROVED |
+| Subphase | Title                                                | State    |
+| -------- | ---------------------------------------------------- | -------- |
+| PH-4.1   | Personality model, parameter space and safe bounds   | APPROVED |
+| PH-4.2   | Asset registry, quantum calibration and registration | APPROVED |
 
 Later subphases are provisional and recorded in the phase document: registry and
 quantum calibration, then multi-asset validation and the differentiation metric.

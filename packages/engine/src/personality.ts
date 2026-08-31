@@ -119,6 +119,20 @@ export function expandPersonality(
   traits: PersonalityTraits,
   instrument: InstrumentSpec,
 ): MarketEngineConfig {
+  return { ...personalityConfig(traits), instrument };
+}
+
+/**
+ * The instrument-independent half of the expansion.
+ *
+ * Registration needs this: an asset's `logQuantum` is derived from simulating
+ * its own behaviour, so the configuration has to exist before the instrument
+ * does. Calibration drives the magnitude and arrival stack directly and never
+ * touches a lattice.
+ */
+export function personalityConfig(
+  traits: PersonalityTraits,
+): Omit<MarketEngineConfig, 'instrument'> {
   assertPersonalityTraits(traits);
 
   const cascade: CascadeConfig = { ...DEFAULT_CASCADE, lowMultiplier: 1 - traits.clustering };
@@ -150,7 +164,6 @@ export function expandPersonality(
   };
 
   return {
-    instrument,
     baseVolatility: traits.volatility,
     cascade,
     regimes,
@@ -322,7 +335,7 @@ export function predictedExcessKurtosis(config: MarketEngineConfig, stream: Rand
  * then recalibrating four times. This decides it in microseconds, before the
  * asset is registered.
  */
-export function assertPersonalitySafe(config: MarketEngineConfig, stream: RandomSource): void {
+export function assertPersonalitySafe(config: MarketEngineConfig, stream: RandomSource): number {
   const predicted = predictedExcessKurtosis(config, stream);
   if (predicted > EXCESS_KURTOSIS_BAND.max) {
     throw new RangeError(
@@ -338,4 +351,7 @@ export function assertPersonalitySafe(config: MarketEngineConfig, stream: Random
         `tails is not realistic either: raise clustering or regimeSpread.`,
     );
   }
+  // Returned so a registration can record what it checked without paying for the
+  // structure simulation twice.
+  return predicted;
 }

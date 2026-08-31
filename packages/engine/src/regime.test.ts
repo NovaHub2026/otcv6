@@ -72,12 +72,20 @@ describe('Weibull sojourns', () => {
   });
 
   it('produces only positive finite durations', () => {
+    // Counted rather than asserted per sample. Two hundred thousand expect()
+    // calls cost about five seconds of matcher overhead — this test used to sit
+    // exactly on the unit project's timeout and would fail whenever the suite
+    // was under load, which is a latent CI failure rather than a real one.
     const stream = derive('weibull-finite');
+    let invalid = 0;
+    let smallest = Number.POSITIVE_INFINITY;
     for (let i = 0; i < 100_000; i += 1) {
       const value = weibullSample(stream, 500, 0.65);
-      expect(value).toBeGreaterThan(0);
-      expect(Number.isFinite(value)).toBe(true);
+      if (!(value > 0) || !Number.isFinite(value)) invalid += 1;
+      if (value < smallest) smallest = value;
     }
+    expect(invalid, 'non-positive or non-finite durations').toBe(0);
+    expect(smallest).toBeGreaterThan(0);
   });
 });
 
