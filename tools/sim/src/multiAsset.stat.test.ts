@@ -214,12 +214,31 @@ describe('the assets are measurably different markets', () => {
     expect(controlSignificance.pValue).toBeGreaterThan(0.01);
   });
 
-  it('is honest that the separation is pace and scale, not shape', async () => {
-    // Recorded rather than hidden. Dividing out pace and amplitude leaves the
+  it('separates the assets on shape alone, and the separation is rhythm', async () => {
+    // ## What this test used to say
+    //
+    // Until PH-10 it asserted a *ceiling* — that shape differentiation stayed
+    // below 45% — and explained that dividing out pace and amplitude left the
     // assets close to indistinguishable, because the observable volatility
-    // dynamics are dominated by the MSM cascade, which every asset shares.
-    // Three levers were tried in PH-4.3 — trait spread, regime tempo and
-    // cascade memory span — and none moved scale-free shape materially.
+    // dynamics were dominated by an MSM cascade every asset shared. That was
+    // true, and it was written as a ceiling deliberately, so that a change which
+    // genuinely improved structural differentiation would fail here and force
+    // the claim to be rewritten rather than quietly overstated.
+    //
+    // PH-10 made the cascade's time structure per-asset. Shape differentiation
+    // went from 30.0% to 40.5% against a 20% null, with a permutation p at the
+    // floor of what 199 shuffles can report and a best shuffle of 30.0%. So the
+    // claim is rewritten, and the assertion is now a floor.
+    //
+    // ## Why the number is worth something
+    //
+    // Shape differentiation is trivially purchasable: spread the assets further
+    // apart in tail weight and this rises without any of them becoming a more
+    // distinct *market*. PH-10.2 forbade that — `catalogue.test.ts` pins every
+    // asset's tail weight to within 6% of its PH-4 value and its realised tick
+    // amplitude to 15 decimal places — so the gain cannot have come from there.
+    //
+    // The split below shows where it did come from, rather than asserting it.
     const real = [];
     for (let i = 0; i < ASSET_CATALOGUE.length; i += 1) {
       real.push({
@@ -235,13 +254,41 @@ describe('the assets are measurably different markets', () => {
       keyEpoch: 0,
     });
     const shapeSignificance = permutationPValue(real, shapeStream, 199, SHAPE_FEATURES);
+
+    // Rhythm features: how volatility clusters over time, and how arrivals
+    // bunch. These are what PH-10 made per-asset.
+    const RHYTHM_FEATURES = [
+      'clusteringLag1',
+      'clusteringLag5',
+      'clusteringLag20',
+      'arrivalDispersion',
+      'varianceRatio',
+    ] as const;
+    // Tail features: how heavy the distribution is. These were deliberately
+    // held at their PH-4 values, so they should carry little.
+    const TAIL_FEATURES = ['kurtosis', 'tailRatio'] as const;
+
+    const rhythmOnly = measureDifferentiation(real, RHYTHM_FEATURES);
+    const tailOnly = measureDifferentiation(real, TAIL_FEATURES);
+
     console.info(
       `shape-only differentiation: ${(shape.accuracy * 100).toFixed(1)}% ` +
-        `(permutation p=${shapeSignificance.pValue.toFixed(4)}), chance 20%`,
+        `(permutation p=${shapeSignificance.pValue.toFixed(4)}, ` +
+        `best shuffle ${(shapeSignificance.permutedMax * 100).toFixed(1)}%); ` +
+        `rhythm features alone ${(rhythmOnly.accuracy * 100).toFixed(1)}%, ` +
+        `tail features alone ${(tailOnly.accuracy * 100).toFixed(1)}%; chance 20%`,
     );
-    // Asserted as a *ceiling*, so that a future change which genuinely improves
-    // structural differentiation fails this test and forces the claim to be
-    // rewritten rather than silently overstated.
-    expect(shape.accuracy).toBeLessThan(0.45);
+
+    // The floor. PH-4.3 measured 30.0% here with a shared cascade.
+    expect(shape.accuracy).toBeGreaterThan(0.35);
+    expect(shapeSignificance.pValue).toBeLessThanOrEqual(0.01);
+    // No relabelling of the same windows reaches the real arrangement.
+    expect(shapeSignificance.permutedMax).toBeLessThan(shape.accuracy);
+
+    // And the attribution: the five features PH-10 made per-asset carry the
+    // separation, while the two it deliberately held fixed do not. If a future
+    // change raises the headline by widening tails instead, this inverts.
+    expect(rhythmOnly.accuracy).toBeGreaterThan(tailOnly.accuracy);
+    expect(rhythmOnly.accuracy).toBeGreaterThan(0.35);
   });
 });

@@ -160,7 +160,7 @@ export class VenueService implements OnModuleDestroy {
   /**
    * Sleep until the soonest deadline rather than on a fixed interval.
    *
-   * The catalogue spans 334ms to 3187ms of mean interval; one interval would
+   * The catalogue spans 333ms to 3352ms of mean interval; one interval would
    * either burn CPU on the slow assets or publish the fast ones late.
    */
   private schedule(): void {

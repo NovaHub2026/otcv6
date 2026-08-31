@@ -290,11 +290,11 @@ The catalogue's five assets are separable by amplitude and pace, which is true b
 construction and means nothing. On scale-free _shape_ features they classify at
 30.0% against a 20% null. PH-10 makes the observable dynamics differ.
 
-| Subphase | Title                                             | State       |
-| -------- | ------------------------------------------------- | ----------- |
-| PH-10.1  | The cascade's time structure becomes personality  | APPROVED    |
-| PH-10.2  | A catalogue authored to differ in rhythm          | ACTIVE      |
-| PH-10.3  | Revalidation: every asset, every guarantee, again | not started |
+| Subphase | Title                                             | State    |
+| -------- | ------------------------------------------------- | -------- |
+| PH-10.1  | The cascade's time structure becomes personality  | APPROVED |
+| PH-10.2  | A catalogue authored to differ in rhythm          | APPROVED |
+| PH-10.3  | Revalidation: every asset, every guarantee, again | ACTIVE   |
 
 ### PH-11 — Detection Power Across Every Horizon the Product Sells
 

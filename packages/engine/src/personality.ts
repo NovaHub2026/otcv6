@@ -493,7 +493,10 @@ export function structureInflation(
  * 1M — a gate built on it would pass exactly the configurations that stay quiet
  * in a short test.
  */
-export function predictedExcessKurtosis(config: MarketEngineConfig, stream: RandomSource): number {
+export function predictedExcessKurtosis(
+  config: Omit<MarketEngineConfig, 'instrument'>,
+  stream: RandomSource,
+): number {
   const product =
     cascadeInflation(config.cascade) *
     regimeInflation(config.regimes) *
@@ -581,6 +584,58 @@ export function solveClustering(
   return (low + high) / 2;
 }
 
+/** A personality authored from targets, with what it actually achieved. */
+export interface AuthoredPersonality {
+  readonly traits: PersonalityTraits;
+  /** What the gate predicts for {@link AuthoredPersonality.traits}. */
+  readonly achievedExcessKurtosis: number;
+  /** RMS per-tick magnitude contributed by base volatility and the cascade. */
+  readonly tickRms: number;
+}
+
+/**
+ * Author a personality from a rhythm and two targets.
+ *
+ * The two traits that cannot be chosen independently of the rhythm are solved
+ * for rather than guessed:
+ *
+ *  - `clustering`, because cascade depth is an exponent on tail weight
+ *    ({@link solveClustering});
+ *  - `volatility`, because a deeper cascade produces larger typical moves for
+ *    the same base scale ({@link cascadeRmsGain}). Left alone, changing an
+ *    asset's rhythm would silently change its amplitude, and the differentiation
+ *    that produced would be the trivial kind PH-10 exists to stop claiming.
+ *
+ * `derive` is called more than once with the same purpose and must return
+ * equivalent fresh streams each time — the counter-addressable sources of
+ * ADR-0002 do. The solve is exact only with respect to that stream, so the
+ * returned {@link AuthoredPersonality.achievedExcessKurtosis} is what the asset
+ * records. Recording the *target* would be publishing a number nothing computed.
+ */
+export function authorPersonality(
+  base: PersonalityTraits,
+  targets: { readonly excessKurtosis: number; readonly tickRms: number },
+  derive: (purpose: string) => RandomSource,
+): AuthoredPersonality {
+  if (!(targets.tickRms > 0) || !Number.isFinite(targets.tickRms)) {
+    throw new RangeError(
+      `Target tick RMS must be finite and positive, received ${targets.tickRms}.`,
+    );
+  }
+  const clustering = solveClustering(base, targets.excessKurtosis, derive('kurtosis'));
+  const shaped = { ...base, clustering };
+  const traits: PersonalityTraits = {
+    ...shaped,
+    volatility: targets.tickRms / cascadeRmsGain(shaped),
+  };
+  assertPersonalityTraits(traits);
+  return {
+    traits,
+    achievedExcessKurtosis: predictedExcessKurtosis(personalityConfig(traits), derive('kurtosis')),
+    tickRms: traits.volatility * cascadeRmsGain(traits),
+  };
+}
+
 /**
  * Reject a personality whose layers would compound outside the realism band.
  *
@@ -588,7 +643,10 @@ export function solveClustering(
  * then recalibrating four times. This decides it in microseconds, before the
  * asset is registered.
  */
-export function assertPersonalitySafe(config: MarketEngineConfig, stream: RandomSource): number {
+export function assertPersonalitySafe(
+  config: Omit<MarketEngineConfig, 'instrument'>,
+  stream: RandomSource,
+): number {
   const predicted = predictedExcessKurtosis(config, stream);
   if (predicted > EXCESS_KURTOSIS_BAND.max) {
     throw new RangeError(

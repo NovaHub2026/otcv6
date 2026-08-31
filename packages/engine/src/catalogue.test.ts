@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { assertValidInstrument, epochMillis, logPrice, MasterKeyring } from '@otc/core';
 import { calibrateAsset, type AssetDefinition } from './asset.js';
-import { ASSET_CATALOGUE, assetById, configFor } from './catalogue.js';
+import { ASSET_CATALOGUE, assetById, configFor, registrationKeyLabel } from './catalogue.js';
 import { createMarketEngine } from './factory.js';
-import { assertPersonalityTraits, DEFAULT_TRAITS } from './personality.js';
+import {
+  assertPersonalityTraits,
+  authorPersonality,
+  cascadeRmsGain,
+  cascadeTimescalesMs,
+  DEFAULT_TRAITS,
+  MIN_FASTEST_COMPONENT_TICKS,
+} from './personality.js';
 
 const keyring = MasterKeyring.forTesting('catalogue-spec');
 const derive =
@@ -119,5 +126,144 @@ describe('registration rejects before it simulates', () => {
   it('rejects a nonsensical tie-rate target', () => {
     expect(() => calibrateAsset(base, derive('probe'), { targetTieRate: 0 })).toThrow(RangeError);
     expect(() => calibrateAsset(base, derive('probe'), { targetTieRate: 1 })).toThrow(RangeError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PH-10.2: the rhythm re-authoring
+// ---------------------------------------------------------------------------
+
+describe('the recorded personalities reproduce from their targets', () => {
+  // A calibration record that reproduces proves the *lattice* was derived. It
+  // says nothing about the two traits the lattice was derived from, and those
+  // two — clustering and volatility — were solved rather than chosen. Without
+  // this, `clustering: 0.18311113955405817` is an unfalsifiable magic number of
+  // exactly the kind the project's engineering rules ban.
+  //
+  // The recorded traits should be a fixed point of the authoring function:
+  // re-author from them and the same traits come back, because the solve
+  // overwrites both of the values it owns.
+  it.each(ASSET_CATALOGUE.map((a) => [a.definition.id, a] as const))(
+    '%s re-authors to exactly its recorded traits',
+    (id, asset) => {
+      const registration = MasterKeyring.forTesting(registrationKeyLabel(id));
+      const again = authorPersonality(asset.definition.traits, asset.authored, (purpose) =>
+        registration.derive({ env: 'simulation', asset: id, purpose, keyEpoch: 0 }),
+      );
+      expect(again.traits).toEqual(asset.definition.traits);
+      expect(again.achievedExcessKurtosis).toBe(asset.evidence.predictedExcessKurtosis);
+    },
+  );
+
+  it('records what was achieved, not what was asked for', () => {
+    // They are close, but they are not the same number, and the difference is
+    // the structure estimator's own resolution. Recording the request would be
+    // publishing a figure nothing ever computed.
+    const differences = ASSET_CATALOGUE.map((a) =>
+      Math.abs(a.evidence.predictedExcessKurtosis - a.authored.excessKurtosis),
+    );
+    expect(differences.every((d) => d < 1e-9)).toBe(true);
+    expect(differences.some((d) => d > 0)).toBe(true);
+  });
+});
+
+describe('re-authoring changed rhythm and nothing else', () => {
+  /**
+   * Realised tick amplitude as PH-4 registered it, before any rhythm existed.
+   *
+   * Frozen deliberately. This is the assertion that stops PH-10 from claiming a
+   * differentiation gain it bought by spreading the assets further apart in
+   * size — which would be trivial, true by construction, and meaningless.
+   */
+  const PH4_TICK_RMS: Record<string, number> = {
+    eurusd: 0.000013932458128335953,
+    gbpjpy: 0.00004234061764642874,
+    btcusd: 0.00007938865808705389,
+    spx: 0.00000820990287547472,
+    xauusd: 0.00002846808863025055,
+  };
+
+  /** Tail weight as PH-4 registered it. */
+  const PH4_EXCESS_KURTOSIS: Record<string, number> = {
+    eurusd: 63.518987927858404,
+    gbpjpy: 108.62098096647418,
+    btcusd: 151.62450294348804,
+    spx: 44.40447547836519,
+    xauusd: 100.48688844255925,
+  };
+
+  it.each(ASSET_CATALOGUE.map((a) => [a.definition.id, a] as const))(
+    '%s keeps its amplitude',
+    (id, asset) => {
+      const realised = asset.definition.traits.volatility * cascadeRmsGain(asset.definition.traits);
+      expect(realised).toBeCloseTo(PH4_TICK_RMS[id]!, 15);
+    },
+  );
+
+  it.each(ASSET_CATALOGUE.map((a) => [a.definition.id, a] as const))(
+    '%s keeps its tail weight within 6%',
+    (id, asset) => {
+      const ratio = asset.evidence.predictedExcessKurtosis / PH4_EXCESS_KURTOSIS[id]!;
+      expect(ratio, `${id} kurtosis ratio`).toBeGreaterThan(0.94);
+      expect(ratio, `${id} kurtosis ratio`).toBeLessThan(1.06);
+    },
+  );
+
+  it('carries every non-rhythm trait across unchanged', () => {
+    // The exclusion, enforced. If a future re-authoring moves burstiness or a
+    // spread while claiming to have changed only rhythm, this is what says so.
+    const PH4_CARRIED: Record<string, Record<string, number>> = {
+      eurusd: { tempoMs: 3_000, burstiness: 0.6, regimeSpread: 1, structureSpread: 1 },
+      gbpjpy: { tempoMs: 1_850, burstiness: 0.62, regimeSpread: 1.15, structureSpread: 1 },
+      btcusd: { tempoMs: 1_100, burstiness: 0.78, regimeSpread: 1.35, structureSpread: 1 },
+      spx: { tempoMs: 5_450, burstiness: 0.45, regimeSpread: 0.85, structureSpread: 1.35 },
+      xauusd: { tempoMs: 4_300, burstiness: 0.55, regimeSpread: 1.25, structureSpread: 0.9 },
+    };
+    const drifted: string[] = [];
+    for (const asset of ASSET_CATALOGUE) {
+      const carried = PH4_CARRIED[asset.definition.id]!;
+      for (const [name, value] of Object.entries(carried)) {
+        const actual = asset.definition.traits[name as keyof typeof asset.definition.traits];
+        if (actual !== value) drifted.push(`${asset.definition.id}.${name}: ${actual} != ${value}`);
+      }
+      if (asset.definition.traits.durationCoupling !== DEFAULT_TRAITS.durationCoupling) {
+        drifted.push(`${asset.definition.id}.durationCoupling`);
+      }
+    }
+    expect(drifted).toEqual([]);
+  });
+});
+
+describe('the assets have genuinely different ladders', () => {
+  it('shares no rhythm between any two assets', () => {
+    // Differentiation is measured statistically in tools/sim. This is the
+    // cheap structural precondition: if two assets had identical ladders, no
+    // measurement downstream could tell them apart and the failure would show
+    // up as an unexplained plateau rather than as a duplicate.
+    const seen = new Map<string, string>();
+    const collisions: string[] = [];
+    for (const asset of ASSET_CATALOGUE) {
+      const t = asset.definition.traits;
+      const key = `${t.cascadeDepth}/${t.cascadeSpanMs}/${t.cascadeSpacing}/${t.regimeTempo}/${t.arrivalMemoryMs}`;
+      const previous = seen.get(key);
+      if (previous !== undefined) collisions.push(`${previous} and ${asset.definition.id}`);
+      seen.set(key, asset.definition.id);
+    }
+    expect(collisions).toEqual([]);
+  });
+
+  it('spans a wide range of memory horizons', () => {
+    const spans = ASSET_CATALOGUE.map((a) => a.definition.traits.cascadeSpanMs);
+    expect(Math.max(...spans) / Math.min(...spans)).toBeGreaterThan(10);
+  });
+
+  it('keeps every fastest component above the tick floor', () => {
+    const tooFast: string[] = [];
+    for (const asset of ASSET_CATALOGUE) {
+      const scales = cascadeTimescalesMs(asset.definition.traits);
+      const ratio = scales[scales.length - 1]! / asset.definition.traits.tempoMs;
+      if (ratio < MIN_FASTEST_COMPONENT_TICKS) tooFast.push(`${asset.definition.id}: ${ratio}`);
+    }
+    expect(tooFast).toEqual([]);
   });
 });

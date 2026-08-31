@@ -120,7 +120,7 @@ describe('catch-up is bounded', () => {
     const market = new HostedMarket({ engine: engineFor(), clock, maxCatchUpMs: 45_000 });
     // Far enough in that ticks have certainly been published: the arrival
     // process starts with no excitation, so the first intervals run near the
-    // 3000ms baseline rather than the 1295ms stationary mean.
+    // 3000ms baseline rather than the 1380ms stationary mean.
     clock.advance(durationMillis(30_000));
     expect(market.advance().length).toBeGreaterThan(0);
     clock.advance(durationMillis(60_000));
@@ -175,7 +175,7 @@ describe('a venue hosts the catalogue', () => {
   });
 
   it('gives the fast assets more ticks than the slow ones', () => {
-    // btcusd ticks at ~334ms and spx at ~3187ms, so over the same wall-clock
+    // btcusd ticks at ~333ms and spx at ~3352ms, so over the same wall-clock
     // window the venue must publish roughly ten times as many btcusd ticks.
     const { venue: v, clock } = venue();
     clock.advance(durationMillis(600_000));

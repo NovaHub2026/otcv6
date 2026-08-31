@@ -125,7 +125,7 @@ export class Venue {
    * Milliseconds until the soonest tick across all markets.
    *
    * A scheduler sleeps for this rather than on a fixed interval. The catalogue
-   * spans 334ms to 3187ms of mean interval, so any single interval would either
+   * spans 333ms to 3352ms of mean interval, so any single interval would either
    * burn CPU on the slow assets or publish the fast ones late.
    */
   msUntilNextTick(now: EpochMillis = this.#clock.now()): number | null {

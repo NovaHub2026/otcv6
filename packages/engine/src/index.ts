@@ -65,15 +65,22 @@ export {
 export {
   assertPersonalitySafe,
   assertPersonalityTraits,
+  authorPersonality,
   cascadeInflation,
+  cascadeInflationOfClustering,
+  cascadeRmsGain,
+  cascadeTimescalesMs,
   DEFAULT_TRAITS,
   EXCESS_KURTOSIS_BAND,
   expandPersonality,
+  MIN_FASTEST_COMPONENT_TICKS,
   predictedExcessKurtosis,
   regimeInflation,
+  solveClustering,
   structureInflation,
   STRUCTURE_INFLATION_STEPS,
   TRAIT_BOUNDS,
+  type AuthoredPersonality,
   type PersonalityTraits,
 } from './personality.js';
 export {
@@ -90,4 +97,11 @@ export {
   type CalibrationOptions,
 } from './asset.js';
 export { personalityConfig } from './personality.js';
-export { ASSET_CATALOGUE, assetById, configFor, type RegisteredAsset } from './catalogue.js';
+export {
+  ASSET_CATALOGUE,
+  assetById,
+  configFor,
+  registrationKeyLabel,
+  type AuthoringTargets,
+  type RegisteredAsset,
+} from './catalogue.js';
