@@ -1,8 +1,17 @@
 {
   "files": [],
   "references": [
-    { "path": "./packages/core" },
-    { "path": "./packages/engine" },
-    { "path": "./tools/sim" }
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/engine"
+    },
+    {
+      "path": "./packages/fixtures"
+    },
+    {
+      "path": "./tools/sim"
+    }
   ]
 }

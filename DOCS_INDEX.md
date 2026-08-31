@@ -1,0 +1,65 @@
+# DOCUMENTATION INDEX
+
+Type: SUPPORTING DOCUMENTATION (navigation)
+Status: Living document
+Rule: every kind of durable knowledge has exactly one canonical location. If two
+documents disagree, the canonical one wins and the other is a defect.
+
+---
+
+## Authoritative foundations
+
+| Document                                             | Class                | Canonical for                                                                                                                                                          |
+| ---------------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`GOVERNANCE.md`](GOVERNANCE.md)                     | GOVERNANCE           | How the project is run: authority, lifecycles, verification levels, audits, commands. Governance-protected; may not be materially changed without Human authorization. |
+| [`PROJECT_INTRODUCTION.md`](PROJECT_INTRODUCTION.md) | PROJECT INTRODUCTION | What the project is, why it exists, product principles, foundational invariants INV-001..INV-010, anti-goals. Not a phase.                                             |
+
+## Operational state
+
+| Document                                   | Class           | Canonical for                                                                                                                              |
+| ------------------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`CLAUDE.md`](CLAUDE.md)                   | SUPPORTING      | Agent operational entrypoint: how to work in this repository, commands, engineering rules.                                                 |
+| [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) | PROJECT CONTEXT | Compact stable project facts: purpose, product surface, stack, package boundaries, durable constraints.                                    |
+| [`CURRENT_STATE.md`](CURRENT_STATE.md)     | CURRENT STATE   | Current cycle, phase, subphase, lifecycle states, blockers, audit state, **exact next legal action**.                                      |
+| [`SESSION_HANDOFF.md`](SESSION_HANDOFF.md) | SESSION HANDOFF | What a fresh session needs to resume immediately: branch, HEAD, completed/incomplete work, last executed verification, continuation point. |
+| `DOCS_INDEX.md`                            | SUPPORTING      | This map.                                                                                                                                  |
+
+## Planning and architecture
+
+| Location                                           | Class                            | Canonical for                                                                                                                |
+| -------------------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| [`docs/phases/ROADMAP.md`](docs/phases/ROADMAP.md) | SUPPORTING (living)              | Dynamic roadmap: completed / active / likely-next phases, dependencies, cycle boundaries.                                    |
+| `docs/phases/PH-N-*.md`                            | PHASE CONTEXT DOCUMENT           | One coherent capability: objective, scope, exclusions, invariants, acceptance intent, risks.                                 |
+| `docs/phases/PH-N.M-*.md`                          | SUBPHASE TECHNICAL DOCUMENT      | One implementation work block: contracts, behaviour, acceptance criteria, verification requirements.                         |
+| [`docs/architecture/`](docs/architecture/)         | SUPPORTING (living)              | Current architecture. Describes reality, not aspiration.                                                                     |
+| [`docs/decisions/`](docs/decisions/)               | ARCHITECTURAL / PRODUCT DECISION | Durable decisions (ADRs). States: PROPOSED / APPROVED / SUPERSEDED / REJECTED. Superseded ADRs are preserved, never deleted. |
+| [`docs/audits/`](docs/audits/)                     | CYCLE AUDIT                      | Records of three-phase Cycle Audits, including Memory Audit and Cold Start Audit results.                                    |
+| [`docs/evidence/`](docs/evidence/)                 | SUPPORTING                       | Recorded verification evidence that approvals cite.                                                                          |
+
+## Backlog, history and verification
+
+| Source                                       | Canonical for                                                                                                                                                                                                                             |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`docs/BACKLOG.md`](docs/BACKLOG.md)         | **Interim** backlog for verified bugs, technical debt, deferred work and blockers, used only until a GitHub remote exists. `GOVERNANCE.md` §42 makes GitHub Issues canonical once available; migration is tracked inside the file itself. |
+| Git history and Pull Requests                | Implementation and integration history.                                                                                                                                                                                                   |
+| Executed local verification + GitHub Actions | Verification evidence. Never report CI as passing if it did not run (`GOVERNANCE.md` §40).                                                                                                                                                |
+
+## Architecture documents
+
+| Document                                                                     | Subject                                                                                                 |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| [`docs/architecture/OVERVIEW.md`](docs/architecture/OVERVIEW.md)             | System decomposition, layers, dependency rules, and how the invariants are enforced structurally.       |
+| [`docs/architecture/MARKET_MODEL.md`](docs/architecture/MARKET_MODEL.md)     | The generative market model: latent state, regimes, volatility, structure, microstructure, personality. |
+| [`docs/architecture/ENTROPY.md`](docs/architecture/ENTROPY.md)               | Deterministic randomness architecture: stream derivation, isolation, replay, secret handling.           |
+| [`docs/architecture/TIME_AND_TICKS.md`](docs/architecture/TIME_AND_TICKS.md) | Canonical time model, tick identity, candle aggregation and cross-timeframe coherence.                  |
+| [`docs/architecture/VALIDATION.md`](docs/architecture/VALIDATION.md)         | Statistical and adversarial validation strategy, and what constitutes a pass.                           |
+
+Documents listed above are created by the phase that first makes them true. A
+missing architecture document means that layer does not exist yet — not that it
+is undocumented.
+
+## Decision records
+
+| ADR                                                                          | Title                                          | Status   |
+| ---------------------------------------------------------------------------- | ---------------------------------------------- | -------- |
+| [ADR-0001](docs/decisions/ADR-0001-repository-and-toolchain-architecture.md) | Repository, toolchain and package architecture | APPROVED |
