@@ -10,6 +10,7 @@ const root = path.dirname(fileURLToPath(import.meta.url));
  * emitted output; Vitest is the authority for behaviour.
  */
 const alias = {
+  '@otc/core/browser': path.resolve(root, 'packages/core/src/browser.ts'),
   '@otc/core': path.resolve(root, 'packages/core/src/index.ts'),
   '@otc/engine': path.resolve(root, 'packages/engine/src/index.ts'),
   '@otc/fixtures': path.resolve(root, 'packages/fixtures/src/index.ts'),
@@ -17,6 +18,7 @@ const alias = {
   '@otc/runtime': path.resolve(root, 'packages/runtime/src/index.ts'),
   '@otc/trading': path.resolve(root, 'packages/trading/src/index.ts'),
   '@otc/distribution': path.resolve(root, 'packages/distribution/src/index.ts'),
+  '@otc/chart': path.resolve(root, 'packages/chart/src/index.ts'),
 };
 
 const commonExclude = ['**/node_modules/**', '**/dist/**', '**/artifacts/**'];

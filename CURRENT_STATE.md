@@ -15,20 +15,20 @@ Last synchronized: 2026-08-31
 | Field                            | Value                                                                   |
 | -------------------------------- | ----------------------------------------------------------------------- |
 | Active development cycle         | Cycle 3                                                                 |
-| Approved phases in current cycle | **1 of 3** (PH-7)                                                       |
+| Approved phases in current cycle | **2 of 3** (PH-7, PH-8)                                                 |
 | Cycle Audit state                | None active — next due after three more phases                          |
 | Last Cycle Audit                 | [Cycle Audit 002](docs/audits/CYCLE-AUDIT-002.md) — APPROVED 2026-08-31 |
 
 ## Phase and subphase
 
-| Field                  | Value                                                        |
-| ---------------------- | ------------------------------------------------------------ |
-| Active phase           | None — PH-8 is next to be created                            |
-| Phase lifecycle        | n/a                                                          |
-| Active subphase        | None                                                         |
-| Subphase lifecycle     | n/a                                                          |
-| Last approved phase    | PH-7 — Public Market Distribution and Multi-User Consistency |
-| Last approved subphase | PH-7.3 — The transport, and the consistency contract         |
+| Field                  | Value                                                 |
+| ---------------------- | ----------------------------------------------------- |
+| Active phase           | None — PH-9 is next, and it closes Cycle 3            |
+| Phase lifecycle        | n/a                                                   |
+| Active subphase        | None                                                  |
+| Subphase lifecycle     | n/a                                                   |
+| Last approved phase    | PH-8 — Observer Frontend and Trading Chart Experience |
+| Last approved subphase | PH-8.3 — The join, and timeframe switching            |
 
 ## Cycle 1 result
 
@@ -148,21 +148,28 @@ the most serious process failure in the project's history, and the rule it
 produced is standing: **never `git add -A` while subagents are running, and keep
 audit plants in an isolated clone.**
 
-**PH-7 is APPROVED.** Many people can watch the same market, and it can be shown
-they are watching the same market: 25 concurrent observers byte-identical over
-4,008 ticks, real sockets agreeing on their overlap, exact resumption across a
-disconnect, and a tick stream unchanged by client behaviour. The two-node question
-is answered in
-[`docs/architecture/CONSISTENCY_CONTRACT.md`](docs/architecture/CONSISTENCY_CONTRACT.md).
+**PH-8 is APPROVED.** A chart that shows what happened: every drawn value is a
+price that was actually observed, every extreme survives at every resolution, a
+quiet period produces no bar, and a client reconstructs the server's record
+exactly across a disconnection — verified against a running API process.
 
-**Create the PH-8 Phase Context Document** — observer frontend and trading chart
-experience — on branch `feature/ph-8-frontend`. It is where Next.js and React are
-first scaffolded.
+**Create PH-9 — continuous integrity assurance and independent red-team
+hardening.** It closes Cycle 3, so on its approval the Three-Phase Human Gate
+applies: STOP and request `EJECUTA` for the third Cycle Audit.
 
-What PH-8 inherits: the frontend is the first consumer that will _render_ the
-market rather than verify it, and the temptation there is the mirror image of
-PH-7's — smoothing, interpolating, or animating between ticks invents prices the
-market never visited. `query.ts` has forbidden that since PH-1.3 for the same
-reason a candle is never synthesised for an empty bucket.
+PH-9 is where a one-time proof becomes a standing guarantee, and the roadmap
+already fixes its hardest requirement: **a red-team round using attack families
+deliberately withheld from all prior tuning.** Everything the battery currently
+knows how to look for has, by construction, been used to shape the engine — so it
+can no longer be surprised by it.
+
+Two things Cycle 3 hands PH-9 directly:
+
+- Both Cycle Audits found the same class: guards that existed, were documented as
+  sufficient, and had never been tested against what they guarded. PH-9 should
+  treat the _guardrail suite itself_ as a subject, not only the engine.
+- Real boundaries in this project have only ever been found by crossing them —
+  PH-5.3's process restart, PH-8.2's browser build. A red team that only reasons
+  will find less than one that runs things.
 
 No Human authorization is required to proceed (`GOVERNANCE.md` §32).

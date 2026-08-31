@@ -1,19 +1,15 @@
 {
-  "name": "@otc/core",
+  "name": "@otc/chart",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Deterministic kernel: time model, entropy architecture, market domain primitives",
+  "description": "The rendering contract: extreme-preserving reduction of a tick record to drawable columns",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    },
-    "./browser": {
-      "types": "./dist/browser.d.ts",
-      "default": "./dist/browser.js"
     }
   },
   "files": [
@@ -21,5 +17,8 @@
   ],
   "scripts": {
     "build": "tsc -b"
+  },
+  "dependencies": {
+    "@otc/core": "*"
   }
 }

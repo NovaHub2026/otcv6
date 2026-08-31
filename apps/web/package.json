@@ -1,0 +1,21 @@
+{
+  "name": "@otc/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Next.js observer frontend: the market as a chart that invents nothing",
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@otc/chart": "*",
+    "@otc/core": "*",
+    "next": "^15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18"
+  }
+}

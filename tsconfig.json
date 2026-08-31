@@ -17,6 +17,9 @@
       "path": "./packages/distribution"
     },
     {
+      "path": "./packages/chart"
+    },
+    {
       "path": "./packages/fixtures"
     },
     {
