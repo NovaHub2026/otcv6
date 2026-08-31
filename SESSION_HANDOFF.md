@@ -9,12 +9,12 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Field              | Value                                          |
 | ------------------ | ---------------------------------------------- |
 | Last clean session | 2026-08-31                                     |
-| Branch             | `main` (PH-4 merged and pushed)                |
+| Branch             | `main` — PH-6 merged and pushed (`20b0001`)    |
 | Remote             | `origin` → NovaHub2026/otcv6 — pushed, in sync |
-| Active cycle       | Cycle 2, **1 of 3** phases approved            |
-| Active phase       | none — PH-5 is next to be created              |
+| Active cycle       | Cycle 2, **3 of 3** phases approved            |
+| Active phase       | none — paused at the Governance Human Gate     |
 | Active subphase    | none                                           |
-| Cycle Audit        | 001 **APPROVED** — next due after PH-4/5/6     |
+| Cycle Audit        | **002 ACTIVE** — authorized 2026-08-31         |
 | Blockers           | none                                           |
 
 ## Completed

@@ -15,20 +15,20 @@ Last synchronized: 2026-08-31
 | Field                            | Value                                                                   |
 | -------------------------------- | ----------------------------------------------------------------------- |
 | Active development cycle         | Cycle 2                                                                 |
-| Approved phases in current cycle | **0 of 3**                                                              |
-| Cycle Audit state                | None active — next due after three more phases                          |
+| Approved phases in current cycle | **3 of 3** (PH-4, PH-5, PH-6)                                           |
+| Cycle Audit state                | **ACTIVE** — Cycle Audit 2 authorized 2026-08-31                        |
 | Last Cycle Audit                 | [Cycle Audit 001](docs/audits/CYCLE-AUDIT-001.md) — APPROVED 2026-08-31 |
 
 ## Phase and subphase
 
-| Field                  | Value                                                          |
-| ---------------------- | -------------------------------------------------------------- |
-| Active phase           | None — PH-5 is next to be created                              |
-| Phase lifecycle        | n/a                                                            |
-| Active subphase        | None                                                           |
-| Subphase lifecycle     | n/a                                                            |
-| Last approved phase    | PH-4 — Asset Personality System and Multi-Asset Instantiation  |
-| Last approved subphase | PH-4.3 — Multi-asset validation and the differentiation metric |
+| Field                  | Value                                                              |
+| ---------------------- | ------------------------------------------------------------------ |
+| Active phase           | None — development is paused at the Governance Human Gate          |
+| Phase lifecycle        | n/a                                                                |
+| Active subphase        | None                                                               |
+| Subphase lifecycle     | n/a                                                                |
+| Last approved phase    | PH-6 — Trading Boundary: contracts, settlement, economic blindness |
+| Last approved subphase | PH-6.2 — The trading boundary and verified economic blindness      |
 
 ## Cycle 1 result
 
