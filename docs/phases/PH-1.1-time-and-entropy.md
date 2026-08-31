@@ -3,7 +3,7 @@
 Type: SUBPHASE TECHNICAL DOCUMENT
 Identifier: PH-1.1
 Parent phase: PH-1 — Deterministic Market Kernel
-Status: ACTIVE
+Status: APPROVED
 Created: 2026-08-31
 
 ---
@@ -258,3 +258,54 @@ None. This is the root of the implementation graph.
 `@otc/core` exports a time model and an entropy architecture that PH-1.2 can
 build portable distribution samplers on, and that PH-1.3 can build snapshot and
 replay on, with reproducibility already guaranteed and tested.
+
+---
+
+## 11. Approval record
+
+Status: **APPROVED** — 2026-08-31, from executed evidence.
+
+### Acceptance criteria
+
+| #   | Criterion                               | Evidence                                                                                      |
+| --- | --------------------------------------- | --------------------------------------------------------------------------------------------- |
+| A1  | RFC 8439 vectors                        | `chacha20.test.ts` — §2.3.2, §2.4.2 and both all-zero vectors reproduce byte-for-byte         |
+| A2  | Re-derivation is identical              | `stream.test.ts` "produces an identical sequence when re-derived"                             |
+| A3  | `seek(position())` round-trips          | `stream.test.ts` "is a pure function of position"                                             |
+| A4  | Seek equals sequential consumption      | `stream.test.ts` "seeking to an index matches consuming sequentially to it"                   |
+| A5  | Label components isolate streams        | `keyring.test.ts` isolation suite; `entropy.stat.test.ts` correlation and collision tests     |
+| A6  | Test keyring cannot reach production    | `keyring.test.ts` production-safety suite                                                     |
+| A7  | `nextFloat64` uniform and well-behaved  | `entropy.stat.test.ts` — 1024-bin chi-square, serial correlation to lag 64, 53-bit resolution |
+| A8  | `nextBoundedUint32` unbiased            | `entropy.stat.test.ts` — bounds 3, 7, 10, 100, 1000, 3e9                                      |
+| A9  | No cursor consumed twice across crashes | `lease.test.ts` — crash at every step of the consume/persist cycle, four lease sizes          |
+| A10 | Bucket alignment nests exactly          | `timeframe.test.ts` — all ordered pairs across 410 instants                                   |
+| A11 | Divisibility chain holds                | `timeframe.test.ts` — all ordered pairs                                                       |
+| A12 | Ambient time confined to `SystemClock`  | `guardrails.test.ts` — asserts the reader set equals the allowlist                            |
+| A13 | Throughput measured                     | 26M `nextFloat64`/s locally; 14M/s under the instrumented statistical run                     |
+
+### Beyond the stated criteria
+
+Two additions were made during implementation because the work revealed the need:
+
+- **Secret containment.** A test showed TypeScript's `private` left the master
+  secret reachable through `JSON.stringify`. Key material moved to ECMAScript
+  `#private` fields with redacting serialisation hooks. This was a genuine
+  INV-010 defect in code that read as correct; see ADR-0002 §5.
+- **Guardrails.** Ambient time, ambient randomness, non-portable maths, economic
+  vocabulary and dependency direction are now build failures under both ESLint
+  and a test suite, verified by planting a deliberate violation and observing
+  five distinct failures.
+
+### Verification executed
+
+| Check                            | Result                              |
+| -------------------------------- | ----------------------------------- |
+| `npm run format:check`           | PASSED                              |
+| `npm run lint`                   | PASSED                              |
+| `npm run build` (full typecheck) | PASSED                              |
+| `npx vitest run`                 | PASSED — 138 tests, 10 files        |
+| Hosted CI                        | NOT EXECUTED — no remote configured |
+
+### Deferred to PH-1.2
+
+Distribution samplers beyond uniform, which require portable `exp`/`ln`.
