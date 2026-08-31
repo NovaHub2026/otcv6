@@ -52,12 +52,20 @@ Ledger from the traded run of `eurusd`, one hour: 4,000 contracts, 15 refunded
 
 ### Two numbers that need reading carefully
 
-**The 0.38% tie rate is not the 1% PH-4.2 calibrated for, and that is expected.**
-PH-4.2 measured non-overlapping wall-clock windows, whose boundaries usually fall
-_between_ ticks — so the window opens at a slightly stale price and the measured
-move is shorter. A contract entered exactly at a tick has no such staleness, so it
-sees a slightly larger move and ties less often. The calibration is therefore
-mildly conservative for tick-anchored entries, which is the safe direction.
+**The 0.38% tie rate is not the 1% PH-4.2 calibrated for.** The explanation
+originally given here — window staleness — was measured by Cycle Audit 2 and found
+to be only part of it, and the smaller part. Reproducing PH-4.2's exact sampling
+scheme on the real published lattice gives 0.47% for eurusd against a recorded
+0.98%, about 5.5 standard errors apart; staleness accounts for the step from
+0.47% to 0.29%, not for the factor of two above it.
+
+The real cause is that calibration measures a **continuous** log return against
+the candidate quantum, while a tie is an **integer** event — the published price
+unchanged. Those are different events, and the continuous proxy overstates the
+lattice rate by roughly a factor of two. Recorded in
+`MEASURED_LATTICE_TIE_RATES`. Economically neutral under ADR-0007, and in the
+safe direction, but the earlier explanation was a plausible story that
+measurement did not support.
 
 **The 46.68% win rate is not evidence of bias.** Contracts are entered at every
 tick with a 30-second horizon, so at a ~1.3s tick interval about twenty are open

@@ -15,8 +15,12 @@ Supersedes: —
 Settlement compares the expiration price to the entry price on an integer log
 lattice, so exact equality is not an edge case. It is a calibrated quantity:
 PH-4.2 sets each asset's `logQuantum` to the 1% quantile of its own 30-second
-return distribution, so roughly **one in a hundred** shortest-horizon contracts
-expires exactly at the entry price.
+return distribution. Cycle Audit 2 later measured the realised rate on the
+published lattice at roughly **one in two hundred** rather than one in a hundred:
+calibration compares a continuous return against the quantum, while a tie is an
+integer-price event. The decision is unaffected — a refunded tie is economically
+neutral at any rate, and the error is in the safe direction — but the figure
+below should be read as an upper bound.
 
 `GOVERNANCE.md` §5 makes a settlement rule with material business consequence a
 Protected Human Decision. It was escalated in the PH-6 phase document with three

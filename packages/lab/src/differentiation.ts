@@ -1,4 +1,4 @@
-import { ln, pow } from '@otc/core';
+import { ln, pow, type RandomSource } from '@otc/core';
 import type { ObserverDataset } from './observer.js';
 
 /**
@@ -277,9 +277,73 @@ export function measureDifferentiation(
 }
 
 /**
+ * Significance of an observed accuracy, against a **permutation** null.
+ *
+ * This replaces a binomial tail, and the reason is worth keeping. The binomial
+ * assumed `windowsPerAsset x assets` independent trials. They are neither
+ * independent nor identically informative: the windows are contiguous slices of
+ * a handful of realisations, and each is classified against a centroid built
+ * from its own asset's other windows. Cycle Audit 2 measured the consequence by
+ * running the identical-personality control on ten independent id-sets — the
+ * accuracies ranged 18.5% to 28.0%, and the binomial reported the 28.0% draw as
+ * p = 4.1e-3, i.e. "highly significant differentiation" between five copies of
+ * one personality.
+ *
+ * Shuffling the asset labels across the pooled signatures and re-running the
+ * classifier carries that dependence structure automatically: the permuted runs
+ * are drawn from exactly the same data, with exactly the same correlations, and
+ * differ only in whether the labels mean anything.
+ *
+ * Returns the fraction of permutations scoring at least the observed accuracy,
+ * with the observed run counted — so the smallest reportable value is
+ * `1 / (permutations + 1)` rather than an arbitrarily small tail.
+ */
+export function permutationPValue(
+  labelled: readonly { asset: string; signatures: readonly AssetSignature[] }[],
+  stream: RandomSource,
+  permutations = 499,
+  features: readonly (keyof AssetSignature)[] = SIGNATURE_FEATURES,
+): { pValue: number; observed: number; permutedMax: number; permutations: number } {
+  const observed = measureDifferentiation(labelled, features).accuracy;
+  const pooled = labelled.flatMap((entry) => entry.signatures);
+  const perAsset = labelled[0]!.signatures.length;
+
+  let atLeastObserved = 1; // the observed arrangement is one of the permutations
+  let permutedMax = 0;
+  for (let round = 0; round < permutations; round += 1) {
+    const shuffled = [...pooled];
+    // Fisher-Yates from the injected stream: a significance figure that moved
+    // between runs would be worth less than no figure at all.
+    for (let i = shuffled.length - 1; i > 0; i -= 1) {
+      const j = stream.nextBoundedUint32(i + 1);
+      const swap = shuffled[i]!;
+      shuffled[i] = shuffled[j]!;
+      shuffled[j] = swap;
+    }
+    const relabelled = labelled.map((entry, index) => ({
+      asset: entry.asset,
+      signatures: shuffled.slice(index * perAsset, (index + 1) * perAsset),
+    }));
+    const accuracy = measureDifferentiation(relabelled, features).accuracy;
+    if (accuracy > permutedMax) permutedMax = accuracy;
+    if (accuracy >= observed) atLeastObserved += 1;
+  }
+  return {
+    pValue: atLeastObserved / (permutations + 1),
+    observed,
+    permutedMax,
+    permutations,
+  };
+}
+
+/**
  * Binomial tail: probability of at least `correct` successes in `total` trials
- * at rate `chance`. Reported so an accuracy is quotable as evidence rather than
- * as a number that merely looks large.
+ * at rate `chance`.
+ *
+ * **Retained only for comparison.** Its independence assumption does not hold
+ * for these windows; use {@link permutationPValue} for anything quoted as
+ * evidence. Cycle Audit 2 found this function reporting p = 4.1e-3 for five
+ * copies of a single personality.
  */
 export function differentiationPValue(result: DifferentiationResult): number {
   const total = result.windowsPerAsset * result.assets.length;

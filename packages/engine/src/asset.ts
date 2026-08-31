@@ -69,6 +69,35 @@ export interface CalibratedAsset {
  */
 export const TARGET_TIE_RATE = 0.01;
 
+/**
+ * What this target actually is, measured.
+ *
+ * Calibration compares a *continuous* log return against the candidate quantum,
+ * because the quantum is the quantity being chosen and the measurement cannot
+ * depend on it. A real tie is a different event: the published integer price
+ * unchanged between entry and expiry.
+ *
+ * Those two are close but not equal, and Cycle Audit 2 measured the gap. On the
+ * real published lattice, PH-4.2's own sampling scheme gives 0.47% (eurusd),
+ * 0.71% (gbpjpy), 0.59% (btcusd), 0.45% (spx) and 0.50% (xauusd) — roughly half
+ * the 1% the continuous proxy reports, and about 5.5 standard errors away.
+ * Tick-anchored entries land lower still, near 0.3%.
+ *
+ * So `TARGET_TIE_RATE` is a calibration knob whose realised lattice value is
+ * about half its nominal one. The consequence is economically nil under
+ * ADR-0007, since a tie is refunded either way, and the direction is the safe
+ * one — fewer ties than intended, not more. It is recorded because the earlier
+ * claim that "exactly 1% of shortest-horizon contracts settle at the money" was
+ * simply not true of the series that settles.
+ */
+export const MEASURED_LATTICE_TIE_RATES = {
+  eurusd: 0.0047,
+  gbpjpy: 0.0071,
+  btcusd: 0.0059,
+  spx: 0.0045,
+  xauusd: 0.005,
+} as const;
+
 /** Horizon the quantum is calibrated against: the shortest contract. */
 export const CALIBRATION_HORIZON_MS = 30_000;
 

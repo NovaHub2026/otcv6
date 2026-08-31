@@ -140,12 +140,12 @@ the same data.
 
 ## Cycle 2 — Make it a living multi-asset system
 
-| Phase | Title                                                                   | State                     |
-| ----- | ----------------------------------------------------------------------- | ------------------------- |
-| PH-4  | Asset personality system and multi-asset instantiation                  | **APPROVED**              |
-| PH-5  | Continuous runtime, sealed state persistence and restart continuity     | **APPROVED**              |
-| PH-6  | Trading boundary: contracts, settlement and verified economic blindness | **APPROVED**              |
-| —     | **Cycle Audit 2** — Human gate, requires `EJECUTA`                      | **PENDING AUTHORIZATION** |
+| Phase | Title                                                                   | State                                                 |
+| ----- | ----------------------------------------------------------------------- | ----------------------------------------------------- |
+| PH-4  | Asset personality system and multi-asset instantiation                  | **APPROVED**                                          |
+| PH-5  | Continuous runtime, sealed state persistence and restart continuity     | **APPROVED**                                          |
+| PH-6  | Trading boundary: contracts, settlement and verified economic blindness | **APPROVED**                                          |
+| —     | **Cycle Audit 2** — Human gate, requires `EJECUTA`                      | **APPROVED** — [record](../audits/CYCLE-AUDIT-002.md) |
 
 PH-4 discharges INV-007, the one invariant `docs/architecture/INVARIANTS.md`
 still records as pending, and it is the phase where the tension between a

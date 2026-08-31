@@ -72,10 +72,10 @@ classified partly by itself.
 
 As recorded by `multiAsset.stat.test.ts`, 40 windows per asset, chance = 20%:
 
-| Signature         | Real catalogue         | Identical-personality control |
-| ----------------- | ---------------------- | ----------------------------- |
-| Full (9 features) | **53.0%**, p = 5.1e-25 | 21.0%, p = 0.39               |
-| Shape only (7)    | 30.0%, p = 5.0e-4      | —                             |
+| Signature         | Real catalogue                   | Identical-personality control |
+| ----------------- | -------------------------------- | ----------------------------- |
+| Full (9 features) | **53.0%**, permutation p = 0.005 | 21.0%, permutation p = 0.395  |
+| Shape only (7)    | 30.0%, permutation p = 0.005     | —                             |
 
 The control landing on chance is what makes the 53.0% mean something.
 
@@ -107,7 +107,8 @@ very little.
 Two honest consequences:
 
 - The claim recorded for INV-007 is that assets are **strongly distinguishable**
-  from their published series (53.0% against a 20% null, p = 5.1e-25), driven
+  from their published series (53.0% against a 20% null, permutation p = 0.005,
+  best relabelling 30.5%), driven
   mostly by pace and scale. Those are genuine market properties, not cosmetic
   ones: a trader experiences a 334 ms market at ten times the volatility as a
   different market, not a relabelled one.
@@ -185,3 +186,28 @@ a family-level run could not answer.
 - Per-asset battery floors sit above the payout threshold. Closing that for every
   asset costs roughly five times PH-3's 24M-tick run, and `btcusd` alone would
   need about 85M ticks with the memory that implies.
+
+---
+
+## 7. Correction — Cycle Audit 2
+
+The p-values this document originally quoted were computed from a binomial tail
+assuming `windows x assets` independent classifications. They are not
+independent: the windows are contiguous slices of a handful of realisations, and
+each is classified against a centroid built from its own asset's other windows.
+
+Cycle Audit 2 measured the consequence directly, running the
+identical-personality control on ten independent id-sets. Accuracies ranged from
+18.5% to 28.0%, and the binomial reported the 28.0% draw as p = 4.1e-3 — "highly
+significant differentiation" between five copies of one personality.
+
+The figures above are now computed against a permutation null: the asset labels
+are shuffled across the pooled signatures and the classifier re-run, so the null
+carries the same dependence structure as the observation and differs only in
+whether the labels mean anything. It also cannot report below `1 / (N + 1)`,
+which is an honest floor rather than an arbitrarily small tail.
+
+**The finding stands, at a defensible size.** 53.0% observed against a best
+relabelling of 30.5% over 199 permutations is a real separation. It is
+significant at 0.005, not at 1e-25, and the difference between those two numbers
+is the difference between a measurement and a decoration.

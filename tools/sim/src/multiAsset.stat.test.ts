@@ -11,8 +11,8 @@ import {
 import {
   assetSignature,
   buildObserverDataset,
-  differentiationPValue,
   measureDifferentiation,
+  permutationPValue,
   runValidation,
   SHAPE_FEATURES,
   type AssetSignature,
@@ -180,21 +180,38 @@ describe('the assets are measurably different markets', () => {
       });
     }
 
+    // Significance against a permutation null, not a binomial tail. The windows
+    // are contiguous slices of a few realisations, classified against centroids
+    // built from their own asset's other windows — the independence a binomial
+    // assumes does not hold, and Cycle Audit 2 measured it reporting p = 4.1e-3
+    // for five copies of a single personality.
+    const permutationStream = keyring.derive({
+      env: 'simulation',
+      asset: 'differentiation',
+      purpose: 'permutation',
+      keyEpoch: 0,
+    });
     const measured = measureDifferentiation(real);
     const nullResult = measureDifferentiation(control);
+    const realSignificance = permutationPValue(real, permutationStream, 199);
+    const controlSignificance = permutationPValue(control, permutationStream, 199);
+
     console.info(
       `differentiation: real ${(measured.accuracy * 100).toFixed(1)}% ` +
-        `(p=${differentiationPValue(measured).toExponential(2)}), ` +
+        `(permutation p=${realSignificance.pValue.toFixed(4)}, ` +
+        `best shuffle ${(realSignificance.permutedMax * 100).toFixed(1)}%), ` +
         `control ${(nullResult.accuracy * 100).toFixed(1)}% ` +
-        `(p=${differentiationPValue(nullResult).toExponential(2)}), chance 20%`,
+        `(permutation p=${controlSignificance.pValue.toFixed(4)}), chance 20%`,
     );
 
     expect(measured.accuracy).toBeGreaterThan(0.45);
-    expect(differentiationPValue(measured)).toBeLessThan(1e-10);
+    expect(realSignificance.pValue).toBeLessThanOrEqual(0.01);
+    // No shuffle of the labels should come close to the real arrangement.
+    expect(realSignificance.permutedMax).toBeLessThan(measured.accuracy);
 
     // The teeth. An identical catalogue must not separate.
     expect(nullResult.accuracy).toBeLessThan(0.32);
-    expect(differentiationPValue(nullResult)).toBeGreaterThan(0.001);
+    expect(controlSignificance.pValue).toBeGreaterThan(0.01);
   });
 
   it('is honest that the separation is pace and scale, not shape', async () => {
@@ -211,9 +228,16 @@ describe('the assets are measurably different markets', () => {
       });
     }
     const shape = measureDifferentiation(real, SHAPE_FEATURES);
+    const shapeStream = keyring.derive({
+      env: 'simulation',
+      asset: 'differentiation',
+      purpose: 'permutation-shape',
+      keyEpoch: 0,
+    });
+    const shapeSignificance = permutationPValue(real, shapeStream, 199, SHAPE_FEATURES);
     console.info(
       `shape-only differentiation: ${(shape.accuracy * 100).toFixed(1)}% ` +
-        `(p=${differentiationPValue(shape).toExponential(2)}), chance 20%`,
+        `(permutation p=${shapeSignificance.pValue.toFixed(4)}), chance 20%`,
     );
     // Asserted as a *ceiling*, so that a future change which genuinely improves
     // structural differentiation fails this test and forces the claim to be

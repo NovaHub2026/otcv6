@@ -10,9 +10,9 @@ Describes: the system as it exists today
 ## Layering
 
 ```
-        apps/web        Next.js client                     (not yet built)
+        apps/web        Next.js client                     (built in PH-5/PH-6 — see RUNTIME_AND_TRADING.md)
             │  transport contracts only
-        apps/api        NestJS runtime, streaming,          (not yet built)
+        apps/api        NestJS runtime, streaming,          (built in PH-5/PH-6 — see RUNTIME_AND_TRADING.md)
             │           trading, settlement, persistence
             ▼
       @otc/engine       generative market model             ✅ (PH-3, APPROVED)

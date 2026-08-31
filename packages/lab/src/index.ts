@@ -58,6 +58,7 @@ export {
 export {
   assetSignature,
   differentiationPValue,
+  permutationPValue,
   measureDifferentiation,
   SHAPE_FEATURES,
   SIGNATURE_FEATURES,

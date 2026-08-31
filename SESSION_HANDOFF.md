@@ -9,12 +9,12 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Field              | Value                                          |
 | ------------------ | ---------------------------------------------- |
 | Last clean session | 2026-08-31                                     |
-| Branch             | `main` — PH-6 merged and pushed (`20b0001`)    |
+| Branch             | `main` — Cycle 2 merged and pushed             |
 | Remote             | `origin` → NovaHub2026/otcv6 — pushed, in sync |
-| Active cycle       | Cycle 2, **3 of 3** phases approved            |
-| Active phase       | none — paused at the Governance Human Gate     |
+| Active cycle       | Cycle 3, **0 of 3** phases approved            |
+| Active phase       | none — PH-7 is next to be created              |
 | Active subphase    | none                                           |
-| Cycle Audit        | **002 ACTIVE** — authorized 2026-08-31         |
+| Cycle Audit        | 002 **APPROVED** — next due after PH-7/8/9     |
 | Blockers           | none                                           |
 
 ## Completed
@@ -49,6 +49,9 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
   computed from the published record alone, and the demonstration that closes
   INV-001. Identical tick streams between a quiet market and one under heavy
   adversarial trading, on all five assets.
+- **Cycle Audit 002 APPROVED** — 31 material findings, all fixed; 103 claims
+  re-executed and held. Read §2 first: an audit plant reached `main` via a
+  concurrent `git add -A`, was never pushed, and was excised.
 - ADRs 0001–0007 persisted. ADR-0007 records the Human Owner's at-the-money
   decision: a tie is refunded.
 
@@ -77,16 +80,18 @@ Read `CURRENT_STATE.md`. Cycle 1 is closed and its audit is approved, so
 development continues **without further Human authorization**
 (`GOVERNANCE.md` §32).
 
-Read `CURRENT_STATE.md`. Development is paused at the Governance Human Gate
-(`GOVERNANCE.md` §28). **Do not start PH-7.**
+Read `CURRENT_STATE.md`. Cycle 2 is closed and its audit approved, so development
+continues **without further Human authorization** (`GOVERNANCE.md` §32).
 
-Await `EJECUTA`, then perform Cycle Audit 2 over PH-4, PH-5 and PH-6, fix
-delegated findings, approve from evidence, reset the cycle counter and resume at
-PH-7.
+Create the **PH-7 Phase Context Document** — public market distribution and
+multi-user consistency — on `feature/ph-7-distribution`.
 
-All ten invariants now carry executed evidence; `docs/architecture/INVARIANTS.md`
-has no remaining pending row. Cycle Audit 1 found that the most valuable thing an
-audit does is check claims that were only ever asserted — that table is the first
-place to look.
+Standing rules from Cycle Audit 002, both learned the hard way:
+
+- **A guard is not finished until it has been watched failing.** Every material
+  finding in that audit was a guard that existed, was documented as sufficient,
+  and had never been tested against the thing it guarded against.
+- **Never `git add -A` while subagents are running**, and keep audit plants in an
+  isolated clone.
 
 Before changing anything in the engine, read the last section of `CLAUDE.md`.

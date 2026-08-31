@@ -1,11 +1,21 @@
 import { describe, expect, it } from 'vitest';
+import { MasterKeyring } from '@otc/core';
 import {
   measureDifferentiation,
   differentiationPValue,
+  permutationPValue,
   SHAPE_FEATURES,
   SIGNATURE_FEATURES,
   type AssetSignature,
 } from './differentiation.js';
+
+const permutationStream = (): ReturnType<MasterKeyring['derive']> =>
+  MasterKeyring.forTesting('permutation').derive({
+    env: 'test',
+    asset: 'differentiation',
+    purpose: 'permutation',
+    keyEpoch: 0,
+  });
 
 /**
  * Mechanics of the metric, on synthetic signatures.
@@ -121,5 +131,58 @@ describe('the differentiation metric', () => {
     for (const row of result.confusion) {
       expect(row.reduce((sum, value) => sum + value, 0)).toBe(10);
     }
+  });
+});
+
+describe('significance is measured against a permutation null', () => {
+  /**
+   * The binomial tail this replaces assumed 200 independent classifications.
+   * They are contiguous slices of a few realisations, each classified against a
+   * centroid built from its own asset's other windows — neither independent nor
+   * identically informative. Cycle Audit 2 measured the binomial reporting
+   * p = 4.1e-3 for five copies of a single personality.
+   */
+  function labelledFrom(spread: number) {
+    return ['a', 'b', 'c', 'd', 'e'].map((asset, index) => ({
+      asset,
+      signatures: Array.from({ length: 30 }, (_, w) =>
+        signature({ kurtosis: 10 + index * spread + noise(index * 100 + w) }),
+      ),
+    }));
+  }
+
+  it('reports near-certainty as insignificant when the assets are identical', () => {
+    const identical = labelledFrom(0);
+    const { pValue, observed } = permutationPValue(identical, permutationStream(), 199);
+    expect(observed).toBeLessThan(0.45);
+    // The whole point: shuffling labels on identical data changes nothing, so
+    // the observed run is unremarkable among its permutations.
+    expect(pValue).toBeGreaterThan(0.05);
+  });
+
+  it('still reports a genuine separation as significant', () => {
+    const separated = labelledFrom(60);
+    const { pValue, observed, permutedMax } = permutationPValue(
+      separated,
+      permutationStream(),
+      199,
+    );
+    expect(observed).toBe(1);
+    expect(permutedMax).toBeLessThan(1);
+    expect(pValue).toBeLessThanOrEqual(1 / 200);
+  });
+
+  it('cannot report a p-value below its own resolution', () => {
+    // An honest floor: with N permutations the smallest reportable value is
+    // 1/(N+1). The binomial happily printed 5.1e-25 from 200 dependent trials.
+    const { pValue } = permutationPValue(labelledFrom(60), permutationStream(), 99);
+    expect(pValue).toBeGreaterThanOrEqual(1 / 100);
+  });
+
+  it('is deterministic for a given stream', () => {
+    const data = labelledFrom(20);
+    const first = permutationPValue(data, permutationStream(), 99);
+    const second = permutationPValue(data, permutationStream(), 99);
+    expect(second).toEqual(first);
   });
 });

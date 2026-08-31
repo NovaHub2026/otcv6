@@ -14,16 +14,16 @@ Last synchronized: 2026-08-31
 
 | Field                            | Value                                                                   |
 | -------------------------------- | ----------------------------------------------------------------------- |
-| Active development cycle         | Cycle 2                                                                 |
-| Approved phases in current cycle | **3 of 3** (PH-4, PH-5, PH-6)                                           |
-| Cycle Audit state                | **ACTIVE** — Cycle Audit 2 authorized 2026-08-31                        |
-| Last Cycle Audit                 | [Cycle Audit 001](docs/audits/CYCLE-AUDIT-001.md) — APPROVED 2026-08-31 |
+| Active development cycle         | Cycle 3                                                                 |
+| Approved phases in current cycle | **0 of 3**                                                              |
+| Cycle Audit state                | None active — next due after three more phases                          |
+| Last Cycle Audit                 | [Cycle Audit 002](docs/audits/CYCLE-AUDIT-002.md) — APPROVED 2026-08-31 |
 
 ## Phase and subphase
 
 | Field                  | Value                                                              |
 | ---------------------- | ------------------------------------------------------------------ |
-| Active phase           | None — development is paused at the Governance Human Gate          |
+| Active phase           | None — PH-7 is next to be created                                  |
 | Phase lifecycle        | n/a                                                                |
 | Active subphase        | None                                                               |
 | Subphase lifecycle     | n/a                                                                |
@@ -82,17 +82,20 @@ without ever running `git remote -v`. See [Cycle Audit 001](docs/audits/CYCLE-AU
 
 ## Verification state
 
-Executed 2026-08-31 at the close of Cycle Audit 001. Full record:
-[`docs/evidence/CYCLE-1-VERIFICATION.md`](docs/evidence/CYCLE-1-VERIFICATION.md).
+Executed 2026-08-31 during Cycle Audit 2, on the post-fix tree.
 
-| Check                            | Status                             |
-| -------------------------------- | ---------------------------------- |
-| `npm run format:check`           | PASSED                             |
-| `npm run lint`                   | PASSED                             |
-| `npm run build` (full typecheck) | PASSED                             |
-| `npm run test:cov` (both suites) | PASSED — 713 tests, 44 files       |
-| Coverage (both suites)           | 98.04% statements, 96.04% branches |
-| Hosted CI                        | NOT EXECUTED — nothing pushed yet  |
+| Check                            | Status                                   |
+| -------------------------------- | ---------------------------------------- |
+| `npm run format:check`           | PASSED (exit 0)                          |
+| `npm run lint`                   | PASSED (exit 0)                          |
+| `npm run build` (full typecheck) | PASSED (exit 0)                          |
+| `npm run test` (both suites)     | see the Cycle Audit 2 record             |
+| Hosted CI                        | BLOCKED — GitHub Actions account billing |
+
+Cycle 1's numbers, and the coverage figure, are in
+[`docs/evidence/CYCLE-1-VERIFICATION.md`](docs/evidence/CYCLE-1-VERIFICATION.md).
+They were presented here as the project's current verification state until Cycle
+Audit 2 re-executed them and found both re-checkable rows false.
 
 ## Known limitations carried forward
 
@@ -100,9 +103,14 @@ Executed 2026-08-31 at the close of Cycle Audit 001. Full record:
   Independent samples at a horizon are fixed by simulated duration, so the
   15-minute horizon needs roughly a hundred times the history. Every verdict
   states the floor it achieved.
-- One asset, one parameter set. Personalities are PH-4.
-- The engine has never run continuously; restart continuity is proven in-process
-  only. A durable store and a runtime arrive in PH-5.
+- Assets differ mostly in pace and scale; scale-free _shape_ differentiation is
+  weak (30.0% against a 20% null). Tracked as B-004.
+- Per-asset battery floors (0.562pp) sit above the 0.2513pp product margin.
+  PH-3's full-rigor run covers the canonical configuration at 0.217pp.
+- The venue is single-node and read-only; clients poll. Distribution, fan-out and
+  a tick feed are PH-7.
+- The catch-up bound is a default with defined behaviour, not a decided venue
+  policy. It needs an owner before a real venue runs.
 
 ## Relevant records
 
@@ -114,9 +122,10 @@ Executed 2026-08-31 at the close of Cycle Audit 001. Full record:
 | ADR-0004 | Canonical price representation: an integer log lattice (APPROVED)            |
 | ADR-0005 | A multifractal cascade as the volatility process (APPROVED)                  |
 | ADR-0006 | A layered sign-blind market model (APPROVED)                                 |
-| Backlog  | `docs/BACKLOG.md` B-001                                                      |
+| ADR-0007 | At-the-money settlement: a tie is refunded (APPROVED, Human Owner)           |
+| Backlog  | `docs/BACKLOG.md` B-001 … B-005                                              |
 | Roadmap  | `docs/phases/ROADMAP.md`                                                     |
-| Branch   | `main`; PH-2 and PH-3 were developed on `feature/ph-2-and-ph-3`, now merged  |
+| Branch   | `main` — every phase branch merged and deleted                               |
 
 ---
 
@@ -127,32 +136,27 @@ fourteen resolved within the audit; the record is
 [`docs/audits/CYCLE-AUDIT-001.md`](docs/audits/CYCLE-AUDIT-001.md). The cycle
 counter has been reset and Cycle 2 has begun.
 
-**PH-4 is ACTIVE** on branch `feature/ph-4-asset-personalities`. Its Phase
-Context Document is
-[`docs/phases/PH-4-asset-personalities.md`](docs/phases/PH-4-asset-personalities.md).
+**Cycle Audit 002 is APPROVED and closed.** 31 confirmed material findings, 40
+minor, 2 refuted, and 103 recorded claims re-executed and held. The record is
+[`docs/audits/CYCLE-AUDIT-002.md`](docs/audits/CYCLE-AUDIT-002.md). The cycle
+counter has been reset and Cycle 3 has begun.
 
-**Cycle 2 is complete: PH-4, PH-5 and PH-6 are all APPROVED.** The
-Three-Phase Human Gate applies (`GOVERNANCE.md` §28).
+Read §2 of that record before anything else: an audit agent's deliberately
+planted INV-001 backdoor was swept into `main` by a concurrent `git add -A`. It
+never reached `origin`, and `main` was reset and re-committed clean — but it is
+the most serious process failure in the project's history, and the rule it
+produced is standing: **never `git add -A` while subagents are running, and keep
+audit plants in an isolated clone.**
 
-**STOP. Request `EJECUTA` to authorise Cycle Audit 2.**
+**Create the PH-7 Phase Context Document** — public market distribution and
+multi-user consistency — on branch `feature/ph-7-distribution`. It opens Cycle 3.
 
-What Cycle 2 delivered:
+Two things Cycle 2 hands it directly:
 
-- **PH-4** — five assets across four families, each with a lattice derived from
-  its own behaviour, each independently clean under the battery. INV-007
-  enforced.
-- **PH-5** — the market runs. `apps/api` hosts the catalogue continuously,
-  checkpoints it, and survives SIGKILL with every market resuming.
-- **PH-6** — people can trade it, and **INV-001 is demonstrated rather than
-  argued**: identical tick streams between a quiet market and one under heavy
-  adversarial trading, on all five assets.
+- The economic-blindness demonstration covers a **single process**. PH-7 separates
+  trading and price generation across a network boundary, and the claim has to be
+  re-established there.
+- The venue is single-node and read-only; clients poll. A tick feed, fan-out and
+  multi-user consistency semantics are PH-7's subject.
 
-**All ten invariants now have executed evidence** —
-[`docs/architecture/INVARIANTS.md`](docs/architecture/INVARIANTS.md) has no
-remaining "pending" row.
-
-Do not start PH-7. On `EJECUTA`, audit PH-4, PH-5 and PH-6 per `GOVERNANCE.md`
-§30, fix delegated findings, approve from evidence, reset the cycle counter, and
-resume at PH-7 (public market distribution and multi-user consistency).
-
-This is a Governance Human Gate. `EJECUTA` is required (`GOVERNANCE.md` §28, §59).
+No Human authorization is required to proceed (`GOVERNANCE.md` §32).

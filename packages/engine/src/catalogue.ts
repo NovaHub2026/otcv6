@@ -59,8 +59,10 @@ function registered(
  * a predicted excess kurtosis of 276.8 against the ceiling of 200, and retuned.
  *
  * Every quantum below was derived, never chosen: it is the 1% quantile of that
- * asset's own 30-second return distribution, so exactly 1% of shortest-horizon
- * contracts settle at the money. Median moves land at 68–85 lattice steps for
+ * asset's own 30-second *continuous* return distribution. The realised rate on the
+ * published lattice is about half that — see `MEASURED_LATTICE_TIE_RATES` — because
+ * a tie is an integer-price event and the calibration measures a continuous proxy
+ * for it. Median moves land at 68–85 lattice steps for
  * all five without that being targeted, because the lattice scales with the
  * asset instead of being imposed on it.
  */
