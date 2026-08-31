@@ -259,6 +259,67 @@ PH-8 is where Next.js and React are first scaffolded. PH-9 converts a one-time
 proof into a standing guarantee, including a red-team round using attack families
 deliberately withheld from all prior tuning.
 
+## Cycle 4 — Close the gaps the first three cycles named
+
+Cycles 1–3 each opened with a question. Cycle 4 opens with a **list**: the
+limitations the previous cycles recorded rather than resolved. Every phase here
+closes an entry that a prior phase or audit wrote down and deferred, so the
+cycle's success criterion is unusually concrete — `docs/BACKLOG.md` should end it
+holding nothing but the one item that needs the Human Owner.
+
+| Phase | Title                                                         | State       |
+| ----- | ------------------------------------------------------------- | ----------- |
+| PH-10 | Per-asset market rhythm                                       | **ACTIVE**  |
+| PH-11 | Detection power across every horizon the product sells        | not started |
+| PH-12 | Verifiable publication and the journal in the running service | not started |
+| —     | **Cycle Audit 4** — Human gate, requires `EJECUTA`            | not started |
+
+| Phase | Closes                                                                     |
+| ----- | -------------------------------------------------------------------------- |
+| PH-10 | B-004; the "assets differ mostly in pace and scale" limitation             |
+| PH-11 | B-002, B-003; the per-asset floor limitation; PH-9's sensitivity limits    |
+| PH-12 | B-009; the journal-not-emitted limitation; the catch-up-bound policy owner |
+
+**Cycle Audit 4 must be conducted by independent agents** (B-008). Cycle Audit 2
+used ten and found 31 material findings; Cycle Audit 3 was conducted by the
+authoring agent and found one. The method is the variable being controlled.
+
+### PH-10 — Per-Asset Market Rhythm
+
+The catalogue's five assets are separable by amplitude and pace, which is true by
+construction and means nothing. On scale-free _shape_ features they classify at
+30.0% against a 20% null. PH-10 makes the observable dynamics differ.
+
+| Subphase | Title                                             | State       |
+| -------- | ------------------------------------------------- | ----------- |
+| PH-10.1  | The cascade's time structure becomes personality  | APPROVED    |
+| PH-10.2  | A catalogue authored to differ in rhythm          | ACTIVE      |
+| PH-10.3  | Revalidation: every asset, every guarantee, again | not started |
+
+### PH-11 — Detection Power Across Every Horizon the Product Sells
+
+The product sells 30s to 15m. Only 30s has ever been policed to the threshold the
+99% payout implies. PH-11 either closes the other horizons or states, per horizon
+and per asset, exactly what remains unpoliced.
+
+| Subphase | Title                                                    | State       |
+| -------- | -------------------------------------------------------- | ----------- |
+| PH-11.1  | An estimator with valid intervals under overlap          | not started |
+| PH-11.2  | The long-horizon evidence run                            | not started |
+| PH-11.3  | Coverage over `tools/`, and evidence that records itself | not started |
+
+### PH-12 — Verifiable Publication and the Journal in the Running Service
+
+PH-9 produced a verdict a counterparty can recompute, and said plainly that its
+fingerprint proves agreement rather than authenticity. PH-12 closes that, and
+connects the journal to the service that actually runs.
+
+| Subphase | Title                                                  | State       |
+| -------- | ------------------------------------------------------ | ----------- |
+| PH-12.1  | A commitment over the journal, with inclusion proofs   | not started |
+| PH-12.2  | The publishing key, and its separation from generation | not started |
+| PH-12.3  | The service emits the journal; the venue gets policy   | not started |
+
 ---
 
 ## Major dependencies

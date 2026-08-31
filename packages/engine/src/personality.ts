@@ -43,6 +43,65 @@ export interface PersonalityTraits {
   readonly structureSpread: number;
   /** Amplitude–duration coupling exponent, in `[0, 1]`. */
   readonly durationCoupling: number;
+
+  // -- rhythm: the time structure of the market ---------------------------
+  //
+  // Everything below controls *when* things happen rather than how large they
+  // are. PH-10.1 §4 records which of them can touch the tail and which cannot:
+  // only `cascadeDepth` enters the kurtosis product, and it enters as an
+  // exponent. The rest are exactly neutral, by cancellation rather than by
+  // approximation.
+
+  /**
+   * Number of cascade components: how many distinct timescales the volatility
+   * of this market has.
+   *
+   * The one rhythm trait that is not tail-neutral. The cascade's kurtosis
+   * contribution is one component's raised to this power, so a market with a
+   * deeper cascade needs proportionally less {@link PersonalityTraits.clustering}
+   * per component to land in the same band. {@link solveClustering} does that
+   * arithmetic; authoring both by hand is how PH-3 reached an excess kurtosis of
+   * 1366.
+   */
+  readonly cascadeDepth: number;
+
+  /**
+   * Mean switching time of the **slowest** cascade component, in milliseconds.
+   *
+   * The outer edge of this market's volatility memory. Together with
+   * {@link PersonalityTraits.cascadeSpacing} and depth it fixes the whole ladder
+   * of timescales, and therefore the decay profile of `|return|`
+   * autocorrelation — which is what a chart reader perceives as the market's
+   * character.
+   */
+  readonly cascadeSpanMs: number;
+
+  /**
+   * Geometric ratio between successive components' switching hazards.
+   *
+   * Wide spacing gives a market with a few well-separated rhythms; narrow
+   * spacing gives one continuous smear of them across a shorter total span.
+   */
+  readonly cascadeSpacing: number;
+
+  /**
+   * Scalar on every volatility regime's sojourn scale.
+   *
+   * Above 1, this market holds a regime longer; below 1, it changes character
+   * more often. Exactly tail-neutral: see {@link regimeInflation}.
+   */
+  readonly regimeTempo: number;
+
+  /**
+   * Hawkes excitation memory, in milliseconds: how long a burst keeps exciting
+   * further arrivals. `decayPerMs` is its reciprocal.
+   *
+   * Independent of {@link PersonalityTraits.burstiness}, which fixes how *much*
+   * total excitation an arrival contributes. Two markets can share a branching
+   * ratio and still burst completely differently — one in short sharp flurries,
+   * the other in long swells.
+   */
+  readonly arrivalMemoryMs: number;
 }
 
 /**
@@ -61,6 +120,14 @@ export const DEFAULT_TRAITS: PersonalityTraits = {
   regimeSpread: 1,
   structureSpread: 1,
   durationCoupling: 0.25,
+  cascadeDepth: DEFAULT_CASCADE.components,
+  // Expressed as times rather than hazards so that the reciprocal reproduces the
+  // calibrated constants to the last bit: DEFAULT_CASCADE's hazard is written
+  // `1 / (6 * 3_600_000)` and DEFAULT_HAWKES' decay `1 / 120_000`.
+  cascadeSpanMs: 6 * 3_600_000,
+  cascadeSpacing: DEFAULT_CASCADE.hazardRatio,
+  regimeTempo: 1,
+  arrivalMemoryMs: 120_000,
 };
 
 /**
@@ -78,7 +145,48 @@ export const TRAIT_BOUNDS = {
   regimeSpread: { min: 0.25, max: 2.5 },
   structureSpread: { min: 0.25, max: 2.5 },
   durationCoupling: { min: 0, max: 1 },
+  cascadeDepth: { min: 4, max: 18 },
+  cascadeSpanMs: { min: 30 * 60_000, max: 48 * 3_600_000 },
+  cascadeSpacing: { min: 1.3, max: 4.5 },
+  regimeTempo: { min: 0.3, max: 3 },
+  arrivalMemoryMs: { min: 15_000, max: 900_000 },
 } as const satisfies Record<keyof PersonalityTraits, { min: number; max: number }>;
+
+/**
+ * The fastest cascade component's mean switching time, as a multiple of the
+ * market's base tick interval.
+ *
+ * A component survives a tick with probability `exp(-tempo / switchingTime)`.
+ * At this ratio that is `exp(-2) ≈ 13.5%`: weak, but still memory. Below it the
+ * component is effectively independent at every observable lag, so it pays its
+ * full share of kurtosis — the expensive part, since depth is an exponent — and
+ * buys no autocorrelation, which is the only thing it was added for.
+ *
+ * The bound is relative to `tempoMs`, not absolute, because "too fast to see" is
+ * a statement about the observer. A 500 ms component is a real rhythm in a
+ * market that ticks every three seconds and noise in one that ticks every 300 ms.
+ *
+ * Every trait involved can be individually in range while the combination is
+ * degenerate, so this has to be a joint check. It is a floor on waste rather
+ * than on safety: `solveClustering` would quietly absorb the kurtosis cost by
+ * thinning every component, which is exactly why the waste needs to be visible.
+ * The default personality sits at 1.59 ticks, comfortably inside it.
+ */
+export const MIN_FASTEST_COMPONENT_TICKS = 0.5;
+
+/**
+ * Mean switching time of each cascade component, slowest first, in milliseconds.
+ *
+ * The ladder of timescales this personality actually has. Diagnostics, authoring
+ * and the joint bound check.
+ */
+export function cascadeTimescalesMs(traits: PersonalityTraits): number[] {
+  const scales: number[] = [];
+  for (let k = 0; k < traits.cascadeDepth; k += 1) {
+    scales.push(traits.cascadeSpanMs / pow(traits.cascadeSpacing, k));
+  }
+  return scales;
+}
 
 export function assertPersonalityTraits(traits: PersonalityTraits): void {
   for (const name of Object.keys(TRAIT_BOUNDS) as (keyof PersonalityTraits)[]) {
@@ -89,6 +197,25 @@ export function assertPersonalityTraits(traits: PersonalityTraits): void {
         `Personality trait ${name} must be in [${min}, ${max}], received ${value}.`,
       );
     }
+  }
+  if (!Number.isInteger(traits.cascadeDepth)) {
+    throw new RangeError(
+      `Personality trait cascadeDepth must be an integer, received ${traits.cascadeDepth}.`,
+    );
+  }
+  const timescales = cascadeTimescalesMs(traits);
+  const fastest = timescales[timescales.length - 1]!;
+  const floor = MIN_FASTEST_COMPONENT_TICKS * traits.tempoMs;
+  if (fastest < floor) {
+    throw new RangeError(
+      `The fastest cascade component switches every ${fastest.toFixed(1)} ms, below the ` +
+        `${floor.toFixed(1)} ms floor set by this market's ${traits.tempoMs} ms tick. It ` +
+        `survives a tick with probability ${exp(-traits.tempoMs / fastest).toExponential(2)}, ` +
+        `so it is independent noise rather than a rhythm: it pays full kurtosis and buys ` +
+        `no autocorrelation. Reduce ` +
+        `cascadeDepth (${traits.cascadeDepth}) or cascadeSpacing ` +
+        `(${traits.cascadeSpacing}), or lengthen cascadeSpanMs (${traits.cascadeSpanMs}).`,
+    );
   }
 }
 
@@ -135,7 +262,12 @@ export function personalityConfig(
 ): Omit<MarketEngineConfig, 'instrument'> {
   assertPersonalityTraits(traits);
 
-  const cascade: CascadeConfig = { ...DEFAULT_CASCADE, lowMultiplier: 1 - traits.clustering };
+  const cascade: CascadeConfig = {
+    components: traits.cascadeDepth,
+    slowestHazardPerMs: 1 / traits.cascadeSpanMs,
+    hazardRatio: traits.cascadeSpacing,
+    lowMultiplier: 1 - traits.clustering,
+  };
 
   const regimes = Object.fromEntries(
     VOLATILITY_REGIMES.map((name) => [
@@ -143,6 +275,9 @@ export function personalityConfig(
       {
         ...DEFAULT_REGIMES[name],
         multiplier: spreadMultiplier(DEFAULT_REGIMES[name].multiplier, traits.regimeSpread),
+        // Multiplication by exactly 1 is exact, so the default personality still
+        // reproduces DEFAULT_REGIMES bit for bit.
+        scaleMs: DEFAULT_REGIMES[name].scaleMs * traits.regimeTempo,
       },
     ]),
   ) as unknown as RegimeConfig;
@@ -161,6 +296,7 @@ export function personalityConfig(
     ...DEFAULT_HAWKES,
     baseIntervalMs: traits.tempoMs,
     branchingRatio: traits.burstiness,
+    decayPerMs: 1 / traits.arrivalMemoryMs,
   };
 
   return {
@@ -197,14 +333,51 @@ function inflation(secondMoment: number, fourthMoment: number): number {
  * `K` independent components, each two-point on `{m₀, 2−m₀}` with equal
  * probability, so the whole product's ratio is one component's raised to `K`.
  */
-export function cascadeInflation(config: CascadeConfig): number {
-  const low = config.lowMultiplier;
+function componentInflation(low: number): number {
   const high = 2 - low;
   const low2 = low * low;
   const high2 = high * high;
   const second = (low2 + high2) / 2;
   const fourth = (low2 * low2 + high2 * high2) / 2;
-  return pow(inflation(second, fourth), config.components);
+  return inflation(second, fourth);
+}
+
+export function cascadeInflation(config: CascadeConfig): number {
+  return pow(componentInflation(config.lowMultiplier), config.components);
+}
+
+/**
+ * One cascade component's inflation, as a function of the clustering trait.
+ *
+ * `low = 1 − c` and `high = 1 + c`, so this is
+ * `(1 + 6c² + c⁴) / (1 + c²)²` — strictly increasing on `[0, 1)`, which is what
+ * makes {@link solveClustering}'s bisection sound.
+ *
+ * Shares {@link componentInflation} with {@link cascadeInflation} rather than
+ * re-deriving it, so a personality's solved clustering and its gate reading
+ * cannot disagree by a rounding step. Note the direction: this goes
+ * clustering → multiplier, never multiplier → clustering. `1 − (1 − c)` is not
+ * `c` in binary floating point.
+ */
+export function cascadeInflationOfClustering(clustering: number): number {
+  return componentInflation(1 - clustering);
+}
+
+/**
+ * Factor by which the cascade multiplies the RMS tick magnitude.
+ *
+ * Each component has mean 1 but `E[M²] = 1 + c²`, so a deeper cascade produces
+ * larger typical moves for the same `volatility` trait. The trait is therefore
+ * the *base* scale, not the realised one; this is the difference, and an author
+ * choosing a depth should look at it. Lattice calibration derives the published
+ * quantum from realised behaviour, so it needs no help — but a realism target
+ * expressed in price units does.
+ */
+export function cascadeRmsGain(traits: PersonalityTraits): number {
+  const low = 1 - traits.clustering;
+  const high = 2 - low;
+  const second = (low * low + high * high) / 2;
+  return pow(second, traits.cascadeDepth / 2);
 }
 
 /**
@@ -326,6 +499,86 @@ export function predictedExcessKurtosis(config: MarketEngineConfig, stream: Rand
     regimeInflation(config.regimes) *
     structureInflation(config.structure, stream);
   return 3 * product - 3;
+}
+
+/**
+ * The `clustering` that puts this personality at a target excess kurtosis.
+ *
+ * Depth is an exponent on the cascade's kurtosis contribution, so varying it —
+ * which is the whole point of PH-10 — moves the tail hard unless clustering
+ * moves with it. This does that arithmetic, so a catalogue can be authored as
+ * "these assets have different rhythms and comparable tails" rather than as a
+ * search for combinations the gate happens to accept.
+ *
+ * Cheap because of the neutrality results in PH-10.1 §4: neither the regime
+ * layer nor the structure layer depends on clustering, so the expensive half of
+ * {@link predictedExcessKurtosis} — a 400k-step simulation — is evaluated once
+ * and the search runs over a closed form.
+ *
+ * Bisection rather than the quadratic's closed form is deliberate. Solving
+ * `(1 + 6u + u²) = t(1 + u)²` for `u = c²` gives a quadratic whose leading
+ * coefficient changes sign at `t = 1` and which has two roots, only one of them
+ * admissible. A root-selection error there would be silent, and would produce a
+ * personality that misses its target while reporting success. A monotone
+ * bisection cannot select the wrong root.
+ *
+ * Throws rather than clamping when the target is out of reach. A clamped solve
+ * returns a plausible number that is not the answer, which is precisely the
+ * class of failure the analytic gate exists to make impossible.
+ *
+ * @param traits Every other trait; the incoming `clustering` is ignored.
+ * @param targetExcessKurtosis Excess kurtosis the personality should predict.
+ * @param stream Drives the structure layer's simulation. **Load-bearing**: the
+ *   structure layer has no closed form, so `predictedExcessKurtosis` is a
+ *   simulation estimate and the solve is exact only with respect to the stream it
+ *   was given. Solving against one stream and verifying against another lands
+ *   within that estimator's noise — around 1% — not at the target. A catalogue
+ *   must therefore derive this stream from a recorded label and record it, which
+ *   is what makes a registered asset's tail weight reproducible.
+ */
+export function solveClustering(
+  traits: PersonalityTraits,
+  targetExcessKurtosis: number,
+  stream: RandomSource,
+): number {
+  if (!Number.isFinite(targetExcessKurtosis) || targetExcessKurtosis <= 0) {
+    throw new RangeError(
+      `Target excess kurtosis must be finite and positive, received ${targetExcessKurtosis}.`,
+    );
+  }
+  const config = personalityConfig(traits);
+  const fixed = regimeInflation(config.regimes) * structureInflation(config.structure, stream);
+  const requiredCascade = (targetExcessKurtosis + 3) / (3 * fixed);
+
+  if (requiredCascade < 1) {
+    throw new RangeError(
+      `The regime and structure layers alone predict an excess kurtosis of ` +
+        `${(3 * fixed - 3).toFixed(2)}, already above the target of ` +
+        `${targetExcessKurtosis}. No clustering can reach it: the cascade can only ` +
+        `add tail weight. Lower regimeSpread or structureSpread.`,
+    );
+  }
+
+  const perComponent = pow(requiredCascade, 1 / traits.cascadeDepth);
+  const ceiling: number = TRAIT_BOUNDS.clustering.max;
+  if (cascadeInflationOfClustering(ceiling) < perComponent) {
+    throw new RangeError(
+      `An excess kurtosis of ${targetExcessKurtosis} needs more cascade inflation than ` +
+        `clustering ${ceiling} can provide at depth ${traits.cascadeDepth}. Raise ` +
+        `cascadeDepth, or raise regimeSpread so another layer carries some of the tail.`,
+    );
+  }
+
+  // Monotone on [0, ceiling]; ~60 halvings reach the last representable step, and
+  // 100 costs nothing.
+  let low = 0;
+  let high = ceiling;
+  for (let iteration = 0; iteration < 100; iteration += 1) {
+    const middle = (low + high) / 2;
+    if (cascadeInflationOfClustering(middle) < perComponent) low = middle;
+    else high = middle;
+  }
+  return (low + high) / 2;
 }
 
 /**
