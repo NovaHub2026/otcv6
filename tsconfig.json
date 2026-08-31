@@ -11,6 +11,9 @@
       "path": "./packages/fixtures"
     },
     {
+      "path": "./packages/lab"
+    },
+    {
       "path": "./tools/sim"
     }
   ]
