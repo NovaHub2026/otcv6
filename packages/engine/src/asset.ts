@@ -78,10 +78,9 @@ export const TARGET_TIE_RATE = 0.01;
  * unchanged between entry and expiry.
  *
  * Those two are close but not equal, and Cycle Audit 2 measured the gap. On the
- * real published lattice, PH-4.2's own sampling scheme gives 0.47% (eurusd),
- * 0.71% (gbpjpy), 0.59% (btcusd), 0.45% (spx) and 0.50% (xauusd) — roughly half
- * the 1% the continuous proxy reports, and about 5.5 standard errors away.
- * Tick-anchored entries land lower still, near 0.3%.
+ * real published lattice the realised rate is roughly half the 1% the continuous
+ * proxy reports — about 5.5 standard errors away. Tick-anchored entries land
+ * lower still, near 0.3%.
  *
  * So `TARGET_TIE_RATE` is a calibration knob whose realised lattice value is
  * about half its nominal one. The consequence is economically nil under
@@ -89,13 +88,50 @@ export const TARGET_TIE_RATE = 0.01;
  * one — fewer ties than intended, not more. It is recorded because the earlier
  * claim that "exactly 1% of shortest-horizon contracts settle at the money" was
  * simply not true of the series that settles.
+ *
+ * ## Why these numbers are not Cycle Audit 2's
+ *
+ * They were, until PH-10. The audit measured 0.47% / 0.71% / 0.59% / 0.45% /
+ * 0.50% on the pre-rhythm catalogue, and re-authoring the cascade's time
+ * structure changed the 30-second return distribution and therefore these rates.
+ * **Nothing failed.** This constant was exported, documented as measured
+ * evidence, and read by no code and no test, so a change to the process it
+ * describes could not invalidate it out loud.
+ *
+ * `latticeTies.stat.test.ts` now re-derives every value here from stream
+ * families the measurement never used. That is the difference between a recorded
+ * measurement and a comment.
+ *
+ * ## Each figure is a mean over replicates, and it has to be
+ *
+ * The first attempt measured one long run per asset and quoted a binomial
+ * standard error. Re-measuring on a second seed moved three of the five by three
+ * to four times that error — eurusd 0.58% to 0.42%, btcusd 0.48% to 0.32%.
+ *
+ * The binomial was wrong for the reason it is always wrong here, and this is now
+ * the third time the project has met it: 20,000 consecutive 30-second horizons
+ * are **one realisation**, not 20,000 independent draws. Volatility clusters, so
+ * whether a horizon ties is strongly autocorrelated with its neighbours. Cycle
+ * Audit 2 found the same error behind INV-007's p-value, and B-002 is the same
+ * fact wearing its third face.
+ *
+ * The measured between-replicate standard deviation is 0.10-0.19pp — against a
+ * binomial 2se of 0.09pp for a single 20,000-horizon run, which is to say the
+ * naive figure understated the real uncertainty by roughly four times.
+ *
+ * Each value below is therefore the mean of **15 independent replicates** across
+ * three unrelated stream families, 8,000 horizons each. The limiting quantity is
+ * not horizons sampled but independent volatility epochs simulated: one
+ * replicate spans 67 hours, and the slowest cascade component turns over in 36
+ * to 44, so a replicate contains only a couple of independent volatility levels.
+ * Sampling more horizons inside one run buys almost nothing.
  */
 export const MEASURED_LATTICE_TIE_RATES = {
-  eurusd: 0.0047,
-  gbpjpy: 0.0071,
-  btcusd: 0.0059,
-  spx: 0.0045,
-  xauusd: 0.005,
+  eurusd: 0.00534,
+  gbpjpy: 0.00419,
+  btcusd: 0.00487,
+  spx: 0.00477,
+  xauusd: 0.00478,
 } as const;
 
 /** Horizon the quantum is calibrated against: the shortest contract. */
@@ -241,19 +277,11 @@ function* calibrateAssetCore(
   }
 
   const config = personalityConfig(definition.traits);
-  const gateInstrument: InstrumentSpec = {
-    id: definition.id,
-    family: definition.family,
-    // A provisional lattice: the gate is a property of the volatility layers and
-    // does not read the instrument, but the config type carries one.
-    logQuantum: 1e-6,
-    displayPrecision: 5,
-    referencePrice: definition.referencePrice,
-  };
-  const predicted = assertPersonalitySafe(
-    { ...config, instrument: gateInstrument },
-    derive('structure-gate'),
-  );
+  // The gate is a property of the volatility layers and reads no instrument.
+  // PH-4.2 had to invent a provisional lattice here purely to satisfy the config
+  // type; PH-10.1 widened the gate to the instrument-free half, so the fiction
+  // is gone rather than documented.
+  const predicted = assertPersonalitySafe(config, derive('structure-gate'));
 
   const replicates = options.replicates ?? CALIBRATION_REPLICATES;
   if (!Number.isInteger(replicates) || replicates < 1) {

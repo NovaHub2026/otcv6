@@ -49,7 +49,7 @@ exact martingale, and is worth **2.9 percentage points** of directional edge.
       │           self-exciting, |x|-driven, adaptive reference
       ▼
    magnitude      CascadeMagnitudeModel     base * cascade * |z|
-      │           Markov-switching multifractal, 10 components, hours to seconds
+      │           Markov-switching multifractal, 4-18 components, per asset
       ├── ×       VolatilityRegimeModulator  compressed / normal / elevated / stressed
       │           continuous-time semi-Markov, Weibull sojourns, shape < 1
       ├── ×       StructurePhaseModulator    coil / expansion / neutral / exhaustion
@@ -65,6 +65,68 @@ exact martingale, and is worth **2.9 percentage points** of directional edge.
 Layers compose as multipliers so each can be measured on its own: turning one off
 is a configuration change, which is what makes a realism movement attributable to
 the mechanism that caused it.
+
+## Personality: what makes one asset a different market
+
+A `MarketEngineConfig` is about forty numbers, and handing that surface to
+whoever adds an asset reintroduces both failures PH-3 paid for once — an unstable
+Hawkes branching ratio that nothing made visible, and a cascade widening that
+compounded to an excess kurtosis of 1366 against a ceiling of 200. So an asset is
+authored as a **personality**: a small trait vector whose global consequences can
+be checked analytically before anything is simulated.
+
+Twelve traits, in two groups.
+
+**Pace and scale** — `tempoMs`, `volatility`, `burstiness`, `clustering`,
+`regimeSpread`, `structureSpread`, `durationCoupling`. How fast the market ticks,
+how far it moves, how heavy its tails are.
+
+**Rhythm** — `cascadeDepth`, `cascadeSpanMs`, `cascadeSpacing`, `regimeTempo`,
+`arrivalMemoryMs`. The ladder of timescales on which volatility actually moves:
+how many there are, how far apart they sit, how long a regime is held, how long a
+burst keeps exciting the next arrival.
+
+The second group is PH-10's. Before it, the entire time structure of the market
+was one shared configuration, so five of the seven scale-free shape features any
+observer can measure were identical across the catalogue by construction. Assets
+differed in size, not in character.
+
+### Depth is an exponent, and that is the whole design constraint
+
+The cascade's contribution to kurtosis is one component's raised to the power of
+the component count. A market authored with a deeper cascade and unchanged
+`clustering` does not get slightly fatter tails; it gets exponentially fatter
+ones.
+
+Of the five rhythm traits, four are **kurtosis-neutral** and one is that
+exponent:
+
+| Trait             | Effect on the tail                                                   |
+| ----------------- | -------------------------------------------------------------------- |
+| `cascadeSpanMs`   | none — never read in the moment product                              |
+| `cascadeSpacing`  | none — never read in the moment product                              |
+| `arrivalMemoryMs` | none — timing is not a magnitude multiplier                          |
+| `regimeTempo`     | none — cancels exactly between a stationary weight and its own total |
+| `cascadeDepth`    | **exponent**                                                         |
+
+So rhythm can be varied freely, and depth is varied together with clustering:
+`solveClustering` finds the clustering that puts a given depth at a target tail
+weight, analytically, in microseconds. `authorPersonality` also divides out
+`cascadeRmsGain`, because a deeper cascade produces larger typical moves from the
+same base scale — without that, changing an asset's rhythm would silently change
+its amplitude.
+
+A joint bound rejects a ladder whose fastest component resamples faster than the
+market ticks: such a component pays full kurtosis and buys no autocorrelation at
+any observable lag. It is a floor on waste rather than on safety, and it has to
+be loud precisely because `solveClustering` would otherwise absorb the cost by
+thinning every component — including the slow ones carrying the long memory.
+
+### None of it can see a sign
+
+Every rhythm quantity is a function of elapsed time and its own randomness. That
+keeps ADR-0003's involution intact, and the mirror test is the check rather than
+the argument: exact, zero divergences, on a personality using all five.
 
 ## How structure emerges without a level
 

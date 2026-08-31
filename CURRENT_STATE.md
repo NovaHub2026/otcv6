@@ -15,20 +15,20 @@ Last synchronized: 2026-08-31
 | Field                            | Value                                                                   |
 | -------------------------------- | ----------------------------------------------------------------------- |
 | Active development cycle         | Cycle 4                                                                 |
-| Approved phases in current cycle | **0 of 3**                                                              |
+| Approved phases in current cycle | **1 of 3**                                                              |
 | Cycle Audit state                | None active — next due after three more phases                          |
 | Last Cycle Audit                 | [Cycle Audit 003](docs/audits/CYCLE-AUDIT-003.md) — APPROVED 2026-08-31 |
 
 ## Phase and subphase
 
-| Field                  | Value                                                        |
-| ---------------------- | ------------------------------------------------------------ |
-| Active phase           | None — PH-10 is next to be created                           |
-| Phase lifecycle        | n/a                                                          |
-| Active subphase        | None                                                         |
-| Subphase lifecycle     | n/a                                                          |
-| Last approved phase    | PH-9 — Continuous Integrity Assurance and Red-Team Hardening |
-| Last approved subphase | PH-9.3 — Assurance a counterparty can recompute              |
+| Field                  | Value                                                       |
+| ---------------------- | ----------------------------------------------------------- |
+| Active phase           | PH-11 — Detection Power Across Every Horizon                |
+| Phase lifecycle        | ACTIVE — context document next                              |
+| Active subphase        | None                                                        |
+| Subphase lifecycle     | n/a                                                         |
+| Last approved phase    | PH-10 — Per-Asset Market Rhythm                             |
+| Last approved subphase | PH-10.3 — Revalidation: every asset, every guarantee, again |
 
 ## Cycle 1 result
 
@@ -52,16 +52,19 @@ not blocked.
 
 ## Pending protected Human decisions
 
-None blocking. Two are recorded for later escalation:
+None blocking. One remains open:
 
-1. **At-the-money settlement policy** — refund or loss when a contract expires
-   exactly at the entry price. Needed at PH-6. Recommendation: **void and
-   refund**; ADR-0003 §3 shows this is the only remaining way the architecture
-   could produce a directional edge, since `P(up) = P(down)` holds exactly.
-2. **Fairness-proof mechanism** — whether the product publishes verifiable
-   settlement proofs, and in what form. Relevant at PH-6/PH-9. Recommendation:
-   Merkle roots of the tick journal with inclusion proofs, never disclosure of
-   generator keys.
+1. **Fairness-proof mechanism** — whether the product publishes verifiable
+   settlement proofs, and in what form. Due at PH-12. Recommendation: Merkle
+   roots of the tick journal with inclusion proofs, never disclosure of generator
+   keys — revealing a key hands an observer a latent-state snapshot with hours of
+   forward validity. PH-9.3 built the recomputable half; what is missing is
+   authenticity, and that needs a publishing key and a publication policy (B-009).
+
+**At-the-money settlement** was decided by the Human Owner and is recorded in
+[ADR-0007](docs/decisions/ADR-0007-at-the-money-settlement.md): a tie is refunded.
+The realised at-the-money rate on the published lattice is 0.42%-0.53% per asset,
+re-measured in PH-10.2 over 15 replicates.
 
 Infrastructure item requiring the Human Owner: `main` was pushed to
 `origin → https://github.com/NovaHub2026/otcv6` on 2026-08-31 (commit `6766b8a`,
@@ -82,15 +85,16 @@ without ever running `git remote -v`. See [Cycle Audit 001](docs/audits/CYCLE-AU
 
 ## Verification state
 
-Executed 2026-08-31 during Cycle Audit 2, on the post-fix tree.
+Executed 2026-08-31 at the PH-10 phase gate.
 
-| Check                            | Status                                   |
-| -------------------------------- | ---------------------------------------- |
-| `npm run format:check`           | PASSED (exit 0)                          |
-| `npm run lint`                   | PASSED (exit 0)                          |
-| `npm run build` (full typecheck) | PASSED (exit 0)                          |
-| `npm run test` (both suites)     | see the Cycle Audit 2 record             |
-| Hosted CI                        | BLOCKED — GitHub Actions account billing |
+| Check                            | Status                                     |
+| -------------------------------- | ------------------------------------------ |
+| `npm run gate`                   | **PASSED (exit 0)** — 1108 tests, 71 files |
+| `npm run format:check`           | PASSED (exit 0)                            |
+| `npm run lint`                   | PASSED (exit 0), and now warning-free      |
+| `npm run build` (full typecheck) | PASSED (exit 0)                            |
+| Unhandled errors                 | none                                       |
+| Hosted CI                        | BLOCKED — GitHub Actions account billing   |
 
 Cycle 1's numbers, and the coverage figure, are in
 [`docs/evidence/CYCLE-1-VERIFICATION.md`](docs/evidence/CYCLE-1-VERIFICATION.md).
@@ -103,12 +107,13 @@ Audit 2 re-executed them and found both re-checkable rows false.
   Independent samples at a horizon are fixed by simulated duration, so the
   15-minute horizon needs roughly a hundred times the history. Every verdict
   states the floor it achieved.
-- Assets differ mostly in pace and scale; scale-free _shape_ differentiation is
-  weak (30.0% against a 20% null). Tracked as B-004.
+- Assets are still easier to tell apart by size than by character. Scale-free
+  _shape_ differentiation is 40.5% against a 20% null (PH-10, up from 30.0%),
+  against a near-perfect figure on the full signature.
 - Per-asset battery floors (0.562pp) sit above the 0.2513pp product margin.
   PH-3's full-rigor run covers the canonical configuration at 0.217pp.
-- The venue is single-node and read-only; clients poll. Distribution, fan-out and
-  a tick feed are PH-7.
+- The venue is single-node. Distribution, fan-out and a resumable tick feed
+  arrived in PH-7; horizontal scale-out has never been designed or tested.
 - The catch-up bound is a default with defined behaviour, not a decided venue
   policy. It needs an owner before a real venue runs.
 
@@ -131,44 +136,39 @@ Audit 2 re-executed them and found both re-checkable rows false.
 
 ## EXACT NEXT LEGAL ACTION
 
-**Cycle Audit 001 is APPROVED and closed.** Fourteen findings were raised and all
-fourteen resolved within the audit; the record is
-[`docs/audits/CYCLE-AUDIT-001.md`](docs/audits/CYCLE-AUDIT-001.md). The cycle
-counter has been reset and Cycle 2 has begun.
+Cycle Audits [001](docs/audits/CYCLE-AUDIT-001.md),
+[002](docs/audits/CYCLE-AUDIT-002.md) and
+[003](docs/audits/CYCLE-AUDIT-003.md) are APPROVED and closed. Read Cycle Audit
+2's §2 before any session that runs subagents — a deliberately planted INV-001
+backdoor reached `main` through a concurrent `git add -A`. It never reached
+`origin`, and the rule it produced is standing: **never `git add -A` while
+subagents are running, and keep audit plants in an isolated clone.**
 
-**Cycle Audit 002 is APPROVED and closed.** 31 confirmed material findings, 40
-minor, 2 refuted, and 103 recorded claims re-executed and held. The record is
-[`docs/audits/CYCLE-AUDIT-002.md`](docs/audits/CYCLE-AUDIT-002.md). The cycle
-counter has been reset and Cycle 3 has begun.
+Read Cycle Audit 3's §1 too: it was conducted by the agent that wrote the code,
+found one finding against Cycle Audit 2's thirty-one, and says plainly that the
+difference is probably method rather than quality. **Cycle Audit 4 must use
+independent agents** (B-008).
 
-Read §2 of that record before anything else: an audit agent's deliberately
-planted INV-001 backdoor was swept into `main` by a concurrent `git add -A`. It
-never reached `origin`, and `main` was reset and re-committed clean — but it is
-the most serious process failure in the project's history, and the rule it
-produced is standing: **never `git add -A` while subagents are running, and keep
-audit plants in an isolated clone.**
+**PH-10 is APPROVED.** Assets now differ in rhythm, not only in pace and scale:
+scale-free shape differentiation rose from 30.0% to **40.5%** against a 20% null,
+permutation p = 0.005, with every asset's tail weight and realised amplitude
+pinned to its PH-4 value so the gain is attributable to time structure alone.
+B-004 is closed.
 
-**Cycle Audit 003 is APPROVED and closed.** One material finding, fixed. The
-record is [`docs/audits/CYCLE-AUDIT-003.md`](docs/audits/CYCLE-AUDIT-003.md), and
-its §1 should be read before its findings: the audit was conducted by the agent
-that wrote the code rather than by independent agents, found one finding against
-Cycle Audit 2's thirty-one, and says plainly that the difference is probably
-method rather than quality. **Cycle 4's audit should use independent agents.**
+**Create the PH-11 Phase Context Document** — detection power across every
+horizon the product sells — and continue. It closes B-002 and B-003.
 
-Cycle 3 delivered distribution with a stated consistency contract, a frontend
-that renders only what happened, and — in PH-9 — an assurance layer independent
-of the party making the claim: attack families withheld from all tuning, a
-guardrail suite audited by mutation, and a verdict a counterparty can recompute
-from the published record with no key.
+PH-11 should start from what PH-10 established rather than from B-002's original
+framing: **every statistic of this market is limited by simulated duration, not
+by sample count**, because the volatility process has memory measured in days.
+That single fact is behind Cycle Audit 2's binomial finding on INV-007, behind
+B-002's hundred-fold history requirement at the 15-minute horizon, and behind the
+lattice tie rates PH-10.2 had to re-measure over 15 replicates. Simulating longer
+is one answer; an estimator that respects the dependence is probably a better one.
 
-**Create the PH-10 Phase Context Document** and continue. The roadmap does not
-yet name Cycle 4's phases; deriving them is the first task, and
-`docs/BACKLOG.md` carries the open candidates — B-004 (personalise the cascade so
-assets differ in rhythm, not only pace and scale) is the largest.
-
-The standing Human item is unchanged and now sharper: **GitHub Actions has
-refused eleven consecutive runs on account billing.** PH-9's entire subject is
-assurance that does not rest on the operator's word, and every one of its results
-is currently attested only by the operator running them locally.
+The standing Human item is unchanged: **GitHub Actions has refused eleven
+consecutive runs on account billing.** Every quality claim in this repository is
+attested only by the operator running it locally, which is precisely what PH-9
+built an assurance layer to avoid.
 
 No Human authorization is required to proceed (`GOVERNANCE.md` §32).

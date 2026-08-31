@@ -126,6 +126,18 @@ uncovered unless coverage is run over both projects.
 - `*.stat.test.ts` co-located in `src/` → the slow `statistical` project.
 - Statistical tests must be **deterministically seeded**. A statistical assertion
   that can fail randomly is a defect, not a flake.
+- **A test body that drives the engine for more than a few seconds must yield to
+  the event loop.** Make the callback `async` and
+  `await new Promise((r) => setImmediate(r))` every few hundred thousand ticks —
+  the convention `calibrateAssetAsync`, `runBatteryAsync` and `observer.ts`
+  already follow.
+
+  The symptom when you forget is the most confusing failure this project
+  produces: **every test passes and the gate still exits 1**, with
+  `Error: [vitest-worker]: Timeout calling "onTaskUpdate"` buried above a green
+  summary. A long synchronous block starves the worker's own RPC channel. It cost
+  PH-4 a phase gate (B-005) and recurred in PH-10.3 — the cause is fixed each
+  time, but the hazard is standing and returns with every new long test.
 
 ---
 

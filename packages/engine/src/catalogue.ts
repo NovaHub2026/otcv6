@@ -2,7 +2,23 @@ import type { InstrumentSpec } from '@otc/core';
 import type { AssetDefinition, CalibrationEvidence } from './asset.js';
 import { CALIBRATION_HORIZON_MS, CALIBRATION_REPLICATES, CALIBRATION_SPAN_MS } from './asset.js';
 import type { MarketEngineConfig } from './factory.js';
-import { DEFAULT_TRAITS, personalityConfig } from './personality.js';
+import { personalityConfig } from './personality.js';
+
+/**
+ * The targets an asset's personality was authored to hit.
+ *
+ * Two traits cannot be chosen independently of an asset's rhythm — `clustering`,
+ * because cascade depth is an exponent on tail weight, and `volatility`, because
+ * depth also changes realised amplitude. Both are solved for by
+ * `authorPersonality`, so what is *chosen* is these two targets and what is
+ * *recorded* is the traits they produced. `catalogue.test.ts` re-runs the
+ * authoring and requires the recorded traits back.
+ */
+export interface AuthoringTargets {
+  readonly excessKurtosis: number;
+  /** RMS per-tick magnitude from base volatility and the cascade. */
+  readonly tickRms: number;
+}
 
 /**
  * An asset that has been through registration, with the evidence it produced.
@@ -17,10 +33,24 @@ export interface RegisteredAsset {
   readonly definition: AssetDefinition;
   readonly instrument: InstrumentSpec;
   readonly evidence: CalibrationEvidence;
+  readonly authored: AuthoringTargets;
+}
+
+/**
+ * Keyring label under which an asset's registration streams were derived.
+ *
+ * PH-10.1 §5.1: the analytic gate's structure term has no closed form and is
+ * estimated by simulation, so the personality solve is exact only with respect
+ * to the stream that drove it. Recording the label is what makes a registered
+ * asset's tail weight reproducible rather than merely plausible.
+ */
+export function registrationKeyLabel(id: string): string {
+  return `registration-${id}`;
 }
 
 function registered(
   definition: AssetDefinition,
+  authored: AuthoringTargets,
   logQuantum: number,
   displayPrecision: number,
   measured: {
@@ -32,6 +62,7 @@ function registered(
 ): RegisteredAsset {
   return {
     definition,
+    authored,
     instrument: {
       id: definition.id,
       family: definition.family,
@@ -53,18 +84,40 @@ function registered(
 /**
  * The asset catalogue.
  *
- * Five assets across four families, spanning a factor of seven in tick rate and
- * an order of magnitude in volatility. Each personality was checked by the
- * analytic gate before it was simulated — the first crypto draft was rejected at
- * a predicted excess kurtosis of 276.8 against the ceiling of 200, and retuned.
+ * Five assets across four families. PH-4 gave them distinct **pace and scale**;
+ * PH-10 gave them distinct **rhythm** — the ladder of timescales on which each
+ * one's volatility actually moves.
+ *
+ * ## What differs, and what deliberately does not
+ *
+ * Only the five rhythm traits were re-authored. `tempoMs`, `burstiness`,
+ * `regimeSpread`, `structureSpread` and `durationCoupling` are carried across
+ * from PH-4 unchanged, and each asset's tail weight and realised tick amplitude
+ * are pinned to their PH-4 values by {@link RegisteredAsset.authored}.
+ *
+ * That constraint is the point. Shape differentiation could be raised trivially
+ * by spreading the assets further apart in amplitude or tail weight, and the
+ * resulting number would mean nothing — separating BTC from an index by how far
+ * it moves is true by construction. Holding both fixed means any gain came from
+ * time structure alone.
+ *
+ * ## The ladders
+ *
+ * | Asset  | Depth | Slowest | Fastest | Character                                |
+ * | ------ | ----- | ------- | ------- | ---------------------------------------- |
+ * | eurusd | 13    | 36 h    | 5.1 s   | Deep and wide; holds a regime a long time |
+ * | gbpjpy | 7     | 8 h     | 13.2 s  | Few, widely separated rhythms             |
+ * | btcusd | 16    | 30 h    | 2.3 s   | Most timescales; restless regimes         |
+ * | spx    | 8     | 44 h    | 30.2 s  | Longest memory, slowest turnover          |
+ * | xauusd | 11    | 4 h     | 6.8 s   | Memory that stops inside a session        |
  *
  * Every quantum below was derived, never chosen: it is the 1% quantile of that
- * asset's own 30-second *continuous* return distribution. The realised rate on the
- * published lattice is about half that — see `MEASURED_LATTICE_TIE_RATES` — because
- * a tie is an integer-price event and the calibration measures a continuous proxy
- * for it. Median moves land at 68–85 lattice steps for
- * all five without that being targeted, because the lattice scales with the
- * asset instead of being imposed on it.
+ * asset's own 30-second *continuous* return distribution. The realised rate on
+ * the published lattice is about half that — see `MEASURED_LATTICE_TIE_RATES` —
+ * because a tie is an integer-price event and the calibration measures a
+ * continuous proxy for it. Median moves land at 72-85 lattice steps for all five
+ * without that being targeted, because the lattice scales with the asset instead
+ * of being imposed on it.
  */
 export const ASSET_CATALOGUE: readonly RegisteredAsset[] = [
   registered(
@@ -73,15 +126,29 @@ export const ASSET_CATALOGUE: readonly RegisteredAsset[] = [
       family: 'forex',
       displayName: 'EUR/USD',
       referencePrice: 1.085,
-      traits: { ...DEFAULT_TRAITS, tempoMs: 3_000, volatility: 1.1e-5 },
+      traits: {
+        tempoMs: 3_000,
+        volatility: 0.000011244199109350982,
+        clustering: 0.18311113955405817,
+        burstiness: 0.6,
+        regimeSpread: 1,
+        structureSpread: 1,
+        durationCoupling: 0.25,
+        cascadeDepth: 13,
+        cascadeSpanMs: 36 * 3_600_000,
+        cascadeSpacing: 2.33,
+        regimeTempo: 1.6,
+        arrivalMemoryMs: 240_000,
+      },
     },
-    2.3240308630908917e-7,
+    { excessKurtosis: 60, tickRms: 0.000013932458128335953 },
+    2.7511622644263434e-7,
     7,
     {
-      predictedExcessKurtosis: 63.518987927858404,
-      tieRate: 0.009837962962962963,
-      medianSteps: 83.40148019893093,
-      meanIntervalMs: 1295.1769150704727,
+      predictedExcessKurtosis: 59.999999999999815,
+      tieRate: 0.009409722222222222,
+      medianSteps: 74.30361502697028,
+      meanIntervalMs: 1379.8191861941425,
     },
   ),
   registered(
@@ -91,21 +158,28 @@ export const ASSET_CATALOGUE: readonly RegisteredAsset[] = [
       displayName: 'GBP/JPY',
       referencePrice: 193.4,
       traits: {
-        ...DEFAULT_TRAITS,
         tempoMs: 1_850,
-        volatility: 3.2e-5,
-        clustering: 0.24,
+        volatility: 0.000031529732929109286,
+        clustering: 0.2964497423273288,
         burstiness: 0.62,
         regimeSpread: 1.15,
+        structureSpread: 1,
+        durationCoupling: 0.25,
+        cascadeDepth: 7,
+        cascadeSpanMs: 8 * 3_600_000,
+        cascadeSpacing: 3.6,
+        regimeTempo: 0.55,
+        arrivalMemoryMs: 40_000,
       },
     },
-    9.557290322065315e-7,
+    { excessKurtosis: 105, tickRms: 0.00004234061764642874 },
+    7.240803723603667e-7,
     4,
     {
-      predictedExcessKurtosis: 108.62098096647418,
-      tieRate: 0.01019675925925926,
-      medianSteps: 74.15800084927021,
-      meanIntervalMs: 760.3982703286258,
+      predictedExcessKurtosis: 105.00000000000031,
+      tieRate: 0.010011574074074074,
+      medianSteps: 85.27008781618775,
+      meanIntervalMs: 714.6766515523951,
     },
   ),
   registered(
@@ -115,22 +189,28 @@ export const ASSET_CATALOGUE: readonly RegisteredAsset[] = [
       displayName: 'BTC/USD',
       referencePrice: 68_000,
       traits: {
-        ...DEFAULT_TRAITS,
         tempoMs: 1_100,
-        volatility: 6e-5,
-        clustering: 0.24,
+        volatility: 0.000060860817520069954,
+        clustering: 0.18378985931871766,
         burstiness: 0.78,
         regimeSpread: 1.35,
         structureSpread: 1.0,
+        durationCoupling: 0.25,
+        cascadeDepth: 16,
+        cascadeSpanMs: 30 * 3_600_000,
+        cascadeSpacing: 2.05,
+        regimeTempo: 0.35,
+        arrivalMemoryMs: 18_000,
       },
     },
-    2.0482446300221224e-6,
+    { excessKurtosis: 150, tickRms: 0.00007938865808705389 },
+    2.089296272947405e-6,
     1,
     {
-      predictedExcessKurtosis: 151.62450294348804,
-      tieRate: 0.009780092592592592,
-      medianSteps: 85.52141866646039,
-      meanIntervalMs: 333.7525412899665,
+      predictedExcessKurtosis: 150.0000000000002,
+      tieRate: 0.010127314814814815,
+      medianSteps: 83.64236012003401,
+      meanIntervalMs: 332.9569156063406,
     },
   ),
   registered(
@@ -140,22 +220,28 @@ export const ASSET_CATALOGUE: readonly RegisteredAsset[] = [
       displayName: 'S&P 500',
       referencePrice: 5_400,
       traits: {
-        ...DEFAULT_TRAITS,
         tempoMs: 5_450,
-        volatility: 7e-6,
-        clustering: 0.18,
+        volatility: 0.000007053228844088205,
+        clustering: 0.19670722555227743,
         burstiness: 0.45,
         regimeSpread: 0.85,
         structureSpread: 1.35,
+        durationCoupling: 0.25,
+        cascadeDepth: 8,
+        cascadeSpanMs: 44 * 3_600_000,
+        cascadeSpacing: 3.4,
+        regimeTempo: 2.4,
+        arrivalMemoryMs: 420_000,
       },
     },
-    1.3923488725864352e-7,
+    { excessKurtosis: 42, tickRms: 0.00000820990287547472 },
+    1.0837880316631743e-7,
     4,
     {
-      predictedExcessKurtosis: 44.40447547836519,
-      tieRate: 0.010416666666666666,
-      medianSteps: 68.61576660010508,
-      meanIntervalMs: 3187.2196427166127,
+      predictedExcessKurtosis: 42.00000000000003,
+      tieRate: 0.009930555555555555,
+      medianSteps: 71.83103728613499,
+      meanIntervalMs: 3352.3021210553543,
     },
   ),
   registered(
@@ -165,22 +251,28 @@ export const ASSET_CATALOGUE: readonly RegisteredAsset[] = [
       displayName: 'Gold',
       referencePrice: 2_380,
       traits: {
-        ...DEFAULT_TRAITS,
         tempoMs: 4_300,
-        volatility: 2.2e-5,
-        clustering: 0.23,
+        volatility: 0.00002221311689504042,
+        clustering: 0.21480719239432494,
         burstiness: 0.55,
         regimeSpread: 1.25,
         structureSpread: 0.9,
+        durationCoupling: 0.25,
+        cascadeDepth: 11,
+        cascadeSpanMs: 4 * 3_600_000,
+        cascadeSpacing: 2.15,
+        regimeTempo: 0.9,
+        arrivalMemoryMs: 110_000,
       },
     },
-    3.876151430451391e-7,
+    { excessKurtosis: 98, tickRms: 0.00002846808863025055 },
+    4.122689022736936e-7,
     4,
     {
-      predictedExcessKurtosis: 100.48688844255925,
-      tieRate: 0.01,
-      medianSteps: 81.0720992767206,
-      meanIntervalMs: 1994.0869781965976,
+      predictedExcessKurtosis: 97.99999999999989,
+      tieRate: 0.009907407407407408,
+      medianSteps: 79.75170190938478,
+      meanIntervalMs: 1969.0617253751434,
     },
   ),
 ];
