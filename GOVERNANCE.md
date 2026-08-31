@@ -16,6 +16,7 @@ changed and why.
 | Date       | Amendment                                                                                             | Recorded in                                                              |
 | ---------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | 2026-08-31 | **Full delegation.** The three-phase Human gate is removed, Cycle Audits run automatically, decision authority over all code and product matters is delegated to the Development Agent, and hosted CI is removed from the verification model. | [ADR-0008](docs/decisions/ADR-0008-full-delegation.md) |
+| 2026-08-31 | **Hosted CI reinstated.** The Human Owner made the repository public, restoring free GitHub Actions. §40 is reversed: CI is a required corroborating layer. Its first executing run found that the quality gate had never passed on a clean checkout. | [ADR-0009](docs/decisions/ADR-0009-hosted-ci-reinstated.md) |
 
 ---
 
@@ -1423,26 +1424,54 @@ Detailed implementation history may remain available through commits and Pull Re
 
 # 40. Hosted CI
 
-**Amended 2026-08-31 (ADR-0008). Hosted CI is out of the verification model.**
+**Amended 2026-08-31 twice. Hosted CI is back, and it is required.**
 
-The repository is private and the account has no paid GitHub Actions allowance,
-so hosted CI cannot run. This is a deliberate accepted position, not a blocker,
-and it must not be reported as one.
+ADR-0008 removed hosted CI because a private repository with no paid Actions
+allowance could not run it. The Human Owner then made the repository **public**,
+which restores free Actions on standard runners, and the position is reversed:
+hosted CI is part of the verification model again.
+
+It is a **corroborating** layer, not a replacement. `npm run gate` remains what a
+claim of "verified" means, because it is the thing an agent can actually run
+before recording an approval. CI is what catches the claims that are true only
+inside the session that made them.
+
+## 40.0 What it caught in its first minute
+
+The first CI run that ever executed failed, and it was right to. `npm run gate`
+ordered `format → lint → build → test`, and the type-aware ESLint rules resolve
+workspace types through each package's **emitted declarations**. On a clean
+checkout there are none, so `lint` reported 46 unresolved-type errors. Locally it
+had always passed, because a previous build's `dist/` is always lying around.
+
+**Every `GATE_EXIT=0` recorded in this project through PH-10 was therefore
+conditional on leftover build artefacts, and nobody could have known from inside
+the session.** The same defect failed the statistical job, whose `apps/api`
+suites spawn the built service and reported `service exited (1)`.
+
+The gate is now ordered `format → build → lint → test`, and CI builds before both
+jobs. That is the fix. The lesson is the reason this section exists: a
+verification claim that has only ever been tested in the environment that
+produced it is not a verification claim, and no amount of local discipline
+substitutes for one clean checkout run by someone else.
 
 **The local quality gate is the verification authority.** `npm run gate` — format,
 lint, build, and both test suites — is what a claim of "verified" means in this
 project, and it is the only thing that may be cited as such.
 
-## 40.1 What this costs, stated plainly
+## 40.1 The standing requirements
 
-Every quality claim in this repository is attested by the operator running it on
-their own machine. There is no independent execution. That is precisely the
-weakness PH-9 built an assurance layer to address, and the project has already
-paid for it once: a failing `npm run lint` survived two subphase approvals in
-PH-4 because nothing outside the session ever ran it.
+- **A green local gate is not enough for a phase approval if CI is red.** CI
+  failing on something the local gate passed is a finding about the gate, not a
+  nuisance.
+- **Never report CI as passing if it did not run.** A refused job is not a pass,
+  and the eleven runs refused for billing before 2026-08-31 were not evidence of
+  anything.
+- **A CI failure is valid evidence and must be addressed**, not waived.
 
-The mitigations are structural rather than procedural, and they are the reason
-this is an acceptable position:
+The structural properties that made local-only verification survivable remain
+worth keeping, and they are what make CI's result reproducible rather than
+merely authoritative:
 
 - **The gate is deterministic and reproducible.** Every statistical test is
   seeded; anyone with the repository can re-run it and get the same numbers.
@@ -1453,9 +1482,9 @@ this is an acceptable position:
   consistency, dependency direction, economic blindness and test cost are checked
   by tests, so drift fails the build rather than waiting for a reviewer.
 
-If a paid allowance or a public repository later makes Actions available, hosted
-CI returns as a **corroborating** layer. It never becomes a substitute for the
-local gate, and CI must never be reported as passing if it did not run.
+Every statistical test is seeded, so CI's numbers and a local run's numbers are
+the same numbers. That is what makes an independent check meaningful here rather
+than merely different.
 
 ---
 

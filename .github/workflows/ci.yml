@@ -23,10 +23,16 @@ jobs:
       - run: npm ci
       - name: Format
         run: npm run format:check
-      - name: Lint
-        run: npm run lint
+      # Build precedes lint deliberately. The type-aware ESLint rules resolve
+      # workspace types through each package's emitted declarations, so on a
+      # clean checkout `lint` reports every cross-package type as unresolved.
+      # This ordering defect was invisible locally for four cycles because a
+      # previous build's `dist/` is always lying around; the first CI run that
+      # actually executed found it in under a minute.
       - name: Build and typecheck
         run: npm run build
+      - name: Lint
+        run: npm run lint
       - name: Unit tests
         run: npx vitest run --project unit
 
@@ -43,6 +49,10 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      # The apps/api suites spawn the built service as a child process, so this
+      # job needs the build too. Without it they fail as `service exited (1)`.
+      - name: Build
+        run: npm run build
       - name: Statistical tests
         # The phase-acceptance run holds ~24M ticks in typed arrays plus the
         # precomputed feature frame, which needs more heap than the default.

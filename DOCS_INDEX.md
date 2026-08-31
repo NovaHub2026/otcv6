@@ -73,4 +73,5 @@ is undocumented.
 | [ADR-0006](docs/decisions/ADR-0006-layered-market-model.md)                  | A layered sign-blind market model                                                                          | APPROVED |
 | [`ADR-0007`](docs/decisions/ADR-0007-at-the-money-settlement.md)             | A contract expiring exactly at the entry price is refunded — the house edge is the payout and nothing else |
 | [ADR-0008](docs/decisions/ADR-0008-full-delegation.md)                       | Full delegation: automatic Cycle Audits, autonomous code and product decisions, no hosted CI               | APPROVED |
+| [ADR-0009](docs/decisions/ADR-0009-hosted-ci-reinstated.md)                  | Hosted CI reinstated after the repository was made public; the gate had never passed on a clean checkout   | APPROVED |
 | [DECISION-LOG](docs/decisions/DECISION-LOG.md)                               | Running record of autonomous decisions that do not warrant a full ADR                                      | LIVING   |

@@ -31,6 +31,48 @@ to it rather than repeating it.
 
 ---
 
+## 2026-08-31 — Lint keeps depending on the build, rather than resolving types itself
+
+**Decided:** fix the clean-checkout lint failure by **ordering** — build before
+lint — rather than by making ESLint resolve workspace types from sources through
+path mapping, the way `vitest.config.ts` already does with aliases.
+
+**Why:** path mapping would give the project two type resolvers that can
+disagree — `tsc -b` through emitted declarations, ESLint through sources. Two
+resolvers that can disagree is a worse failure mode than an ordering constraint,
+because the disagreement is silent and the constraint is not.
+
+**Cost:** `npm run gate` now always builds before linting, so a lint-only check
+is no longer the cheapest thing you can run. That is a real ergonomic loss.
+
+**Revisit when:** the build becomes slow enough that linting first matters, or
+the two-resolver risk is eliminated some other way.
+
+See [ADR-0009](ADR-0009-hosted-ci-reinstated.md).
+
+---
+
+## 2026-08-31 — The repository is public, and that was checked before it mattered
+
+**Decided:** treat publication as safe, on evidence rather than on the assumption
+that a synthetic engine has nothing to hide.
+
+**Checked:** no committed key material, no tracked `.env`, no private keys in
+history; `OTC_MASTER_SECRET` comes from the environment and the service refuses
+to boot without it rather than inventing a default.
+
+**Why it holds:** the security model never depended on the code being secret.
+ADR-0002 puts secrecy in the key; ADR-0003 goes further and gives
+`P(up) = P(down)` under _every public conditioning_, which includes an adversary
+who has read the whole engine. Publishing gives an attacker nothing the theorem
+had not already granted them.
+
+**Revisit when:** anything key-derived, operator-specific, or customer-facing
+enters the repository. The check is cheap and should be repeated then, not
+assumed to still hold.
+
+---
+
 ## 2026-08-31 — Governance itself stays with the Human Owner
 
 **Decided:** the Development Agent will not amend `GOVERNANCE.md` on its own
