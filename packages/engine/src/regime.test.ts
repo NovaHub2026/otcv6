@@ -115,11 +115,13 @@ describe('the regime chain', () => {
 
   it('returns the configured multiplier for the current regime', () => {
     const modulator = new VolatilityRegimeModulator(DEFAULT_REGIMES, derive('multiplier'));
+    let mismatches = 0;
     for (let i = 1; i <= 50_000; i += 1) {
       const before = modulator.regime;
       const multiplier = modulator.advance(context(1_000, i));
-      expect(multiplier).toBe(DEFAULT_REGIMES[before].multiplier);
+      if (multiplier !== DEFAULT_REGIMES[before].multiplier) mismatches += 1;
     }
+    expect(mismatches, 'multipliers disagreeing with the current regime').toBe(0);
   });
 
   it('handles an interval longer than a sojourn', () => {

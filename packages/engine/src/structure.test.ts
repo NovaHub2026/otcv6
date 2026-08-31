@@ -57,11 +57,13 @@ describe('the phase chain', () => {
 
   it('returns the configured multiplier for the current phase', () => {
     const modulator = new StructurePhaseModulator(DEFAULT_STRUCTURE, derive('multiplier'));
+    let mismatches = 0;
     for (let i = 1; i <= 50_000; i += 1) {
       const before = modulator.phase;
       const multiplier = modulator.advance(context(1_000, i, 10));
-      expect(multiplier).toBe(DEFAULT_STRUCTURE[before].multiplier);
+      if (multiplier !== DEFAULT_STRUCTURE[before].multiplier) mismatches += 1;
     }
+    expect(mismatches, 'multipliers disagreeing with the current phase').toBe(0);
   });
 
   it('accumulates path length from magnitudes, never from signed moves', () => {

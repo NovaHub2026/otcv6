@@ -83,7 +83,7 @@ packages/fixtures          Planted-edge markets with known defects (calibrates t
 packages/lab               Adversarial predictability battery, realism metrics, economics
 packages/runtime           Framework-free market runtime: hosted markets, scheduling, persistence
 tools/sim                  Offline simulation runner and statistical evidence generator
-apps/api                   NestJS runtime service (created in the phase that needs it)
+apps/api                   NestJS runtime service hosting the catalogue continuously
 apps/web                   Next.js frontend (created in the phase that needs it)
 ```
 

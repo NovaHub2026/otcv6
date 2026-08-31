@@ -143,7 +143,7 @@ the same data.
 | Phase | Title                                                                   | State        |
 | ----- | ----------------------------------------------------------------------- | ------------ |
 | PH-4  | Asset personality system and multi-asset instantiation                  | **APPROVED** |
-| PH-5  | Continuous runtime, sealed state persistence and restart continuity     | **ACTIVE**   |
+| PH-5  | Continuous runtime, sealed state persistence and restart continuity     | **APPROVED** |
 | PH-6  | Trading boundary: contracts, settlement and verified economic blindness | Not started  |
 
 PH-4 discharges INV-007, the one invariant `docs/architecture/INVARIANTS.md`
@@ -178,6 +178,8 @@ resetting or redrawing a keystream position it has already spent.
 | Subphase | Title                                                    | State    |
 | -------- | -------------------------------------------------------- | -------- |
 | PH-5.1   | Runtime core: hosted markets, scheduling and supervision | APPROVED |
+| PH-5.2   | Sealed state persistence and the recovery policy         | APPROVED |
+| PH-5.3   | The NestJS service and a real process-boundary restart   | APPROVED |
 
 Later subphases are provisional: sealed persistence and the recovery policy, then
 the NestJS service and a real process-boundary restart.

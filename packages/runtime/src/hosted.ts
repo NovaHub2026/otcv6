@@ -1,4 +1,4 @@
-import { epochMillis, type Clock, type EpochMillis, type Tick } from '@otc/core';
+import { epochMillis, type Clock, type EpochMillis, type LogPrice, type Tick } from '@otc/core';
 import type { MarketEngine } from '@otc/engine';
 
 /**
@@ -35,6 +35,18 @@ export interface HostedMarketOptions {
    * behaviour, and it is deliberately generous.
    */
   readonly maxCatchUpMs?: number;
+  /**
+   * A tick drawn before a restart but never published.
+   *
+   * Restoring an engine snapshot alone would skip it: the snapshot is taken
+   * after every draw, so the restored engine's next tick is the one *after* the
+   * pending one. Resuming without this loses a tick silently, which is the
+   * quietest way to break replay.
+   */
+  readonly resumePending?: Tick | null;
+  /** The last tick published before a restart, if any. */
+  readonly resumeLastPublished?:
+    Tick | { sequence: number; instant: EpochMillis; price: LogPrice } | null;
 }
 
 /** Default catch-up bound: one hour. */
@@ -69,20 +81,67 @@ export class HostedMarket {
    */
   #pending: Tick | null = null;
   #lastPublished: Tick | null = null;
+  #lastPublishedSequence: number | null = null;
+  #lastPublishedInstant: EpochMillis | null = null;
+  #lastPublishedPrice: LogPrice | null = null;
   #exhausted = false;
 
   constructor(options: HostedMarketOptions) {
     this.#engine = options.engine;
     this.#clock = options.clock;
+    this.#pending = options.resumePending ?? null;
+    const resumed = options.resumeLastPublished ?? null;
+    if (resumed !== null) {
+      this.#lastPublishedSequence = resumed.sequence;
+      this.#lastPublishedInstant = resumed.instant;
+      this.#lastPublishedPrice = resumed.price;
+    }
     this.#maxCatchUpMs = options.maxCatchUpMs ?? DEFAULT_MAX_CATCH_UP_MS;
     if (!(this.#maxCatchUpMs > 0)) {
       throw new RangeError(`maxCatchUpMs must be positive, received ${this.#maxCatchUpMs}.`);
     }
   }
 
-  /** The last tick published, or `null` before the first. */
+  /** The last tick published in this process, or `null` before the first. */
   get lastPublished(): Tick | null {
     return this.#lastPublished;
+  }
+
+  /**
+   * Sequence of the last tick published, including one carried across a restart.
+   *
+   * Distinct from `lastPublished`, which is only the ticks this process emitted.
+   * A resumed market has published history it never saw.
+   */
+  get lastPublishedSequence(): number | null {
+    return this.#lastPublishedSequence;
+  }
+
+  /**
+   * The last published tick, including one inherited across a restart.
+   *
+   * A resumed market has published history this process never saw. Reporting
+   * `null` until it emits its own first tick would show a client an asset with
+   * no price for up to several seconds after every deploy, which is wrong: the
+   * price is known, it simply was not produced here.
+   */
+  get lastPublishedState(): { sequence: number; instant: EpochMillis; price: LogPrice } | null {
+    if (this.#lastPublishedSequence === null) return null;
+    return {
+      sequence: this.#lastPublishedSequence,
+      instant: this.#lastPublishedInstant!,
+      price: this.#lastPublishedPrice!,
+    };
+  }
+
+  /** The tick drawn but not yet due, if any. */
+  get pending(): Tick | null {
+    return this.#pending;
+  }
+
+  /** Latent engine state, for persistence. Carries cursors, never key material. */
+  snapshotEngine(): ReturnType<MarketEngine['snapshot']> {
+    return this.#engine.snapshot();
   }
 
   /** Whether the engine has reached its tick limit. */
@@ -108,8 +167,9 @@ export class HostedMarket {
   /** Publish every tick due at or before `now`. */
   advanceTo(now: EpochMillis): Tick[] {
     const published: Tick[] = [];
-    if (this.#lastPublished !== null) {
-      const behind = now - this.#lastPublished.instant;
+    const lastInstant = this.#lastPublished?.instant ?? this.#lastPublishedInstant;
+    if (lastInstant !== null && lastInstant !== undefined) {
+      const behind = now - lastInstant;
       if (behind > this.#maxCatchUpMs) {
         throw new CatchUpTooLargeError(behind, this.#maxCatchUpMs);
       }
@@ -127,6 +187,9 @@ export class HostedMarket {
       }
       if (this.#pending.instant > now) break;
       this.#lastPublished = this.#pending;
+      this.#lastPublishedSequence = this.#pending.sequence;
+      this.#lastPublishedInstant = this.#pending.instant;
+      this.#lastPublishedPrice = this.#pending.price;
       published.push(this.#pending);
       this.#pending = null;
     }

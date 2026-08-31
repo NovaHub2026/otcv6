@@ -131,25 +131,26 @@ counter has been reset and Cycle 2 has begun.
 Context Document is
 [`docs/phases/PH-4-asset-personalities.md`](docs/phases/PH-4-asset-personalities.md).
 
-**PH-5.1 is APPROVED.** `@otc/runtime` exists: a hosted market advances because
-the clock moved, not because it was polled, and a venue supervises the whole
-catalogue against one clock. A new `dependencies.test.ts` guardrail enforces that
-dependencies point only downward, so the engine cannot acquire a framework or an
-undeclared internal import.
+**PH-5 is APPROVED.** The market runs: `apps/api` hosts all five assets
+continuously, checkpoints them, and survives SIGKILL — every market resumes with
+a sequence that never goes backwards.
 
-Create the **PH-5.2 Subphase Technical Document** — sealed state persistence. The
-substance is the recovery policy in the phase document §2.2, which has two
-branches that pull in opposite directions:
+**Create PH-6 — the trading boundary: contracts, settlement and verified
+economic blindness.** It is the last phase of Cycle 2, so on its approval the
+Three-Phase Human Gate applies: STOP and request `EJECUTA` for the second Cycle
+Audit.
 
-- **snapshot intact** → restore and _replay_ the gap, redrawing the same
-  keystream positions deliberately, because that reproduces the ticks the market
-  would have had (INV-009);
-- **snapshot lost** → fall back to the leased cursor high-water mark and accept a
-  visible seam, because publishing from an unknown latent state is worse.
+PH-6 is the phase the whole architecture was built to make safe, and it carries
+the one genuinely Protected Human Decision already on record:
 
-The dangerous case is replaying from a **stale** snapshot after newer ticks were
-already published: that republishes different prices for instants observers have
-already seen, which breaks INV-002 outright. Persisted state must also carry no
-key material (INV-010) — PH-1 found exactly that defect in memory.
+- **At-the-money settlement policy** — whether a contract expiring exactly at the
+  entry price is refunded or lost. It has material business consequence
+  (`GOVERNANCE.md` §5), and PH-4.2 coupled the lattice calibration to it: the
+  quantum is set so 1% of 30-second contracts land at the money.
+
+The phase must also close INV-001 empirically rather than structurally: today the
+guardrail scan proves the price path never _names_ an economic quantity. PH-6
+must demonstrate that economic state cannot influence price generation even when
+both exist in the same process.
 
 No Human authorization is required to proceed (`GOVERNANCE.md` §32).
