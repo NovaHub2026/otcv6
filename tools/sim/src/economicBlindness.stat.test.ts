@@ -237,7 +237,7 @@ describe('settlement is blind too, on real market data', () => {
 
     // Cannot pass vacuously.
     expect(mirrored, 'no decided contracts were compared').toBeGreaterThan(500);
-    // eslint-disable-next-line no-console -- recorded evidence for the audit
+
     console.info(`settlement mirror: ${mirrored} decided pairs exchanged, ${ties} ties symmetric`);
   });
 });

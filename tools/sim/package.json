@@ -16,6 +16,7 @@
     "@otc/fixtures": "*",
     "@otc/lab": "*",
     "@otc/trading": "*",
-    "@otc/runtime": "*"
+    "@otc/runtime": "*",
+    "@otc/distribution": "*"
   }
 }

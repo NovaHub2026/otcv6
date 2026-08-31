@@ -14,6 +14,9 @@
       "path": "./packages/trading"
     },
     {
+      "path": "./packages/distribution"
+    },
+    {
       "path": "./packages/fixtures"
     },
     {
