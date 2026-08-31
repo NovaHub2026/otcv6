@@ -98,7 +98,7 @@ B-001), so history is local-only and hosted CI has never executed.
 | ADR-0006 | A layered sign-blind market model (APPROVED)                                 |
 | Backlog  | `docs/BACKLOG.md` B-001                                                      |
 | Roadmap  | `docs/phases/ROADMAP.md`                                                     |
-| Branch   | `feature/ph-3-generative-market-process`, merged to `main`                   |
+| Branch   | `main`; PH-2 and PH-3 were developed on `feature/ph-2-and-ph-3`, now merged  |
 
 ---
 
