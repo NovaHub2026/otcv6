@@ -1,3 +1,4 @@
+// Invariant evidence: INV-008 (continuous market state).
 import { describe, expect, it } from 'vitest';
 import {
   CursorLease,
@@ -221,5 +222,62 @@ describe('restart continuity', () => {
     const headMean = mean(magnitudes(afterTicks.slice(0, 10_000)));
     expect(headMean).toBeGreaterThan(tailMean * 0.4);
     expect(headMean).toBeLessThan(tailMean * 2.5);
+  });
+});
+
+describe('the composed model restores exactly', () => {
+  // The lease path above deliberately abandons latent state. This is the other
+  // path: a snapshot restored into a fresh process, which is what the hosted
+  // runtime will do on every deploy. It is the only test that drives
+  // ModulatedMagnitudeModel.restore — the composition the canonical engine
+  // actually runs. Restoring each component in isolation proves nothing about
+  // whether the composition threads state to the right member.
+  it('reproduces a continuation bit-for-bit after snapshot and restore', () => {
+    const reference = build();
+    drain(reference, 5_000);
+    const snapshot = reference.snapshot();
+    const expected = drain(reference, 1_000);
+
+    const restored = build();
+    restored.restore(snapshot);
+    expect(restored.sequence).toBe(snapshot.sequence);
+    expect(restored.price).toBe(snapshot.price);
+    expect(drain(restored, 1_000)).toEqual(expected);
+  });
+
+  it('is a test with teeth: without restore the continuation differs', () => {
+    // If the assertion above could pass on an engine that ignored the latent
+    // state, it would prove nothing. A fresh engine seeked to the same price
+    // and instant, but never restored, must diverge.
+    const reference = build();
+    drain(reference, 5_000);
+    const snapshot = reference.snapshot();
+    const expected = drain(reference, 1_000);
+
+    const naive = build({ start: { instant: snapshot.instant, price: snapshot.price } });
+    expect(drain(naive, 1_000)).not.toEqual(expected);
+  });
+
+  it('restores the volatility cascade, not just the price', () => {
+    // Latent volatility is the state most likely to be silently dropped: the
+    // price and cursors would still line up, and only the *scale* of the
+    // continuation would be wrong. Compare realised magnitude either side.
+    const reference = build();
+    drain(reference, 20_000);
+    const snapshot = reference.snapshot();
+    const expectedTicks = drain(reference, 2_000);
+
+    const restored = build();
+    restored.restore(snapshot);
+    const actualTicks = drain(restored, 2_000);
+
+    const meanAbsStep = (ticks: Tick[]): number => {
+      let total = 0;
+      for (let i = 1; i < ticks.length; i += 1) {
+        total += Math.abs(ticks[i]!.price - ticks[i - 1]!.price);
+      }
+      return total / (ticks.length - 1);
+    };
+    expect(meanAbsStep(actualTicks)).toBe(meanAbsStep(expectedTicks));
   });
 });

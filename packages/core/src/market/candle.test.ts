@@ -1,3 +1,4 @@
+// Invariant evidence: INV-003 (single underlying stream), INV-004 (timeframe observer independence).
 import { describe, expect, it } from 'vitest';
 import { epochMillis } from '../time/instant.js';
 import { allTimeframes, nests, timeframe } from '../time/timeframe.js';

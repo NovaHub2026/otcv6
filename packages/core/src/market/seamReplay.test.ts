@@ -1,3 +1,4 @@
+// Invariant evidence: INV-008 (continuous market state), INV-009 (reproducible settlement).
 import { describe, expect, it } from 'vitest';
 import { CursorLease } from '../entropy/lease.js';
 import { MasterKeyring } from '../entropy/keyring.js';

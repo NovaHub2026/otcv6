@@ -1,3 +1,4 @@
+// Invariant evidence: INV-010 (private generator state).
 import { inspect } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { ProductionStreamFromTestKeyringError } from './errors.js';

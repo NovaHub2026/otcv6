@@ -6,16 +6,16 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                       |
-| ------------------ | ------------------------------------------- |
-| Last clean session | 2026-08-31                                  |
-| Branch             | `main`                                      |
-| Remote             | none configured — history is local only     |
-| Active cycle       | Cycle 1, **3 of 3** phases approved         |
-| Active phase       | none — paused at the Human Gate             |
-| Active subphase    | none                                        |
-| Cycle Audit        | **PENDING HUMAN AUTHORIZATION (`EJECUTA`)** |
-| Blockers           | none                                        |
+| Field              | Value                                         |
+| ------------------ | --------------------------------------------- |
+| Last clean session | 2026-08-31                                    |
+| Branch             | `main`                                        |
+| Remote             | `origin` → NovaHub2026/otcv6 (private, empty) |
+| Active cycle       | Cycle 2, **0 of 3** phases approved           |
+| Active phase       | none — PH-4 is next to be created             |
+| Active subphase    | none                                          |
+| Cycle Audit        | 001 **APPROVED** — next due after PH-4/5/6    |
+| Blockers           | none                                          |
 
 ## Completed
 
@@ -31,23 +31,39 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 - **PH-3 APPROVED** — the generative market model: sign-blind magnitude and a
   fair coin, a multifractal volatility cascade, volatility regimes, structure
   phases, self-exciting arrivals, duration coupling, and the mirror test.
+- **Cycle Audit 001 APPROVED** — fourteen findings, all resolved within the
+  audit. Five were material: INV-005 had no enforcement at all, the composed
+  snapshot/restore path was never exercised, two of five packages were missing
+  from canonical documentation, no invariant→evidence map existed, and the Git
+  remote was misdescribed in twelve documents. Two guardrails were added so the
+  same class of defect fails the build rather than waiting for an audit.
 - ADRs 0001–0006 persisted.
 
 ## Incomplete
 
-Nothing is in progress. The next work item is the Cycle Audit, which requires
-Human authorization.
+Nothing is in progress. PH-4 has not been created yet.
 
 ## Last executed verification
 
-Full gate green — `format:check`, `lint`, `build`, `vitest run`. Phase acceptance
-run: 24M ticks, 327 simulated days, verdict clean at a 0.217pp detection floor,
-realism 15/15, mirror test zero divergences. Hosted CI has never executed: no
-remote is configured.
+Full gate green at the close of Cycle Audit 001 — `format:check`, `lint`,
+`build`, and `test:cov` across both projects: **713 tests, 44 files, 0 failed**,
+98.04% statement coverage. Phase acceptance run: 24M ticks, 327 simulated days,
+verdict clean at a 0.217pp detection floor, realism 15/15, mirror test zero
+divergences. Recorded in
+[`docs/evidence/CYCLE-1-VERIFICATION.md`](docs/evidence/CYCLE-1-VERIFICATION.md).
+
+Hosted CI has still never executed: nothing has been pushed to the configured
+remote.
 
 ## Continuation point
 
-Read `CURRENT_STATE.md`. Development is paused at the Governance Human Gate
-(`GOVERNANCE.md` §28). **Do not start PH-4.** Await `EJECUTA`, then perform the
-Cycle Audit over PH-1 to PH-3, fix delegated findings, approve the audit, reset
-the cycle counter, create PH-4 and resume.
+Read `CURRENT_STATE.md`. Cycle 1 is closed and its audit is approved, so
+development continues **without further Human authorization**
+(`GOVERNANCE.md` §32).
+
+Create the PH-4 Phase Context Document — _Asset personality system and
+multi-asset instantiation_ — on `feature/ph-4-asset-personalities`, decompose it
+into subphases, and begin. PH-4 discharges INV-007, the only invariant
+`docs/architecture/INVARIANTS.md` still records as pending.
+
+Before changing anything in the engine, read the last section of `CLAUDE.md`.

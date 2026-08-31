@@ -1,3 +1,4 @@
+// Invariant evidence: INV-006 (no deterministic exploitable directional rules).
 import { describe, expect, it } from 'vitest';
 import { epochMillis, MasterKeyring, type InstrumentSpec } from '@otc/core';
 import { fixtureByName } from '@otc/fixtures';

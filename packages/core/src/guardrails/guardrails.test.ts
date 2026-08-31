@@ -1,3 +1,4 @@
+// Invariant evidence: INV-001 (economic independence), INV-005 (expiration independence).
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -103,8 +104,32 @@ describe('guardrail scanner', () => {
     );
   });
 
+  it('finds contract and expiration inputs', () => {
+    expect(
+      scanSource('x.ts', 'const e = ctx.selectedExpirationMs;', ECONOMIC_BLINDNESS_RULES),
+    ).toHaveLength(1);
+    expect(
+      scanSource('x.ts', 'if (tradeDirection === 1) {}', ECONOMIC_BLINDNESS_RULES),
+    ).toHaveLength(1);
+  });
+
+  it('matches inside camelCase, not only at word boundaries', () => {
+    // The Cycle Audit 001 regression: `\bpayout\b` cannot match `userPayout`,
+    // and `\bexpiration\b` cannot match `selectedExpirationMs`. A planted
+    // `selectedExpirationMs` field passed every guardrail because of it.
+    for (const source of [
+      'const a = userPayout;',
+      'const b = ctx.selectedExpirationMs;',
+      'const c = theContractHorizonMs;',
+    ]) {
+      expect(scanSource('x.ts', source, ECONOMIC_BLINDNESS_RULES), source).toHaveLength(1);
+    }
+  });
+
   it('does not flag ordinary words that merely look economic', () => {
-    const safe = 'const p = stream.position(); const state = { open, high, low, close };';
+    const safe =
+      'const p = stream.position(); const state = { open, high, low, close };\n' +
+      'const v = volatilityContraction(range); const id = contractionId;';
     expect(scanSource('x.ts', safe, ECONOMIC_BLINDNESS_RULES)).toHaveLength(0);
   });
 

@@ -51,12 +51,12 @@ process inside a generate → attack → diagnose → correct loop.
 
 ## Cycle 1 — Prove the core hypothesis
 
-| Phase | Title                                                         | State                     |
-| ----- | ------------------------------------------------------------- | ------------------------- |
-| PH-1  | Deterministic Market Substrate                                | **APPROVED**              |
-| PH-2  | Calibrated Adversarial Predictability Laboratory              | **APPROVED**              |
-| PH-3  | Core Generative Market Process Under Continuous Falsification | **APPROVED**              |
-| —     | **Cycle Audit 1** — Human gate, requires `EJECUTA`            | **PENDING AUTHORIZATION** |
+| Phase | Title                                                         | State                                                 |
+| ----- | ------------------------------------------------------------- | ----------------------------------------------------- |
+| PH-1  | Deterministic Market Substrate                                | **APPROVED**                                          |
+| PH-2  | Calibrated Adversarial Predictability Laboratory              | **APPROVED**                                          |
+| PH-3  | Core Generative Market Process Under Continuous Falsification | **APPROVED**                                          |
+| —     | **Cycle Audit 1** — Human gate, requires `EJECUTA`            | **APPROVED** — [record](../audits/CYCLE-AUDIT-001.md) |
 
 ### PH-1 — Deterministic Market Substrate
 
@@ -140,11 +140,16 @@ the same data.
 
 ## Cycle 2 — Make it a living multi-asset system
 
-| Phase | Title                                                                   |
-| ----- | ----------------------------------------------------------------------- |
-| PH-4  | Asset personality system and multi-asset instantiation                  |
-| PH-5  | Continuous runtime, sealed state persistence and restart continuity     |
-| PH-6  | Trading boundary: contracts, settlement and verified economic blindness |
+| Phase | Title                                                                   | State       |
+| ----- | ----------------------------------------------------------------------- | ----------- |
+| PH-4  | Asset personality system and multi-asset instantiation                  | **NEXT**    |
+| PH-5  | Continuous runtime, sealed state persistence and restart continuity     | Not started |
+| PH-6  | Trading boundary: contracts, settlement and verified economic blindness | Not started |
+
+PH-4 discharges INV-007, the one invariant `docs/architecture/INVARIANTS.md`
+still records as pending, and it is the phase where the tension between a
+differentiated product and a provably unpredictable one has to be resolved with
+evidence rather than assertion: every asset is attacked on its own.
 
 PH-5 is where NestJS is first scaffolded, and the engine core stays framework-free
 and I/O-free so the batteries can keep driving it directly. PH-6 closes with the

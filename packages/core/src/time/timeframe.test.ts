@@ -1,3 +1,4 @@
+// Invariant evidence: INV-004 (timeframe observer independence).
 import { describe, expect, it } from 'vitest';
 import { epochMillis, MAX_EPOCH_MILLIS, type EpochMillis } from './instant.js';
 import {

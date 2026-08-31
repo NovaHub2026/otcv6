@@ -134,17 +134,35 @@ export const PORTABILITY_RULES: readonly Rule[] = [
 ];
 
 /**
- * Economic vocabulary that must never appear in the price path (INV-001).
- * Terms are specific rather than generic so that ordinary words such as
- * "position" — which legitimately names a cursor position — are not flagged.
+ * Vocabulary that must never appear in the price path.
+ *
+ * **Matched as substrings, not as whole words.** An earlier version anchored
+ * each term with `\b`, which cannot fire inside camelCase: `\bpayout\b` does not
+ * match `userPayout`, and `\bexpiration\b` does not match `selectedExpirationMs`.
+ * The audit that found this planted `selectedExpirationMs` directly into the
+ * price engine's input type and every guardrail passed.
+ *
+ * Terms are therefore specific enough to be unambiguous as substrings. Generic
+ * words are deliberately absent: "position" legitimately names a cursor
+ * position, and "contract" appears inside "contraction", which is ordinary
+ * volatility vocabulary.
  */
 export const ECONOMIC_BLINDNESS_RULES: readonly Rule[] = [
   {
     name: 'no-economic-inputs',
     pattern:
-      /\b(?:payout|brokerExposure|userBalance|accountBalance|wager|stakeAmount|profitAndLoss|brokerPnl|traderPnl|winRatio|houseEdge)\b/i,
+      /(?:payout|brokerExposure|userBalance|accountBalance|wagerAmount|stakeAmount|profitAndLoss|brokerPnl|traderPnl|winRatio|houseEdge)/i,
     reason:
       'The price core must be economically blind: it may never see payout, exposure, balances or profit (INV-001).',
+  },
+  {
+    name: 'no-contract-inputs',
+    pattern:
+      /(?:expiration|expiryMs|expiresAt|contractHorizon|selectedHorizon|binaryHorizon|contractId|tradeDirection|positionDirection)/i,
+    reason:
+      'Selecting an expiration must never change the market (INV-005). The price path may not ' +
+      'name a contract, an expiration or a trade direction: if it can see one, a user choosing a ' +
+      'different expiry could move the price.',
   },
 ];
 

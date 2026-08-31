@@ -1,3 +1,4 @@
+// Invariant evidence: INV-009 (reproducible settlement).
 import { describe, expect, it } from 'vitest';
 import { epochMillis } from '../time/instant.js';
 import { logPrice } from './instrument.js';

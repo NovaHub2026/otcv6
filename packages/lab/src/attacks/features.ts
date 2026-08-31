@@ -2,7 +2,17 @@ import { bucketStart, epochMillis, timeframe, type EpochMillis } from '@otc/core
 import type { ObserverDataset } from '../observer.js';
 
 /**
- * Feature computations shared by the attack families.
+ * Reference feature computations: the readable definition of each feature.
+ *
+ * The attack families no longer call these. They read precomputed arrays from
+ * `FeatureFrame`, because recomputing rolling features per family made the
+ * battery's detection floor worse than the materiality threshold it polices.
+ * These remain as the specification the frame is tested against — `frame.test.ts`
+ * asserts the fast path agrees with each function here at every index.
+ *
+ * Keep them obvious rather than fast. Their value is that a reader can see what
+ * a feature means, and that a subtle optimisation in the frame has something
+ * independent to disagree with.
  *
  * Every function here takes an `entryIndex` and reads no index beyond it. That
  * discipline is the single most important property of this file: a feature that

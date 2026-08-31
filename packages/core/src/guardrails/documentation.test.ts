@@ -172,3 +172,45 @@ describe('canonical state documents stay answerable', () => {
     expect(state).toMatch(/Cycle Audit state/);
   });
 });
+
+describe('the documented repository layout is real', () => {
+  // CLAUDE.md's layout block is the first thing a fresh agent reads to find its
+  // way around. The first Cycle Audit found it listing `docs/evidence/` with no
+  // caveat, for a directory that did not exist, and omitting two of the five
+  // packages entirely — an agent trusting it would not have known the validation
+  // laboratory existed.
+  const FUTURE = '(created in the phase that needs it)';
+
+  function layoutEntries(): { path: string; future: boolean }[] {
+    const claude = read('CLAUDE.md');
+    const block = /```\n([\s\S]*?docs\/architecture\/[\s\S]*?)```/.exec(claude);
+    expect(block, 'CLAUDE.md layout block').not.toBeNull();
+    const entries: { path: string; future: boolean }[] = [];
+    for (const line of block![1]!.split('\n')) {
+      const match = /^([A-Za-z][\w./*-]*\/?)\s{2,}(.+)$/.exec(line.trim());
+      if (match === null) continue;
+      entries.push({ path: match[1]!, future: match[2]!.includes(FUTURE) });
+    }
+    return entries;
+  }
+
+  it('lists a usable number of entries', () => {
+    expect(layoutEntries().length).toBeGreaterThan(8);
+  });
+
+  it('names nothing that does not exist without marking it as future work', () => {
+    const missing = layoutEntries()
+      .filter((entry) => !entry.future)
+      .filter((entry) => !entry.path.includes('*'))
+      .filter((entry) => !existsSync(path.join(repoRoot, entry.path)))
+      .map((entry) => entry.path);
+    expect(missing, `documented but absent (mark future ones "${FUTURE}")`).toEqual([]);
+  });
+
+  it('lists every workspace package', () => {
+    const documented = new Set(layoutEntries().map((entry) => entry.path.replace(/\/$/, '')));
+    const actual = readdirSync(path.join(repoRoot, 'packages')).map((name) => `packages/${name}`);
+    expect(actual.length).toBeGreaterThan(0);
+    for (const pkg of actual) expect(documented, `${pkg} is undocumented`).toContain(pkg);
+  });
+});

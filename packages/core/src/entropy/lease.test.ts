@@ -1,3 +1,4 @@
+// Invariant evidence: INV-008 (continuous market state), INV-010 (private generator state).
 import { describe, expect, it } from 'vitest';
 import { CursorLease } from './lease.js';
 import { MAX_BLOCK_INDEX } from './stream.js';

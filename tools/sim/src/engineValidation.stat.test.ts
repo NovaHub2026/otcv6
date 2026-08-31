@@ -1,3 +1,4 @@
+// Invariant evidence: INV-006 (no deterministic exploitable directional rules).
 import { describe, expect, it } from 'vitest';
 import {
   epochMillis,
@@ -174,7 +175,18 @@ describe('the cascade engine under full validation', () => {
       `engine throughput: ${(1_000_000 / seconds / 1e6).toFixed(2)}M ticks/s — ` +
         `${simulatedDays.toFixed(0)} simulated days in ${seconds.toFixed(1)}s`,
     );
-    expect(1_000_000 / seconds).toBeGreaterThan(200_000);
+    // The floor encodes the product requirement, not this machine's speed. A
+    // hosted market ticks about once per second per asset, so anything above a
+    // few thousand ticks per second is already "far faster than real time" by
+    // orders of magnitude.
+    //
+    // It is set well below observed throughput on purpose. Cycle Audit 001 found
+    // this assertion failing at 116k ticks/s under v8 coverage instrumentation
+    // while the same engine sustains ~800k ticks/s uninstrumented — a test that
+    // passes or fails according to how the suite was invoked is a defect, not a
+    // flake, and a shared CI runner would have tripped it too.
+    const REAL_TIME_MULTIPLE_FLOOR = 20_000;
+    expect(1_000_000 / seconds).toBeGreaterThan(REAL_TIME_MULTIPLE_FLOOR);
   });
 });
 

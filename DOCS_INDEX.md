@@ -53,6 +53,7 @@ documents disagree, the canonical one wins and the other is a defect.
 | [`docs/architecture/ENTROPY.md`](docs/architecture/ENTROPY.md)               | Deterministic randomness architecture: stream derivation, isolation, replay, secret handling.                                  |
 | [`docs/architecture/TIME_AND_TICKS.md`](docs/architecture/TIME_AND_TICKS.md) | Canonical time model, tick identity, candle aggregation and cross-timeframe coherence.                                         |
 | [`docs/architecture/VALIDATION.md`](docs/architecture/VALIDATION.md)         | The predictability and realism batteries: observer boundary, feature taxonomy, harness discipline, and achieved sensitivity.   |
+| [`docs/architecture/INVARIANTS.md`](docs/architecture/INVARIANTS.md)         | Which executable evidence discharges each of the ten invariants, and what is still pending                                     |
 
 Documents listed above are created by the phase that first makes them true. A
 missing architecture document means that layer does not exist yet — not that it

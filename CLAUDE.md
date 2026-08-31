@@ -79,6 +79,8 @@ docs/evidence/             Recorded verification evidence referenced by approval
 
 packages/core              Deterministic kernel: time, entropy, market domain primitives
 packages/engine            Market generation model
+packages/fixtures          Planted-edge markets with known defects (calibrates the battery)
+packages/lab               Adversarial predictability battery, realism metrics, economics
 tools/sim                  Offline simulation runner and statistical evidence generator
 apps/api                   NestJS runtime service (created in the phase that needs it)
 apps/web                   Next.js frontend (created in the phase that needs it)
@@ -97,15 +99,22 @@ npm run lint           # ESLint 9, type-aware
 npm run format         # Prettier write
 npm run format:check   # Prettier check
 
-npx vitest run --project unit          # fast unit suite
-npx vitest run --project statistical   # slow statistical / simulation suite
-npm test                               # both projects
+npx vitest run --project unit          # fast unit suite      (~90s)
+npx vitest run --project statistical   # slow statistical suite (~10min)
+npm test                               # both projects          (~12min)
 
-npm run gate           # format:check + lint + build + unit&statistical tests
+npm run gate           # format:check + lint + build + both suites (~13min)
+npm run test:cov       # coverage, both projects; excludes tools/
 ```
 
-`npm run gate` is the full local Quality Gate. A **targeted** subphase gate is a
-justified subset of it — see `GOVERNANCE.md` §21.
+**Budget the time.** `npm run gate` runs the statistical suite and takes roughly
+thirteen minutes — it has not hung. Run it in the background rather than under a
+short command timeout. During subphase work use a **targeted** gate (a justified
+subset — see `GOVERNANCE.md` §21); the full gate belongs at phase boundaries.
+
+Coverage measures `packages/*/src` only. `tools/sim` is excluded by
+`vitest.config.ts`, and a file exercised solely by statistical tests reads as
+uncovered unless coverage is run over both projects.
 
 ### Test conventions
 
