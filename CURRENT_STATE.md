@@ -21,14 +21,14 @@ Last synchronized: 2026-08-31
 
 ## Phase and subphase
 
-| Field                  | Value                                                                |
-| ---------------------- | -------------------------------------------------------------------- |
-| Active phase           | None — PH-4 is the next to be created                                |
-| Phase lifecycle        | n/a                                                                  |
-| Active subphase        | None                                                                 |
-| Subphase lifecycle     | n/a                                                                  |
-| Last approved phase    | PH-3 — Core Generative Market Process Under Continuous Falsification |
-| Last approved subphase | PH-3.4 — Canonical engine, restart continuity, and phase validation  |
+| Field                  | Value                                                          |
+| ---------------------- | -------------------------------------------------------------- |
+| Active phase           | None — PH-5 is next to be created                              |
+| Phase lifecycle        | n/a                                                            |
+| Active subphase        | None                                                           |
+| Subphase lifecycle     | n/a                                                            |
+| Last approved phase    | PH-4 — Asset Personality System and Multi-Asset Instantiation  |
+| Last approved subphase | PH-4.3 — Multi-asset validation and the differentiation metric |
 
 ## Cycle 1 result
 
@@ -120,11 +120,30 @@ fourteen resolved within the audit; the record is
 [`docs/audits/CYCLE-AUDIT-001.md`](docs/audits/CYCLE-AUDIT-001.md). The cycle
 counter has been reset and Cycle 2 has begun.
 
-**Create the PH-4 Phase Context Document** — _Asset personality system and
-multi-asset instantiation_ — on branch `feature/ph-4-asset-personalities`, then
-decompose it into subphases and begin autonomous development. PH-4 discharges
-INV-007, the only invariant
-[`docs/architecture/INVARIANTS.md`](docs/architecture/INVARIANTS.md) still
-records as pending.
+**PH-4 is ACTIVE** on branch `feature/ph-4-asset-personalities`. Its Phase
+Context Document is
+[`docs/phases/PH-4-asset-personalities.md`](docs/phases/PH-4-asset-personalities.md).
+
+**PH-4 is APPROVED.** The product has an asset list: five assets across four
+families, each with a lattice derived from its own behaviour, each independently
+clean under the attack battery and plausible on all fifteen realism metrics, and
+each passing the mirror test with zero divergences. INV-007 is promoted to
+enforced in [`docs/architecture/INVARIANTS.md`](docs/architecture/INVARIANTS.md),
+with the hedge its evidence actually supports.
+
+**Create the PH-5 Phase Context Document** — continuous runtime, sealed state
+persistence and restart continuity — on branch `feature/ph-5-runtime`. This is
+where NestJS is first scaffolded, and where the engine stops being something only
+a test can drive. The engine core must stay framework-free and I/O-free so the
+batteries can keep driving it directly.
+
+Two things carried into PH-5 from PH-4:
+
+- Restart continuity is proven **in-process only**. The composed snapshot/restore
+  path is now tested (Cycle Audit 001, F-06) but nothing has ever restarted for
+  real, and cursor leasing has never met a durable store.
+- Hosted CI has still never executed. PH-4 lost a phase gate to a failing lint
+  that two subphase approvals had recorded as passing; a local gate is only as
+  good as the operator's reading of it (`docs/BACKLOG.md` B-001).
 
 No Human authorization is required to proceed (`GOVERNANCE.md` §32).

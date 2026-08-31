@@ -34,18 +34,18 @@ is maximally precise.
 
 ## The map
 
-| Invariant                                              | Status           | Evidence                                                                                                                                                       |
-| ------------------------------------------------------ | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| INV-001 Economic independence                          | Enforced         | `guardrails.test.ts` — source scan rejects economic vocabulary anywhere in the generation path                                                                 |
-| INV-002 Shared market                                  | Enforced         | `sharedMarket.test.ts` — independently constructed processes produce identical streams; observers at different cadences agree on price                         |
-| INV-003 Single underlying stream                       | Enforced         | `sharedMarket.test.ts`, `candle.test.ts` — every candle's open, close and extremes are prices that occurred in the tick stream                                 |
-| INV-004 Timeframe observer independence                | Enforced         | `timeframe.test.ts`, `candle.test.ts` — aggregation is a pure fold; refolding a coarser timeframe from a finer one agrees                                      |
-| INV-005 Expiration independence                        | Enforced         | `guardrails.test.ts` — source scan rejects contract, expiration and direction vocabulary in the generation path                                                |
-| INV-006 No deterministic exploitable directional rules | Enforced         | `mirror.test.ts` (sign symmetry is structural), `battery.test.ts`, `calibration.stat.test.ts`, `engineValidation.stat.test.ts`, `phaseAcceptance.stat.test.ts` |
-| INV-007 Asset differentiation                          | **Pending PH-4** | No asset personality system exists yet. There is one instrument, so there is nothing to differentiate.                                                         |
-| INV-008 Continuous market state                        | Enforced         | `factory.test.ts` (restart across a lease seam, and snapshot/restore of the composed model), `engine.test.ts`, `seamReplay.test.ts`, `lease.test.ts`           |
-| INV-009 Reproducible settlement                        | Enforced         | `seamReplay.test.ts`, `replay.test.ts` — a recorded run replays to identical prices                                                                            |
-| INV-010 Private generator state                        | Enforced         | `keyring.test.ts` (key material is redacted in JSON, string and inspect forms), `engine.test.ts` (a snapshot carries no key material), `lease.test.ts`         |
+| Invariant                                              | Status   | Evidence                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| INV-001 Economic independence                          | Enforced | `guardrails.test.ts` — source scan rejects economic vocabulary anywhere in the generation path                                                                                                                                                                                                                                                                         |
+| INV-002 Shared market                                  | Enforced | `sharedMarket.test.ts` — independently constructed processes produce identical streams; observers at different cadences agree on price                                                                                                                                                                                                                                 |
+| INV-003 Single underlying stream                       | Enforced | `sharedMarket.test.ts`, `candle.test.ts` — every candle's open, close and extremes are prices that occurred in the tick stream                                                                                                                                                                                                                                         |
+| INV-004 Timeframe observer independence                | Enforced | `timeframe.test.ts`, `candle.test.ts` — aggregation is a pure fold; refolding a coarser timeframe from a finer one agrees                                                                                                                                                                                                                                              |
+| INV-005 Expiration independence                        | Enforced | `guardrails.test.ts` — source scan rejects contract, expiration and direction vocabulary in the generation path                                                                                                                                                                                                                                                        |
+| INV-006 No deterministic exploitable directional rules | Enforced | `mirror.test.ts` (sign symmetry is structural), `battery.test.ts`, `calibration.stat.test.ts`, `engineValidation.stat.test.ts`, `phaseAcceptance.stat.test.ts`                                                                                                                                                                                                         |
+| INV-007 Asset differentiation                          | Enforced | `multiAsset.stat.test.ts` — leave-one-out classification of windows to assets scores 53.0% against a 20% null (p = 5.1e-25), while an identical-personality control scores 21.0% (p = 0.39). Separation is driven mostly by pace and scale; the shape-only figure of 30.0% is asserted as a ceiling so a genuine improvement forces the claim to be rewritten (B-004). |
+| INV-008 Continuous market state                        | Enforced | `factory.test.ts` (restart across a lease seam, and snapshot/restore of the composed model), `engine.test.ts`, `seamReplay.test.ts`, `lease.test.ts`                                                                                                                                                                                                                   |
+| INV-009 Reproducible settlement                        | Enforced | `seamReplay.test.ts`, `replay.test.ts` — a recorded run replays to identical prices                                                                                                                                                                                                                                                                                    |
+| INV-010 Private generator state                        | Enforced | `keyring.test.ts` (key material is redacted in JSON, string and inspect forms), `engine.test.ts` (a snapshot carries no key material), `lease.test.ts`                                                                                                                                                                                                                 |
 
 ## What the map does not claim
 
@@ -57,6 +57,14 @@ from a dedicated stream that no magnitude input can observe, so the mirror invol
 holds by construction. The battery exists to catch a _break_ in that argument, not to
 establish it.
 
-INV-007 is honestly marked pending rather than quietly omitted. Marking it enforced
-against the single-instrument tests that exist today would be exactly the failure this
-document was created to prevent.
+INV-007 was marked pending through PH-4.1 and PH-4.2 and promoted only in PH-4.3,
+when the evidence existed. `traceability.test.ts` enforced that in both directions
+and caught a premature tag during PH-4.1.
+
+Its evidence is also the most carefully hedged in this table, because it is the
+invariant most easily faked. The metric it rests on has a reachable null, and that
+null was measured: five copies of one personality score at chance. What the metric
+does **not** establish is that the assets differ in _shape_ once pace and amplitude
+are divided out — that signal is real but weak (30.0% against 20%), because the
+volatility cascade dominates the observable dynamics and every asset shares it. The
+table says "Enforced" for the claim that is evidenced, and B-004 carries the rest.

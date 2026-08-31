@@ -9,10 +9,10 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Field              | Value                                         |
 | ------------------ | --------------------------------------------- |
 | Last clean session | 2026-08-31                                    |
-| Branch             | `main`                                        |
+| Branch             | `feature/ph-4-asset-personalities` (merge me) |
 | Remote             | `origin` → NovaHub2026/otcv6 (private, empty) |
-| Active cycle       | Cycle 2, **0 of 3** phases approved           |
-| Active phase       | none — PH-4 is next to be created             |
+| Active cycle       | Cycle 2, **1 of 3** phases approved           |
+| Active phase       | none — PH-5 is next to be created             |
 | Active subphase    | none                                          |
 | Cycle Audit        | 001 **APPROVED** — next due after PH-4/5/6    |
 | Blockers           | none                                          |
@@ -37,11 +37,17 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
   from canonical documentation, no invariant→evidence map existed, and the Git
   remote was misdescribed in twelve documents. Two guardrails were added so the
   same class of defect fails the build rather than waiting for an audit.
+- **PH-4 APPROVED** — the asset personality system: seven bounded traits per
+  asset, an analytic volatility-inflation gate that rejects unsafe combinations
+  in microseconds, per-asset lattice calibration derived from each asset's own
+  30-second return distribution, a five-asset catalogue, and a differentiation
+  metric with a reachable null. INV-007 promoted to enforced.
 - ADRs 0001–0006 persisted.
 
 ## Incomplete
 
-Nothing is in progress. PH-4 has not been created yet.
+Nothing is in progress. PH-4 is approved and its branch is ready to merge into
+`main`.
 
 ## Last executed verification
 
@@ -61,9 +67,13 @@ Read `CURRENT_STATE.md`. Cycle 1 is closed and its audit is approved, so
 development continues **without further Human authorization**
 (`GOVERNANCE.md` §32).
 
-Create the PH-4 Phase Context Document — _Asset personality system and
-multi-asset instantiation_ — on `feature/ph-4-asset-personalities`, decompose it
-into subphases, and begin. PH-4 discharges INV-007, the only invariant
-`docs/architecture/INVARIANTS.md` still records as pending.
+Merge `feature/ph-4-asset-personalities` into `main`, then create the **PH-5
+Phase Context Document** — continuous runtime, sealed state persistence and
+restart continuity — on `feature/ph-5-runtime`. PH-5 is where NestJS is first
+scaffolded; the engine core must stay framework-free and I/O-free so the
+batteries can keep driving it directly.
+
+Restart continuity is proven in-process only. Nothing has ever restarted for
+real, and cursor leasing has never met a durable store.
 
 Before changing anything in the engine, read the last section of `CLAUDE.md`.

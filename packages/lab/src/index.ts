@@ -55,3 +55,12 @@ export {
   type BootstrapResult,
   type ProportionTest,
 } from './statistics.js';
+export {
+  assetSignature,
+  differentiationPValue,
+  measureDifferentiation,
+  SHAPE_FEATURES,
+  SIGNATURE_FEATURES,
+  type AssetSignature,
+  type DifferentiationResult,
+} from './differentiation.js';

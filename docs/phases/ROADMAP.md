@@ -140,16 +140,33 @@ the same data.
 
 ## Cycle 2 — Make it a living multi-asset system
 
-| Phase | Title                                                                   | State       |
-| ----- | ----------------------------------------------------------------------- | ----------- |
-| PH-4  | Asset personality system and multi-asset instantiation                  | **NEXT**    |
-| PH-5  | Continuous runtime, sealed state persistence and restart continuity     | Not started |
-| PH-6  | Trading boundary: contracts, settlement and verified economic blindness | Not started |
+| Phase | Title                                                                   | State        |
+| ----- | ----------------------------------------------------------------------- | ------------ |
+| PH-4  | Asset personality system and multi-asset instantiation                  | **APPROVED** |
+| PH-5  | Continuous runtime, sealed state persistence and restart continuity     | Not started  |
+| PH-6  | Trading boundary: contracts, settlement and verified economic blindness | Not started  |
 
 PH-4 discharges INV-007, the one invariant `docs/architecture/INVARIANTS.md`
 still records as pending, and it is the phase where the tension between a
 differentiated product and a provably unpredictable one has to be resolved with
 evidence rather than assertion: every asset is attacked on its own.
+
+### PH-4 — Asset Personality System and Multi-Asset Instantiation
+
+One validated market process becomes a catalogue of assets that feel genuinely
+different to trade, without any of them becoming predictable. The sign cannot
+leak an edge whatever the parameters — that argument is indifferent to them — so
+the risk lives in the two places where parameters meet the published series: the
+per-asset lattice quantum, and degenerate regions of the parameter space.
+
+| Subphase | Title                                                 | State    |
+| -------- | ----------------------------------------------------- | -------- |
+| PH-4.1   | Personality model, parameter space and safe bounds    | APPROVED |
+| PH-4.2   | Asset registry, quantum calibration and registration  | APPROVED |
+| PH-4.3   | Multi-asset validation and the differentiation metric | APPROVED |
+
+Later subphases are provisional and recorded in the phase document: registry and
+quantum calibration, then multi-asset validation and the differentiation metric.
 
 PH-5 is where NestJS is first scaffolded, and the engine core stays framework-free
 and I/O-free so the batteries can keep driving it directly. PH-6 closes with the
