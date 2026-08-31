@@ -14,6 +14,7 @@ const alias = {
   '@otc/engine': path.resolve(root, 'packages/engine/src/index.ts'),
   '@otc/fixtures': path.resolve(root, 'packages/fixtures/src/index.ts'),
   '@otc/lab': path.resolve(root, 'packages/lab/src/index.ts'),
+  '@otc/runtime': path.resolve(root, 'packages/runtime/src/index.ts'),
 };
 
 const commonExclude = ['**/node_modules/**', '**/dist/**', '**/artifacts/**'];

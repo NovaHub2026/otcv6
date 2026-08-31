@@ -1,0 +1,103 @@
+import type { Clock, EpochMillis, Tick } from '@otc/core';
+import type { RegisteredAsset } from '@otc/engine';
+import { type HostedMarket } from './hosted.js';
+
+/** Ticks published for one asset in one advance. */
+export interface AssetTicks {
+  readonly assetId: string;
+  readonly ticks: readonly Tick[];
+}
+
+export interface VenueOptions {
+  readonly clock: Clock;
+  readonly markets: readonly { asset: RegisteredAsset; market: HostedMarket }[];
+}
+
+/**
+ * Every hosted market, advanced together against one clock.
+ *
+ * The markets share a clock and nothing else. They have separate engines,
+ * separate key material and separate latent state, so hosting them together adds
+ * no coupling: a venue is a scheduling convenience, not a market-level entity.
+ * That matters because a shared object here would be the obvious route for one
+ * asset's state to influence another's prices, which nothing in the model
+ * permits.
+ */
+export class Venue {
+  readonly #clock: Clock;
+  readonly #markets: Map<string, HostedMarket>;
+  readonly #assets: Map<string, RegisteredAsset>;
+
+  constructor(options: VenueOptions) {
+    if (options.markets.length === 0) {
+      throw new RangeError('A venue needs at least one market.');
+    }
+    this.#clock = options.clock;
+    this.#markets = new Map();
+    this.#assets = new Map();
+    for (const { asset, market } of options.markets) {
+      const id = asset.definition.id;
+      if (this.#markets.has(id)) {
+        throw new RangeError(`Duplicate asset in venue: ${id}.`);
+      }
+      this.#markets.set(id, market);
+      this.#assets.set(id, asset);
+    }
+  }
+
+  get assetIds(): readonly string[] {
+    return [...this.#markets.keys()];
+  }
+
+  marketFor(assetId: string): HostedMarket {
+    const market = this.#markets.get(assetId);
+    if (market === undefined) {
+      throw new RangeError(
+        `Unknown asset ${assetId}. The venue hosts: ${[...this.#markets.keys()].join(', ')}.`,
+      );
+    }
+    return market;
+  }
+
+  assetFor(assetId: string): RegisteredAsset {
+    this.marketFor(assetId);
+    return this.#assets.get(assetId)!;
+  }
+
+  /** Prime every market so the next deadline is known. */
+  prime(): void {
+    for (const market of this.#markets.values()) market.prime();
+  }
+
+  /** Advance every market to the current clock reading. */
+  advance(): readonly AssetTicks[] {
+    return this.advanceTo(this.#clock.now());
+  }
+
+  /** Advance every market to `now`, in a stable asset order. */
+  advanceTo(now: EpochMillis): readonly AssetTicks[] {
+    const out: AssetTicks[] = [];
+    for (const [assetId, market] of this.#markets) {
+      const ticks = market.advanceTo(now);
+      if (ticks.length > 0) out.push({ assetId, ticks });
+    }
+    return out;
+  }
+
+  /**
+   * Milliseconds until the soonest tick across all markets.
+   *
+   * A scheduler sleeps for this rather than on a fixed interval. The catalogue
+   * spans 334ms to 3187ms of mean interval, so any single interval would either
+   * burn CPU on the slow assets or publish the fast ones late.
+   */
+  msUntilNextTick(now: EpochMillis = this.#clock.now()): number | null {
+    let soonest: number | null = null;
+    for (const market of this.#markets.values()) {
+      const wait = market.msUntilNextTick(now);
+      if (wait === null) continue;
+      if (soonest === null || wait < soonest) soonest = wait;
+    }
+    return soonest;
+  }
+}
