@@ -6,16 +6,16 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                   |
-| ------------------ | ------------------------------------------------------- |
-| Last clean session | 2026-08-31                                              |
-| Branch             | `feature/ph-8-frontend` — PH-8 approved, ready to merge |
-| Remote             | `origin` → NovaHub2026/otcv6 — pushed, in sync          |
-| Active cycle       | Cycle 3, **2 of 3** phases approved                     |
-| Active phase       | none — PH-9 next, then the Human Gate                   |
-| Active subphase    | none                                                    |
-| Cycle Audit        | 002 **APPROVED** — next due after PH-7/8/9              |
-| Blockers           | none                                                    |
+| Field              | Value                                                    |
+| ------------------ | -------------------------------------------------------- |
+| Last clean session | 2026-08-31                                               |
+| Branch             | `feature/ph-9-assurance` — PH-9 approved, ready to merge |
+| Remote             | `origin` → NovaHub2026/otcv6 — pushed, in sync           |
+| Active cycle       | Cycle 4, **0 of 3** phases approved                      |
+| Active phase       | none — PH-10 is next to be created                       |
+| Active subphase    | none                                                     |
+| Cycle Audit        | 003 **APPROVED** — next due after PH-10/11/12            |
+| Blockers           | none                                                     |
 
 ## Completed
 

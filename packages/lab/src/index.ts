@@ -65,3 +65,12 @@ export {
   type AssetSignature,
   type DifferentiationResult,
 } from './differentiation.js';
+export {
+  JournalError,
+  journalFingerprint,
+  journalPriceAt,
+  journalSeries,
+  readJournal,
+  writeJournal,
+  type TickJournal,
+} from './assurance.js';

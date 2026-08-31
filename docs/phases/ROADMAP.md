@@ -192,9 +192,11 @@ verdict from them is no longer independent evidence — they are the families th
 engine was shaped to survive. PH-9 attacks it with families withheld from all
 prior tuning.
 
-| Subphase | Title                          | State    |
-| -------- | ------------------------------ | -------- |
-| PH-9.1   | The withheld red-team families | APPROVED |
+| Subphase | Title                                  | State    |
+| -------- | -------------------------------------- | -------- |
+| PH-9.1   | The withheld red-team families         | APPROVED |
+| PH-9.2   | The guardrail meta-audit               | APPROVED |
+| PH-9.3   | Assurance a counterparty can recompute | APPROVED |
 
 Later subphases are provisional: the guardrail meta-audit, then re-derivable
 assurance and phase integration.
@@ -248,9 +250,10 @@ empirical demonstration that economic state cannot influence price generation.
 
 | Phase | Title                                                             |
 | ----- | ----------------------------------------------------------------- |
-| PH-7  | Public market distribution and multi-user consistency             | **APPROVED** |
-| PH-8  | Observer frontend and trading chart experience                    | **APPROVED** |
-| PH-9  | Continuous integrity assurance and independent red-team hardening | **ACTIVE**   |
+| PH-7  | Public market distribution and multi-user consistency             | **APPROVED**                                          |
+| PH-8  | Observer frontend and trading chart experience                    | **APPROVED**                                          |
+| PH-9  | Continuous integrity assurance and independent red-team hardening | **APPROVED**                                          |
+| —     | **Cycle Audit 3** — Human gate, requires `EJECUTA`                | **APPROVED** — [record](../audits/CYCLE-AUDIT-003.md) |
 
 PH-8 is where Next.js and React are first scaffolded. PH-9 converts a one-time
 proof into a standing guarantee, including a red-team round using attack families

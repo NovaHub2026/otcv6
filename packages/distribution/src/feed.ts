@@ -34,6 +34,34 @@ export interface Subscription {
   cancel(reason?: string): void;
 }
 
+/**
+ * Thrown when a client asks for a sequence the feed has never published.
+ *
+ * Found by Cycle Audit 3. The feed refused history it had *lost* but accepted a
+ * future it had never *had*: asking for sequence 600 when 100 existed returned an
+ * empty array, indistinguishable from "you are up to date". A client in that
+ * state holds ticks the server never published — it is following a different
+ * market, or a different asset id — and silence lets it sit there indefinitely
+ * believing it is current.
+ *
+ * Refusing both directions is the same principle applied symmetrically: the feed
+ * never guesses about a record it cannot account for.
+ */
+export class UnknownSequenceError extends Error {
+  constructor(
+    readonly assetId: string,
+    readonly requested: number,
+    readonly newestPublished: number,
+  ) {
+    super(
+      `Sequence ${requested} for ${assetId} has never been published; the newest is ` +
+        `${newestPublished}. A client asking for it is not behind — it is holding a record ` +
+        `this feed did not produce.`,
+    );
+    this.name = 'UnknownSequenceError';
+  }
+}
+
 /** Thrown when a client asks for history the feed no longer retains. */
 export class EvictedError extends Error {
   constructor(
@@ -133,6 +161,12 @@ export class TickFeed {
     const oldest = history[0]!.sequence;
     if (fromSequence < oldest) {
       throw new EvictedError(assetId, fromSequence, oldest);
+    }
+    const newest = history[history.length - 1]!.sequence;
+    // `newest + 1` is legitimate: it means "I have everything, send me what comes
+    // next". Anything beyond that is a client claiming ticks that do not exist.
+    if (fromSequence > newest + 1) {
+      throw new UnknownSequenceError(assetId, fromSequence, newest);
     }
     const offset = fromSequence - oldest;
     return history.slice(Math.max(0, offset));

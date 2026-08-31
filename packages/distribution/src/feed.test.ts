@@ -1,7 +1,7 @@
 // Invariant evidence: INV-002 (shared market), INV-009 (reproducible settlement).
 import { describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, type Tick } from '@otc/core';
-import { EvictedError, TickFeed, type FeedSink } from './feed.js';
+import { EvictedError, TickFeed, UnknownSequenceError, type FeedSink } from './feed.js';
 
 function tick(sequence: number): Tick {
   return {
@@ -153,6 +153,20 @@ describe('resumption is exact', () => {
     expect(() => feed.since('eurusd', 200)).toThrow(EvictedError);
     expect(() => feed.subscribe('eurusd', recorder(), 200)).toThrow(EvictedError);
     expect(feed.since('eurusd', 401)).toHaveLength(100);
+  });
+
+  it('refuses a sequence it has never published', () => {
+    // Cycle Audit 3. The feed refused lost history but accepted an impossible
+    // future, returning [] — indistinguishable from "you are up to date". A
+    // client asking for it holds ticks this feed never produced.
+    const feed = new TickFeed();
+    feed.publish('eurusd', ticks(1, 100));
+    // Legitimate: "I have everything, send me the next one."
+    expect(feed.since('eurusd', 101)).toEqual([]);
+    // Not legitimate: claiming ticks that do not exist.
+    expect(() => feed.since('eurusd', 102)).toThrow(UnknownSequenceError);
+    expect(() => feed.since('eurusd', 600)).toThrow(UnknownSequenceError);
+    expect(() => feed.subscribe('eurusd', recorder(), 600)).toThrow(UnknownSequenceError);
   });
 
   it('rejects a nonsensical retention bound', () => {

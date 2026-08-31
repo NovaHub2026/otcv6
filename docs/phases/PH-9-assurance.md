@@ -2,7 +2,7 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-9
-Status: ACTIVE
+Status: APPROVED
 Cycle: 3 (phase 3 of 3)
 Created: 2026-08-31
 Branch: `feature/ph-9-assurance`
@@ -134,3 +134,69 @@ holder of the published record can recompute.
 | A withheld family finds a real edge                 | The point of the exercise. It would be the most valuable finding in the project, and §5 forbids quietly tuning it away. |
 | The withheld families are too weak to find anything | Real. Each must be calibrated against the planted-edge fixture corpus, exactly as PH-2 calibrated the originals.        |
 | The meta-audit becoming a formality                 | Guarded by requiring a _mutation_ per guard, not a reading.                                                             |
+
+---
+
+## 12. Phase approval record
+
+**APPROVED** from executed evidence, 2026-08-31.
+
+### The result the phase existed to produce
+
+Three things that did not exist before it:
+
+1. **A verdict from families that never shaped the engine.** 91 hypotheses,
+   CLEAN, worst |z| 2.91; and 107 hypotheses CLEAN across a real restart seam.
+2. **A guardrail suite that has been audited.** Ten mutations, ten guards fail on
+   the defect they name, run in isolated copies that never touch the working
+   tree.
+3. **Assurance a counterparty can recompute.** A verdict and settlements derived
+   from a published journal alone — no key, no engine, no configuration.
+
+| Subphase | Title                                  | State    |
+| -------- | -------------------------------------- | -------- |
+| PH-9.1   | The withheld red-team families         | APPROVED |
+| PH-9.2   | The guardrail meta-audit               | APPROVED |
+| PH-9.3   | Assurance a counterparty can recompute | APPROVED |
+
+### Phase invariants
+
+- **INV-006** re-established against conditioning that had no influence on the
+  design — which is a materially stronger statement than the main battery can now
+  make about itself.
+- **INV-009** strengthened from "the operator can recompute it" to "anyone
+  holding the published record can".
+- All ten invariants remain demonstrated, and for the first time the _evidence_
+  has been audited rather than trusted.
+
+### What the phase learned
+
+**A clean verdict decays.** Every family in the battery was available while PH-3
+tuned the engine, so their clean result stopped being independent evidence the
+moment it was used to steer design. Nobody had said so. That is not a defect in
+the battery — it is a property of using a test as a target, and it means
+independence has to be manufactured deliberately and then protected. PH-9 §5
+forbids tuning against the withheld families for exactly that reason: doing it
+once would convert them into what the main battery already is.
+
+**The plant needs the same scrutiny as the guard.** This phase produced three
+more instances of a pattern that has now appeared six times: a mutation whose
+anchor did not exist, a mutation that removed one of nine pieces of evidence, and
+a planted edge averaged away by the contract horizon. In each case the guard
+looked toothless and was fine. A meta-audit is only worth having if it fails
+loudly when its own plant misses, which is why the anchor assertion exists.
+
+**Auditing the auditor terminates somewhere, and saying where is the honest
+move.** The meta-audit is itself a guard that nothing audits. That regress stops
+here, deliberately, because its failure mode is visible: a mutation that finds no
+anchor fails loudly rather than passing quietly.
+
+### Known limitations carried forward
+
+- The withheld families are calibrated against edges of roughly 12–18 percentage
+  points; subtler structure in the same conditioning would need more history.
+- `wh-seam-proximity` needs more data than the others to reach confirmation.
+- Ten mutations is not an exhaustive mutation space.
+- The journal fingerprint proves agreement, not authenticity. Signed publication
+  is unscoped and is the natural next step.
+- The journal is not yet emitted by the running service.
