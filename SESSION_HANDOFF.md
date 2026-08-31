@@ -6,16 +6,16 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                       |
-| ------------------ | ----------------------------------------------------------- |
-| Last clean session | 2026-08-31                                                  |
-| Branch             | `feature/ph-7-distribution` — PH-7 approved, ready to merge |
-| Remote             | `origin` → NovaHub2026/otcv6 — pushed, in sync              |
-| Active cycle       | Cycle 3, **1 of 3** phases approved                         |
-| Active phase       | none — PH-8 is next to be created                           |
-| Active subphase    | none                                                        |
-| Cycle Audit        | 002 **APPROVED** — next due after PH-7/8/9                  |
-| Blockers           | none                                                        |
+| Field              | Value                                                   |
+| ------------------ | ------------------------------------------------------- |
+| Last clean session | 2026-08-31                                              |
+| Branch             | `feature/ph-8-frontend` — PH-8 approved, ready to merge |
+| Remote             | `origin` → NovaHub2026/otcv6 — pushed, in sync          |
+| Active cycle       | Cycle 3, **2 of 3** phases approved                     |
+| Active phase       | none — PH-9 next, then the Human Gate                   |
+| Active subphase    | none                                                    |
+| Cycle Audit        | 002 **APPROVED** — next due after PH-7/8/9              |
+| Blockers           | none                                                    |
 
 ## Completed
 
@@ -49,6 +49,9 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
   computed from the published record alone, and the demonstration that closes
   INV-001. Identical tick streams between a quiet market and one under heavy
   adversarial trading, on all five assets.
+- **PH-8 APPROVED** — the observer frontend: a rendering contract that invents no
+  price and hides no extreme, a client that reconstructs the server's record
+  across a disconnection, Next.js 15 and React 19 scaffolded.
 - **PH-7 APPROVED** — public market distribution: a sequence-addressed feed that
   disconnects rather than degrades, exact resumption, and INV-002 re-established
   across concurrent observers, a real socket, and two nodes under clock skew.
@@ -86,14 +89,14 @@ development continues **without further Human authorization**
 Read `CURRENT_STATE.md`. Cycle 2 is closed and its audit approved, so development
 continues **without further Human authorization** (`GOVERNANCE.md` §32).
 
-Create the **PH-8 Phase Context Document** — observer frontend and trading chart
-experience — on `feature/ph-8-frontend`. Next.js and React are first scaffolded
-there.
+Create the **PH-9 Phase Context Document** — continuous integrity assurance and
+independent red-team hardening — on `feature/ph-9-assurance`. It closes Cycle 3;
+on approval, **STOP** and request `EJECUTA` for the third Cycle Audit.
 
-The trap PH-8 inherits is the mirror image of PH-7's: a chart that smooths,
-interpolates or animates between ticks invents prices the market never visited.
-`query.ts` has forbidden that since PH-1.3, for the same reason a candle is never
-synthesised for an empty bucket.
+Its hardest requirement is fixed by the roadmap: a red-team round using attack
+families **deliberately withheld from all prior tuning**. Everything the battery
+knows has already been used to shape the engine, so it can no longer be surprised
+by it.
 
 Standing rules from Cycle Audit 002, both learned the hard way:
 

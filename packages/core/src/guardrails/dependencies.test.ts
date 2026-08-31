@@ -31,6 +31,7 @@ const ALLOWED: Record<string, readonly string[]> = {
   '@otc/trading': ['@otc/core'],
   '@otc/distribution': ['@otc/core'],
   '@otc/chart': ['@otc/core'],
+  '@otc/api': ['@otc/core', '@otc/engine', '@otc/runtime', '@otc/distribution', '@otc/chart'],
   '@otc/sim': [
     '@otc/core',
     '@otc/engine',

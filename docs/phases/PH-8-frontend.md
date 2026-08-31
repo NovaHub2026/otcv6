@@ -2,7 +2,7 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-8
-Status: ACTIVE
+Status: APPROVED
 Cycle: 3 (phase 2 of 3)
 Created: 2026-08-31
 Branch: `feature/ph-8-frontend`
@@ -141,3 +141,60 @@ ticks — with a browser client that reconstructs the server's record exactly.
 | Downsampling that hides spikes                     | The central risk; §2.2 makes it a testable property.                                                                                 |
 | A backgrounded tab silently falling behind         | Real. The browser throttles timers; the client must resume by sequence rather than assume continuity.                                |
 | Rendering work drifting into the packages below it | Guarded by `dependencies.test.ts`.                                                                                                   |
+
+---
+
+## 12. Phase approval record
+
+**APPROVED** from executed evidence, 2026-08-31.
+
+### The result the phase existed to produce
+
+A chart that shows what happened. Every value drawn is a price that was actually
+observed, every extreme in the window survives at every resolution, a period with
+no ticks produces no bar, and a client reconstructs the server's record exactly
+across a disconnection.
+
+| Subphase | Title                                          | State    |
+| -------- | ---------------------------------------------- | -------- |
+| PH-8.1   | The rendering contract                         | APPROVED |
+| PH-8.2   | The streaming client and the frontend scaffold | APPROVED |
+| PH-8.3   | The join, and timeframe switching              | APPROVED |
+
+### Phase invariants
+
+- **INV-004** becomes a product property: switching timeframe re-reduces what is
+  already held and cannot change a price.
+- **INV-002** extends to a browser-shaped client, verified against a running API.
+- No new invariant. The frontend's job was to not break the ones that exist, and
+  the interesting work was enumerating the ways it could.
+
+### What the phase learned
+
+**Rendering is where honesty is cheapest to lose.** Interpolation, sampling and
+synthesised bars are the three natural ways to fit a price path into a few
+hundred pixels, and each invents something. That the honest reduction turns out
+to be OHLC is not a coincidence — the candle form exists because it is the lossy
+reduction that preserves what matters about a price path.
+
+**A guard must fail against the defect it names.** PH-8.1's "draws only values
+that were actually observed" was written to catch interpolation and _passed_ with
+interpolation planted: it checked set membership, and with 20,000 ticks the
+observed price set is dense enough that an averaged value lands on a traded price
+often enough to slip through. This was the third time in two phases that a
+planted-defect test could not catch its own defect, and it sharpened the rule to
+its final form.
+
+**Real boundaries are found by crossing them.** `next build` found the keyring in
+a browser bundle. Nothing else would have: the dependency was permitted, the
+import was legitimate, and the failure was one of _granularity_ — which is why
+`@otc/core/browser` now exists and why the allowlist compares package names
+rather than import paths.
+
+### Known limitations carried forward
+
+- Trading from the UI is not built. PH-6 built the boundary; exposing it needs
+  accounts and entitlement, which no phase has scoped.
+- The chart is not exercised in a browser. The data reaching it is, which is
+  where the invariants live.
+- The join test costs 254 seconds, the slowest file in the suite.

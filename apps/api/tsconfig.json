@@ -12,6 +12,7 @@
     { "path": "../../packages/core" },
     { "path": "../../packages/engine" },
     { "path": "../../packages/runtime" },
-    { "path": "../../packages/distribution" }
+    { "path": "../../packages/distribution" },
+    { "path": "../../packages/chart" }
   ]
 }

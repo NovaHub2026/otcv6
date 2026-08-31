@@ -196,6 +196,7 @@ asserts a trade that did not happen.
 | -------- | ---------------------------------------------- | -------- |
 | PH-8.1   | The rendering contract                         | APPROVED |
 | PH-8.2   | The streaming client and the frontend scaffold | APPROVED |
+| PH-8.3   | The join, and timeframe switching              | APPROVED |
 
 Later subphases are provisional: Next.js scaffolding and the streaming client,
 then the chart and phase integration.
@@ -234,7 +235,7 @@ empirical demonstration that economic state cannot influence price generation.
 | Phase | Title                                                             |
 | ----- | ----------------------------------------------------------------- |
 | PH-7  | Public market distribution and multi-user consistency             | **APPROVED** |
-| PH-8  | Observer frontend and trading chart experience                    | **ACTIVE**   |
+| PH-8  | Observer frontend and trading chart experience                    | **APPROVED** |
 | PH-9  | Continuous integrity assurance and independent red-team hardening |
 
 PH-8 is where Next.js and React are first scaffolded. PH-9 converts a one-time

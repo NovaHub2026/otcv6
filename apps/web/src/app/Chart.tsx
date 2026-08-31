@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { TickWindow, type Column } from '@otc/chart';
-import { columnsFor, streamMarket } from '../lib/marketStream';
+import { columnsFor, streamMarket, TIMEFRAMES, type TimeframeLabel } from '../lib/marketStream';
 
 /**
  * The chart draws columns and nothing else.
@@ -21,19 +21,31 @@ export function Chart({ apiBase, assetId }: { apiBase: string; assetId: string }
   const [columns, setColumns] = useState<Column[]>([]);
   const [latest, setLatest] = useState<number | null>(null);
   const [status, setStatus] = useState('connecting');
+  const [timeframe, setTimeframe] = useState<TimeframeLabel>('5m');
   const windowRef = useRef(new TickWindow({ capacity: 50_000 }));
+  const timeframeRef = useRef(timeframe);
+  timeframeRef.current = timeframe;
 
   useEffect(() => {
     const window = windowRef.current;
     const handle = streamMarket(apiBase, assetId, window, (updated) => {
       setStatus('live');
       setLatest(updated.latest?.price ?? null);
-      setColumns(columnsFor(updated, 240));
+      const span = TIMEFRAMES.find((t) => t.label === timeframeRef.current)!.spanMs;
+      setColumns(columnsFor(updated, 240, span));
     });
     return () => {
       handle.close();
     };
   }, [apiBase, assetId]);
+
+  // Switching the timeframe re-reduces what is already held. It never refetches
+  // and never resamples: the market is unchanged by how it is being viewed
+  // (INV-004), and a viewer who switches back sees exactly what they saw before.
+  useEffect(() => {
+    const span = TIMEFRAMES.find((t) => t.label === timeframe)!.spanMs;
+    setColumns(columnsFor(windowRef.current, 240, span));
+  }, [timeframe]);
 
   if (columns.length === 0) {
     return <p style={{ padding: 24 }}>{status}…</p>;
@@ -53,6 +65,28 @@ export function Chart({ apiBase, assetId }: { apiBase: string; assetId: string }
         {assetId} <span style={{ opacity: 0.6 }}>· {status}</span>{' '}
         {latest !== null && <span style={{ opacity: 0.6 }}>· {latest}</span>}
       </h1>
+      <div style={{ display: 'flex', gap: 8, margin: '8px 0 16px' }}>
+        {TIMEFRAMES.map((option) => (
+          <button
+            key={option.label}
+            type="button"
+            onClick={() => {
+              setTimeframe(option.label);
+            }}
+            style={{
+              background: option.label === timeframe ? '#1f2733' : 'transparent',
+              color: '#d7dce5',
+              border: '1px solid #2b3442',
+              borderRadius: 4,
+              padding: '4px 10px',
+              cursor: 'pointer',
+              font: 'inherit',
+            }}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
       <svg width={width} height={height} role="img" aria-label={`${assetId} price`}>
         {columns.map((column, index) => {
           const x = index * columnWidth + columnWidth / 2;
