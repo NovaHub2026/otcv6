@@ -131,26 +131,25 @@ counter has been reset and Cycle 2 has begun.
 Context Document is
 [`docs/phases/PH-4-asset-personalities.md`](docs/phases/PH-4-asset-personalities.md).
 
-**PH-4 is APPROVED.** The product has an asset list: five assets across four
-families, each with a lattice derived from its own behaviour, each independently
-clean under the attack battery and plausible on all fifteen realism metrics, and
-each passing the mirror test with zero divergences. INV-007 is promoted to
-enforced in [`docs/architecture/INVARIANTS.md`](docs/architecture/INVARIANTS.md),
-with the hedge its evidence actually supports.
+**PH-5.1 is APPROVED.** `@otc/runtime` exists: a hosted market advances because
+the clock moved, not because it was polled, and a venue supervises the whole
+catalogue against one clock. A new `dependencies.test.ts` guardrail enforces that
+dependencies point only downward, so the engine cannot acquire a framework or an
+undeclared internal import.
 
-**Create the PH-5 Phase Context Document** — continuous runtime, sealed state
-persistence and restart continuity — on branch `feature/ph-5-runtime`. This is
-where NestJS is first scaffolded, and where the engine stops being something only
-a test can drive. The engine core must stay framework-free and I/O-free so the
-batteries can keep driving it directly.
+Create the **PH-5.2 Subphase Technical Document** — sealed state persistence. The
+substance is the recovery policy in the phase document §2.2, which has two
+branches that pull in opposite directions:
 
-Two things carried into PH-5 from PH-4:
+- **snapshot intact** → restore and _replay_ the gap, redrawing the same
+  keystream positions deliberately, because that reproduces the ticks the market
+  would have had (INV-009);
+- **snapshot lost** → fall back to the leased cursor high-water mark and accept a
+  visible seam, because publishing from an unknown latent state is worse.
 
-- Restart continuity is proven **in-process only**. The composed snapshot/restore
-  path is now tested (Cycle Audit 001, F-06) but nothing has ever restarted for
-  real, and cursor leasing has never met a durable store.
-- Hosted CI has still never executed. PH-4 lost a phase gate to a failing lint
-  that two subphase approvals had recorded as passing; a local gate is only as
-  good as the operator's reading of it (`docs/BACKLOG.md` B-001).
+The dangerous case is replaying from a **stale** snapshot after newer ticks were
+already published: that republishes different prices for instants observers have
+already seen, which breaks INV-002 outright. Persisted state must also carry no
+key material (INV-010) — PH-1 found exactly that defect in memory.
 
 No Human authorization is required to proceed (`GOVERNANCE.md` §32).

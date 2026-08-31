@@ -143,7 +143,7 @@ the same data.
 | Phase | Title                                                                   | State        |
 | ----- | ----------------------------------------------------------------------- | ------------ |
 | PH-4  | Asset personality system and multi-asset instantiation                  | **APPROVED** |
-| PH-5  | Continuous runtime, sealed state persistence and restart continuity     | Not started  |
+| PH-5  | Continuous runtime, sealed state persistence and restart continuity     | **ACTIVE**   |
 | PH-6  | Trading boundary: contracts, settlement and verified economic blindness | Not started  |
 
 PH-4 discharges INV-007, the one invariant `docs/architecture/INVARIANTS.md`
@@ -167,6 +167,20 @@ per-asset lattice quantum, and degenerate regions of the parameter space.
 
 Later subphases are provisional and recorded in the phase document: registry and
 quantum calibration, then multi-asset validation and the differentiation metric.
+
+### PH-5 — Continuous Runtime, Sealed State Persistence and Restart Continuity
+
+The market stops being something only a test can drive. A hosted market advances
+because time passed, not because it was polled — which is where INV-002 and
+INV-008 are won or lost — and it survives a real process restart without
+resetting or redrawing a keystream position it has already spent.
+
+| Subphase | Title                                                    | State    |
+| -------- | -------------------------------------------------------- | -------- |
+| PH-5.1   | Runtime core: hosted markets, scheduling and supervision | APPROVED |
+
+Later subphases are provisional: sealed persistence and the recovery policy, then
+the NestJS service and a real process-boundary restart.
 
 PH-5 is where NestJS is first scaffolded, and the engine core stays framework-free
 and I/O-free so the batteries can keep driving it directly. PH-6 closes with the

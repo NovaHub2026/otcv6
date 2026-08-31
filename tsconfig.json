@@ -8,6 +8,9 @@
       "path": "./packages/engine"
     },
     {
+      "path": "./packages/runtime"
+    },
+    {
       "path": "./packages/fixtures"
     },
     {
