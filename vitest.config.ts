@@ -12,6 +12,7 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 const alias = {
   '@otc/core': path.resolve(root, 'packages/core/src/index.ts'),
   '@otc/engine': path.resolve(root, 'packages/engine/src/index.ts'),
+  '@otc/fixtures': path.resolve(root, 'packages/fixtures/src/index.ts'),
 };
 
 const commonExclude = ['**/node_modules/**', '**/dist/**', '**/artifacts/**'];

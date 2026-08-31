@@ -6,9 +6,5 @@
   },
   "include": ["src/**/*.ts"],
   "exclude": ["dist", "node_modules"],
-  "references": [
-    { "path": "../../packages/core" },
-    { "path": "../../packages/engine" },
-    { "path": "../../packages/fixtures" }
-  ]
+  "references": [{ "path": "../core" }]
 }

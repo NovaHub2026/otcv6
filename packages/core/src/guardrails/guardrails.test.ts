@@ -15,7 +15,15 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../../..');
 
 /** Packages whose code generates or transforms market data. */
-const GENERATION_ROOTS = ['packages/core/src', 'packages/engine/src'];
+const GENERATION_ROOTS = [
+  'packages/core/src',
+  'packages/engine/src',
+  // Fixtures deliberately plant directional defects, but they are still
+  // generation code: they must be replayable and portable, or a calibration run
+  // would not be reproducible. Their intended violation — reading a sign — is
+  // caught by the mirror test in PH-3, not by this scanner.
+  'packages/fixtures/src',
+];
 
 /**
  * `SystemClock` is the single sanctioned reader of ambient time: something must
