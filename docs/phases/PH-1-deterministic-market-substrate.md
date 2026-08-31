@@ -1,4 +1,4 @@
-# PH-1 — Deterministic Market Kernel
+# PH-1 — Deterministic Market Substrate
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-1
@@ -73,8 +73,9 @@ specified. The kernel must therefore own its own elementary functions.
    (`exp`, `ln`, and what derives from them) implemented with exactly-specified
    IEEE-754 operations only, plus the distribution samplers the market model will
    need (uniform, Gaussian, exponential, heavy-tailed, discrete).
-4. **Market domain primitives** — instrument specification, price scale and
-   quantisation, tick identity and ordering, candle.
+4. **Market domain primitives** — instrument specification, the canonical
+   **integer log-lattice** price representation (ADR-0004), tick identity and
+   ordering, candle.
 5. **Timeframe aggregation** — tick stream to OHLC for every supported
    timeframe, with the coherence guarantees of §14 and §17.
 6. **State, snapshot and replay contract** — what an engine snapshot is, how a
@@ -82,8 +83,12 @@ specified. The kernel must therefore own its own elementary functions.
 7. **Architecture guardrails** — automated tests that fail the build if the
    engine acquires ambient randomness, ambient time, a non-portable
    transcendental, or a dependency on a trading concept.
-8. **Offline simulation runner skeleton** — enough of `@otc/sim` to drive a
-   generator over a horizon and emit ticks and candles for later analysis.
+8. **Offline simulation runner** — enough of `@otc/sim` to drive a generator
+   over a horizon and emit ticks and candles for later analysis.
+9. **Planted-edge fixture corpus** — a set of generators carrying deliberate,
+   tunable directional edges of known size, plus a symmetric control. This is
+   what PH-2 calibrates its attack battery against; without it, a battery
+   reporting "no edge found" cannot be distinguished from a broken one.
 
 ## 5. Exclusions
 
@@ -202,7 +207,10 @@ PH-1 is complete when a developer can, from the repository alone:
 6. replay a recorded segment from `snapshot + cursor records` and reproduce it
    exactly;
 7. observe the guardrail suite fail when ambient time, ambient randomness, a
-   non-portable transcendental, or a trading import is deliberately introduced.
+   non-portable transcendental, or a trading import is deliberately introduced;
+8. run a generator with a deliberately planted directional edge of a chosen size
+   and recover that edge from the emitted stream, which is what makes PH-2's
+   battery calibratable.
 
 ## 11. Success criteria
 

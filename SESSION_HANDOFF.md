@@ -37,5 +37,5 @@ passed locally. Hosted CI has not executed: no remote is configured.
 
 ## Continuation point
 
-Read `CURRENT_STATE.md`, then `docs/phases/PH-1-deterministic-market-kernel.md`,
+Read `CURRENT_STATE.md`, then `docs/phases/PH-1-deterministic-market-substrate.md`,
 then `docs/phases/PH-1.1-time-and-entropy.md`, and continue implementation.
