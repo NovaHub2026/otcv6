@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { MasterKeyring, type RandomSource } from '@otc/core';
-import { calibrateAsset, TARGET_TIE_RATE, type AssetDefinition } from './asset.js';
+import {
+  calibrateAsset as calibrateAssetSync,
+  calibrateAssetAsync,
+  TARGET_TIE_RATE,
+  type AssetDefinition,
+} from './asset.js';
 import { ASSET_CATALOGUE } from './catalogue.js';
 
 /**
@@ -13,12 +18,12 @@ import { ASSET_CATALOGUE } from './catalogue.js';
 describe('recorded calibration evidence reproduces', () => {
   it.each(ASSET_CATALOGUE.map((a) => [a.definition.id, a] as const))(
     '%s recalibrates to its recorded quantum',
-    (id, asset) => {
+    async (id, asset) => {
       const keyring = MasterKeyring.forTesting(`recalibrate-${id}`);
       const derive = (purpose: string): RandomSource =>
         keyring.derive({ env: 'test', asset: `recal-${id}`, purpose, keyEpoch: 0 });
 
-      const fresh = calibrateAsset(asset.definition, derive);
+      const fresh = await calibrateAssetAsync(asset.definition, derive);
 
       // What must reproduce is the *property* the quantum was chosen for, not
       // the number itself. Measured during PH-4.2: the recorded quanta deliver
@@ -106,8 +111,8 @@ describe('the registration procedure itself', () => {
     traits: ASSET_CATALOGUE[0]!.definition.traits,
   };
 
-  it('derives a quantum that hits the target tie rate', () => {
-    const asset = calibrateAsset(base, derive, { simulatedMs: 2 * 86_400_000 });
+  it('derives a quantum that hits the target tie rate', async () => {
+    const asset = await calibrateAssetAsync(base, derive, { simulatedMs: 2 * 86_400_000 });
     expect(Math.abs(asset.evidence.tieRate - TARGET_TIE_RATE)).toBeLessThan(0.003);
     expect(asset.evidence.logQuantum).toBeGreaterThan(0);
     expect(asset.evidence.medianSteps).toBeGreaterThan(20);
@@ -115,13 +120,13 @@ describe('the registration procedure itself', () => {
   });
 
   it('refuses a span too short to place the quantile', () => {
-    expect(() => calibrateAsset(base, derive, { simulatedMs: 60_000 })).toThrow(
+    expect(() => calibrateAssetSync(base, derive, { simulatedMs: 60_000 })).toThrow(
       /simulate a longer span/,
     );
   });
 
   it('refuses a nonsensical replicate count', () => {
-    expect(() => calibrateAsset(base, derive, { replicates: 0 })).toThrow(RangeError);
-    expect(() => calibrateAsset(base, derive, { replicates: 1.5 })).toThrow(RangeError);
+    expect(() => calibrateAssetSync(base, derive, { replicates: 0 })).toThrow(RangeError);
+    expect(() => calibrateAssetSync(base, derive, { replicates: 1.5 })).toThrow(RangeError);
   });
 });

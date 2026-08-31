@@ -1,7 +1,7 @@
 // Note: this does NOT tag INV-007. PH-4.1 builds the personality model; the
 // evidence that assets are genuinely differentiated is PH-4.3, and traceability.test.ts
 // rejects a claim of evidence for an invariant the map still records as pending.
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { epochMillis, MasterKeyring, type InstrumentSpec, type RandomSource } from '@otc/core';
 import { CascadeMagnitudeModel } from './cascade.js';
 import { DurationCouplingModulator } from './hawkes.js';
@@ -35,7 +35,11 @@ const derive = (purpose: string): RandomSource =>
  * nothing to an even moment. Measuring magnitudes alone is therefore not an
  * approximation, and it avoids generating a price path entirely.
  */
-function measuredExcessKurtosis(traits: PersonalityTraits, steps: number, seed: string): number {
+async function measuredExcessKurtosis(
+  traits: PersonalityTraits,
+  steps: number,
+  seed: string,
+): Promise<number> {
   const config = expandPersonality(traits, instrument);
   const seeded = MasterKeyring.forTesting(seed);
   const derive = (purpose: string): RandomSource =>
@@ -71,6 +75,11 @@ function measuredExcessKurtosis(traits: PersonalityTraits, steps: number, seed: 
     const squared = magnitude * magnitude;
     second += squared;
     fourth += squared * squared;
+
+    // Yield periodically, matching `buildObserverDataset`. A million-iteration
+    // synchronous block starves the test runner's progress channel, which
+    // surfaces as an unrelated-looking worker RPC timeout at the end of the run.
+    if (step % 250_000 === 0) await new Promise<void>((resolve) => setImmediate(resolve));
   }
   const e2 = second / steps;
   const e4 = fourth / steps;
@@ -90,7 +99,14 @@ describe('the analytic gate predicts what the layers actually do', () => {
     expandPersonality(DEFAULT_TRAITS, instrument),
     derive('gate'),
   );
-  const measured = SEEDS.map((seed) => measuredExcessKurtosis(DEFAULT_TRAITS, 1_000_000, seed));
+  let measured: number[] = [];
+
+  beforeAll(async () => {
+    measured = [];
+    for (const seed of SEEDS) {
+      measured.push(await measuredExcessKurtosis(DEFAULT_TRAITS, 1_000_000, seed));
+    }
+  }, 900_000);
 
   it('matches the median realisation closely', () => {
     // The median, not the mean. See the next test for why: one realisation in
@@ -140,12 +156,18 @@ describe('the analytic gate predicts what the layers actually do', () => {
     expect(measuredSpread).toBeGreaterThan(predictedSpread * 1.5);
   });
 
-  it('tracks a change in clustering, in both prediction and measurement', () => {
+  it('tracks a change in clustering, in both prediction and measurement', async () => {
     const calm: PersonalityTraits = { ...DEFAULT_TRAITS, clustering: 0.12 };
     const wild: PersonalityTraits = { ...DEFAULT_TRAITS, clustering: 0.3 };
 
-    const calmMeasured = median(SEEDS.map((s) => measuredExcessKurtosis(calm, 400_000, s)));
-    const wildMeasured = median(SEEDS.map((s) => measuredExcessKurtosis(wild, 400_000, s)));
+    const calmValues: number[] = [];
+    const wildValues: number[] = [];
+    for (const seed of SEEDS) {
+      calmValues.push(await measuredExcessKurtosis(calm, 400_000, seed));
+      wildValues.push(await measuredExcessKurtosis(wild, 400_000, seed));
+    }
+    const calmMeasured = median(calmValues);
+    const wildMeasured = median(wildValues);
     expect(wildMeasured).toBeGreaterThan(calmMeasured);
 
     const calmPredicted = predictedExcessKurtosis(expandPersonality(calm, instrument), derive('g'));

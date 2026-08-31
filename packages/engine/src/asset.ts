@@ -92,7 +92,12 @@ export interface CalibrationOptions {
   readonly simulatedMs?: number;
   readonly replicates?: number;
   readonly targetTieRate?: number;
+  /** Yield to the event loop every this many ticks, in the async variant. */
+  readonly chunkTicks?: number;
 }
+
+/** Default yield interval, matching `buildObserverDataset`. */
+export const CALIBRATION_CHUNK_TICKS = 250_000;
 
 /** Stream purposes a calibration run consumes. */
 export const CALIBRATION_STREAM_PURPOSES = [
@@ -116,12 +121,13 @@ function quantile(sorted: readonly number[], fraction: number): number {
  * choose. The walk is accumulated at full precision and windowed by wall clock,
  * which is also how a contract sees it.
  */
-function horizonReturns(
+function* horizonReturnsCore(
   config: Omit<MarketEngineConfig, 'instrument'>,
   derive: (purpose: string) => RandomSource,
   horizonMs: number,
   simulatedMs: number,
-): { returns: number[]; ticks: number } {
+  chunkTicks: number,
+): Generator<void, { returns: number[]; ticks: number }> {
   const magnitude = new ModulatedMagnitudeModel(
     new CascadeMagnitudeModel(
       config.baseVolatility,
@@ -178,6 +184,11 @@ function horizonReturns(
       horizonOpen = logPrice;
       horizonEndMs += horizonMs;
     }
+
+    // Yield periodically. A calibration run is millions of iterations, and a
+    // synchronous block that long starves whatever else shares the loop — a test
+    // runner's progress channel today, a runtime's request handling later.
+    if (sequence % chunkTicks === 0) yield;
   }
   return { returns, ticks: sequence };
 }
@@ -188,11 +199,11 @@ function horizonReturns(
  * The order matters. Bounds and the analytic kurtosis gate run first and cost
  * microseconds; only a personality that survives both is worth simulating.
  */
-export function calibrateAsset(
+function* calibrateAssetCore(
   definition: AssetDefinition,
   derive: (purpose: string) => RandomSource,
-  options: CalibrationOptions = {},
-): CalibratedAsset {
+  options: CalibrationOptions,
+): Generator<void, CalibratedAsset> {
   const horizonMs = options.horizonMs ?? CALIBRATION_HORIZON_MS;
   const simulatedMs = options.simulatedMs ?? CALIBRATION_SPAN_MS;
   const targetTieRate = options.targetTieRate ?? TARGET_TIE_RATE;
@@ -225,11 +236,12 @@ export function calibrateAsset(
   let totalHorizons = 0;
   const pooled: number[] = [];
   for (let replicate = 0; replicate < replicates; replicate += 1) {
-    const { returns, ticks } = horizonReturns(
+    const { returns, ticks } = yield* horizonReturnsCore(
       config,
-      (purpose) => derive(`${purpose}-r${replicate}`),
+      (purpose: string) => derive(`${purpose}-r${replicate}`),
       horizonMs,
       simulatedMs,
+      options.chunkTicks ?? CALIBRATION_CHUNK_TICKS,
     );
     if (returns.length < 100) {
       throw new RangeError(
@@ -288,4 +300,37 @@ export function calibrateAsset(
       horizons: totalHorizons,
     },
   };
+}
+
+/**
+ * Register an asset synchronously.
+ *
+ * Convenient for short spans. A full registration is millions of iterations of
+ * uninterrupted CPU, so prefer {@link calibrateAssetAsync} anywhere something
+ * else shares the event loop — a test runner's progress channel, or a runtime.
+ */
+export function calibrateAsset(
+  definition: AssetDefinition,
+  derive: (purpose: string) => RandomSource,
+  options: CalibrationOptions = {},
+): CalibratedAsset {
+  const run = calibrateAssetCore(definition, derive, options);
+  for (;;) {
+    const step = run.next();
+    if (step.done === true) return step.value;
+  }
+}
+
+/** Register an asset, yielding to the event loop as it goes. */
+export async function calibrateAssetAsync(
+  definition: AssetDefinition,
+  derive: (purpose: string) => RandomSource,
+  options: CalibrationOptions = {},
+): Promise<CalibratedAsset> {
+  const run = calibrateAssetCore(definition, derive, options);
+  for (;;) {
+    const step = run.next();
+    if (step.done === true) return step.value;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
 }

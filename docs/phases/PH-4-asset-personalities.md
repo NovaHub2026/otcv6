@@ -231,8 +231,18 @@ smaller size.
 
 It is **not** waved away. A gate that can exit non-zero without a failing test is
 a gate that trains its operator to ignore it, which is precisely the habit that
-cost this phase its first gate run. Tracked as B-005, and the phase is approved on
-the test results with the discrepancy stated rather than on a green summary line.
+cost this phase its first gate run. Tracked as B-005, and the phase was approved
+on the test results with the discrepancy stated rather than on a green summary
+line.
+
+**Resolved after approval (B-005, closed 2026-08-31).** The cause was this
+phase's own code, not the runner. Calibration and kurtosis measurement ran
+millions of iterations without returning to the event loop, so the worker could
+not process the acknowledgement to its own `onTaskUpdate` call. `observer.ts` had
+documented the convention from the start — "Yield to the event loop every this
+many ticks" — and `runBatteryAsync` already followed it; the PH-4 code simply did
+not. Calibration now has a generator core with sync and yielding wrappers. The
+gate exits 0: 804 tests across 50 files, zero unhandled errors.
 
 ### A process defect this phase exposed
 

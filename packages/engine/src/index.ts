@@ -78,6 +78,8 @@ export {
 } from './personality.js';
 export {
   calibrateAsset,
+  calibrateAssetAsync,
+  CALIBRATION_CHUNK_TICKS,
   CALIBRATION_HORIZON_MS,
   CALIBRATION_SPAN_MS,
   CALIBRATION_STREAM_PURPOSES,
