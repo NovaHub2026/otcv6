@@ -12,30 +12,31 @@ Last synchronized: 2026-08-31
 
 ## Development cycle
 
-| Field                            | Value                                                                     |
-| -------------------------------- | ------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 1                                                                   |
-| Approved phases in current cycle | 0 of 3                                                                    |
-| Cycle Audit state                | NOT PENDING — becomes pending when the third phase of Cycle 1 is APPROVED |
-| Last Cycle Audit                 | None                                                                      |
+| Field                            | Value                                               |
+| -------------------------------- | --------------------------------------------------- |
+| Active development cycle         | Cycle 1                                             |
+| Approved phases in current cycle | **1 of 3** (PH-1)                                   |
+| Cycle Audit state                | NOT PENDING — becomes pending when PH-3 is APPROVED |
+| Last Cycle Audit                 | None                                                |
 
 ## Phase and subphase
 
-| Field                  | Value                                                                |
-| ---------------------- | -------------------------------------------------------------------- |
-| Active phase           | PH-1 — Deterministic Market Kernel                                   |
-| Phase lifecycle        | ACTIVE                                                               |
-| Active subphase        | PH-1.1 — Canonical time model and deterministic entropy architecture |
-| Subphase lifecycle     | ACTIVE                                                               |
-| Last approved phase    | None                                                                 |
-| Last approved subphase | None                                                                 |
+| Field                  | Value                                                      |
+| ---------------------- | ---------------------------------------------------------- |
+| Active phase           | PH-2 — Calibrated Adversarial Predictability Laboratory    |
+| Phase lifecycle        | ACTIVE                                                     |
+| Active subphase        | PH-2.1 — Public-observer dataset and the attack contract   |
+| Subphase lifecycle     | ACTIVE                                                     |
+| Last approved phase    | PH-1 — Deterministic Market Substrate                      |
+| Last approved subphase | PH-1.4 — Simulation runner and planted-edge fixture corpus |
 
 ## Current objective
 
-Establish the deterministic substrate every later capability depends on: a
-canonical time model, a keyed counter-based entropy architecture giving
-reproducible replay with cryptographic public unpredictability, the market
-domain primitives, and coherent tick-to-candle aggregation across timeframes.
+Build and **calibrate** the instrument that decides project success: a
+public-observer attack battery measuring directional edge at the eight binary
+horizons, paired with a realism battery. Its acceptance is about the instrument,
+not the market — it must detect every planted edge at or above a declared minimum
+detectable effect, report nothing on the control, and publish power curves.
 
 ## Blockers
 
@@ -43,39 +44,47 @@ None.
 
 ## Pending protected Human decisions
 
-None blocking. Two items are recorded for a future decision point and do **not**
-block current work:
+None blocking. Two are recorded for later escalation and do **not** block work:
 
-1. **GitHub remote creation** (`docs/BACKLOG.md` B-001) — creating a repository
-   under the Human Owner's account is outward-facing, so it is offered rather
-   than performed. Until then Git history is local-only and hosted CI has not
-   executed.
-2. **At-the-money settlement policy** — whether a contract expiring exactly at
-   the entry price is refunded or lost is a settlement rule with material
-   business consequence (`GOVERNANCE.md` §5). It is not needed before the
-   settlement phase and will be escalated then with a recommendation.
+1. **At-the-money settlement policy** — refund or loss when a contract expires
+   exactly at the entry price. A settlement rule with material business
+   consequence (`GOVERNANCE.md` §5). Needed at PH-6. Recommendation: **void and
+   refund** — ADR-0003 §3 shows this is the only remaining way the architecture
+   could produce a directional edge, since `P(up) = P(down)` holds exactly.
+2. **Fairness-proof mechanism** — whether the product publishes verifiable
+   settlement proofs, and in what form. Relevant at PH-6/PH-9. Recommendation:
+   Merkle roots of the tick journal with inclusion proofs, never disclosure of
+   generator keys.
+
+Non-blocking infrastructure item: **no GitHub remote exists** (`docs/BACKLOG.md`
+B-001), so history is local-only and hosted CI has never executed.
 
 ## Verification state
 
 | Check                            | Status                              |
 | -------------------------------- | ----------------------------------- |
-| `npm run build` (full typecheck) | PASSED                              |
-| `npm run lint`                   | PASSED                              |
 | `npm run format:check`           | PASSED                              |
-| `npx vitest run`                 | PASSED                              |
+| `npm run lint`                   | PASSED                              |
+| `npm run build` (full typecheck) | PASSED                              |
+| `npx vitest run`                 | PASSED — 381 tests, 22 files        |
+| Coverage (unit)                  | 99.74% statements, 98.37% branches  |
 | Hosted CI                        | NOT EXECUTED — no remote configured |
 
 ## Relevant records
 
-| Kind    | Reference                                                            |
-| ------- | -------------------------------------------------------------------- |
-| ADR     | ADR-0001 — Repository, toolchain and package architecture (APPROVED) |
-| Backlog | `docs/BACKLOG.md` B-001                                              |
-| Roadmap | `docs/phases/ROADMAP.md`                                             |
+| Kind     | Reference                                                                                |
+| -------- | ---------------------------------------------------------------------------------------- |
+| ADR-0001 | Repository, toolchain and package architecture (APPROVED)                                |
+| ADR-0002 | Deterministic entropy architecture (APPROVED)                                            |
+| ADR-0003 | Conditional sign symmetry as the anti-predictability architecture (APPROVED)             |
+| ADR-0004 | Canonical price representation: an integer log lattice (APPROVED)                        |
+| Backlog  | `docs/BACKLOG.md` B-001                                                                  |
+| Roadmap  | `docs/phases/ROADMAP.md`                                                                 |
+| Branch   | `feature/ph-1-deterministic-market-kernel` (PH-1 work; PH-2 continues on its own branch) |
 
 ---
 
 ## EXACT NEXT LEGAL ACTION
 
-Continue autonomous implementation of **PH-1.1** per
-`docs/phases/PH-1.1-time-and-entropy.md`.
+Continue autonomous implementation of **PH-2.1** per
+`docs/phases/PH-2.1-observer-dataset-and-attack-contract.md`.

@@ -102,6 +102,14 @@ describe('RandomStream — cursor arithmetic', () => {
     expect(Buffer.concat(parts.map((p) => Buffer.from(p)))).toEqual(Buffer.from(bulk));
   });
 
+  it('refuses to generate past the end of the stream', () => {
+    // Reachable only at block 2^64, but it is a correctness boundary: silently
+    // wrapping would restart the keystream and repeat history.
+    const exhausted = stream(cursor(MAX_BLOCK_INDEX, 60));
+    exhausted.nextUint32(); // consumes the last four bytes of the final block
+    expect(() => exhausted.nextUint32()).toThrow(RangeError);
+  });
+
   it('rejects an out-of-range cursor', () => {
     expect(() => cursor(-1n, 0)).toThrow(RangeError);
     expect(() => cursor(MAX_BLOCK_INDEX + 1n, 0)).toThrow(RangeError);
@@ -152,6 +160,14 @@ describe('RandomStream — uniform primitives', () => {
       }
       expect(outOfRange, `bound ${bound}`).toBe(0);
     }
+  });
+
+  it('nextBoundedUint32 accepts the full 32-bit range', () => {
+    const s = stream();
+    const value = s.nextBoundedUint32(2 ** 32);
+    expect(Number.isInteger(value)).toBe(true);
+    expect(value).toBeGreaterThanOrEqual(0);
+    expect(value).toBeLessThan(2 ** 32);
   });
 
   it('nextBoundedUint32 rejects invalid bounds', () => {

@@ -2,7 +2,7 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-1
-Status: ACTIVE
+Status: APPROVED
 Cycle: 1 (phase 1 of 3)
 Created: 2026-08-31
 Branch: `feature/ph-1-deterministic-market-kernel`
@@ -238,3 +238,82 @@ again.
 | Cursor-lease waste at high restart frequency                       | Low        | Lease size is configurable; waste is bounded and recorded                                                                                                   |
 | Millisecond time resolution too coarse for tick ordering           | Medium     | Ticks carry a per-asset monotonic sequence number, so ordering never depends on clock resolution                                                            |
 | Over-engineering the kernel before the market model exists         | Real       | Scope is fixed to what the invariants require; anything the market model _might_ want is deferred to PH-2                                                   |
+
+---
+
+## 14. Phase approval record
+
+Status: **APPROVED** — 2026-08-31, from executed evidence.
+Cycle 1: phase 1 of 3 approved.
+
+### Subphases
+
+| Subphase | Title                                                                              | State    |
+| -------- | ---------------------------------------------------------------------------------- | -------- |
+| PH-1.1   | Canonical time model and deterministic entropy architecture                        | APPROVED |
+| PH-1.2   | Portable numeric foundation and distribution samplers                              | APPROVED |
+| PH-1.3   | Market domain: integer log lattice, ticks, candle aggregation, snapshot and replay | APPROVED |
+| PH-1.4   | Simulation runner and planted-edge fixture corpus                                  | APPROVED |
+
+### Acceptance intent
+
+| #   | Intent                                                                 | Evidence                                                                                                                                                                 |
+| --- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Derive a stream, draw, snapshot, restore, byte-identical continuation  | `stream.test.ts` — re-derivation, `seek(position())` round-trip, far-index random access                                                                                 |
+| 2   | Distinct labels independent; simulation cannot collide with production | `keyring.test.ts` isolation and production-safety suites; `entropy.stat.test.ts` correlation and collision tests                                                         |
+| 3   | Every sampler reproducible exactly                                     | `distributions.test.ts` — 12 samplers, reproducible and stateless                                                                                                        |
+| 4   | Tick stream folds to coherent candles on every timeframe               | all 66 ordered timeframe pairs, streams to 400k ticks, plus a chained re-fold through every timeframe                                                                    |
+| 5   | A crash never consumes a cursor twice                                  | `lease.test.ts` — crash at every point in the consume/persist cycle, four lease sizes                                                                                    |
+| 6   | Replay a recorded segment exactly, across a restart seam               | `seamReplay.test.ts` — a two-session history with a real cursor jump, reproduced exactly from snapshot plus advances, **and demonstrably not reproducible without them** |
+| 7   | Guardrails fail when a violation is introduced                         | `guardrails.test.ts` scanner tests, plus a planted violation producing five distinct failures                                                                            |
+| 8   | Recover a deliberately planted edge from an emitted stream             | `calibration.stat.test.ts` — six planted defects, each silent at strength 0 and detected at strength 1                                                                   |
+
+### Phase invariants
+
+All of PH1-I1 … PH1-I11 are covered by executed, passing tests. INV-003, INV-004,
+INV-008, INV-009 and INV-010 now have structural, tested foundations; INV-001 is
+enforced by the package graph plus the guardrail suite.
+
+### Verification executed
+
+| Check                            | Result                                                        |
+| -------------------------------- | ------------------------------------------------------------- |
+| `npm run format:check`           | PASSED                                                        |
+| `npm run lint`                   | PASSED                                                        |
+| `npm run build` (full typecheck) | PASSED                                                        |
+| `npx vitest run`                 | PASSED — **381 tests, 22 files**                              |
+| Coverage (unit)                  | **99.74% statements, 98.37% branches, 100% functions**        |
+| Hosted CI                        | NOT EXECUTED — no remote configured (`docs/BACKLOG.md` B-001) |
+
+### Measured performance
+
+| Component               | Throughput                                          |
+| ----------------------- | --------------------------------------------------- |
+| Entropy (`nextFloat64`) | 26M draws/s                                         |
+| `standardNormal`        | 4.3M draws/s                                        |
+| Candle aggregation      | 27.6M ticks/s                                       |
+| End-to-end simulation   | 1.19M ticks/s; 0.62M while folding three timeframes |
+
+### What the phase changed about the plan
+
+Three findings from PH-1 altered the roadmap and are recorded in ADRs rather than
+left in this document:
+
+1. **Conditional symmetry, not zero drift, is the invariant** (ADR-0003). A
+   process can be an exact martingale and still pay out at P(up) = 0.529, because
+   a binary contract settles on the median. The leverage effect — the most likely
+   "realism" improvement anyone would propose — is worth 2.9pp of edge.
+2. **The canonical price must be an integer log lattice** (ADR-0004). Publishing
+   a rounded price re-introduces up to 22pp of edge at the 30-second horizon.
+3. **The falsifier must be built and calibrated before the market model.** Three
+   of six planted defects are invisible to an unconditional estimator, and a
+   probe written during this phase reported z > 1000 on a provably unexploitable
+   process because of a look-ahead bug. The roadmap was reordered accordingly.
+
+### Known limitations carried forward
+
+- Hosted CI has never executed; all evidence is local.
+- The symmetric control fixture is a calibration device, not a candidate product.
+  The real generative model is PH-3.
+- Master-secret custody, rotation and durable lease storage are operational
+  requirements recorded in `docs/architecture/ENTROPY.md` for PH-5.

@@ -1,3 +1,4 @@
+import { inspect } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { ProductionStreamFromTestKeyringError } from './errors.js';
 import { MasterKeyring } from './keyring.js';
@@ -129,6 +130,25 @@ describe('MasterKeyring — secret containment', () => {
     expect(serialised).toContain('"position":"0:0"');
     expect(Object.keys(s)).not.toContain('keyWords');
     expect(String(s)).toContain('RandomStream(');
+  });
+
+  it('redacts the secret in Node inspect output too', () => {
+    // console.log and util.inspect do not call toJSON, so the inspect hook is a
+    // separate containment guarantee and needs its own check.
+    const marker = 0xcd;
+    const keyring = MasterKeyring.fromSecret('kr2', new Uint8Array(32).fill(marker));
+    const inspected = inspect(keyring);
+    expect(inspected).toBe('MasterKeyring(kr2)');
+    expect(inspected).not.toContain(String(marker));
+    expect(inspect({ nested: keyring })).toContain('MasterKeyring(kr2)');
+  });
+
+  it('redacts a derived stream in Node inspect output', () => {
+    const keyring = MasterKeyring.forTesting('inspect');
+    const s = keyring.derive(base);
+    const keyHex = Buffer.from(keyring.deriveKey(base)).toString('hex');
+    expect(inspect(s)).not.toContain(keyHex);
+    expect(inspect(s)).toContain('RandomStream(');
   });
 
   it('exposes only a key identifier for snapshots to reference', () => {

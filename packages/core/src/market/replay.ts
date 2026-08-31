@@ -55,7 +55,11 @@ export function assertReplaySegment(segment: ReplaySegment): void {
     throw new RangeError('Snapshot must record the key identifier that produced the history.');
   }
 
+  // A single restart advances every stream the engine holds, all at the same
+  // sequence. So the list is ordered non-decreasing overall, and strictly
+  // increasing only within a purpose — a purpose cannot jump twice at one tick.
   let previous = -1;
+  const lastBySequenceForPurpose = new Map<string, number>();
   for (const advance of advances) {
     if (advance.instrumentId !== snapshot.instrumentId) {
       throw new RangeError(
@@ -67,11 +71,18 @@ export function assertReplaySegment(segment: ReplaySegment): void {
         `Cursor advance at ${advance.atSequence} precedes the snapshot at ${snapshot.sequence}.`,
       );
     }
-    if (advance.atSequence <= previous) {
+    if (advance.atSequence < previous) {
       throw new RangeError(
-        `Cursor advances must be strictly ordered: ${advance.atSequence} follows ${previous}.`,
+        `Cursor advances must be ordered by sequence: ${advance.atSequence} follows ${previous}.`,
       );
     }
+    const lastForPurpose = lastBySequenceForPurpose.get(advance.purpose);
+    if (lastForPurpose !== undefined && advance.atSequence <= lastForPurpose) {
+      throw new RangeError(
+        `Stream ${JSON.stringify(advance.purpose)} advances more than once at sequence ${advance.atSequence}.`,
+      );
+    }
+    lastBySequenceForPurpose.set(advance.purpose, advance.atSequence);
     previous = advance.atSequence;
     if (!Object.prototype.hasOwnProperty.call(snapshot.cursors, advance.purpose)) {
       throw new RangeError(

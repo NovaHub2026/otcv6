@@ -15,17 +15,20 @@ Describes: the system as it exists today
         apps/api        NestJS runtime, streaming,          (not yet built)
             │           trading, settlement, persistence
             ▼
-      @otc/engine       generative market model             (PH-2)
+      @otc/engine       generative market model             (PH-3)
             │
             ▼
-       @otc/core        deterministic kernel                (PH-1, in progress)
+       @otc/core        deterministic substrate             (PH-1, APPROVED)
                         ├── time/       instants, clocks, timeframes      ✅
                         ├── entropy/    keyring, streams, cursor lease    ✅
-                        ├── math/       portable elementary functions     (PH-1.2)
-                        ├── market/     tick, candle, aggregation         (PH-1.3)
+                        ├── math/       portable exp / ln / pow           ✅
+                        ├── random/     distribution samplers             ✅
+                        ├── market/     log lattice, ticks, candles,      ✅
+                        │               snapshot and replay
                         └── guardrails/ architecture tests                ✅
 
-       tools/sim        offline simulation and evidence     (PH-1.3)
+    @otc/fixtures       planted-edge corpus + control       ✅
+       tools/sim        simulation runner and edge estimator ✅
 ```
 
 ## The dependency rule
@@ -83,3 +86,28 @@ Statistical tests are **deterministically seeded** and use published critical
 values rather than thresholds fitted to observed output. A randomly failing
 statistical test is indistinguishable from a real integrity regression, and a
 gate the team learns to re-run is not a gate.
+
+## The price representation
+
+The canonical price is an **integer count of log units** (ADR-0004). The integer
+the generator accumulates is the one published and the one that settles;
+rendering a decimal price is a client concern that never reaches a comparison.
+
+This is not a formatting preference. Publishing a rounded price re-introduces a
+directional edge of up to 22 percentage points at the 30-second horizon, because
+symmetry holds about the _unrounded_ value and rounding a signed price is
+asymmetric about it. Accumulating in log space also makes proportional volatility
+automatic, so the generator never has to consult the price level — and the price
+level is a sign-dependent quantity, so consulting it would break the symmetry
+guarantee of ADR-0003.
+
+## Calibration corpus
+
+`@otc/fixtures` holds a symmetric control and six generators each carrying one
+deliberate directional defect. It exists because an attack battery reporting "no
+edge found" is worthless until it has been shown capable of reporting the
+opposite.
+
+Its calibration produced the result that shapes PH-2: **three of the six defects
+are invisible to an unconditional estimator**, and level-anchored defects need
+roughly three times the history of the others to reach the same significance.

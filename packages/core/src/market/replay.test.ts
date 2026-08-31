@@ -30,18 +30,37 @@ const advance = (atSequence: number, purpose: string, from: string, to: string):
 
 describe('replay segment validation', () => {
   it('accepts a well-formed segment', () => {
-    const segment: ReplaySegment = {
-      snapshot,
-      advances: [
-        advance(1_500, 'magnitude', '600:0', '1600:0'),
-        advance(1_500, 'sign', '300:0', '1300:0'),
-      ],
-    };
-    // Two purposes advancing at the same sequence is a single restart, so their
-    // ordering must be tolerated; strict ordering applies across sequences.
     expect(() =>
-      assertReplaySegment({ ...segment, advances: [segment.advances[0]!] }),
+      assertReplaySegment({ snapshot, advances: [advance(1_500, 'magnitude', '600:0', '1600:0')] }),
     ).not.toThrow();
+  });
+
+  it('accepts several streams advancing at the same sequence', () => {
+    // One restart advances every stream the engine holds, all at once, so the
+    // list is only non-decreasing overall — strict ordering applies per purpose.
+    expect(() =>
+      assertReplaySegment({
+        snapshot,
+        advances: [
+          advance(1_500, 'magnitude', '600:0', '1600:0'),
+          advance(1_500, 'sign', '300:0', '1300:0'),
+          advance(1_500, 'arrival', '90:8', '1090:0'),
+          advance(2_400, 'magnitude', '1600:0', '2600:0'),
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it('rejects one stream advancing twice at the same sequence', () => {
+    expect(() =>
+      assertReplaySegment({
+        snapshot,
+        advances: [
+          advance(1_500, 'magnitude', '600:0', '1600:0'),
+          advance(1_500, 'magnitude', '1600:0', '2600:0'),
+        ],
+      }),
+    ).toThrow(RangeError);
   });
 
   it('records a key identifier, never a secret', () => {
@@ -63,7 +82,7 @@ describe('replay segment validation', () => {
     ).toThrow(RangeError);
   });
 
-  it('rejects unordered advances', () => {
+  it('rejects advances out of sequence order', () => {
     expect(() =>
       assertReplaySegment({
         snapshot,
