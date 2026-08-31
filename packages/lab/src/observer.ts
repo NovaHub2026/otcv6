@@ -1,8 +1,8 @@
 import {
   CandleAggregator,
   epochMillis,
-  foldTicks,
   indexAtOrAfter,
+  logPrice,
   priceAtOrBefore,
   timeframe,
   type AssetFamily,
@@ -65,11 +65,20 @@ export interface ObserverDataset {
 class Dataset implements ObserverDataset {
   readonly #candleCache = new Map<TimeframeId, readonly Candle[]>();
 
+  /**
+   * Prices and instants are held as typed arrays and nothing else.
+   *
+   * An earlier version retained the `Tick` objects so candles could be folded
+   * from them. At roughly a hundred bytes per tick that made a hundred-million-
+   * tick run impossible, and a hundred million ticks is what policing the long
+   * horizons actually requires. Ticks are now rebuilt transiently while folding,
+   * which costs allocation the collector immediately reclaims and takes the
+   * retained cost to twelve bytes per tick.
+   */
   constructor(
     readonly instrument: PublicInstrument,
     readonly prices: Int32Array,
     readonly instants: Float64Array,
-    private readonly ticks: readonly Tick[],
   ) {}
 
   get tickCount(): number {
@@ -87,7 +96,20 @@ class Dataset implements ObserverDataset {
   candles(id: TimeframeId): readonly Candle[] {
     const cached = this.#candleCache.get(id);
     if (cached !== undefined) return cached;
-    const folded = foldTicks(timeframe(id), this.ticks);
+    // Uses the substrate's own aggregator, so a candle here is the same object a
+    // chart would show. Reimplementing the fold would risk diverging from it.
+    const aggregator = new CandleAggregator(timeframe(id));
+    const folded: Candle[] = [];
+    for (let i = 0; i < this.prices.length; i += 1) {
+      const closed = aggregator.accept({
+        instant: epochMillis(this.instants[i]!),
+        sequence: i + 1,
+        price: logPrice(this.prices[i]!),
+      });
+      if (closed !== null) folded.push(closed);
+    }
+    const open = aggregator.current();
+    if (open !== null) folded.push(open);
     this.#candleCache.set(id, folded);
     return folded;
   }
@@ -124,7 +146,6 @@ export async function buildObserverDataset(options: DatasetBuildOptions): Promis
     throw new RangeError(`maxTicks must be a positive integer, received ${maxTicks}.`);
   }
 
-  const ticks: Tick[] = [];
   const prices = new Int32Array(maxTicks);
   const instants = new Float64Array(maxTicks);
   let count = 0;
@@ -139,7 +160,6 @@ export async function buildObserverDataset(options: DatasetBuildOptions): Promis
     }
     prices[count] = tick.price;
     instants[count] = tick.instant;
-    ticks.push(tick);
     count += 1;
     if (count % chunkTicks === 0) await new Promise<void>((resolve) => setImmediate(resolve));
   }
@@ -151,7 +171,6 @@ export async function buildObserverDataset(options: DatasetBuildOptions): Promis
     toPublicInstrument(source.instrument),
     prices.subarray(0, count),
     instants.subarray(0, count),
-    ticks,
   );
 }
 
@@ -177,7 +196,7 @@ export function datasetFromTicks(
   }
   const publicSpec: PublicInstrument =
     'family' in instrument ? toPublicInstrument(instrument) : instrument;
-  return new Dataset(publicSpec, prices, instants, ticks);
+  return new Dataset(publicSpec, prices, instants);
 }
 
 /** Streaming aggregation, exposed so a runtime can reuse the same fold. */

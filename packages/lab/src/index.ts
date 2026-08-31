@@ -1,3 +1,4 @@
+export * from './attacks/index.js';
 export {
   assessEconomics,
   breakevenWinRate,
