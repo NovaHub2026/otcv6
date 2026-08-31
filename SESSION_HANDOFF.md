@@ -6,16 +6,16 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                         |
-| ------------------ | --------------------------------------------- |
-| Last clean session | 2026-08-31                                    |
-| Branch             | `feature/ph-4-asset-personalities` (merge me) |
-| Remote             | `origin` → NovaHub2026/otcv6 (private, empty) |
-| Active cycle       | Cycle 2, **1 of 3** phases approved           |
-| Active phase       | none — PH-5 is next to be created             |
-| Active subphase    | none                                          |
-| Cycle Audit        | 001 **APPROVED** — next due after PH-4/5/6    |
-| Blockers           | none                                          |
+| Field              | Value                                          |
+| ------------------ | ---------------------------------------------- |
+| Last clean session | 2026-08-31                                     |
+| Branch             | `main` (PH-4 merged and pushed)                |
+| Remote             | `origin` → NovaHub2026/otcv6 — pushed, in sync |
+| Active cycle       | Cycle 2, **1 of 3** phases approved            |
+| Active phase       | none — PH-5 is next to be created              |
+| Active subphase    | none                                           |
+| Cycle Audit        | 001 **APPROVED** — next due after PH-4/5/6     |
+| Blockers           | none                                           |
 
 ## Completed
 
@@ -58,8 +58,10 @@ verdict clean at a 0.217pp detection floor, realism 15/15, mirror test zero
 divergences. Recorded in
 [`docs/evidence/CYCLE-1-VERIFICATION.md`](docs/evidence/CYCLE-1-VERIFICATION.md).
 
-Hosted CI has still never executed: nothing has been pushed to the configured
-remote.
+Hosted CI has still never executed. `main` was pushed on 2026-08-31 and the
+workflow triggered, but GitHub Actions refused to start the job: "recent account
+payments have failed or your spending limit needs to be increased". This needs
+the Human Owner (`docs/BACKLOG.md` B-001).
 
 ## Continuation point
 
@@ -67,8 +69,7 @@ Read `CURRENT_STATE.md`. Cycle 1 is closed and its audit is approved, so
 development continues **without further Human authorization**
 (`GOVERNANCE.md` §32).
 
-Merge `feature/ph-4-asset-personalities` into `main`, then create the **PH-5
-Phase Context Document** — continuous runtime, sealed state persistence and
+Create the **PH-5 Phase Context Document** — continuous runtime, sealed state persistence and
 restart continuity — on `feature/ph-5-runtime`. PH-5 is where NestJS is first
 scaffolded; the engine core must stay framework-free and I/O-free so the
 batteries can keep driving it directly.

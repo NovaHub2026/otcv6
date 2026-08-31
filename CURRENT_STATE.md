@@ -63,11 +63,18 @@ None blocking. Two are recorded for later escalation:
    Merkle roots of the tick journal with inclusion proofs, never disclosure of
    generator keys.
 
-Non-blocking infrastructure item: a private remote **is** configured —
-`origin → https://github.com/NovaHub2026/otcv6`, with `main` tracking
-`origin/main`. The repository exists, is reachable and is **empty**: nothing has
-ever been pushed, so history is local-only and hosted CI has never executed
-(`docs/BACKLOG.md` B-001).
+Infrastructure item requiring the Human Owner: `main` was pushed to
+`origin → https://github.com/NovaHub2026/otcv6` on 2026-08-31 (commit `6766b8a`,
+20 commits). The CI workflow triggered correctly and **could not run**:
+
+> The job was not started because recent account payments have failed or your
+> spending limit needs to be increased.
+
+So hosted CI still has not executed, and the reason is now an account billing
+state rather than a missing push. This is the one thing a local gate cannot
+substitute for — PH-4 lost a phase gate to a failing lint that two subphase
+approvals had recorded as passing, precisely because no independent check ever
+ran (`docs/BACKLOG.md` B-001).
 
 Cycle Audit 001 found this stated as "no remote configured" throughout PH-1, PH-2
 and PH-3. The remote existed the whole time; the claim was asserted repeatedly
