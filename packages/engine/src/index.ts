@@ -62,3 +62,17 @@ export {
   type MirrorOptions,
   type MirrorResult,
 } from './mirror.js';
+export {
+  assertPersonalitySafe,
+  assertPersonalityTraits,
+  cascadeInflation,
+  DEFAULT_TRAITS,
+  EXCESS_KURTOSIS_BAND,
+  expandPersonality,
+  predictedExcessKurtosis,
+  regimeInflation,
+  structureInflation,
+  STRUCTURE_INFLATION_STEPS,
+  TRAIT_BOUNDS,
+  type PersonalityTraits,
+} from './personality.js';

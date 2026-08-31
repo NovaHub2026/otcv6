@@ -25,10 +25,10 @@ Last synchronized: 2026-08-31
 | ---------------------- | -------------------------------------------------------------------- |
 | Active phase           | PH-4 — Asset Personality System and Multi-Asset Instantiation        |
 | Phase lifecycle        | ACTIVE — decomposing into subphases                                  |
-| Active subphase        | None                                                                 |
+| Active subphase        | None — PH-4.1 approved, PH-4.2 next                                  |
 | Subphase lifecycle     | n/a                                                                  |
 | Last approved phase    | PH-3 — Core Generative Market Process Under Continuous Falsification |
-| Last approved subphase | PH-3.4 — Canonical engine, restart continuity, and phase validation  |
+| Last approved subphase | PH-4.1 — Personality model, parameter space and safe bounds          |
 
 ## Cycle 1 result
 
@@ -124,11 +124,21 @@ counter has been reset and Cycle 2 has begun.
 Context Document is
 [`docs/phases/PH-4-asset-personalities.md`](docs/phases/PH-4-asset-personalities.md).
 
-Create the **PH-4.1 Subphase Technical Document** — personality model, parameter
-space and safe bounds — then implement, test, run a targeted gate, and approve
-from evidence. PH-4 discharges INV-007, the only invariant
+**PH-4.1 is APPROVED.** A personality is now seven bounded traits that expand
+into a `MarketEngineConfig`, with an analytic gate that rejects combinations
+whose volatility layers would compound outside the realism band.
+
+Create the **PH-4.2 Subphase Technical Document** — asset registry, per-asset
+`logQuantum` calibration and the registration procedure. The quantum must be
+derived from the first percentile of each asset's own simulated volatility, never
+chosen: too coarse a quantum relative to an asset's quiet state makes
+quantisation itself a signal, and the `displayQuantization` fixture shows the
+battery detects that at z = -85.
+
+PH-4 discharges INV-007, the only invariant
 [`docs/architecture/INVARIANTS.md`](docs/architecture/INVARIANTS.md) still
-records as pending; `traceability.test.ts` will fail if that table is promoted
-before the evidence exists.
+records as pending. Do not promote it before PH-4.3 produces the evidence —
+`traceability.test.ts` rejects a premature claim, and did so once already during
+PH-4.1.
 
 No Human authorization is required to proceed (`GOVERNANCE.md` §32).

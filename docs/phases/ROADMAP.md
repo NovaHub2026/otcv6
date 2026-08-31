@@ -151,6 +151,21 @@ still records as pending, and it is the phase where the tension between a
 differentiated product and a provably unpredictable one has to be resolved with
 evidence rather than assertion: every asset is attacked on its own.
 
+### PH-4 — Asset Personality System and Multi-Asset Instantiation
+
+One validated market process becomes a catalogue of assets that feel genuinely
+different to trade, without any of them becoming predictable. The sign cannot
+leak an edge whatever the parameters — that argument is indifferent to them — so
+the risk lives in the two places where parameters meet the published series: the
+per-asset lattice quantum, and degenerate regions of the parameter space.
+
+| Subphase | Title                                              | State    |
+| -------- | -------------------------------------------------- | -------- |
+| PH-4.1   | Personality model, parameter space and safe bounds | APPROVED |
+
+Later subphases are provisional and recorded in the phase document: registry and
+quantum calibration, then multi-asset validation and the differentiation metric.
+
 PH-5 is where NestJS is first scaffolded, and the engine core stays framework-free
 and I/O-free so the batteries can keep driving it directly. PH-6 closes with the
 empirical demonstration that economic state cannot influence price generation.
