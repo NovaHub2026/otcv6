@@ -10,6 +10,11 @@ export default tseslint.config(
       '**/coverage/**',
       '**/artifacts/**',
       '**/.next/**',
+      // Next.js generates these and lints the web app itself during `next build`
+      // with its own ruleset. Linting a generated declaration file here only
+      // produces noise about a triple-slash reference the framework requires.
+      'apps/web/next-env.d.ts',
+      'apps/web/next.config.mjs',
     ],
   },
   js.configs.recommended,

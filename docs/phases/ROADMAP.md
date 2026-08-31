@@ -192,9 +192,10 @@ lossy by necessity, and every natural way to discard information invents
 something: interpolation invents prices, sampling hides spikes, a flat bar
 asserts a trade that did not happen.
 
-| Subphase | Title                  | State    |
-| -------- | ---------------------- | -------- |
-| PH-8.1   | The rendering contract | APPROVED |
+| Subphase | Title                                          | State    |
+| -------- | ---------------------------------------------- | -------- |
+| PH-8.1   | The rendering contract                         | APPROVED |
+| PH-8.2   | The streaming client and the frontend scaffold | APPROVED |
 
 Later subphases are provisional: Next.js scaffolding and the streaming client,
 then the chart and phase integration.

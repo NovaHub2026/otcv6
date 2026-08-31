@@ -130,6 +130,19 @@ function importedModules(file: string): string[] {
 }
 
 /**
+ * The package a specifier belongs to.
+ *
+ * `@otc/core/browser` is a dependency on `@otc/core`. PH-8 introduced that
+ * subpath so a browser bundle could take the domain primitives without the
+ * entropy subsystem, and the allowlist compares package names rather than
+ * import paths.
+ */
+function packageOf(specifier: string): string {
+  const parts = specifier.split('/');
+  return specifier.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0]!;
+}
+
+/**
  * Relative specifiers that leave their own package.
  *
  * `../../trading/dist/index.js` is a dependency by any honest reading, and it
@@ -163,7 +176,9 @@ describe('dependencies only point down', () => {
   it.each(all.map((w) => [w.name, w] as const))(
     '%s declares only what it may',
     (name, workspace) => {
-      const internal = workspace.declared.filter((dependency) => dependency.startsWith('@otc/'));
+      const internal = workspace.declared
+        .filter((dependency) => dependency.startsWith('@otc/'))
+        .map(packageOf);
       const permitted = ALLOWED[name] ?? [];
       for (const dependency of internal) {
         expect(permitted, `${name} may not depend on ${dependency}`).toContain(dependency);
@@ -181,7 +196,7 @@ describe('dependencies only point down', () => {
       for (const file of sourceFiles(workspace.dir)) {
         for (const specifier of importedModules(file)) {
           if (!specifier.startsWith('@otc/')) continue;
-          if (!permitted.has(specifier)) {
+          if (!permitted.has(packageOf(specifier))) {
             offenders.push(`${path.relative(repoRoot, file)} imports ${specifier}`);
           }
         }

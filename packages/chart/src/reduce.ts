@@ -1,4 +1,4 @@
-import { logPrice, type EpochMillis, type LogPrice } from '@otc/core';
+import { logPrice, type EpochMillis, type LogPrice } from '@otc/core/browser';
 
 /**
  * One drawable column: what happened inside a slice of the window.

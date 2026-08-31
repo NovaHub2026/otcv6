@@ -1,6 +1,6 @@
 // Invariant evidence: INV-004 (timeframe observer independence).
 import { describe, expect, it } from 'vitest';
-import { epochMillis } from '@otc/core';
+import { epochMillis } from '@otc/core/browser';
 import { reduceToColumns, windowExtremes } from './reduce.js';
 
 /** A deterministic jagged path: this must never depend on a lucky draw. */

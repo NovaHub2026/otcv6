@@ -87,7 +87,7 @@ packages/distribution      Sequence-addressed tick distribution and the consiste
 packages/chart             The rendering contract: extreme-preserving reduction to columns
 tools/sim                  Offline simulation runner and statistical evidence generator
 apps/api                   NestJS runtime service hosting the catalogue continuously
-apps/web                   Next.js frontend (created in the phase that needs it)
+apps/web                   Next.js observer frontend and trading chart
 ```
 
 ---

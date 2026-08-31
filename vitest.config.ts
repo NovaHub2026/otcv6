@@ -10,6 +10,7 @@ const root = path.dirname(fileURLToPath(import.meta.url));
  * emitted output; Vitest is the authority for behaviour.
  */
 const alias = {
+  '@otc/core/browser': path.resolve(root, 'packages/core/src/browser.ts'),
   '@otc/core': path.resolve(root, 'packages/core/src/index.ts'),
   '@otc/engine': path.resolve(root, 'packages/engine/src/index.ts'),
   '@otc/fixtures': path.resolve(root, 'packages/fixtures/src/index.ts'),
