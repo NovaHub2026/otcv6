@@ -61,11 +61,12 @@ is undocumented.
 
 ## Decision records
 
-| ADR                                                                          | Title                                                             | Status   |
-| ---------------------------------------------------------------------------- | ----------------------------------------------------------------- | -------- |
-| [ADR-0001](docs/decisions/ADR-0001-repository-and-toolchain-architecture.md) | Repository, toolchain and package architecture                    | APPROVED |
-| [ADR-0002](docs/decisions/ADR-0002-deterministic-entropy-architecture.md)    | Deterministic entropy architecture                                | APPROVED |
-| [ADR-0003](docs/decisions/ADR-0003-conditional-sign-symmetry.md)             | Conditional sign symmetry as the anti-predictability architecture | APPROVED |
-| [ADR-0004](docs/decisions/ADR-0004-canonical-price-representation.md)        | Canonical price representation: an integer log lattice            | APPROVED |
-| [ADR-0005](docs/decisions/ADR-0005-volatility-cascade.md)                    | A multifractal cascade as the volatility process                  | APPROVED |
-| [ADR-0006](docs/decisions/ADR-0006-layered-market-model.md)                  | A layered sign-blind market model                                 | APPROVED |
+| ADR                                                                          | Title                                                                                                      | Status   |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | -------- |
+| [ADR-0001](docs/decisions/ADR-0001-repository-and-toolchain-architecture.md) | Repository, toolchain and package architecture                                                             | APPROVED |
+| [ADR-0002](docs/decisions/ADR-0002-deterministic-entropy-architecture.md)    | Deterministic entropy architecture                                                                         | APPROVED |
+| [ADR-0003](docs/decisions/ADR-0003-conditional-sign-symmetry.md)             | Conditional sign symmetry as the anti-predictability architecture                                          | APPROVED |
+| [ADR-0004](docs/decisions/ADR-0004-canonical-price-representation.md)        | Canonical price representation: an integer log lattice                                                     | APPROVED |
+| [ADR-0005](docs/decisions/ADR-0005-volatility-cascade.md)                    | A multifractal cascade as the volatility process                                                           | APPROVED |
+| [ADR-0006](docs/decisions/ADR-0006-layered-market-model.md)                  | A layered sign-blind market model                                                                          | APPROVED |
+| [`ADR-0007`](docs/decisions/ADR-0007-at-the-money-settlement.md)             | A contract expiring exactly at the entry price is refunded — the house edge is the payout and nothing else |

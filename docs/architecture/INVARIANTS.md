@@ -36,7 +36,7 @@ is maximally precise.
 
 | Invariant                                              | Status   | Evidence                                                                                                                                                                                                                                                                                                                                                               |
 | ------------------------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| INV-001 Economic independence                          | Enforced | `guardrails.test.ts` — source scan rejects economic vocabulary anywhere in the generation path                                                                                                                                                                                                                                                                         |
+| INV-001 Economic independence                          | Enforced | `guardrails.test.ts` — source scan rejects economic vocabulary anywhere in the generation path; `dependencies.test.ts` — nothing below `apps/` may import a framework; **`economicBlindness.stat.test.ts` — the published tick stream is byte-identical between a quiet market and one under heavy adversarial trading, on all five assets**                           |
 | INV-002 Shared market                                  | Enforced | `sharedMarket.test.ts` — independently constructed processes produce identical streams; observers at different cadences agree on price                                                                                                                                                                                                                                 |
 | INV-003 Single underlying stream                       | Enforced | `sharedMarket.test.ts`, `candle.test.ts` — every candle's open, close and extremes are prices that occurred in the tick stream                                                                                                                                                                                                                                         |
 | INV-004 Timeframe observer independence                | Enforced | `timeframe.test.ts`, `candle.test.ts` — aggregation is a pure fold; refolding a coarser timeframe from a finer one agrees                                                                                                                                                                                                                                              |
@@ -46,6 +46,19 @@ is maximally precise.
 | INV-008 Continuous market state                        | Enforced | `factory.test.ts` (restart across a lease seam, and snapshot/restore of the composed model), `engine.test.ts`, `seamReplay.test.ts`, `lease.test.ts`                                                                                                                                                                                                                   |
 | INV-009 Reproducible settlement                        | Enforced | `seamReplay.test.ts`, `replay.test.ts` — a recorded run replays to identical prices                                                                                                                                                                                                                                                                                    |
 | INV-010 Private generator state                        | Enforced | `keyring.test.ts` (key material is redacted in JSON, string and inspect forms), `engine.test.ts` (a snapshot carries no key material), `lease.test.ts`                                                                                                                                                                                                                 |
+
+## The last one to become evidence
+
+INV-001 was the invariant the whole architecture exists to protect, and until
+PH-6 it was the one still held up by an argument rather than a measurement. The
+scan proves the price path never _names_ an economic quantity; that is not the
+same as showing economic state cannot reach it.
+
+It stayed comfortable for five phases because contracts and the engine had never
+been in the same process — there were no positions to leak. PH-6 put them
+together and then tried to make the leak happen: one-sided exposure, concentrated
+on a single asset, entries pinned to tick instants, stakes scaled by the market's
+own recent movement. The streams are identical.
 
 ## What the map does not claim
 

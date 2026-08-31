@@ -82,6 +82,7 @@ packages/engine            Market generation model
 packages/fixtures          Planted-edge markets with known defects (calibrates the battery)
 packages/lab               Adversarial predictability battery, realism metrics, economics
 packages/runtime           Framework-free market runtime: hosted markets, scheduling, persistence
+packages/trading           Contracts and deterministic settlement against the published record
 tools/sim                  Offline simulation runner and statistical evidence generator
 apps/api                   NestJS runtime service hosting the catalogue continuously
 apps/web                   Next.js frontend (created in the phase that needs it)

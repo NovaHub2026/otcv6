@@ -131,26 +131,28 @@ counter has been reset and Cycle 2 has begun.
 Context Document is
 [`docs/phases/PH-4-asset-personalities.md`](docs/phases/PH-4-asset-personalities.md).
 
-**PH-5 is APPROVED.** The market runs: `apps/api` hosts all five assets
-continuously, checkpoints them, and survives SIGKILL — every market resumes with
-a sequence that never goes backwards.
+**Cycle 2 is complete: PH-4, PH-5 and PH-6 are all APPROVED.** The
+Three-Phase Human Gate applies (`GOVERNANCE.md` §28).
 
-**Create PH-6 — the trading boundary: contracts, settlement and verified
-economic blindness.** It is the last phase of Cycle 2, so on its approval the
-Three-Phase Human Gate applies: STOP and request `EJECUTA` for the second Cycle
-Audit.
+**STOP. Request `EJECUTA` to authorise Cycle Audit 2.**
 
-PH-6 is the phase the whole architecture was built to make safe, and it carries
-the one genuinely Protected Human Decision already on record:
+What Cycle 2 delivered:
 
-- **At-the-money settlement policy** — whether a contract expiring exactly at the
-  entry price is refunded or lost. It has material business consequence
-  (`GOVERNANCE.md` §5), and PH-4.2 coupled the lattice calibration to it: the
-  quantum is set so 1% of 30-second contracts land at the money.
+- **PH-4** — five assets across four families, each with a lattice derived from
+  its own behaviour, each independently clean under the battery. INV-007
+  enforced.
+- **PH-5** — the market runs. `apps/api` hosts the catalogue continuously,
+  checkpoints it, and survives SIGKILL with every market resuming.
+- **PH-6** — people can trade it, and **INV-001 is demonstrated rather than
+  argued**: identical tick streams between a quiet market and one under heavy
+  adversarial trading, on all five assets.
 
-The phase must also close INV-001 empirically rather than structurally: today the
-guardrail scan proves the price path never _names_ an economic quantity. PH-6
-must demonstrate that economic state cannot influence price generation even when
-both exist in the same process.
+**All ten invariants now have executed evidence** —
+[`docs/architecture/INVARIANTS.md`](docs/architecture/INVARIANTS.md) has no
+remaining "pending" row.
 
-No Human authorization is required to proceed (`GOVERNANCE.md` §32).
+Do not start PH-7. On `EJECUTA`, audit PH-4, PH-5 and PH-6 per `GOVERNANCE.md`
+§30, fix delegated findings, approve from evidence, reset the cycle counter, and
+resume at PH-7 (public market distribution and multi-user consistency).
+
+This is a Governance Human Gate. `EJECUTA` is required (`GOVERNANCE.md` §28, §59).
