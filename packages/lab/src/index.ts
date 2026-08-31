@@ -23,7 +23,13 @@ export {
   STANDARD_PAYOUTS,
   type EconomicAssessment,
 } from './economics.js';
+export {
+  designEffect,
+  minimumDetectableEffectUnderDependence,
+  type DesignEffectResult,
+} from './dependence.js';
 export { BINARY_HORIZONS, horizonByLabel, type HorizonSpec } from './horizons.js';
+export { HorizonAccumulator, type HorizonOutcome } from './horizonTally.js';
 export {
   aggregatorFor,
   buildObserverDataset,

@@ -64,7 +64,17 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json-summary', 'html'],
-      include: ['packages/*/src/**/*.ts'],
+      // `tools/*` was excluded until PH-11.3 (B-003). It carries the simulation
+      // runner, the evidence generators and the phase acceptance suites — the
+      // code that produces the numbers every claim in this project cites — and
+      // its coverage was simply unmeasured. Excluding the code that generates
+      // your evidence from the measurement of your evidence is the wrong way
+      // round.
+      //
+      // Entry points are deliberately *not* excluded. A CLI that no test drives
+      // should read as uncovered, because it is.
+      include: ['packages/*/src/**/*.ts', 'tools/*/src/**/*.ts'],
+      // `**/*.test.ts` also matches `*.stat.test.ts`.
       exclude: ['**/*.test.ts', '**/index.ts', '**/*.d.ts'],
     },
   },

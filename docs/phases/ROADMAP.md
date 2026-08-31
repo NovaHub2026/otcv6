@@ -56,7 +56,7 @@ process inside a generate → attack → diagnose → correct loop.
 | PH-1  | Deterministic Market Substrate                                | **APPROVED**                                          |
 | PH-2  | Calibrated Adversarial Predictability Laboratory              | **APPROVED**                                          |
 | PH-3  | Core Generative Market Process Under Continuous Falsification | **APPROVED**                                          |
-| —     | **Cycle Audit 1** — Human gate, requires `EJECUTA`            | **APPROVED** — [record](../audits/CYCLE-AUDIT-001.md) |
+| —     | **Cycle Audit 1** — three-phase audit                         | **APPROVED** — [record](../audits/CYCLE-AUDIT-001.md) |
 
 ### PH-1 — Deterministic Market Substrate
 
@@ -145,7 +145,7 @@ the same data.
 | PH-4  | Asset personality system and multi-asset instantiation                  | **APPROVED**                                          |
 | PH-5  | Continuous runtime, sealed state persistence and restart continuity     | **APPROVED**                                          |
 | PH-6  | Trading boundary: contracts, settlement and verified economic blindness | **APPROVED**                                          |
-| —     | **Cycle Audit 2** — Human gate, requires `EJECUTA`                      | **APPROVED** — [record](../audits/CYCLE-AUDIT-002.md) |
+| —     | **Cycle Audit 2** — three-phase audit                                   | **APPROVED** — [record](../audits/CYCLE-AUDIT-002.md) |
 
 PH-4 discharges INV-007, the one invariant `docs/architecture/INVARIANTS.md`
 still records as pending, and it is the phase where the tension between a
@@ -253,7 +253,7 @@ empirical demonstration that economic state cannot influence price generation.
 | PH-7  | Public market distribution and multi-user consistency             | **APPROVED**                                          |
 | PH-8  | Observer frontend and trading chart experience                    | **APPROVED**                                          |
 | PH-9  | Continuous integrity assurance and independent red-team hardening | **APPROVED**                                          |
-| —     | **Cycle Audit 3** — Human gate, requires `EJECUTA`                | **APPROVED** — [record](../audits/CYCLE-AUDIT-003.md) |
+| —     | **Cycle Audit 3** — three-phase audit                             | **APPROVED** — [record](../audits/CYCLE-AUDIT-003.md) |
 
 PH-8 is where Next.js and React are first scaffolded. PH-9 converts a one-time
 proof into a standing guarantee, including a red-team round using attack families
@@ -272,7 +272,7 @@ holding nothing but the one item that needs the Human Owner.
 | PH-10 | Per-asset market rhythm                                       | **APPROVED** |
 | PH-11 | Detection power across every horizon the product sells        | **ACTIVE**   |
 | PH-12 | Verifiable publication and the journal in the running service | not started  |
-| —     | **Cycle Audit 4** — Human gate, requires `EJECUTA`            | not started  |
+| —     | **Cycle Audit 4** — automatic (ADR-0008)                      | not started  |
 
 | Phase | Closes                                                                     |
 | ----- | -------------------------------------------------------------------------- |
@@ -280,9 +280,13 @@ holding nothing but the one item that needs the Human Owner.
 | PH-11 | B-002, B-003; the per-asset floor limitation; PH-9's sensitivity limits    |
 | PH-12 | B-009; the journal-not-emitted limitation; the catch-up-bound policy owner |
 
-**Cycle Audit 4 must be conducted by independent agents** (B-008). Cycle Audit 2
-used ten and found 31 material findings; Cycle Audit 3 was conducted by the
-authoring agent and found one. The method is the variable being controlled.
+**Cycle Audit 4 runs automatically** — the three-phase Human gate was removed on
+2026-08-31 ([ADR-0008](../decisions/ADR-0008-full-delegation.md)). That makes the
+audit's method the only external check left, so **it must be conducted by
+independent agents** (B-008): Cycle Audit 2 used ten and found 31 material
+findings; Cycle Audit 3 was conducted by the authoring agent and found one. The
+method is the variable being controlled, and there is now nothing else
+controlling it.
 
 ### PH-10 — Per-Asset Market Rhythm
 
@@ -308,8 +312,8 @@ and per asset, exactly what remains unpoliced.
 
 | Subphase | Title                                                    | State       |
 | -------- | -------------------------------------------------------- | ----------- |
-| PH-11.1  | An estimator with valid intervals under overlap          | not started |
-| PH-11.2  | The long-horizon evidence run                            | not started |
+| PH-11.1  | Is the independent error bar honest?                     | APPROVED    |
+| PH-11.2  | The long-horizon evidence run                            | ACTIVE      |
 | PH-11.3  | Coverage over `tools/`, and evidence that records itself | not started |
 
 ### PH-12 — Verifiable Publication and the Journal in the Running Service

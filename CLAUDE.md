@@ -116,6 +116,14 @@ thirteen minutes — it has not hung. Run it in the background rather than under
 short command timeout. During subphase work use a **targeted** gate (a justified
 subset — see `GOVERNANCE.md` §21); the full gate belongs at phase boundaries.
 
+**The gate is the verification authority.** There is no hosted CI: the repository
+is private and the account has no paid Actions allowance, so it was removed from
+the verification model rather than left open as a blocker (ADR-0008). Nothing
+outside this session runs anything, which means a claim is only as true as the
+run behind it. Never write "PASSED" from a command whose exit code you did not
+see — `| tail -1` discards it, and that is how a failing `npm run lint` survived
+two subphase approvals in PH-4.
+
 Coverage measures `packages/*/src` only. `tools/sim` is excluded by
 `vitest.config.ts`, and a file exercised solely by statistical tests reads as
 uncovered unless coverage is run over both projects.
@@ -168,15 +176,34 @@ CREATE SUBPHASE TECHNICAL DOCUMENT -> ACTIVATE -> IMPLEMENT -> TEST
   -> next subphase, autonomously
 PHASE COMPLETE -> INTEGRATED PHASE VERIFICATION -> PHASE QUALITY GATE -> APPROVED
   -> next phase, autonomously
-THREE APPROVED PHASES -> STOP -> request `EJECUTA` for the Cycle Audit
+THREE APPROVED PHASES -> STOP NORMAL DEVELOPMENT -> RUN THE CYCLE AUDIT
+  -> next cycle, autonomously
 ```
 
-Do **not** ask the Human Owner to approve architecture, libraries, tests,
-refactors, phases, or subphases. Escalate only genuine Protected Human Decisions
-(`GOVERNANCE.md` §5) using the CONTEXT / OPTIONS / CONSEQUENCES / RECOMMENDATION /
-HUMAN DECISION REQUIRED format.
+**The loop does not stop for anyone.** Since 2026-08-31 (ADR-0008) there is no
+three-phase gate: the Cycle Audit runs automatically. Development still _pauses_
+at the boundary, because the pause changes the mode of work from building to
+examining — but nothing is requested and nothing is waited for.
 
-Human commands: `START`, `EJECUTA`, `GUARDAR`, `PARAR` (`GOVERNANCE.md` §59).
+Do **not** ask the Human Owner to approve anything: not architecture, libraries,
+tests, refactors, phases, subphases, the roadmap, the business model, payout
+rules, or what gets built next. **Decide, then record the decision** — an ADR for
+something durable, `docs/decisions/DECISION-LOG.md` for everything else worth
+finding later.
+
+Two things are still the Human Owner's (`GOVERNANCE.md` §5.1): **amendments to
+Governance itself**, and **commitments that bind them outside the repository**
+(legal, contractual, real-money, custody, paid services). Nothing else.
+
+The removal of the gate raises the stakes on the audit, and the project has
+measured by how much: ten independent agents found **31** material findings in
+Cycle Audit 2; the authoring agent found **one** in Cycle Audit 3. An automatic
+audit is worth only as much as its adversarial discipline — falsify rather than
+confirm, re-execute rather than read, plant defects against every guard
+(`GOVERNANCE.md` §28.1).
+
+Human commands: `START`, `GUARDAR`, `PARAR`, and `EJECUTA` — now optional, and
+meaning only "run a Cycle Audit now" (`GOVERNANCE.md` §59).
 
 ---
 

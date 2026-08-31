@@ -14,8 +14,8 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Active cycle       | Cycle 4, **1 of 3** phases approved                            |
 | Active phase       | PH-11 — next to be created                                     |
 | Active subphase    | none                                                           |
-| Cycle Audit        | 003 **APPROVED** — next due after PH-10/11/12                  |
-| Blockers           | none                                                           |
+| Cycle Audit        | 003 APPROVED — 004 runs **automatically** after PH-12          |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)             |
 
 ## Completed
 
@@ -113,6 +113,28 @@ finding on INV-007, behind B-002's hundred-fold history requirement at 15
 minutes, and behind the lattice tie rates PH-10.2 had to re-measure over 15
 replicates. Simulating longer is one answer; an estimator that respects the
 dependence is probably a better one.
+
+**Governance changed on 2026-08-31** ([ADR-0008](docs/decisions/ADR-0008-full-delegation.md)).
+Read this before anything else about process:
+
+- **There is no three-phase Human gate.** Cycle Audits run automatically. Stop
+  normal development at the boundary, run the audit, continue. Never wait for
+  `EJECUTA` and never report a cycle as blocked pending it.
+- **Every code and product decision is yours** — purpose, business model, payout
+  and settlement rules, architecture, roadmap, what does not get built. Decide,
+  then record it: an ADR for something durable,
+  [`DECISION-LOG.md`](docs/decisions/DECISION-LOG.md) for everything else.
+- **Two things are still the Human Owner's**: amendments to Governance itself,
+  and commitments that bind them outside the repository (legal, contractual,
+  real-money, custody, paid services).
+- **There is no hosted CI.** `npm run gate` is the verification authority, and
+  nothing independent runs anything. A claim is only as true as the run behind
+  it — never write PASSED from a command whose exit code you did not see.
+
+Removing the gate removed one of the project's two external checks. The audit's
+method is now the whole of what remains, and the project has measured what that
+is worth: ten independent agents found **31** material findings in Cycle Audit 2;
+the authoring agent found **one** in Cycle Audit 3.
 
 Standing rules, all learned the hard way:
 
