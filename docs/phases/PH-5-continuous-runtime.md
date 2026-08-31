@@ -2,7 +2,7 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-5
-Status: ACTIVE
+Status: APPROVED
 Cycle: 2 (phase 2 of 3)
 Created: 2026-08-31
 Branch: `feature/ph-5-runtime`
@@ -163,3 +163,93 @@ anywhere in the persisted state.
 | The engine acquiring an I/O or framework dependency by convenience  | Real. The guardrail scan covers vocabulary, not dependency direction — this phase should extend it. |
 | Persisted state leaking key material                                | Real, and cheap to test for. PH-1 found exactly this defect in memory.                              |
 | Catch-up horizon chosen silently                                    | Surfaced in §2.3 rather than picked.                                                                |
+
+---
+
+## 12. Phase approval record
+
+**APPROVED** from executed evidence, 2026-08-31.
+
+### The result the phase existed to produce
+
+The market runs. `apps/api` hosts all five assets continuously, checkpoints them,
+and survives being killed: the acceptance test SIGKILLs the service — no shutdown
+hook, no final checkpoint — restarts it on the same state directory, and requires
+every market to report `resumed` with a sequence that never goes backwards.
+
+| Subphase | Title                                                  | State    |
+| -------- | ------------------------------------------------------ | -------- |
+| PH-5.1   | Runtime core: hosted markets, scheduling, supervision  | APPROVED |
+| PH-5.2   | Sealed state persistence and the recovery policy       | APPROVED |
+| PH-5.3   | The NestJS service and a real process-boundary restart | APPROVED |
+
+### Phase invariants
+
+- **INV-002 / INV-008** are the phase's subject and are now operational rather
+  than argued. A market advances because the clock moved, not because it was
+  polled: an observer stepping one second at a time and one jumping ten minutes
+  produce identical tick arrays. Across a restart, a checkpointed and resumed
+  market produces _exactly_ the ticks an uninterrupted one would have.
+- **INV-009** strengthened: reproduction now works from persisted records, not
+  only from an in-process snapshot.
+- **INV-010** survives persistence. Records are checked for key material two
+  ways — a structural walk for long hex runs and a regex over the serialised
+  form — and a full record is under 4 kB.
+
+### What the phase learned
+
+**The dangerous case looked like the benign one, again.** A corrupt persisted
+record is more dangerous than a missing one. Missing means nothing ran, so
+genesis is safe. Corrupt means something ran and its lease marks are gone, so
+restarting at genesis would re-consume keystream already spent and publish a
+second, different market under the same asset id. The first implementation
+returned `null` for both. There is no safe automatic recovery — the information
+needed to seam is the thing that was lost — so the market now refuses to start.
+
+This is the third time in the project that the correct action was to _refuse_
+rather than to degrade gracefully. It is worth naming as a pattern: when the
+missing information is the information needed to recover safely, "best effort" is
+just an unlogged corruption.
+
+**In-process restart tests are weaker than they look.** They cannot catch state
+in a module-level variable, a snapshot that fails to round-trip through JSON, or
+a store whose writes never reached disk. The real process-boundary test found a
+user-visible defect none of the in-process ones did: after a restart the API
+reported no price at all until the new process published its own first tick.
+
+### A latent failure the phase gate exposed, and closed for good
+
+The first PH-5 phase gate failed on `cascade.test.ts`, timing out at 5s with 859
+of 860 tests passing. Not a logic error: the test made 100,000 `expect()` calls
+in a loop, and a matcher call costs about 25 microseconds. A millisecond of real
+work, five seconds of overhead.
+
+This was the **second** time. `regime.test.ts` did the same thing during PH-4.2
+and sat at 5.08s, failing only when something else competed for CPU. Both were
+latent for exactly as long as nothing ran beside them — the worst kind of
+failure, because it surfaces when the suite gets busier and looks like the new
+work broke something.
+
+A sweep found five genuine sites across `cascade`, `regime`, `hawkes` and
+`structure`, up to 100,000 matcher calls each, all converted to counting inside
+the loop and asserting once after it. That reads better anyway: a failure now
+reports "3 invalid values" instead of stopping at the first.
+
+Fixing it twice was enough. `testCost.test.ts` now fails the build on any
+assertion inside a loop of 20,000 iterations or more. It counts _iterations_
+rather than the loop bound — a first version flagged
+`interval <= 60_000; interval += 137`, which runs 438 times — and it was verified
+to fail when an in-loop assertion is reintroduced.
+
+### Verification executed
+
+Full gate at the phase boundary. See the subphase records for per-subphase
+evidence.
+
+### Known limitations carried forward
+
+- Single node, read-only observation, clients poll. Distribution, fan-out,
+  multi-user consistency and a tick feed are PH-7.
+- The catch-up bound remains a default with defined behaviour, not a decided
+  venue policy. It needs an owner before a real venue runs.
+- Nothing economic exists yet: no contracts, no positions, no settlement. PH-6.

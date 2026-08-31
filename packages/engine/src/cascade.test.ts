@@ -99,12 +99,14 @@ describe('switching behaviour', () => {
     const high = 2 - DEFAULT_CASCADE.lowMultiplier;
     let maximum = 0;
     let minimum = Number.POSITIVE_INFINITY;
+    let nonPositive = 0;
     for (let i = 0; i < 100_000; i += 1) {
       const value = cascade.advance(1_000);
-      expect(value).toBeGreaterThan(0);
+      if (!(value > 0)) nonPositive += 1;
       maximum = Math.max(maximum, value);
       minimum = Math.min(minimum, value);
     }
+    expect(nonPositive, 'non-positive multipliers').toBe(0);
     // Bounded by the extreme all-low and all-high products, computed by the same
     // repeated multiplication the cascade uses. `Math.pow` rounds differently
     // and can sit an ulp below the achievable maximum.
@@ -161,11 +163,15 @@ describe('the magnitude model', () => {
       derive('mag-cascade'),
       derive('mag-shock'),
     );
+    // Counted, not asserted per sample. A hundred thousand matcher calls cost
+    // seconds of pure overhead and put this test on the unit project's 5s
+    // timeout, where it failed whenever the suite ran under load.
+    let invalid = 0;
     for (let i = 1; i <= 50_000; i += 1) {
       const value = model.advance(context(1_000, i));
-      expect(value).toBeGreaterThanOrEqual(0);
-      expect(Number.isFinite(value)).toBe(true);
+      if (!(value >= 0) || !Number.isFinite(value)) invalid += 1;
     }
+    expect(invalid, 'negative or non-finite magnitudes').toBe(0);
   });
 
   it('scales with base volatility', () => {

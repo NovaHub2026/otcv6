@@ -119,11 +119,15 @@ describe('the intensity responds to activity', () => {
 
   it('never returns an interval below one millisecond', () => {
     const model = new HawkesArrivalModel(DEFAULT_HAWKES, derive('floor'));
+    let invalid = 0;
+    let smallest = Number.POSITIVE_INFINITY;
     for (let i = 1; i <= 50_000; i += 1) {
       const interval = model.nextIntervalMs(context(1, 500, i));
-      expect(Number.isInteger(interval)).toBe(true);
-      expect(interval).toBeGreaterThanOrEqual(1);
+      if (!Number.isInteger(interval) || interval < 1) invalid += 1;
+      if (interval < smallest) smallest = interval;
     }
+    expect(invalid, 'non-integer or sub-millisecond intervals').toBe(0);
+    expect(smallest).toBeGreaterThanOrEqual(1);
   });
 });
 
