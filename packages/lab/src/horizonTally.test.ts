@@ -1,0 +1,107 @@
+import { describe, expect, it } from 'vitest';
+import { durationMillis } from '@otc/core';
+import { HorizonAccumulator } from './horizonTally.js';
+import { BINARY_HORIZONS } from './horizons.js';
+
+const spec = (label: string, ms: number) => ({ label, durationMs: durationMillis(ms) });
+
+describe('the accumulator classifies windows the way settlement does', () => {
+  it('counts a rise, a fall and a tie', () => {
+    const acc = new HorizonAccumulator([spec('10', 10)], 0, 100);
+    // Window [0,10): last price strictly before 10 is 105 -> up.
+    acc.observe(5, 105);
+    acc.observe(10, 105); // crosses the boundary; open becomes 105
+    // Window [10,20): last before 20 is 101 -> down from 105.
+    acc.observe(15, 101);
+    acc.observe(20, 101); // open becomes 101
+    // Window [20,30): last before 30 is 101 -> tie.
+    acc.observe(25, 101);
+    acc.observe(30, 101);
+
+    const [outcome] = acc.outcomes();
+    expect(outcome!.ups).toBe(1);
+    expect(outcome!.downs).toBe(1);
+    expect(outcome!.ties).toBe(1);
+    expect(outcome!.decided).toBe(2);
+    expect(outcome!.windows).toBe(3);
+    expect(outcome!.upRate).toBe(0.5);
+    expect(outcome!.tieRate).toBeCloseTo(1 / 3, 12);
+  });
+
+  it('closes a window at the last price strictly before the boundary', () => {
+    // The tick that lands exactly on the boundary belongs to the next window.
+    // Settlement uses "the price at or before the expiry instant", so a tick at
+    // the boundary must not be the one that decides the window it opens.
+    const acc = new HorizonAccumulator([spec('10', 10)], 0, 100);
+    acc.observe(9, 100); // still flat at 9
+    acc.observe(10, 500); // arrives at the boundary; must not count for [0,10)
+    const [outcome] = acc.outcomes();
+    expect(outcome!.ties).toBe(1);
+    expect(outcome!.ups).toBe(0);
+  });
+
+  it('tiles the timeline rather than sliding along it', () => {
+    // Non-overlapping is what makes the independent error bar defensible, so it
+    // is asserted rather than assumed: N windows in N durations, never more.
+    const acc = new HorizonAccumulator([spec('100', 100)], 0, 0);
+    for (let t = 1; t <= 1_000; t += 1) acc.observe(t, t);
+    const [outcome] = acc.outcomes();
+    expect(outcome!.windows).toBe(10);
+  });
+
+  it('closes every window a long gap skipped over', () => {
+    // A quiet market still expires contracts. Six windows pass between ticks
+    // here, and all six must be counted as ties rather than silently dropped.
+    const acc = new HorizonAccumulator([spec('10', 10)], 0, 42);
+    acc.observe(65, 99);
+    const [outcome] = acc.outcomes();
+    expect(outcome!.windows).toBe(6);
+    expect(outcome!.ties).toBe(6);
+  });
+});
+
+describe('several horizons advance independently from one pass', () => {
+  it('gives each horizon its own tiling of the same path', () => {
+    const acc = new HorizonAccumulator([spec('10', 10), spec('50', 50)], 0, 0);
+    for (let t = 1; t <= 1_000; t += 1) acc.observe(t, t);
+    const [fast, slow] = acc.outcomes();
+    expect(fast!.windows).toBe(100);
+    expect(slow!.windows).toBe(20);
+    // A monotonically rising path is up at every horizon.
+    expect(fast!.ups).toBe(100);
+    expect(slow!.ups).toBe(20);
+  });
+
+  it('reports the fewest completed windows across horizons', () => {
+    const acc = new HorizonAccumulator(BINARY_HORIZONS, 0, 0);
+    // Ten simulated hours, one tick per second.
+    for (let t = 1_000; t <= 36_000_000; t += 1_000) acc.observe(t, t);
+    const outcomes = acc.outcomes();
+    expect(outcomes.find((o) => o.horizon === '30s')!.windows).toBe(1_200);
+    expect(outcomes.find((o) => o.horizon === '15m')!.windows).toBe(40);
+    // The slowest horizon is the one that bounds an evidence run's length.
+    expect(acc.slowestHorizonWindows).toBe(40);
+    expect(acc.ticks).toBe(36_000);
+  });
+});
+
+describe('the accumulator refuses what it cannot handle', () => {
+  it('needs at least one horizon', () => {
+    expect(() => new HorizonAccumulator([], 0, 0)).toThrow(/at least one horizon/);
+  });
+
+  it('refuses ticks that arrive out of order', () => {
+    // Out-of-order arrival would silently mis-close windows, and the resulting
+    // tallies would look perfectly plausible.
+    const acc = new HorizonAccumulator([spec('10', 10)], 0, 0);
+    acc.observe(20, 1);
+    expect(() => acc.observe(15, 2)).toThrow(/must arrive in order/);
+  });
+
+  it('reports NaN rather than a rate it has not measured', () => {
+    const acc = new HorizonAccumulator([spec('10', 10)], 0, 0);
+    const [outcome] = acc.outcomes();
+    expect(outcome!.upRate).toBeNaN();
+    expect(outcome!.tieRate).toBeNaN();
+  });
+});

@@ -308,8 +308,8 @@ and per asset, exactly what remains unpoliced.
 
 | Subphase | Title                                                    | State       |
 | -------- | -------------------------------------------------------- | ----------- |
-| PH-11.1  | An estimator with valid intervals under overlap          | not started |
-| PH-11.2  | The long-horizon evidence run                            | not started |
+| PH-11.1  | Is the independent error bar honest?                     | APPROVED    |
+| PH-11.2  | The long-horizon evidence run                            | ACTIVE      |
 | PH-11.3  | Coverage over `tools/`, and evidence that records itself | not started |
 
 ### PH-12 — Verifiable Publication and the Journal in the Running Service
