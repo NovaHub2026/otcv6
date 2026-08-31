@@ -45,12 +45,17 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 - **PH-5 APPROVED** — the runtime: hosted markets that advance with the clock
   rather than with polling, sealed state persistence with an explicit recovery
   policy, and a NestJS service that survives SIGKILL and resumes every market.
-- ADRs 0001–0006 persisted.
+- **PH-6 APPROVED** — the trading boundary: contracts, deterministic settlement
+  computed from the published record alone, and the demonstration that closes
+  INV-001. Identical tick streams between a quiet market and one under heavy
+  adversarial trading, on all five assets.
+- ADRs 0001–0007 persisted. ADR-0007 records the Human Owner's at-the-money
+  decision: a tie is refunded.
 
 ## Incomplete
 
-Nothing is in progress. PH-4 is approved and its branch is ready to merge into
-`main`.
+Nothing is in progress. Cycle 2 is complete and development is paused at the
+Governance Human Gate.
 
 ## Last executed verification
 
@@ -72,14 +77,16 @@ Read `CURRENT_STATE.md`. Cycle 1 is closed and its audit is approved, so
 development continues **without further Human authorization**
 (`GOVERNANCE.md` §32).
 
-Create the **PH-6 Phase Context Document** — the trading boundary: contracts,
-settlement and verified economic blindness — on `feature/ph-6-trading`.
+Read `CURRENT_STATE.md`. Development is paused at the Governance Human Gate
+(`GOVERNANCE.md` §28). **Do not start PH-7.**
 
-PH-6 closes Cycle 2. On its approval, **STOP** and request `EJECUTA` for the
-second Cycle Audit (`GOVERNANCE.md` §28).
+Await `EJECUTA`, then perform Cycle Audit 2 over PH-4, PH-5 and PH-6, fix
+delegated findings, approve from evidence, reset the cycle counter and resume at
+PH-7.
 
-It carries the one Protected Human Decision already on record: the at-the-money
-settlement policy. PH-4.2 coupled the lattice to it — the quantum is calibrated
-so 1% of 30-second contracts land exactly at the money.
+All ten invariants now carry executed evidence; `docs/architecture/INVARIANTS.md`
+has no remaining pending row. Cycle Audit 1 found that the most valuable thing an
+audit does is check claims that were only ever asserted — that table is the first
+place to look.
 
 Before changing anything in the engine, read the last section of `CLAUDE.md`.

@@ -10,6 +10,8 @@
     { "path": "../../packages/core" },
     { "path": "../../packages/engine" },
     { "path": "../../packages/fixtures" },
-    { "path": "../../packages/lab" }
+    { "path": "../../packages/lab" },
+    { "path": "../../packages/runtime" },
+    { "path": "../../packages/trading" }
   ]
 }

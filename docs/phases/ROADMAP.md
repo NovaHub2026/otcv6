@@ -140,11 +140,12 @@ the same data.
 
 ## Cycle 2 — Make it a living multi-asset system
 
-| Phase | Title                                                                   | State        |
-| ----- | ----------------------------------------------------------------------- | ------------ |
-| PH-4  | Asset personality system and multi-asset instantiation                  | **APPROVED** |
-| PH-5  | Continuous runtime, sealed state persistence and restart continuity     | **APPROVED** |
-| PH-6  | Trading boundary: contracts, settlement and verified economic blindness | Not started  |
+| Phase | Title                                                                   | State                     |
+| ----- | ----------------------------------------------------------------------- | ------------------------- |
+| PH-4  | Asset personality system and multi-asset instantiation                  | **APPROVED**              |
+| PH-5  | Continuous runtime, sealed state persistence and restart continuity     | **APPROVED**              |
+| PH-6  | Trading boundary: contracts, settlement and verified economic blindness | **APPROVED**              |
+| —     | **Cycle Audit 2** — Human gate, requires `EJECUTA`                      | **PENDING AUTHORIZATION** |
 
 PH-4 discharges INV-007, the one invariant `docs/architecture/INVARIANTS.md`
 still records as pending, and it is the phase where the tension between a
@@ -183,6 +184,16 @@ resetting or redrawing a keystream position it has already spent.
 
 Later subphases are provisional: sealed persistence and the recovery policy, then
 the NestJS service and a real process-boundary restart.
+
+### PH-6 — Trading Boundary: Contracts, Settlement and Verified Economic Blindness
+
+People can trade the market, and the market is shown not to know it. INV-001 was
+the only invariant still established structurally rather than empirically.
+
+| Subphase | Title                                                | State    |
+| -------- | ---------------------------------------------------- | -------- |
+| PH-6.1   | Contract model and deterministic settlement          | APPROVED |
+| PH-6.2   | The trading boundary and verified economic blindness | APPROVED |
 
 PH-5 is where NestJS is first scaffolded, and the engine core stays framework-free
 and I/O-free so the batteries can keep driving it directly. PH-6 closes with the
