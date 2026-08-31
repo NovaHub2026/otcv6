@@ -1,0 +1,17 @@
+{
+  "name": "@otc/sim",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Offline simulation runner and statistical evidence generator",
+  "bin": {
+    "otc-sim": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@otc/core": "*",
+    "@otc/engine": "*"
+  }
+}

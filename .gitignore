@@ -1,0 +1,39 @@
+# dependencies
+node_modules/
+.npm/
+
+# build output
+dist/
+build/
+*.tsbuildinfo
+.next/
+out/
+
+# test / coverage
+coverage/
+.vitest/
+
+# generated simulation artifacts and evidence blobs
+artifacts/
+*.ndjson
+*.ndjson.gz
+
+# environment / secrets
+.env
+.env.*
+!.env.example
+secrets/
+*.key
+*.pem
+
+# editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# logs
+*.log
+npm-debug.log*

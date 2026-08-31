@@ -1,0 +1,9 @@
+dist/
+coverage/
+node_modules/
+*.tsbuildinfo
+artifacts/
+
+# Authoritative documents: content is governed, not formatted.
+GOVERNANCE.md
+PROJECT_INTRODUCTION.md
