@@ -185,6 +185,21 @@ resetting or redrawing a keystream position it has already spent.
 Later subphases are provisional: sealed persistence and the recovery policy, then
 the NestJS service and a real process-boundary restart.
 
+### PH-7 — Public Market Distribution and Multi-User Consistency
+
+INV-002 has been true so far for an uninteresting reason: one observer, one
+process, one array. This is the first phase where it can fail — in the delivery
+path, where breaking it looks like performance work.
+
+| Subphase | Title                                                        | State    |
+| -------- | ------------------------------------------------------------ | -------- |
+| PH-7.1   | The tick feed: ordering, resumption, backpressure            | APPROVED |
+| PH-7.2   | Multi-observer consistency and blindness across the boundary | APPROVED |
+| PH-7.3   | The transport, and the consistency contract written down     | APPROVED |
+
+Later subphases are provisional: multi-observer consistency and the blindness
+demonstration across the boundary, then service integration.
+
 ### PH-6 — Trading Boundary: Contracts, Settlement and Verified Economic Blindness
 
 People can trade the market, and the market is shown not to know it. INV-001 was
@@ -203,7 +218,7 @@ empirical demonstration that economic state cannot influence price generation.
 
 | Phase | Title                                                             |
 | ----- | ----------------------------------------------------------------- |
-| PH-7  | Public market distribution and multi-user consistency             |
+| PH-7  | Public market distribution and multi-user consistency             | **APPROVED** |
 | PH-8  | Observer frontend and trading chart experience                    |
 | PH-9  | Continuous integrity assurance and independent red-team hardening |
 

@@ -48,17 +48,18 @@ Durable rationale lives in `docs/decisions/`.
 
 ## 4. Package boundaries (stable facts)
 
-| Package         | Responsibility                                                                                                                                  | May depend on                                           |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `@otc/core`     | Deterministic kernel: canonical time, entropy/random-stream architecture, market domain primitives (price, tick, candle), timeframe aggregation | nothing                                                 |
-| `@otc/engine`   | Market generation model: latent market state, regimes, volatility, structure, microstructure, asset personalities                               | `@otc/core`                                             |
-| `@otc/fixtures` | Planted-edge generators and the symmetric control: markets with known, quantified defects, used to calibrate the battery                        | `@otc/core`                                             |
-| `@otc/lab`      | Adversarial predictability battery, realism metrics and the outcome/economics model                                                             | `@otc/core`                                             |
-| `@otc/runtime`  | Framework-free market runtime: hosted markets that advance with the clock, venue supervision, sealed state persistence                          | `@otc/core`, `@otc/engine`                              |
-| `@otc/trading`  | Contracts and deterministic settlement, computed from the published tick record alone — no keys, no engine, no latent state                     | `@otc/core`                                             |
-| `@otc/sim`      | Offline simulation runner and statistical evidence generation                                                                                   | `@otc/core`, `@otc/engine`, `@otc/fixtures`, `@otc/lab` |
-| `apps/api`      | NestJS runtime: market hosting, streaming, trading, settlement, persistence                                                                     | `@otc/core`, `@otc/engine`                              |
-| `apps/web`      | Next.js client: charting and trading UI                                                                                                         | HTTP/WS contracts only                                  |
+| Package             | Responsibility                                                                                                                                  | May depend on                                           |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `@otc/core`         | Deterministic kernel: canonical time, entropy/random-stream architecture, market domain primitives (price, tick, candle), timeframe aggregation | nothing                                                 |
+| `@otc/engine`       | Market generation model: latent market state, regimes, volatility, structure, microstructure, asset personalities                               | `@otc/core`                                             |
+| `@otc/fixtures`     | Planted-edge generators and the symmetric control: markets with known, quantified defects, used to calibrate the battery                        | `@otc/core`                                             |
+| `@otc/lab`          | Adversarial predictability battery, realism metrics and the outcome/economics model                                                             | `@otc/core`                                             |
+| `@otc/runtime`      | Framework-free market runtime: hosted markets that advance with the clock, venue supervision, sealed state persistence                          | `@otc/core`, `@otc/engine`                              |
+| `@otc/trading`      | Contracts and deterministic settlement, computed from the published tick record alone — no keys, no engine, no latent state                     | `@otc/core`                                             |
+| `@otc/distribution` | Sequence-addressed tick distribution: ordered gapless delivery, exact resumption, and the consistency contract                                  | `@otc/core`                                             |
+| `@otc/sim`          | Offline simulation runner and statistical evidence generation                                                                                   | `@otc/core`, `@otc/engine`, `@otc/fixtures`, `@otc/lab` |
+| `apps/api`          | NestJS runtime: market hosting, streaming, trading, settlement, persistence                                                                     | `@otc/core`, `@otc/engine`                              |
+| `apps/web`          | Next.js client: charting and trading UI                                                                                                         | HTTP/WS contracts only                                  |
 
 **Dependency rule:** information flows _outward_ from the price core. Nothing in
 `@otc/core`'s price path or `@otc/engine` may depend on trading, position,

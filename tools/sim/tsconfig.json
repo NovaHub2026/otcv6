@@ -12,6 +12,7 @@
     { "path": "../../packages/fixtures" },
     { "path": "../../packages/lab" },
     { "path": "../../packages/runtime" },
-    { "path": "../../packages/trading" }
+    { "path": "../../packages/trading" },
+    { "path": "../../packages/distribution" }
   ]
 }

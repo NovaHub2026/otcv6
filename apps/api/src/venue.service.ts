@@ -16,6 +16,7 @@ import {
   type RecoveryOutcome,
   type StateStore,
 } from '@otc/runtime';
+import { TickFeed } from '@otc/distribution';
 
 /**
  * The service that makes the markets run.
@@ -36,6 +37,14 @@ export class VenueService implements OnModuleDestroy {
   private timer: NodeJS.Timeout | null = null;
   private stopping = false;
   private readonly recovery = new Map<string, RecoveryOutcome>();
+  /**
+   * The distribution boundary.
+   *
+   * Every tick this service publishes goes through here, in the same order, once
+   * — so what a streaming client reconstructs is the same market the REST
+   * endpoints report, by construction rather than by two code paths agreeing.
+   */
+  readonly feed = new TickFeed();
   private readonly latest = new Map<string, Tick>();
   private lastCheckpointAt = 0;
 
@@ -132,6 +141,7 @@ export class VenueService implements OnModuleDestroy {
     for (const { assetId, ticks } of this.venue.advance()) {
       const last = ticks[ticks.length - 1];
       if (last !== undefined) this.latest.set(assetId, last);
+      this.feed.publish(assetId, ticks);
     }
     if (this.clock.now() - this.lastCheckpointAt >= this.checkpointEveryMs) {
       await this.checkpoint();
