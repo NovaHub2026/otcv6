@@ -13,6 +13,7 @@
   "dependencies": {
     "@otc/core": "*",
     "@otc/engine": "*",
-    "@otc/fixtures": "*"
+    "@otc/fixtures": "*",
+    "@otc/lab": "*"
   }
 }

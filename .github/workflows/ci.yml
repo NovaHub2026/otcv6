@@ -44,4 +44,8 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Statistical tests
+        # The phase-acceptance run holds ~24M ticks in typed arrays plus the
+        # precomputed feature frame, which needs more heap than the default.
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: npx vitest run --project statistical

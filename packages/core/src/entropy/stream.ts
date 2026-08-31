@@ -51,6 +51,27 @@ export function parseCursor(text: string): StreamCursor {
 }
 
 /**
+ * The capability a consumer of randomness needs.
+ *
+ * Separate from {@link RandomStream} so that a consumer depends on what it uses
+ * rather than on the concrete implementation. That matters for more than
+ * tidiness: the mirror test that guards the anti-predictability theorem works by
+ * wrapping a stream in a decorator that inverts its coin flips, and a decorator
+ * cannot implement a class with private fields.
+ */
+export interface RandomSource {
+  readonly label: string;
+  nextUint32(): number;
+  nextUint64(): bigint;
+  nextFloat64(): number;
+  nextBoundedUint32(bound: number): number;
+  nextBoolean(): boolean;
+  nextBytes(count: number): Uint8Array;
+  position(): StreamCursor;
+  seek(target: StreamCursor): void;
+}
+
+/**
  * A seekable, deterministic source of uniform randomness.
  *
  * Reproducible because output is a pure function of `(key, blockIndex)`.
@@ -58,7 +79,7 @@ export function parseCursor(text: string): StreamCursor {
  * ChaCha20 distinguishing problem. Those two properties are what let the same
  * mechanism serve replay (INV-009) and public unpredictability (INV-010).
  */
-export class RandomStream {
+export class RandomStream implements RandomSource {
   // Private at runtime, not merely at compile time: the expanded stream key is
   // exactly the material an observer would need to compute every future draw,
   // so it must be unreachable by serialisation or enumeration (INV-010).

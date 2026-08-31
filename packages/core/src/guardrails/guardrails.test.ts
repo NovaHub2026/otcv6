@@ -201,6 +201,23 @@ describe('dependency direction', () => {
     expect(offenders).toEqual([]);
   });
 
+  it('limits @otc/lab to depending on @otc/core outside its tests', () => {
+    // The battery must be able to attack any tick source without knowing what
+    // produced it. A battery that can reach the generator is not an observer.
+    // Its tests may import the fixture corpus — that is where calibration
+    // happens — but nothing that ships may.
+    const offenders = listSourceFiles('packages/lab/src')
+      .filter((file) => !isTestFile(file))
+      .map((file) => ({
+        file,
+        imports: workspaceImports(readFileSync(path.join(repoRoot, file), 'utf8')).filter(
+          (s) => s !== '@otc/core' && !s.startsWith('@otc/core/'),
+        ),
+      }))
+      .filter(({ imports }) => imports.length > 0);
+    expect(offenders).toEqual([]);
+  });
+
   it('limits @otc/engine to depending on @otc/core', () => {
     const offenders = listSourceFiles('packages/engine/src')
       .map((file) => ({

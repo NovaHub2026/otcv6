@@ -1,5 +1,5 @@
 import { exp, ln, pow } from '../math/portable.js';
-import type { RandomStream } from '../entropy/stream.js';
+import type { RandomSource } from '../entropy/stream.js';
 
 /**
  * Distribution samplers over a deterministic stream.
@@ -30,7 +30,7 @@ function assertFinite(name: string, value: number): void {
 }
 
 /** Uniform on `[min, max)`. */
-export function uniform(stream: RandomStream, min: number, max: number): number {
+export function uniform(stream: RandomSource, min: number, max: number): number {
   assertFinite('min', min);
   assertFinite('max', max);
   if (min > max) {
@@ -40,11 +40,11 @@ export function uniform(stream: RandomStream, min: number, max: number): number 
 }
 
 /** Uniform on `[-1, 1)`. */
-export function uniformSymmetric(stream: RandomStream): number {
+export function uniformSymmetric(stream: RandomSource): number {
   return 2 * stream.nextFloat64() - 1;
 }
 
-export function bernoulli(stream: RandomStream, probability: number): boolean {
+export function bernoulli(stream: RandomSource, probability: number): boolean {
   if (!(probability >= 0 && probability <= 1)) {
     throw new RangeError(`Probability must be in [0, 1], received ${probability}.`);
   }
@@ -58,7 +58,7 @@ export function bernoulli(stream: RandomStream, probability: number): boolean {
  * short, and a linear scan consumes exactly one draw regardless of the outcome,
  * which keeps cursor arithmetic simple to reason about during replay.
  */
-export function categorical(stream: RandomStream, weights: readonly number[]): number {
+export function categorical(stream: RandomSource, weights: readonly number[]): number {
   if (weights.length === 0) {
     throw new RangeError('Categorical weights must not be empty.');
   }
@@ -98,7 +98,7 @@ export function categorical(stream: RandomStream, weights: readonly number[]): n
  * (probability π/4 ≈ 0.785). Uses `ln` and `sqrt` only — no trigonometry — which
  * is why the kernel does not need portable `sin`/`cos`.
  */
-export function standardNormal(stream: RandomStream): number {
+export function standardNormal(stream: RandomSource): number {
   for (;;) {
     const u = uniformSymmetric(stream);
     const v = uniformSymmetric(stream);
@@ -109,7 +109,7 @@ export function standardNormal(stream: RandomStream): number {
   }
 }
 
-export function normal(stream: RandomStream, mean: number, stdDev: number): number {
+export function normal(stream: RandomSource, mean: number, stdDev: number): number {
   assertFinite('mean', mean);
   if (!(stdDev >= 0) || !Number.isFinite(stdDev)) {
     throw new RangeError(`Standard deviation must be finite and non-negative, received ${stdDev}.`);
@@ -118,7 +118,7 @@ export function normal(stream: RandomStream, mean: number, stdDev: number): numb
 }
 
 /** Exponential with the given rate (inverse mean). */
-export function exponential(stream: RandomStream, rate: number): number {
+export function exponential(stream: RandomSource, rate: number): number {
   if (!(rate > 0) || !Number.isFinite(rate)) {
     throw new RangeError(`Rate must be finite and positive, received ${rate}.`);
   }
@@ -131,7 +131,7 @@ export function exponential(stream: RandomStream, rate: number): number {
  *
  * For `shape < 1` the standard boost is applied: `G(a) = G(a+1) · U^(1/a)`.
  */
-export function gamma(stream: RandomStream, shape: number, scale: number): number {
+export function gamma(stream: RandomSource, shape: number, scale: number): number {
   if (!(shape > 0) || !Number.isFinite(shape)) {
     throw new RangeError(`Shape must be finite and positive, received ${shape}.`);
   }
@@ -167,7 +167,7 @@ export function gamma(stream: RandomStream, shape: number, scale: number): numbe
   }
 }
 
-export function chiSquared(stream: RandomStream, degreesOfFreedom: number): number {
+export function chiSquared(stream: RandomSource, degreesOfFreedom: number): number {
   if (!(degreesOfFreedom > 0) || !Number.isFinite(degreesOfFreedom)) {
     throw new RangeError(
       `Degrees of freedom must be finite and positive, received ${degreesOfFreedom}.`,
@@ -182,7 +182,7 @@ export function chiSquared(stream: RandomStream, degreesOfFreedom: number): numb
  * the market model will be able to produce genuinely fat tails rather than
  * merely large Gaussian draws.
  */
-export function studentT(stream: RandomStream, degreesOfFreedom: number): number {
+export function studentT(stream: RandomSource, degreesOfFreedom: number): number {
   if (!(degreesOfFreedom > 0) || !Number.isFinite(degreesOfFreedom)) {
     throw new RangeError(
       `Degrees of freedom must be finite and positive, received ${degreesOfFreedom}.`,
@@ -194,6 +194,6 @@ export function studentT(stream: RandomStream, degreesOfFreedom: number): number
 }
 
 /** Log-normal with the given log-space mean and standard deviation. */
-export function logNormal(stream: RandomStream, logMean: number, logStdDev: number): number {
+export function logNormal(stream: RandomSource, logMean: number, logStdDev: number): number {
   return exp(normal(stream, logMean, logStdDev));
 }
