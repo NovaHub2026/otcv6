@@ -51,12 +51,12 @@ process inside a generate → attack → diagnose → correct loop.
 
 ## Cycle 1 — Prove the core hypothesis
 
-| Phase    | Title                                                         | State              |
-| -------- | ------------------------------------------------------------- | ------------------ |
-| **PH-1** | Deterministic Market Substrate                                | **ACTIVE**         |
-| PH-2     | Calibrated Adversarial Predictability Laboratory              | NOT STARTED        |
-| PH-3     | Core Generative Market Process Under Continuous Falsification | NOT STARTED        |
-| —        | **Cycle Audit 1** — Human gate, requires `EJECUTA`            | pending after PH-3 |
+| Phase | Title                                                         | State                     |
+| ----- | ------------------------------------------------------------- | ------------------------- |
+| PH-1  | Deterministic Market Substrate                                | **APPROVED**              |
+| PH-2  | Calibrated Adversarial Predictability Laboratory              | **APPROVED**              |
+| PH-3  | Core Generative Market Process Under Continuous Falsification | **APPROVED**              |
+| —     | **Cycle Audit 1** — Human gate, requires `EJECUTA`            | **PENDING AUTHORIZATION** |
 
 ### PH-1 — Deterministic Market Substrate
 
@@ -65,12 +65,12 @@ every later capability draws from: entropy, portable numerics, authoritative
 time, the tick and price domain, tick-to-OHLC projection, and the planted-edge
 fixture corpus that PH-2 calibrates against.
 
-| Subphase | Title                                                                              | State       |
-| -------- | ---------------------------------------------------------------------------------- | ----------- |
-| PH-1.1   | Canonical time model and deterministic entropy architecture                        | APPROVED    |
-| PH-1.2   | Portable numeric foundation and distribution samplers                              | APPROVED    |
-| PH-1.3   | Market domain: integer log lattice, ticks, candle aggregation, snapshot and replay | ACTIVE      |
-| PH-1.4   | Simulation runner and planted-edge fixture corpus                                  | NOT STARTED |
+| Subphase | Title                                                                              | State    |
+| -------- | ---------------------------------------------------------------------------------- | -------- |
+| PH-1.1   | Canonical time model and deterministic entropy architecture                        | APPROVED |
+| PH-1.2   | Portable numeric foundation and distribution samplers                              | APPROVED |
+| PH-1.3   | Market domain: integer log lattice, ticks, candle aggregation, snapshot and replay | APPROVED |
+| PH-1.4   | Simulation runner and planted-edge fixture corpus                                  | APPROVED |
 
 ### PH-2 — Calibrated Adversarial Predictability Laboratory
 
@@ -119,23 +119,22 @@ random interior point and assert every latent variable is bit-identical while
 every increment is exactly negated — is the primary structural gate, and it is
 cheap, exact, and something no statistical battery can replace.
 
-| Subphase | Title                                                               | State       |
-| -------- | ------------------------------------------------------------------- | ----------- |
-| PH-3.1   | Sign-blind engine skeleton, volatility cascade, and the mirror test | APPROVED    |
-| PH-3.2   | Regime and structure layers                                         | ACTIVE      |
-| PH-3.3   | Microstructure: self-exciting arrivals, heavy tails, jumps          | NOT STARTED |
-| PH-3.4   | Full validation, calibration and phase integration                  | NOT STARTED |
+| Subphase | Title                                                               | State    |
+| -------- | ------------------------------------------------------------------- | -------- |
+| PH-3.1   | Sign-blind engine skeleton, volatility cascade, and the mirror test | APPROVED |
+| PH-3.2   | Regime and structure layers                                         | APPROVED |
+| PH-3.3   | Microstructure: self-exciting arrivals and duration coupling        | APPROVED |
+| PH-3.4   | Canonical engine, restart continuity, and phase validation          | APPROVED |
 
-PH-3.1 already produced the phase's headline result: on four million ticks the
-cascade engine is **clean across 560 attack hypotheses** and passes **15/15
-realism metrics**. The core project hypothesis — that a market can be
-simultaneously plausible and provably unexploitable — is demonstrated.
+**Approved.** Phase acceptance on 24 million ticks spanning 327 simulated days:
+verdict **clean** across all four attack feature kinds at a 30-second detection
+floor of **0.217pp** — finer than the 0.2513pp margin the promotional payout
+implies — with realism at **15/15** and the mirror test showing zero divergences
+on that exact configuration.
 
-That makes the realism battery a floor rather than a ceiling. PH-3.2 and PH-3.3
-exist to deliver behaviour `PROJECT_INTRODUCTION.md` requires but the current
-metrics do not measure: §10 nested regimes and structure, §15 emergent ranges and
-breakouts, §13 changing microstructure. PH-3.4 extends the battery to measure
-them.
+**The core project hypothesis is settled.** A market can be simultaneously
+realistic and provably unexploitable, with executed evidence for both halves on
+the same data.
 
 ---
 

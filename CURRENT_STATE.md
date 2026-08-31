@@ -12,38 +12,43 @@ Last synchronized: 2026-08-31
 
 ## Development cycle
 
-| Field                            | Value                                               |
-| -------------------------------- | --------------------------------------------------- |
-| Active development cycle         | Cycle 1                                             |
-| Approved phases in current cycle | **2 of 3** (PH-1, PH-2)                             |
-| Cycle Audit state                | NOT PENDING — becomes pending when PH-3 is APPROVED |
-| Last Cycle Audit                 | None                                                |
+| Field                            | Value                           |
+| -------------------------------- | ------------------------------- |
+| Active development cycle         | Cycle 1                         |
+| Approved phases in current cycle | **3 of 3** (PH-1, PH-2, PH-3)   |
+| Cycle Audit state                | **PENDING HUMAN AUTHORIZATION** |
+| Last Cycle Audit                 | None                            |
 
 ## Phase and subphase
 
 | Field                  | Value                                                                |
 | ---------------------- | -------------------------------------------------------------------- |
-| Active phase           | PH-3 — Core Generative Market Process Under Continuous Falsification |
-| Phase lifecycle        | ACTIVE                                                               |
-| Active subphase        | PH-3.1 — Sign-blind engine skeleton and the mirror test              |
-| Subphase lifecycle     | ACTIVE                                                               |
-| Last approved phase    | PH-2 — Calibrated Adversarial Predictability Laboratory              |
-| Last approved subphase | PH-2.3 — Realism battery and the combined report                     |
+| Active phase           | None — development is paused at the Governance Human Gate            |
+| Phase lifecycle        | n/a                                                                  |
+| Active subphase        | None                                                                 |
+| Subphase lifecycle     | n/a                                                                  |
+| Last approved phase    | PH-3 — Core Generative Market Process Under Continuous Falsification |
+| Last approved subphase | PH-3.4 — Canonical engine, restart continuity, and phase validation  |
 
-## Current objective
+## Cycle 1 result
 
-Build the real generative market model inside a generate → attack → diagnose →
-correct loop against the PH-2 laboratory, until one asset simultaneously passes
-the realism battery and the anti-predictability verdict.
+The cycle existed to settle one question: can a synthetic market be
+simultaneously plausible and provably unexploitable, with executed evidence for
+both?
 
-The architecture is fixed by ADR-0003 and ADR-0004: increments are a **sign-blind
-magnitude times an independent fair coin**, accumulated on an **integer log
-lattice**. All richness lives in the magnitude and timing process. The **mirror
-test** is the primary structural gate.
+**It can.** On 24 million ticks spanning 327 simulated days, one asset is:
+
+|                              | Result                                                                                   |
+| ---------------------------- | ---------------------------------------------------------------------------------------- |
+| Unexploitable                | clean verdict across ~570 hypotheses and all four attack feature kinds                   |
+| At a resolution that matters | 30-second detection floor 0.217pp, finer than the 0.2513pp margin the 99% payout implies |
+| Plausible                    | 15/15 realism metrics, targets fixed before the model existed                            |
+| Structurally guaranteed      | mirror test passes with zero divergences                                                 |
 
 ## Blockers
 
-None.
+None. Development is paused at the Governance Human Gate (`GOVERNANCE.md` §28),
+not blocked.
 
 ## Pending protected Human decisions
 
@@ -73,10 +78,13 @@ B-001), so history is local-only and hosted CI has never executed.
 
 ## Known limitations carried forward
 
-- The validation laboratory currently policies only the 30-second horizon to the
-  0.2513pp threshold implied by the 99% promotional payout. Longer horizons need
-  proportionally more simulated time, and every verdict states the floor it
-  achieved.
+- Only the 30-second horizon is policed to the promotional-payout threshold.
+  Independent samples at a horizon are fixed by simulated duration, so the
+  15-minute horizon needs roughly a hundred times the history. Every verdict
+  states the floor it achieved.
+- One asset, one parameter set. Personalities are PH-4.
+- The engine has never run continuously; restart continuity is proven in-process
+  only. A durable store and a runtime arrive in PH-5.
 
 ## Relevant records
 
@@ -86,13 +94,22 @@ B-001), so history is local-only and hosted CI has never executed.
 | ADR-0002 | Deterministic entropy architecture (APPROVED)                                |
 | ADR-0003 | Conditional sign symmetry as the anti-predictability architecture (APPROVED) |
 | ADR-0004 | Canonical price representation: an integer log lattice (APPROVED)            |
+| ADR-0005 | A multifractal cascade as the volatility process (APPROVED)                  |
+| ADR-0006 | A layered sign-blind market model (APPROVED)                                 |
 | Backlog  | `docs/BACKLOG.md` B-001                                                      |
 | Roadmap  | `docs/phases/ROADMAP.md`                                                     |
-| Branch   | `feature/ph-3-generative-market-process`                                     |
+| Branch   | `feature/ph-3-generative-market-process`, merged to `main`                   |
 
 ---
 
 ## EXACT NEXT LEGAL ACTION
 
-Continue autonomous implementation of **PH-3.1** per
-`docs/phases/PH-3.1-sign-blind-engine-and-mirror-test.md`.
+**Await the Human `EJECUTA` command**, which authorizes the pending Cycle Audit
+(`GOVERNANCE.md` §29).
+
+No new phase may begin until that audit has been authorized and completed
+successfully (`GOVERNANCE.md` §28). On `EJECUTA`, perform the comprehensive Cycle
+Audit over PH-1, PH-2 and PH-3 — product coherence, architecture, implementation
+quality, integrated verification, security and reliability, performance,
+technical debt, documentation, Memory Audit, Cold Start Audit and Git integrity —
+fix delegated findings autonomously, then create PH-4 and resume.

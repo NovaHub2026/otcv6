@@ -161,3 +161,40 @@ Human commands: `START`, `EJECUTA`, `GUARDAR`, `PARAR` (`GOVERNANCE.md` §59).
 - Default branch granularity is **phase-level**: `feature/ph-N-<slug>`.
 - Commits are coherent technical changes with conventional-commit subjects.
 - Update `CURRENT_STATE.md` and `SESSION_HANDOFF.md` before closing a session.
+
+---
+
+## 9. What the project has established
+
+Cycle 1 settled the question the whole product rests on, and three results are
+worth knowing before changing anything in the engine.
+
+**Anti-predictability is a theorem, not a calibration.** Increments are
+`sign × magnitude` where the sign is an independent fair coin and the magnitude
+engine is structurally unable to observe a sign, a price, or anything derived
+from them. Flipping every future sign is then a measure-preserving involution, so
+`P(up) = P(down)` exactly, at every horizon, under every public conditioning
+(ADR-0003).
+
+**The most dangerous change is the one that looks like an improvement.** The
+leverage effect — volatility responding to the _signed_ return — is one of the
+most robust stylized facts in real markets, arrives as a three-line change,
+leaves the process an exact martingale, and is worth **2.9 percentage points** of
+directional edge. Run the **mirror test** before believing any change to the
+magnitude or timing path is safe.
+
+**A conventional attack battery cannot see a level-anchored leak.** Measured:
+translation-invariant and temporal attack families — everything a normal
+validation suite contains — return _clean_ on an engine whose volatility is keyed
+to the price level, across 354 hypotheses. That mechanism is exactly what a
+designer reaches for when asked to make support and resistance feel real.
+
+### Before changing the engine
+
+```bash
+npx vitest run --project unit packages/engine     # includes the mirror test
+npx vitest run --project statistical              # includes the full battery
+```
+
+The mirror test is fast and exact; the battery is slow and statistical. A change
+that passes the battery but fails the mirror test is broken.

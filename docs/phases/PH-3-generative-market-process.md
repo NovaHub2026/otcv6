@@ -2,7 +2,7 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-3
-Status: ACTIVE
+Status: APPROVED
 Cycle: 1 (phase 3 of 3)
 Created: 2026-08-31
 Branch: `feature/ph-3-generative-market-process`
@@ -206,3 +206,98 @@ PH-3 is complete when, from the repository alone:
 | Calibration overfits to the battery                                                         | Real                                                                                              | The realism targets and attack families were fixed beforehand; PH-9 holds back further families for an independent round                                                                                  |
 | Long-horizon sensitivity is too coarse to certify                                           | Known and quantified in PH-2                                                                      | Report the achieved floor; do not claim more                                                                                                                                                              |
 | The cascade's mixing time exceeds an asset's useful life, so its apparent character wanders | Medium                                                                                            | Bound the slowest timescale and measure stationarity over long runs                                                                                                                                       |
+
+---
+
+## 13. Phase approval record
+
+Status: **APPROVED** — 2026-08-31, from executed evidence.
+Cycle 1: phase 3 of 3 approved. **Cycle Audit is now pending.**
+
+### The result the phase existed to produce
+
+On 24 million ticks spanning **327 simulated days**, one asset is
+**simultaneously**:
+
+|                              | Result                                                                                       |
+| ---------------------------- | -------------------------------------------------------------------------------------------- |
+| Unexploitable                | **clean** verdict across ~570 hypotheses and all four attack feature kinds                   |
+| At a resolution that matters | 30-second detection floor **0.217pp**, finer than the 0.2513pp margin the 99% payout implies |
+| Plausible                    | **15/15** realism metrics, whose targets were fixed in PH-2 before this model existed        |
+| Structurally guaranteed      | mirror test passes with zero divergences on the exact configuration validated                |
+
+**The core project hypothesis is settled.** A market can be simultaneously
+realistic and provably unexploitable, and there is executed evidence for both
+halves at the same time on the same data.
+
+### Subphases
+
+| Subphase | Title                                                               | State    |
+| -------- | ------------------------------------------------------------------- | -------- |
+| PH-3.1   | Sign-blind engine skeleton, volatility cascade, and the mirror test | APPROVED |
+| PH-3.2   | Regime and structure layers                                         | APPROVED |
+| PH-3.3   | Microstructure: self-exciting arrivals and duration coupling        | APPROVED |
+| PH-3.4   | Canonical engine, restart continuity, and phase validation          | APPROVED |
+
+### Acceptance intent
+
+| #   | Intent                                                       | Evidence                                                                                              |
+| --- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| 1   | Continuous tick stream on the canonical lattice              | 24M ticks, strictly ordered, integer log lattice                                                      |
+| 2   | Mirror test from randomised interior snapshots               | zero divergences at every burn-in tried, with every layer active                                      |
+| 3   | Snapshot and replay exactly, including across a restart seam | fresh engine restored from a snapshot alone; seam test proves no keystream position is consumed twice |
+| 4   | Attack battery clean, sensitivity recorded                   | clean; 0.217pp at 30s                                                                                 |
+| 5   | Realism plausible                                            | 15/15                                                                                                 |
+| 6   | Combined report `acceptable`                                 | true                                                                                                  |
+| 7   | Regime and phase durations non-lattice                       | transition instants uniform modulo the 1-minute and 15-minute grids                                   |
+| 8   | Throughput measured                                          | 0.41M ticks/s                                                                                         |
+
+### Phase invariants
+
+PH3-I1 … PH3-I7 are all covered by executed, passing tests.
+
+### What the phase learned
+
+Four findings changed the model rather than the targets, and all four came from
+measurement:
+
+1. **Kurtosis multiplies across layers.** Three layers that each looked
+   reasonable alone compounded to 1366 against a ceiling of 200. Every layer's
+   spread is gentler than it would be in isolation.
+2. **Sample kurtosis grows with the sample** for heavy tails — 127 on 1.5M ticks
+   became 191 on 4M. Parameters carry margin so a longer run does not breach.
+3. **A safety clamp silently became the mechanism.** A fixed magnitude reference
+   in the arrival process put the effective branching ratio above one; the
+   process ran permanently clamped at three times the configured tick rate, and
+   nothing failed. Excitation now normalises against a running average, and a
+   test asserts the clamp is not load-bearing.
+4. **The tick rate is a product decision.** At a five-second interval a
+   30-second contract resolves on five ticks; two-sided wick fraction fell below
+   its floor, detecting a real product problem. The rate is now about one second.
+
+The realism targets were fixed in PH-2 before this model existed, which is what
+made every one of these actionable: the model was calibrated to the targets
+rather than the targets moved to the model.
+
+### Verification executed
+
+| Check                  | Result                              |
+| ---------------------- | ----------------------------------- |
+| `npm run format:check` | PASSED                              |
+| `npm run lint`         | PASSED                              |
+| `npm run build`        | PASSED                              |
+| `npx vitest run`       | PASSED                              |
+| Hosted CI              | NOT EXECUTED — no remote configured |
+
+### Known limitations carried forward
+
+1. **Only the 30-second horizon is policed to the promotional-payout threshold.**
+   Independent samples at a horizon are fixed by simulated duration, so the
+   15-minute horizon needs roughly a hundred times the history. Every verdict
+   states the floor it achieved.
+2. **One asset, one parameter set.** Personalities and multi-asset isolation are
+   PH-4.
+3. **The engine has never run continuously.** Restart continuity is proven
+   in-process; a durable store and a real runtime arrive in PH-5.
+4. **The learned attack family is deliberately simple.** PH-9 runs an independent
+   red-team round with families withheld from all prior tuning.

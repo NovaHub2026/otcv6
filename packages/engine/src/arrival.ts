@@ -1,5 +1,5 @@
 import { ln, type RandomSource } from '@otc/core';
-import type { ArrivalModel, MagnitudeContext } from './magnitude.js';
+import type { ArrivalContext, ArrivalModel } from './magnitude.js';
 
 /**
  * Poisson tick arrivals: exponential inter-arrival times with a fixed mean.
@@ -23,7 +23,7 @@ export class PoissonArrivalModel implements ArrivalModel {
     }
   }
 
-  nextIntervalMs(_context: MagnitudeContext): number {
+  nextIntervalMs(_context: ArrivalContext): number {
     // 1 - u lies in (0, 1], so the logarithm can never be -Infinity.
     const raw = -ln(1 - this.stream.nextFloat64()) * this.meanIntervalMs;
     // At least 1ms: two ticks in the same millisecond would still be ordered by

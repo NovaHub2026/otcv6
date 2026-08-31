@@ -1,5 +1,22 @@
 export { PoissonArrivalModel } from './arrival.js';
 export {
+  createMarketEngine,
+  defaultConfigFor,
+  DEFAULT_ENGINE_CONFIG,
+  ENGINE_STREAM_PURPOSES,
+  type CreateEngineOptions,
+  type MarketEngineConfig,
+} from './factory.js';
+export {
+  assertHawkesConfig,
+  DEFAULT_DURATION_COUPLING,
+  DEFAULT_HAWKES,
+  DurationCouplingModulator,
+  HawkesArrivalModel,
+  type HawkesConfig,
+  type HawkesSnapshot,
+} from './hawkes.js';
+export {
   assertCascadeConfig,
   CascadeMagnitudeModel,
   DEFAULT_CASCADE,

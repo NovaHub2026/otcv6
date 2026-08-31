@@ -11,7 +11,12 @@ import {
   type Tick,
   type TickSource,
 } from '@otc/core';
-import type { ArrivalModel, MagnitudeContext, MagnitudeModel } from './magnitude.js';
+import type {
+  ArrivalContext,
+  ArrivalModel,
+  MagnitudeContext,
+  MagnitudeModel,
+} from './magnitude.js';
 
 /**
  * The market engine.
@@ -45,6 +50,7 @@ export interface EngineSnapshot {
   readonly instant: EpochMillis;
   readonly price: LogPrice;
   readonly previousMagnitude: number;
+  readonly previousIntervalMs: number;
   readonly magnitudeState: unknown;
   readonly arrivalState: unknown;
   /** Position of every stream, by name. `sign` and `rounding` are always present. */
@@ -72,6 +78,7 @@ export class MarketEngine implements TickSource {
   #instant: number;
   #price: number;
   #previousMagnitude = 0;
+  #previousIntervalMs = 0;
 
   constructor(private readonly options: MarketEngineOptions) {
     this.instrument = options.instrument;
@@ -84,15 +91,16 @@ export class MarketEngine implements TickSource {
       return null;
     }
 
-    // Context carries magnitudes and time. It cannot carry a sign or a price,
-    // because the type does not have room for one.
-    const preliminary: MagnitudeContext = {
-      intervalMs: 0,
+    // The arrival model is deciding the interval about to elapse, so it is told
+    // the one already elapsed. Passing this tick's interval would be circular,
+    // and passing zero silently disables any time-based decay it performs.
+    const arrivalContext: ArrivalContext = {
+      elapsedSincePreviousMs: this.#previousIntervalMs,
       previousMagnitude: this.#previousMagnitude,
       instant: epochMillis(this.#instant),
       sequence: this.#sequence,
     };
-    const intervalMs = this.options.arrival.nextIntervalMs(preliminary);
+    const intervalMs = this.options.arrival.nextIntervalMs(arrivalContext);
     if (!Number.isInteger(intervalMs) || intervalMs < 1) {
       throw new RangeError(
         `Arrival interval must be an integer of at least 1ms, received ${intervalMs}.`,
@@ -124,6 +132,7 @@ export class MarketEngine implements TickSource {
 
     this.#price += sign * steps;
     this.#previousMagnitude = steps;
+    this.#previousIntervalMs = intervalMs;
 
     return {
       instant: epochMillis(this.#instant),
@@ -138,6 +147,7 @@ export class MarketEngine implements TickSource {
       instant: epochMillis(this.#instant),
       price: logPrice(this.#price),
       previousMagnitude: this.#previousMagnitude,
+      previousIntervalMs: this.#previousIntervalMs,
       magnitudeState: this.options.magnitude.snapshot(),
       arrivalState: this.options.arrival.snapshot(),
       cursors: this.#cursors(),
@@ -189,6 +199,7 @@ export class MarketEngine implements TickSource {
     this.#instant = snapshot.instant;
     this.#price = snapshot.price;
     this.#previousMagnitude = snapshot.previousMagnitude;
+    this.#previousIntervalMs = snapshot.previousIntervalMs ?? 0;
     this.options.magnitude.restore(snapshot.magnitudeState);
     this.options.arrival.restore(snapshot.arrivalState);
   }

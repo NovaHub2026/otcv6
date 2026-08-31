@@ -15,7 +15,7 @@ Describes: the system as it exists today
         apps/api        NestJS runtime, streaming,          (not yet built)
             │           trading, settlement, persistence
             ▼
-      @otc/engine       generative market model             (PH-3)
+      @otc/engine       generative market model             ✅ (PH-3, APPROVED)
             │
             ▼
        @otc/core        deterministic substrate             (PH-1, APPROVED)
@@ -112,3 +112,18 @@ opposite.
 Its calibration produced the result that shapes PH-2: **three of the six defects
 are invisible to an unconditional estimator**, and level-anchored defects need
 roughly three times the history of the others to reach the same significance.
+
+## The market model
+
+`@otc/engine` produces the market. Its shape is one line — a sign-blind magnitude
+quantised to the lattice, multiplied by an independent fair coin — with five
+layers behind it producing that magnitude: a multifractal volatility cascade,
+volatility regimes, structure phases, duration coupling and self-exciting
+arrivals. See [`MARKET_MODEL.md`](MARKET_MODEL.md).
+
+The **mirror test** is the primary structural gate. Negating the sign source must
+leave every latent variable bit-identical and negate every increment exactly; any
+mechanism that reads a sign, a price, or anything derived from them fails it in
+milliseconds. PH-2 measured why a statistical battery cannot replace it: a
+conventional attack battery returns _clean_ on an engine whose volatility is
+keyed to the price level.

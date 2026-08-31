@@ -120,16 +120,33 @@ const HARNESS_FAMILIES = [
 ];
 const HARNESS_OPTIONS = { families: HARNESS_FAMILIES, minimumBucketSamples: 200 };
 
+/**
+ * A two-horizon subset.
+ *
+ * These tests exercise the harness's bookkeeping — splitting, occupancy,
+ * correction, verdict assembly — none of which depends on how many horizons
+ * run. The full eight-horizon sweep belongs to the statistical calibration
+ * suite, and running it here took nearly three seconds: fine alone, a timeout
+ * under a parallel suite. A unit test that fails only under load erodes the gate
+ * it belongs to.
+ */
+const FAST_OPTIONS = {
+  ...HARNESS_OPTIONS,
+  horizons: [horizonByLabel('30s'), horizonByLabel('1m')],
+};
+
 describe('the verdict', () => {
   it('is clean on the control', () => {
-    const verdict = runBattery(dataset, HARNESS_OPTIONS);
+    const verdict = runBattery(dataset, FAST_OPTIONS);
     expect(verdict.clean).toBe(true);
     expect(verdict.exploitable).toEqual([]);
-    expect(verdict.coverage.hypothesesTested).toBeGreaterThan(10);
+    // Three families over two horizons, less the buckets that miss the
+    // occupancy floor.
+    expect(verdict.coverage.hypothesesTested).toBeGreaterThanOrEqual(8);
   });
 
   it('reports sensitivity per horizon, computed from the sample count', () => {
-    const verdict = runBattery(dataset, HARNESS_OPTIONS);
+    const verdict = runBattery(dataset, FAST_OPTIONS);
     expect(verdict.sensitivity.length).toBeGreaterThan(0);
     for (const s of verdict.sensitivity) {
       expect(s.minimumDetectableEffectPoints).toBeGreaterThan(0);
@@ -142,7 +159,7 @@ describe('the verdict', () => {
   });
 
   it('separates statistical significance from economic materiality', () => {
-    const verdict = runBattery(dataset, { ...HARNESS_OPTIONS, payout: PAYOUT_PROMOTIONAL });
+    const verdict = runBattery(dataset, { ...FAST_OPTIONS, payout: PAYOUT_PROMOTIONAL });
     const threshold = profitabilityThresholdPoints(PAYOUT_PROMOTIONAL);
     expect(threshold).toBeCloseTo(0.2513, 4);
     let materialSeen = 0;
@@ -162,7 +179,7 @@ describe('the verdict', () => {
   it('gates on the intersection, not on significance alone', () => {
     // At a payout of 1.0 the breakeven is exactly 0.5, so every finding is
     // material and the gate reduces to statistical significance.
-    const strict = runBattery(dataset, { ...HARNESS_OPTIONS, payout: 1 });
+    const strict = runBattery(dataset, { ...FAST_OPTIONS, payout: 1 });
     for (const finding of strict.findings) {
       expect(finding.material).toBe(true);
       expect(finding.exploitable).toBe(finding.significant && finding.confirmed);
@@ -171,7 +188,7 @@ describe('the verdict', () => {
 
   it('skips under-occupied buckets rather than testing them', () => {
     const verdict = runBattery(dataset, {
-      ...HARNESS_OPTIONS,
+      ...FAST_OPTIONS,
       minimumBucketSamples: 1_000_000,
     });
     expect(verdict.coverage.hypothesesTested).toBe(0);
@@ -180,12 +197,8 @@ describe('the verdict', () => {
   });
 
   it('rejects an invalid training fraction', () => {
-    expect(() => runBattery(dataset, { ...HARNESS_OPTIONS, trainingFraction: 0 })).toThrow(
-      RangeError,
-    );
-    expect(() => runBattery(dataset, { ...HARNESS_OPTIONS, trainingFraction: 1 })).toThrow(
-      RangeError,
-    );
+    expect(() => runBattery(dataset, { ...FAST_OPTIONS, trainingFraction: 0 })).toThrow(RangeError);
+    expect(() => runBattery(dataset, { ...FAST_OPTIONS, trainingFraction: 1 })).toThrow(RangeError);
   });
 
   it('rejects a family returning an out-of-range bucket', () => {
@@ -201,7 +214,7 @@ describe('the verdict', () => {
   });
 
   it('formats a readable summary', () => {
-    const text = formatVerdict(runBattery(dataset, HARNESS_OPTIONS));
+    const text = formatVerdict(runBattery(dataset, FAST_OPTIONS));
     expect(text).toContain('VERDICT:');
     expect(text).toContain('sensitivity:');
     expect(text).toContain('hypotheses across');
@@ -211,7 +224,7 @@ describe('the verdict', () => {
 describe('out-of-sample discipline', () => {
   it('evaluates only after the training split', () => {
     const trainingFraction = 0.4;
-    const verdict = runBattery(dataset, { trainingFraction });
+    const verdict = runBattery(dataset, { ...FAST_OPTIONS, trainingFraction });
     // Every horizon's sample count must be consistent with the evaluation span
     // alone, not the whole dataset.
     const evaluationMs =

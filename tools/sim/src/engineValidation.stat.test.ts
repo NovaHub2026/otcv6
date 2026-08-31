@@ -11,6 +11,10 @@ import {
   DEFAULT_CASCADE,
   DEFAULT_REGIMES,
   DEFAULT_STRUCTURE,
+  DEFAULT_DURATION_COUPLING,
+  DEFAULT_HAWKES,
+  DurationCouplingModulator,
+  HawkesArrivalModel,
   MarketEngine,
   ModulatedMagnitudeModel,
   PoissonArrivalModel,
@@ -44,11 +48,21 @@ const TICKS = 4_000_000;
 const MEAN_INTERVAL_MS = 5_000;
 
 /**
- * @param layered whether to include the PH-3.2 regime and structure layers.
- *   Running both configurations is what makes a realism movement attributable
- *   to the layers rather than to chance.
+ * Engine configurations, built up layer by layer.
+ *
+ * Running each level separately is what makes a realism movement attributable to
+ * the mechanism that caused it rather than to chance.
  */
-function buildEngine(layered: boolean, maxTicks = TICKS): MarketEngine {
+export type EngineLevel =
+  /** PH-3.1: cascade and Poisson arrivals. */
+  | 'cascade'
+  /** PH-3.2: plus volatility regime and structure phase. */
+  | 'layered'
+  /** PH-3.3: plus duration coupling and self-exciting arrivals. */
+  | 'full';
+
+function buildEngine(level: EngineLevel, maxTicks = TICKS): MarketEngine {
+  const layered = level !== 'cascade';
   const keyring = MasterKeyring.forTesting('ph3-validation');
   const derive = (purpose: string): RandomSource =>
     keyring.derive({ env: 'simulation', asset: instrument.id, purpose, keyEpoch: 0 });
@@ -66,13 +80,19 @@ function buildEngine(layered: boolean, maxTicks = TICKS): MarketEngine {
     ? new ModulatedMagnitudeModel(base, [
         new VolatilityRegimeModulator(DEFAULT_REGIMES, regime),
         new StructurePhaseModulator(DEFAULT_STRUCTURE, structure),
+        ...(level === 'full'
+          ? [new DurationCouplingModulator(DEFAULT_DURATION_COUPLING, MEAN_INTERVAL_MS)]
+          : []),
       ])
     : base;
 
   return new MarketEngine({
     instrument,
     magnitude,
-    arrival: new PoissonArrivalModel(MEAN_INTERVAL_MS, arrival),
+    arrival:
+      level === 'full'
+        ? new HawkesArrivalModel(DEFAULT_HAWKES, arrival)
+        : new PoissonArrivalModel(MEAN_INTERVAL_MS, arrival),
     streams: {
       sign: derive('sign'),
       rounding: derive('rounding'),
@@ -85,10 +105,32 @@ function buildEngine(layered: boolean, maxTicks = TICKS): MarketEngine {
   });
 }
 
+// Several tests examine the same configuration from different angles.
+// Regenerating four million ticks for each was most of this file's runtime, and
+// caching also guarantees every test sees the identical stream.
+const datasets = new Map<string, Promise<Awaited<ReturnType<typeof buildObserverDataset>>>>();
+
+function datasetFor(level: EngineLevel): Promise<Awaited<ReturnType<typeof buildObserverDataset>>> {
+  const cached = datasets.get(level);
+  if (cached !== undefined) return cached;
+  const built = buildObserverDataset({ source: buildEngine(level), maxTicks: TICKS });
+  datasets.set(level, built);
+  return built;
+}
+
+const reports = new Map<string, Promise<Awaited<ReturnType<typeof runValidation>>>>();
+
+async function reportFor(level: EngineLevel) {
+  const cached = reports.get(level);
+  if (cached !== undefined) return cached;
+  const built = datasetFor(level).then((dataset) => runValidation(dataset));
+  reports.set(level, built);
+  return built;
+}
+
 describe('the cascade engine under full validation', () => {
   it('is unexploitable and its realism gap is measured', async () => {
-    const dataset = await buildObserverDataset({ source: buildEngine(false), maxTicks: TICKS });
-    const report = await runValidation(dataset);
+    const report = await reportFor('cascade');
     console.info(formatValidationReport(report));
 
     // The architecture guarantees this; the battery is the independent check.
@@ -123,7 +165,7 @@ describe('the cascade engine under full validation', () => {
   it('generates far faster than real time', async () => {
     const started = process.hrtime.bigint();
     const dataset = await buildObserverDataset({
-      source: buildEngine(true, 1_000_000),
+      source: buildEngine('full', 1_000_000),
       maxTicks: 1_000_000,
     });
     const seconds = Number(process.hrtime.bigint() - started) / 1e9;
@@ -138,8 +180,7 @@ describe('the cascade engine under full validation', () => {
 
 describe('the layered engine: regimes and structure', () => {
   it('is still unexploitable with both layers active', async () => {
-    const dataset = await buildObserverDataset({ source: buildEngine(true), maxTicks: TICKS });
-    const report = await runValidation(dataset);
+    const report = await reportFor('layered');
     console.info(formatValidationReport(report));
 
     // The layers add episodes; they must add no direction. The structure
@@ -151,12 +192,8 @@ describe('the layered engine: regimes and structure', () => {
   });
 
   it('widens the volatility regime range relative to the cascade alone', async () => {
-    const plain = await runValidation(
-      await buildObserverDataset({ source: buildEngine(false), maxTicks: TICKS }),
-    );
-    const layered = await runValidation(
-      await buildObserverDataset({ source: buildEngine(true), maxTicks: TICKS }),
-    );
+    const plain = await reportFor('cascade');
+    const layered = await reportFor('layered');
     const value = (report: typeof plain, name: string) =>
       report.realism.metrics.find((m) => m.name === name)!.value;
 
@@ -171,5 +208,34 @@ describe('the layered engine: regimes and structure', () => {
     // Episodes should make quiet and violent periods differ more, which is the
     // whole point of adding them.
     expect(layeredRange).toBeGreaterThan(plainRange);
+  });
+});
+
+describe('the complete engine: arrivals and duration coupling', () => {
+  it('is unexploitable with every layer active', async () => {
+    const report = await reportFor('full');
+    console.info(formatValidationReport(report));
+    expect(report.predictability.clean).toBe(true);
+    expect(report.realism.plausible).toBe(true);
+    expect(report.acceptable).toBe(true);
+  });
+
+  it('thickens intra-bar structure, which is what the arrivals were for', async () => {
+    const layered = await reportFor('layered');
+    const full = await reportFor('full');
+    const value = (report: typeof full, name: string) =>
+      report.realism.metrics.find((m) => m.name === name)!.value;
+
+    const before = value(layered, 'two-sided-wick-fraction');
+    const after = value(full, 'two-sided-wick-fraction');
+    console.info(
+      `two-sided wicks: ${before.toFixed(4)} -> ${after.toFixed(4)}; ` +
+        `excess kurtosis: ${value(layered, 'excess-kurtosis').toFixed(1)} -> ${value(full, 'excess-kurtosis').toFixed(1)}`,
+    );
+    // Activity that bursts puts more ticks inside active bars, and wicks come
+    // from price moving both ways within a bar.
+    expect(after).toBeGreaterThan(before);
+    // Tails must stay inside the band the realism battery fixed in PH-2.
+    expect(value(full, 'excess-kurtosis')).toBeLessThan(200);
   });
 });

@@ -90,6 +90,45 @@ describe('the roadmap tracks every phase document', () => {
   });
 });
 
+describe('phase states agree between documents and the roadmap', () => {
+  // Lifecycle state drifting between a phase document and the roadmap is the
+  // most consequential kind of documentation staleness: Governance §71 requires
+  // a fresh agent to determine the current phase and subphase from the
+  // repository alone, and two sources disagreeing makes that impossible.
+  //
+  // This check exists because it happened. Four roadmap rows silently kept
+  // stale states across several approvals, because Markdown table edits matched
+  // nothing after the table was reformatted.
+  const roadmap = read('docs/phases/ROADMAP.md');
+
+  const phases = listMarkdown('docs/phases')
+    .filter((name) => name.startsWith('PH-'))
+    .map((name) => {
+      const id = /^(PH-\d+(?:\.\d+)?)/.exec(name)?.[1] ?? name;
+      const status = /^Status:\s*(\w[\w ]*)$/m.exec(read(`docs/phases/${name}`))?.[1]?.trim();
+      return { name, id, status };
+    });
+
+  it('every phase document declares a status', () => {
+    expect(phases.filter((p) => p.status === undefined)).toEqual([]);
+  });
+
+  it.each(phases.map((p) => [p.id, p.status!] as const))(
+    '%s is recorded as %s in the roadmap',
+    (id, status) => {
+      // Find the roadmap row for this identifier and confirm it carries the
+      // same state the phase document declares.
+      const row = roadmap
+        .split('\n')
+        .find((line) =>
+          new RegExp(`^\\|\\s*(\\*\\*)?${id.replace('.', '\\.')}(\\*\\*)?\\s*\\|`).test(line),
+        );
+      expect(row, `no roadmap row for ${id}`).toBeDefined();
+      expect(row!.toUpperCase(), `roadmap row for ${id}: ${row!}`).toContain(status.toUpperCase());
+    },
+  );
+});
+
 describe('every repo-relative link resolves', () => {
   const documents = [
     'DOCS_INDEX.md',

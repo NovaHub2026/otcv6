@@ -57,7 +57,7 @@ export const DEFAULT_CASCADE: CascadeConfig = {
   components: 10,
   slowestHazardPerMs: 1 / (6 * 3_600_000),
   hazardRatio: 2.6,
-  lowMultiplier: 0.7,
+  lowMultiplier: 0.78,
 };
 
 export function assertCascadeConfig(config: CascadeConfig): void {

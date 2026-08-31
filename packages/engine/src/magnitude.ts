@@ -48,6 +48,31 @@ export interface MagnitudeModel {
 }
 
 /**
+ * What an arrival model is allowed to see.
+ *
+ * Distinct from {@link MagnitudeContext} because the two are called at different
+ * points in a tick and `intervalMs` would mean different things to each. An
+ * arrival model is deciding the interval that is about to elapse, so the only
+ * duration it can know is the one *already* elapsed.
+ *
+ * Conflating the two caused a real defect: the engine passed `intervalMs: 0` to
+ * the arrival model, a self-exciting process decayed its excitation by that
+ * zero, and the excitation therefore only ever accumulated until it hit its
+ * safety clamp. The realized tick rate was three times the configured one and
+ * nothing failed, because the unit tests fed a context shape the engine never
+ * produced.
+ */
+export interface ArrivalContext {
+  /** Milliseconds that elapsed before the previous tick. Zero at the first. */
+  readonly elapsedSincePreviousMs: number;
+  /** Absolute size of the previous increment, in lattice steps. Never signed. */
+  readonly previousMagnitude: number;
+  /** Wall-clock instant of the previous tick. */
+  readonly instant: EpochMillis;
+  readonly sequence: number;
+}
+
+/**
  * A sign-blind source of inter-arrival times.
  *
  * Separate from the magnitude model because volatility can arrive either as more
@@ -56,7 +81,7 @@ export interface MagnitudeModel {
  */
 export interface ArrivalModel {
   /** Milliseconds until the next tick. At least 1. */
-  nextIntervalMs(context: MagnitudeContext): number;
+  nextIntervalMs(context: ArrivalContext): number;
   snapshot(): unknown;
   restore(state: unknown): void;
 }
