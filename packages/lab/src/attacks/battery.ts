@@ -34,7 +34,12 @@ export interface AttackFinding {
   readonly significant: boolean;
   /** Clears the profitability threshold at the tightest payout. */
   readonly material: boolean;
-  /** Both. This is what the gate turns on. */
+  /** Reproduces on a held-out confirmation split, with the same sign. */
+  readonly confirmed: boolean;
+  /** Edge measured on the confirmation split, in percentage points. */
+  readonly confirmationEdgePoints: number;
+  readonly confirmationSamples: number;
+  /** Significant, material AND confirmed. This is what the gate turns on. */
   readonly exploitable: boolean;
   readonly expectedValueAtTightestPayout: number;
 }
@@ -74,6 +79,11 @@ export interface Verdict {
 export interface BatteryOptions {
   /** Fraction of the dataset reserved for fitting. Default 0.4. */
   readonly trainingFraction?: number;
+  /**
+   * Fraction of the dataset at which evaluation ends and confirmation begins.
+   * Default 0.75, giving a 40/35/25 training/evaluation/confirmation split.
+   */
+  readonly confirmationFraction?: number;
   /** Minimum decided outcomes for a bucket to be tested at all. Default 500. */
   readonly minimumBucketSamples?: number;
   readonly falseDiscoveryRate?: number;
@@ -112,6 +122,12 @@ function* batteryCore(
   if (!(trainingFraction > 0 && trainingFraction < 1)) {
     throw new RangeError(`trainingFraction must lie in (0, 1), received ${trainingFraction}.`);
   }
+  const confirmationFraction = options.confirmationFraction ?? 0.75;
+  if (!(confirmationFraction > trainingFraction && confirmationFraction < 1)) {
+    throw new RangeError(
+      `confirmationFraction must lie in (trainingFraction, 1), received ${confirmationFraction}.`,
+    );
+  }
   const minimumBucketSamples = options.minimumBucketSamples ?? 500;
   const falseDiscoveryRate = options.falseDiscoveryRate ?? 0.05;
   const payout = options.payout ?? PAYOUT_PROMOTIONAL;
@@ -128,6 +144,21 @@ function* batteryCore(
   const trainingEndIndex = Math.floor(dataset.tickCount * trainingFraction);
   const evaluationStartInstant = dataset.instants[trainingEndIndex]!;
   const warmupMs = evaluationStartInstant - dataset.firstInstant;
+
+  // A held-out confirmation split.
+  //
+  // Benjamini-Hochberg controls the false discovery rate at q, which means a
+  // clean market produces a spurious finding on roughly q of all runs. Measured
+  // directly: a provably symmetric Gaussian walk yielded one "exploitable"
+  // finding out of 564 hypotheses. A gate that fires on one run in twenty of a
+  // healthy engine is a gate the project learns to ignore.
+  //
+  // A real leak reproduces on fresh data; a false discovery does not. Requiring
+  // both cuts the false-positive rate by more than an order of magnitude while
+  // costing almost nothing in power against a genuine edge.
+  const confirmationStartIndex = Math.floor(dataset.tickCount * confirmationFraction);
+  const confirmationStartInstant = dataset.instants[confirmationStartIndex]!;
+  const confirmationWarmupMs = confirmationStartInstant - dataset.firstInstant;
 
   // The threshold an edge must clear to be worth exploiting. At the promotional
   // 99% payout this is 0.25 percentage points; at 85% it is 4.05.
@@ -147,6 +178,11 @@ function* batteryCore(
   for (const horizon of horizons) {
     const sampling = sampleOutcomes(dataset, horizon.durationMs, {
       warmupMs,
+      endInstant: epochMillis(confirmationStartInstant),
+      ...options.sampling,
+    });
+    const confirmation = sampleOutcomes(dataset, horizon.durationMs, {
+      warmupMs: confirmationWarmupMs,
       ...options.sampling,
     });
     if (sampling.decided === 0) {
@@ -166,30 +202,35 @@ function* batteryCore(
         family.fit(frame, trainingEndIndex, horizon.durationMs);
       }
 
-      const tallies: BucketTally[] = Array.from({ length: family.buckets }, () => ({
-        up: 0,
-        down: 0,
-        ties: 0,
-      }));
-      let classified = 0;
-
-      for (let s = 0; s < sampling.entryIndices.length; s += 1) {
-        const entryIndex = sampling.entryIndices[s]!;
-        const entryInstant = epochMillis(sampling.entryInstants[s]!);
-        const bucket = family.bucket(frame, entryIndex, entryInstant);
-        if (bucket === SKIP_BUCKET) continue;
-        if (!Number.isInteger(bucket) || bucket < 0 || bucket >= family.buckets) {
-          throw new RangeError(
-            `Attack family ${family.name} returned bucket ${bucket}, outside [0, ${family.buckets}).`,
-          );
+      const tally = (source: typeof sampling): { tallies: BucketTally[]; classified: number } => {
+        const tallies: BucketTally[] = Array.from({ length: family.buckets }, () => ({
+          up: 0,
+          down: 0,
+          ties: 0,
+        }));
+        let classified = 0;
+        for (let s = 0; s < source.entryIndices.length; s += 1) {
+          const entryIndex = source.entryIndices[s]!;
+          const entryInstant = epochMillis(source.entryInstants[s]!);
+          const bucket = family.bucket(frame, entryIndex, entryInstant);
+          if (bucket === SKIP_BUCKET) continue;
+          if (!Number.isInteger(bucket) || bucket < 0 || bucket >= family.buckets) {
+            throw new RangeError(
+              `Attack family ${family.name} returned bucket ${bucket}, outside [0, ${family.buckets}).`,
+            );
+          }
+          const entry = tallies[bucket]!;
+          const outcome = source.outcomes[s]!;
+          if (outcome > 0) entry.up += 1;
+          else if (outcome < 0) entry.down += 1;
+          else entry.ties += 1;
+          classified += 1;
         }
-        const tally = tallies[bucket]!;
-        const outcome = sampling.outcomes[s]!;
-        if (outcome > 0) tally.up += 1;
-        else if (outcome < 0) tally.down += 1;
-        else tally.ties += 1;
-        classified += 1;
-      }
+        return { tallies, classified };
+      };
+
+      const { tallies, classified } = tally(sampling);
+      const { tallies: confirmationTallies } = tally(confirmation);
 
       if (classified === 0) {
         notes.push(`${family.name} @ ${horizon.label}: classified no entries; skipped.`);
@@ -199,14 +240,27 @@ function* batteryCore(
       yield;
 
       for (let bucket = 0; bucket < family.buckets; bucket += 1) {
-        const tally = tallies[bucket]!;
-        const decided = tally.up + tally.down;
+        const tallyEntry = tallies[bucket]!;
+        const decided = tallyEntry.up + tallyEntry.down;
         if (decided < minimumBucketSamples) {
           bucketsSkippedForOccupancy += 1;
           continue;
         }
-        const test = binomialProportionTest(tally.up, decided);
+        const test = binomialProportionTest(tallyEntry.up, decided);
         const economics = assessEconomics(test.proportion, payout);
+
+        const confirmEntry = confirmationTallies[bucket]!;
+        const confirmDecided = confirmEntry.up + confirmEntry.down;
+        const confirmTest =
+          confirmDecided > 0 ? binomialProportionTest(confirmEntry.up, confirmDecided) : null;
+        const confirmEdge = confirmTest === null ? 0 : (confirmTest.proportion - 0.5) * 100;
+        // Reproduces means: same direction, and significant on its own terms.
+        const confirmed =
+          confirmTest !== null &&
+          confirmDecided >= Math.max(50, minimumBucketSamples / 4) &&
+          Math.sign(confirmEdge) === Math.sign(economics.edgePoints) &&
+          Math.abs(confirmTest.z) > 1.96;
+
         raw.push({
           family: family.name,
           featureKind: family.featureKind,
@@ -214,12 +268,15 @@ function* batteryCore(
           horizon: horizon.label,
           bucket,
           samples: decided,
-          ties: tally.ties,
+          ties: tallyEntry.ties,
           upRate: test.proportion,
           edgePoints: economics.edgePoints,
           z: test.z,
           pValue: test.pValue,
           material: Math.abs(economics.edgePoints) >= materialityPoints,
+          confirmed,
+          confirmationEdgePoints: confirmEdge,
+          confirmationSamples: confirmDecided,
           expectedValueAtTightestPayout: economics.expectedValue,
         });
       }
@@ -237,7 +294,7 @@ function* batteryCore(
 
   const findings: AttackFinding[] = raw.map((f, index) => {
     const significant = significantIndices.has(index);
-    return { ...f, significant, exploitable: significant && f.material };
+    return { ...f, significant, exploitable: significant && f.material && f.confirmed };
   });
 
   const exploitable = findings.filter((f) => f.exploitable);
@@ -322,7 +379,8 @@ export function formatVerdict(verdict: Verdict): string {
     const w = verdict.worst;
     lines.push(
       `  worst z: ${w.z >= 0 ? '+' : ''}${w.z.toFixed(2)} — ${w.family} bucket ${w.bucket} @ ${w.horizon} ` +
-        `(edge ${w.edgePoints >= 0 ? '+' : ''}${w.edgePoints.toFixed(3)}pp, n=${w.samples})`,
+        `(edge ${w.edgePoints >= 0 ? '+' : ''}${w.edgePoints.toFixed(3)}pp, n=${w.samples}, ` +
+        `confirmation edge ${w.confirmationEdgePoints >= 0 ? '+' : ''}${w.confirmationEdgePoints.toFixed(3)}pp)`,
     );
   }
   for (const finding of verdict.exploitable.slice(0, 10)) {

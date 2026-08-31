@@ -28,6 +28,7 @@ Describes: the system as it exists today
                         └── guardrails/ architecture tests                ✅
 
     @otc/fixtures       planted-edge corpus + control       ✅
+       @otc/lab         predictability and realism batteries ✅ (PH-2, APPROVED)
        tools/sim        simulation runner and edge estimator ✅
 ```
 

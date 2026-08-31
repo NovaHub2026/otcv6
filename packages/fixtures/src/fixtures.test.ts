@@ -34,9 +34,13 @@ function drain(fixtureName: string, options: FixtureOptions): number[] {
 }
 
 describe('fixture registry', () => {
-  it('exposes a symmetric control and six planted defects', () => {
-    expect(FIXTURES).toHaveLength(7);
+  it('exposes both controls and six planted defects', () => {
+    // Two controls, not one: `symmetricControl` is the anti-predictability
+    // control and `gaussianRandomWalk` is the realism control, which passes
+    // every attack precisely because it is not a market.
+    expect(FIXTURES).toHaveLength(8);
     expect(FIXTURES.map((f) => f.name)).toContain('symmetricControl');
+    expect(FIXTURES.map((f) => f.name)).toContain('gaussianRandomWalk');
     expect(new Set(FIXTURES.map((f) => f.name)).size).toBe(FIXTURES.length);
   });
 

@@ -46,13 +46,13 @@ documents disagree, the canonical one wins and the other is a defect.
 
 ## Architecture documents
 
-| Document                                                                     | Subject                                                                                                 |
-| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| [`docs/architecture/OVERVIEW.md`](docs/architecture/OVERVIEW.md)             | System decomposition, layers, dependency rules, and how the invariants are enforced structurally.       |
-| [`docs/architecture/MARKET_MODEL.md`](docs/architecture/MARKET_MODEL.md)     | The generative market model: latent state, regimes, volatility, structure, microstructure, personality. |
-| [`docs/architecture/ENTROPY.md`](docs/architecture/ENTROPY.md)               | Deterministic randomness architecture: stream derivation, isolation, replay, secret handling.           |
-| [`docs/architecture/TIME_AND_TICKS.md`](docs/architecture/TIME_AND_TICKS.md) | Canonical time model, tick identity, candle aggregation and cross-timeframe coherence.                  |
-| [`docs/architecture/VALIDATION.md`](docs/architecture/VALIDATION.md)         | Statistical and adversarial validation strategy, and what constitutes a pass.                           |
+| Document                                                                     | Subject                                                                                                                      |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| [`docs/architecture/OVERVIEW.md`](docs/architecture/OVERVIEW.md)             | System decomposition, layers, dependency rules, and how the invariants are enforced structurally.                            |
+| `docs/architecture/MARKET_MODEL.md` (not yet created)                        | The generative market model. Created by PH-3, which is where the model first exists.                                         |
+| [`docs/architecture/ENTROPY.md`](docs/architecture/ENTROPY.md)               | Deterministic randomness architecture: stream derivation, isolation, replay, secret handling.                                |
+| [`docs/architecture/TIME_AND_TICKS.md`](docs/architecture/TIME_AND_TICKS.md) | Canonical time model, tick identity, candle aggregation and cross-timeframe coherence.                                       |
+| [`docs/architecture/VALIDATION.md`](docs/architecture/VALIDATION.md)         | The predictability and realism batteries: observer boundary, feature taxonomy, harness discipline, and achieved sensitivity. |
 
 Documents listed above are created by the phase that first makes them true. A
 missing architecture document means that layer does not exist yet — not that it
@@ -60,6 +60,10 @@ is undocumented.
 
 ## Decision records
 
-| ADR                                                                          | Title                                          | Status   |
-| ---------------------------------------------------------------------------- | ---------------------------------------------- | -------- |
-| [ADR-0001](docs/decisions/ADR-0001-repository-and-toolchain-architecture.md) | Repository, toolchain and package architecture | APPROVED |
+| ADR                                                                          | Title                                                             | Status   |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------- | -------- |
+| [ADR-0001](docs/decisions/ADR-0001-repository-and-toolchain-architecture.md) | Repository, toolchain and package architecture                    | APPROVED |
+| [ADR-0002](docs/decisions/ADR-0002-deterministic-entropy-architecture.md)    | Deterministic entropy architecture                                | APPROVED |
+| [ADR-0003](docs/decisions/ADR-0003-conditional-sign-symmetry.md)             | Conditional sign symmetry as the anti-predictability architecture | APPROVED |
+| [ADR-0004](docs/decisions/ADR-0004-canonical-price-representation.md)        | Canonical price representation: an integer log lattice            | APPROVED |
+| [ADR-0005](docs/decisions/ADR-0005-volatility-cascade.md)                    | A multifractal cascade as the volatility process                  | APPROVED |

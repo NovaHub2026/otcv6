@@ -9,6 +9,7 @@
   "references": [
     { "path": "../../packages/core" },
     { "path": "../../packages/engine" },
-    { "path": "../../packages/fixtures" }
+    { "path": "../../packages/fixtures" },
+    { "path": "../../packages/lab" }
   ]
 }

@@ -1,5 +1,5 @@
 import { exp, ln } from '@otc/core';
-import type { RandomStream } from '@otc/core';
+import type { RandomSource } from '@otc/core';
 
 /**
  * Statistical core for the attack battery.
@@ -234,7 +234,7 @@ export function movingBlockBootstrap(
   values: Float64Array,
   blockSize: number,
   replicates: number,
-  stream: RandomStream,
+  stream: RandomSource,
 ): BootstrapResult {
   const n = values.length;
   if (n === 0) throw new RangeError('Cannot bootstrap an empty sample.');

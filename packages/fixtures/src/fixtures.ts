@@ -203,6 +203,29 @@ class LevelAnchoredFixture extends FixtureSource {
   }
 }
 
+/**
+ * A memoryless Gaussian random walk: constant volatility, no clustering, no fat
+ * tails, no regimes.
+ *
+ * The realism **negative control**. It has no directional edge at any horizon
+ * under any conditioning, so it passes the entire attack battery — which is
+ * exactly the point. `PROJECT_INTRODUCTION.md` names it as anti-goal 31.1, and
+ * without a realism gate it is the cheapest way to pass PH-2 while building
+ * something worthless.
+ */
+class GaussianRandomWalkFixture extends FixtureSource {
+  protected step(): number {
+    const magnitude = FLAT_VOLATILITY * Math.abs(standardNormal(this.streams.magnitude));
+    const steps = quantise(this.streams.magnitude, magnitude, this.instrument.logQuantum);
+    const sign = this.streams.sign.nextBoolean() ? 1 : -1;
+    this.price += sign * steps;
+    return this.price;
+  }
+}
+
+/** Constant per-tick volatility, matching the other fixtures' typical move. */
+const FLAT_VOLATILITY = 1e-5;
+
 function fixture(
   name: string,
   description: string,
@@ -214,6 +237,13 @@ function fixture(
 }
 
 export const FIXTURES: readonly Fixture[] = [
+  fixture(
+    'gaussianRandomWalk',
+    'A memoryless Gaussian random walk with constant volatility.',
+    'none directionally — it is the REALISM negative control, not an anti-predictability one',
+    [30, 60, 300],
+    (o) => new GaussianRandomWalkFixture(o, 'gaussian-random-walk'),
+  ),
   fixture(
     'symmetricControl',
     'Sign-blind two-timescale stochastic volatility with heavy tails and jumps.',

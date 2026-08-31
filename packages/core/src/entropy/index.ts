@@ -27,5 +27,6 @@ export {
   MAX_BLOCK_INDEX,
   parseCursor,
   RandomStream,
+  type RandomSource,
   type StreamCursor,
 } from './stream.js';

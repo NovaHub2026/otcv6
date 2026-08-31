@@ -1,5 +1,18 @@
 export * from './attacks/index.js';
 export {
+  assessRealism,
+  formatRealismReport,
+  type RealismMetric,
+  type RealismOptions,
+  type RealismReport,
+} from './realism.js';
+export {
+  formatValidationReport,
+  runValidation,
+  type ValidationOptions,
+  type ValidationReport,
+} from './report.js';
+export {
   assessEconomics,
   breakevenWinRate,
   expectedValuePerTrade,

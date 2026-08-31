@@ -2,7 +2,7 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-2
-Status: ACTIVE
+Status: APPROVED
 Cycle: 1 (phase 2 of 3)
 Created: 2026-08-31
 Branch: `feature/ph-2-predictability-laboratory`
@@ -194,3 +194,93 @@ PH-2 is complete when, from the repository alone:
 | Attack families are tuned until the control passes             | **Real and insidious**                                                                                                                                                        | The control's clean verdict must hold with attack parameters fixed _before_ they are pointed at any candidate model, and the corpus provides the opposing constraint: weakening an attack to clear the control also loses a planted fixture |
 | A learned predictor overfits and reports phantom edges         | Medium                                                                                                                                                                        | Strict out-of-sample split with a temporal boundary; report out-of-sample only                                                                                                                                                              |
 | Battery runtime makes it unusable as a gate                    | Medium                                                                                                                                                                        | Separate a fast gate subset from the full run; measure and record both                                                                                                                                                                      |
+
+---
+
+## 13. Phase approval record
+
+Status: **APPROVED** — 2026-08-31, from executed evidence.
+Cycle 1: phase 2 of 3 approved.
+
+### Subphases
+
+| Subphase | Title                                                    | State    |
+| -------- | -------------------------------------------------------- | -------- |
+| PH-2.1   | Observer dataset, economic edge metric, statistical core | APPROVED |
+| PH-2.2   | Attack families and the verdict                          | APPROVED |
+| PH-2.3   | Realism battery and the combined report                  | APPROVED |
+
+### The two results that justify the phase
+
+**1. A conventional battery certifies a leaking engine as clean.**
+
+Against PH-1's `levelAnchoredVolatility` fixture:
+
+| Battery                                 | Families | Hypotheses | Verdict                    |
+| --------------------------------------- | -------- | ---------- | -------------------------- |
+| Translation-invariant and temporal only | 11       | 354        | **clean**                  |
+| With level-anchored families            | 20       | 570        | **exploitable**, z = −6.69 |
+
+Everything a normal validation suite contains misses it. The swept cell family
+recovers the fixture's actual 4000-step cell width, with the correct opposite
+signs either side of the cell centre.
+
+**2. Passing the attack battery is not enough.**
+
+| Engine               | Attacks     | Realism | Acceptable |
+| -------------------- | ----------- | ------- | ---------- |
+| `gaussianRandomWalk` | clean       | 8/15    | no         |
+| `symmetricControl`   | clean       | 15/15   | **yes**    |
+| `leverageEffect`     | exploitable | 13/15   | no         |
+
+A memoryless walk is unexploitable and is not a market. A market with the
+leverage effect is plausible and is exploitable. Only the conjunction says
+anything.
+
+### Acceptance intent
+
+| #   | Intent                                                                   | Evidence                                                                                                    |
+| --- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| 1   | Observer dataset from any tick source, public data only                  | structural: the dataset holds arrays and candles and carries no source, keyring, cursor or model state      |
+| 2   | Clean verdict on the control with a stated sensitivity                   | 531+ hypotheses, worst z ≈ 2.9, 0.222pp floor at 30s                                                        |
+| 3   | Every planted fixture detected, with the family named                    | all six caught, each by a family whose stated purpose matches its defect                                    |
+| 4   | Detection threshold measured per fixture                                 | calibration suite records the data each needs; the level-anchored defect needs roughly three times the rest |
+| 5   | Every attack demonstrated free of look-ahead                             | generic truncation audit over every family, plus a planted peeking family the audit catches                 |
+| 6   | Realism distinguishes a random walk from a stochastic-volatility process | 8/15 against 15/15, with the failures being exactly the market-defining facts                               |
+| 7   | A single artefact a build can gate on                                    | `ValidationReport.acceptable`                                                                               |
+
+### Phase invariants
+
+PH2-I1 … PH2-I8 are all covered by executed, passing tests.
+
+### Verification executed
+
+| Check                  | Result                              |
+| ---------------------- | ----------------------------------- |
+| `npm run format:check` | PASSED                              |
+| `npm run lint`         | PASSED                              |
+| `npm run build`        | PASSED                              |
+| `npx vitest run`       | PASSED                              |
+| Hosted CI              | NOT EXECUTED — no remote configured |
+
+### Known limitations carried forward
+
+1. **Only the 30-second horizon is policed to the promotional-payout threshold.**
+   Independent samples at a horizon are fixed by simulated _duration_, not tick
+   count, so the 15-minute horizon needs roughly a hundred times the history that
+   suffices at 30 seconds. Every verdict states the floor it achieved. Closing
+   this is a matter of buying simulated years and is what PH-9's continuous runs
+   against accumulated production history are for.
+2. **The learned family is deliberately simple.** PH-9 runs the independent
+   red-team round with stronger models and attack families withheld from all
+   prior tuning, which is only meaningful if some are genuinely reserved.
+3. **Restart-seam and cross-asset attacks do not exist yet**, because seams
+   arrive with the runtime in PH-5 and a second asset arrives in PH-4.
+
+### What this phase changed about the plan
+
+Nothing in the roadmap. It confirmed the ordering decision that produced it: the
+falsifier had to exist, and be calibrated, before the market model — and the
+level-anchored result is the concrete demonstration of why. PH-3 now builds the
+generative model inside a generate → attack → diagnose → correct loop with a
+trusted instrument already in place.

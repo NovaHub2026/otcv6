@@ -148,7 +148,9 @@ describe('the verdict', () => {
     let materialSeen = 0;
     for (const finding of verdict.findings) {
       expect(finding.material).toBe(Math.abs(finding.edgePoints) >= threshold);
-      expect(finding.exploitable).toBe(finding.significant && finding.material);
+      expect(finding.exploitable).toBe(
+        finding.significant && finding.material && finding.confirmed,
+      );
       if (finding.material) materialSeen += 1;
     }
     // On a fair market, findings that clear the economic threshold by chance are
@@ -163,7 +165,7 @@ describe('the verdict', () => {
     const strict = runBattery(dataset, { ...HARNESS_OPTIONS, payout: 1 });
     for (const finding of strict.findings) {
       expect(finding.material).toBe(true);
-      expect(finding.exploitable).toBe(finding.significant);
+      expect(finding.exploitable).toBe(finding.significant && finding.confirmed);
     }
   });
 

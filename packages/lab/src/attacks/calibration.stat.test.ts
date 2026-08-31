@@ -28,11 +28,14 @@ const keyring = MasterKeyring.forTesting('battery-calibration');
 const INTERVAL_MS = 5_000;
 /**
  * Sized so the shortest horizon actually reaches a detection floor finer than
- * the 0.2513pp threshold the promotional payout implies. At three million ticks
- * the floor was 0.2588pp — just above it, which would have made a clean verdict
- * unable to police the product it exists to police.
+ * the 0.2513pp threshold the promotional payout implies.
+ *
+ * This grew twice, and both times for the same reason: a clean verdict that
+ * cannot resolve the threshold it polices is not an answer. Three million ticks
+ * gave 0.2588pp; four million gave 0.224pp until the held-out confirmation split
+ * took a quarter of the data and pushed it back to 0.293pp.
  */
-const TICKS = 4_000_000;
+const TICKS = 7_000_000;
 /** The level-anchored defect is the hardest to detect and needs more history. */
 const LEVEL_TICKS = 6_000_000;
 

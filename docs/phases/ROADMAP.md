@@ -79,11 +79,30 @@ measuring directional edge at the exact eight binary horizons, paired with a
 realism battery that stops anti-predictability from being achieved by making the
 market meaningless.
 
-Its acceptance is about the _instrument_, not the market: it must detect every
-planted edge at or above its declared minimum detectable effect, report no edge
-on a driftless control, and publish power curves per horizon. The public-observer
-data boundary defined here is reused verbatim as the public API contract in
-PH-7, so the shipped surface and the attacked surface are provably identical.
+Its acceptance was about the _instrument_, not the market.
+
+**Approved.** Two results define what the laboratory is worth:
+
+- a **conventional battery** — translation-invariant and temporal families, which
+  is everything a normal validation suite contains — returns _clean_ on a
+  demonstrably exploitable engine, while the full battery catches it through the
+  swept price-cell family at the exact cell width;
+- a **memoryless Gaussian random walk** passes every attack and fails realism at
+  8/15, so passing the attack battery alone is worthless.
+
+Achieved sensitivity: 0.222pp at the 30-second horizon, finer than the 0.2513pp
+threshold implied by the 99% promotional payout. Longer horizons are coarser and
+every verdict says so.
+
+The public-observer data boundary defined here is reused verbatim as the public
+API contract in PH-7, so the shipped surface and the attacked surface are
+provably identical.
+
+| Subphase | Title                                                    | State    |
+| -------- | -------------------------------------------------------- | -------- |
+| PH-2.1   | Observer dataset, economic edge metric, statistical core | APPROVED |
+| PH-2.2   | Attack families and the verdict                          | APPROVED |
+| PH-2.3   | Realism battery and the combined report                  | APPROVED |
 
 ### PH-3 — Core Generative Market Process Under Continuous Falsification
 
@@ -91,6 +110,32 @@ The real generative model — latent state, regime, volatility, emergent structu
 tick microstructure — built inside a tight generate → attack → diagnose → correct
 loop against the PH-2 laboratory, until a single asset simultaneously passes the
 realism battery and the anti-predictability verdict.
+
+The architecture is fixed by ADR-0003 and ADR-0004: increments are a sign-blind
+magnitude times an independent fair coin drawn from its own cryptographic stream,
+accumulated on an integer log lattice. Everything the phase builds lives in the
+magnitude and timing process. The **mirror test** — negate the sign stream from a
+random interior point and assert every latent variable is bit-identical while
+every increment is exactly negated — is the primary structural gate, and it is
+cheap, exact, and something no statistical battery can replace.
+
+| Subphase | Title                                                               | State       |
+| -------- | ------------------------------------------------------------------- | ----------- |
+| PH-3.1   | Sign-blind engine skeleton, volatility cascade, and the mirror test | APPROVED    |
+| PH-3.2   | Regime and structure layers                                         | ACTIVE      |
+| PH-3.3   | Microstructure: self-exciting arrivals, heavy tails, jumps          | NOT STARTED |
+| PH-3.4   | Full validation, calibration and phase integration                  | NOT STARTED |
+
+PH-3.1 already produced the phase's headline result: on four million ticks the
+cascade engine is **clean across 560 attack hypotheses** and passes **15/15
+realism metrics**. The core project hypothesis — that a market can be
+simultaneously plausible and provably unexploitable — is demonstrated.
+
+That makes the realism battery a floor rather than a ceiling. PH-3.2 and PH-3.3
+exist to deliver behaviour `PROJECT_INTRODUCTION.md` requires but the current
+metrics do not measure: §10 nested regimes and structure, §15 emergent ranges and
+breakouts, §13 changing microstructure. PH-3.4 extends the battery to measure
+them.
 
 ---
 

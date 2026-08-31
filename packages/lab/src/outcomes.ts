@@ -33,6 +33,11 @@ export interface SamplingOptions {
   readonly entryMode?: EntryMode;
   /** Ignore the first span of history so features have something to read. */
   readonly warmupMs?: number;
+  /**
+   * Latest instant a contract may expire at. Used to confine sampling to a
+   * temporal split without copying the dataset.
+   */
+  readonly endInstant?: EpochMillis;
   /** Upper bound on samples. Reported when it binds. */
   readonly maxSamples?: number;
 }
@@ -97,7 +102,7 @@ export function sampleOutcomes(
   let ties = 0;
 
   const first = dataset.firstInstant;
-  const last = dataset.lastInstant;
+  const last = Math.min(dataset.lastInstant, options.endInstant ?? dataset.lastInstant);
 
   const record = (entryInstant: EpochMillis): boolean => {
     const entry = dataset.priceAt(entryInstant);
