@@ -222,6 +222,24 @@ authoritative.
 The economic-blindness scan and the mirror test both still pass, so no
 personality parameter has reached the sign path (acceptance criterion 6).
 
+### Correction: this record overstated its verification
+
+The verification table above recorded `npm run lint` as PASSED. It was not.
+`personality.stat.test.ts` violated `restrict-template-expressions` on two lines
+from the moment it was written, and lint failed continuously from this subphase
+until the PH-4 phase gate caught it.
+
+The cause was the way the check was run: `npm run lint 2>&1 | tail -1` discards
+the exit status, and with only two error lines the visible tail showed nothing.
+A check whose result is read off the wrong end of a pipe has not been executed in
+any meaningful sense.
+
+This is the exact failure class Cycle Audit 001 was convened over — a check
+reported as passing that was never verified — repeated in the phase immediately
+after it. The audit added guardrails for _documentation_ drift; it did not
+address the habit that produces it. Recorded here rather than quietly amended,
+and re-verified by exit code in the PH-4 phase gate.
+
 ### Known limitations carried forward
 
 - The gate is analytic for the cascade and regime layers and **simulated** for

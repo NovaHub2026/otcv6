@@ -140,11 +140,11 @@ the same data.
 
 ## Cycle 2 — Make it a living multi-asset system
 
-| Phase | Title                                                                   | State       |
-| ----- | ----------------------------------------------------------------------- | ----------- |
-| PH-4  | Asset personality system and multi-asset instantiation                  | **ACTIVE**  |
-| PH-5  | Continuous runtime, sealed state persistence and restart continuity     | Not started |
-| PH-6  | Trading boundary: contracts, settlement and verified economic blindness | Not started |
+| Phase | Title                                                                   | State        |
+| ----- | ----------------------------------------------------------------------- | ------------ |
+| PH-4  | Asset personality system and multi-asset instantiation                  | **APPROVED** |
+| PH-5  | Continuous runtime, sealed state persistence and restart continuity     | Not started  |
+| PH-6  | Trading boundary: contracts, settlement and verified economic blindness | Not started  |
 
 PH-4 discharges INV-007, the one invariant `docs/architecture/INVARIANTS.md`
 still records as pending, and it is the phase where the tension between a
@@ -159,10 +159,11 @@ leak an edge whatever the parameters — that argument is indifferent to them �
 the risk lives in the two places where parameters meet the published series: the
 per-asset lattice quantum, and degenerate regions of the parameter space.
 
-| Subphase | Title                                                | State    |
-| -------- | ---------------------------------------------------- | -------- |
-| PH-4.1   | Personality model, parameter space and safe bounds   | APPROVED |
-| PH-4.2   | Asset registry, quantum calibration and registration | APPROVED |
+| Subphase | Title                                                 | State    |
+| -------- | ----------------------------------------------------- | -------- |
+| PH-4.1   | Personality model, parameter space and safe bounds    | APPROVED |
+| PH-4.2   | Asset registry, quantum calibration and registration  | APPROVED |
+| PH-4.3   | Multi-asset validation and the differentiation metric | APPROVED |
 
 Later subphases are provisional and recorded in the phase document: registry and
 quantum calibration, then multi-asset validation and the differentiation metric.

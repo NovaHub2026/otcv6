@@ -2,7 +2,7 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-4
-Status: ACTIVE
+Status: APPROVED
 Cycle: 2 (phase 1 of 3)
 Created: 2026-08-31
 Branch: `feature/ph-4-asset-personalities`
@@ -145,3 +145,122 @@ from pending to enforced without the traceability guardrail complaining.
 | A personality region that is realistic but subtly exploitable              | Real. Mitigated by per-asset acceptance rather than family-level acceptance.                                                                 |
 | Differentiation that is visible in parameters but not in output            | Real, and the reason §6.3 requires a measured metric with teeth.                                                                             |
 | Statistical power: validating N assets costs N times the simulation budget | Real. Expect this to constrain how many assets Cycle 2 registers, and to be stated honestly rather than absorbed by weakening the threshold. |
+
+---
+
+## 12. Phase approval record
+
+**APPROVED** from executed evidence, 2026-08-31.
+
+### The result the phase existed to produce
+
+The product has an asset list. Five assets across four families, each with a
+lattice derived from its own behaviour, each independently clean under the attack
+battery and plausible on all fifteen realism metrics, and each passing the mirror
+test with zero divergences.
+
+| Asset  | Family    | Pace    | Excess kurtosis | logQuantum | Display |
+| ------ | --------- | ------- | --------------- | ---------- | ------- |
+| btcusd | crypto    | 334 ms  | 151.6           | 2.048e-6   | 1 dp    |
+| gbpjpy | forex     | 760 ms  | 108.6           | 9.557e-7   | 4 dp    |
+| eurusd | forex     | 1295 ms | 63.5            | 2.324e-7   | 7 dp    |
+| xauusd | commodity | 1994 ms | 100.5           | 3.876e-7   | 4 dp    |
+| spx    | index     | 3187 ms | 44.4            | 1.392e-7   | 4 dp    |
+
+### Subphases
+
+| Subphase | Title                                                 | State    |
+| -------- | ----------------------------------------------------- | -------- |
+| PH-4.1   | Personality model, parameter space and safe bounds    | APPROVED |
+| PH-4.2   | Asset registry, quantum calibration and registration  | APPROVED |
+| PH-4.3   | Multi-asset validation and the differentiation metric | APPROVED |
+
+### Phase invariants
+
+INV-007 is **promoted to enforced** in
+[`INVARIANTS.md`](../architecture/INVARIANTS.md), on the evidence in PH-4.3 and
+with the hedge that evidence actually supports. INV-006 continues to hold for
+every registered asset: five mirror tests, zero divergences, and five clean
+battery verdicts at a common 0.562pp floor. The sign boundary is untouched — no
+personality parameter reaches the sign path, and the guardrail scan enforces it.
+
+### What the phase learned
+
+**Three analytic results replaced three simulations.** The kurtosis of the
+increment distribution is exactly `E[m⁴]/E[m²]²` because the sign is an
+independent fair coin, and it factorises across the independent multiplier
+layers. That turned a ten-minute simulation followed by recalibration into a
+microsecond check, and it rejected the first crypto personality at 276.8 against
+a ceiling of 200 before anything ran.
+
+**Measured quantities are less trustworthy than they look.** Three separate times
+this phase, a number that appeared to be evidence was not:
+
+- excess kurtosis measured on one run varies from 36.6 to 370.3 across seeds on
+  the _same_ configuration — either side of the ceiling it is checked against;
+- a calibrated quantum reproduces only to within 28% between seeds, while the
+  property it exists to deliver reproduces to within 0.25pp;
+- a per-asset detection floor budgeted by ticks varies 2x across assets, because
+  the floor depends on wall-clock span and the assets tick at different rates.
+
+In each case the fix was the same: assert the property the artefact exists for,
+not the intermediate number it happens to be made of.
+
+**The differentiation metric failed the product before the product shipped.** It
+scored `gbpjpy` and `xauusd` at 9/40 because they had been given near-identical
+pace and scale. That is the whole point of a metric with a reachable null.
+
+### Phase quality gate
+
+| Check                  | Result                                  |
+| ---------------------- | --------------------------------------- |
+| `npm run format:check` | PASSED                                  |
+| `npm run lint`         | PASSED (exit 0, verified)               |
+| `npm run build`        | PASSED (exit 0, verified)               |
+| `npm test`             | **804 tests across 50 files, 0 failed** |
+| `npm run gate` exit    | **1** — see below                       |
+
+The gate exited non-zero while every test passed. The cause is recorded rather
+than rounded off: Vitest reported one unhandled error,
+`[vitest-worker]: Timeout calling "onTaskUpdate"`. That is the worker's RPC
+heartbeat expiring because the statistical suite's longest tests block the event
+loop for tens of seconds at a time — the slowest single assertion in this run took
+35.8s of uninterrupted CPU. It is an infrastructure timeout, not a test outcome,
+and it is load-dependent: the same suite exited 0 earlier in the session at a
+smaller size.
+
+It is **not** waved away. A gate that can exit non-zero without a failing test is
+a gate that trains its operator to ignore it, which is precisely the habit that
+cost this phase its first gate run. Tracked as B-005, and the phase is approved on
+the test results with the discrepancy stated rather than on a green summary line.
+
+### A process defect this phase exposed
+
+The PH-4 phase gate failed on its first run: `npm run lint` had been failing since
+PH-4.1, and both subphase approval records claimed it passed. The cause was
+running the check as `npm run lint 2>&1 | tail -1`, which discards the exit status
+and, with two error lines, displayed nothing informative.
+
+Cycle Audit 001 identified exactly this class — a check reported as verified that
+was never executed — and added guardrails for the _documentation_ symptom. It did
+not address the habit, and the habit reproduced the defect in the next phase.
+
+Two things follow, and only one of them is a fix:
+
+- The subphase records have been corrected in place rather than amended quietly,
+  each carrying an explicit note of what was overstated and why.
+- The durable fix is not discipline, it is **hosted CI** — which has still never
+  executed, because nothing has ever been pushed to the configured remote. A
+  green local gate depends on the operator reading it correctly; a CI run does
+  not. This is now the strongest argument in `docs/BACKLOG.md` B-001.
+
+### Known limitations carried forward
+
+- Assets differ mostly in pace and scale. Scale-free shape differentiation is
+  real but weak — 30.0% against a 20% null — because the MSM cascade dominates
+  observable volatility dynamics and every asset shares it. Tracked as B-004.
+- Per-asset battery floors (0.562pp) sit above the 0.2513pp product margin.
+  PH-3's full-rigor 0.217pp run covers the canonical configuration; the mirror
+  test covers each asset exactly and structurally.
+- No asset has ever been hosted. Nothing runs continuously, and restart
+  continuity is proven in-process only. That is PH-5.

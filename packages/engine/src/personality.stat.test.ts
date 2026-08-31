@@ -129,10 +129,14 @@ describe('the analytic gate predicts what the layers actually do', () => {
     const measuredSpread = spread(measured);
     const predictedSpread = spread(predictions);
 
-    expect(predictedSpread, `predictions: ${predictions.map((v) => v.toFixed(1))}`).toBeLessThan(
-      1.2,
-    );
-    expect(measuredSpread, `measured: ${measured.map((v) => v.toFixed(1))}`).toBeGreaterThan(1.5);
+    expect(
+      predictedSpread,
+      `predictions: ${predictions.map((v) => v.toFixed(1)).join(', ')}`,
+    ).toBeLessThan(1.2);
+    expect(
+      measuredSpread,
+      `measured: ${measured.map((v) => v.toFixed(1)).join(', ')}`,
+    ).toBeGreaterThan(1.5);
     expect(measuredSpread).toBeGreaterThan(predictedSpread * 1.5);
   });
 

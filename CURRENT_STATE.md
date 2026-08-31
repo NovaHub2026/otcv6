@@ -21,14 +21,14 @@ Last synchronized: 2026-08-31
 
 ## Phase and subphase
 
-| Field                  | Value                                                                |
-| ---------------------- | -------------------------------------------------------------------- |
-| Active phase           | PH-4 — Asset Personality System and Multi-Asset Instantiation        |
-| Phase lifecycle        | ACTIVE — decomposing into subphases                                  |
-| Active subphase        | None — PH-4.2 approved, PH-4.3 next                                  |
-| Subphase lifecycle     | n/a                                                                  |
-| Last approved phase    | PH-3 — Core Generative Market Process Under Continuous Falsification |
-| Last approved subphase | PH-4.2 — Asset registry, quantum calibration and registration        |
+| Field                  | Value                                                          |
+| ---------------------- | -------------------------------------------------------------- |
+| Active phase           | None — PH-5 is next to be created                              |
+| Phase lifecycle        | n/a                                                            |
+| Active subphase        | None                                                           |
+| Subphase lifecycle     | n/a                                                            |
+| Last approved phase    | PH-4 — Asset Personality System and Multi-Asset Instantiation  |
+| Last approved subphase | PH-4.3 — Multi-asset validation and the differentiation metric |
 
 ## Cycle 1 result
 
@@ -124,30 +124,26 @@ counter has been reset and Cycle 2 has begun.
 Context Document is
 [`docs/phases/PH-4-asset-personalities.md`](docs/phases/PH-4-asset-personalities.md).
 
-**PH-4.2 is APPROVED.** The product has an asset list: five assets across four
-families (`eurusd`, `gbpjpy`, `btcusd`, `spx`, `xauusd`), each with a lattice
-derived from its own simulated behaviour so that exactly 1% of 30-second
-contracts settle at the money, and each carrying the evidence that derivation
-produced.
+**PH-4 is APPROVED.** The product has an asset list: five assets across four
+families, each with a lattice derived from its own behaviour, each independently
+clean under the attack battery and plausible on all fifteen realism metrics, and
+each passing the mirror test with zero divergences. INV-007 is promoted to
+enforced in [`docs/architecture/INVARIANTS.md`](docs/architecture/INVARIANTS.md),
+with the hedge its evidence actually supports.
 
-Create the **PH-4.3 Subphase Technical Document** — multi-asset validation and
-the differentiation metric. Two things must hold, per asset and not per family:
+**Create the PH-5 Phase Context Document** — continuous runtime, sealed state
+persistence and restart continuity — on branch `feature/ph-5-runtime`. This is
+where NestJS is first scaffolded, and where the engine stops being something only
+a test can drive. The engine core must stay framework-free and I/O-free so the
+batteries can keep driving it directly.
 
-- every registered asset independently passes the predictability battery and the
-  realism battery, at the materiality threshold the promotional payout implies;
-- the assets are **measurably** distinguishable from one another, by a metric
-  that would fail if the personalities were secretly identical. INV-007 is the
-  invariant most easily faked, and differing parameters are not evidence of
-  differing markets.
+Two things carried into PH-5 from PH-4:
 
-Only then may INV-007 be promoted in
-[`docs/architecture/INVARIANTS.md`](docs/architecture/INVARIANTS.md).
-`traceability.test.ts` rejects a premature claim, and did so once already during
-PH-4.1.
-
-Note for PH-4.3, recorded in PH-4.1: the realism battery's excess-kurtosis metric
-measured on a single run is weak evidence — realisations of the same
-configuration span an order of magnitude. Compare against the analytic
-prediction.
+- Restart continuity is proven **in-process only**. The composed snapshot/restore
+  path is now tested (Cycle Audit 001, F-06) but nothing has ever restarted for
+  real, and cursor leasing has never met a durable store.
+- Hosted CI has still never executed. PH-4 lost a phase gate to a failing lint
+  that two subphase approvals had recorded as passing; a local gate is only as
+  good as the operator's reading of it (`docs/BACKLOG.md` B-001).
 
 No Human authorization is required to proceed (`GOVERNANCE.md` §32).
