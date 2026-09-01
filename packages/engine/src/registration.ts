@@ -1,4 +1,9 @@
-import type { MasterKeyring, RandomSource } from '@otc/core';
+import {
+  assertValidInstrument,
+  type InstrumentSpec,
+  type MasterKeyring,
+  type RandomSource,
+} from '@otc/core';
 import {
   calibrateAssetAsync,
   CALIBRATION_REPLICATES,
@@ -280,6 +285,11 @@ export async function registerAsset(
   }
 
   const derivedPrecision = calibrated.instrument.displayPrecision;
+  // **Cycle Audit 6, CA6-20.** Nothing re-validated the instrument that is
+  // actually returned. `checkIdentity` requires a non-negative integer and
+  // `assertValidInstrument` caps display precision at 18, so `19` and `30` both
+  // registered and produced an instrument the core rejects — a registration
+  // whose output the rest of the system will not accept.
   if (request.displayPrecision !== undefined && request.displayPrecision < derivedPrecision) {
     return {
       kind: 'refused',
@@ -296,6 +306,16 @@ export async function registerAsset(
     return { kind: 'refused', stage: 'differentiation', reason: distinct };
   }
 
+  const instrument: InstrumentSpec = {
+    ...calibrated.instrument,
+    displayPrecision: request.displayPrecision ?? derivedPrecision,
+  };
+  try {
+    assertValidInstrument(instrument);
+  } catch (error) {
+    return { kind: 'refused', stage: 'calibration', reason: (error as Error).message };
+  }
+
   return {
     kind: 'registered',
     asset: {
@@ -303,10 +323,7 @@ export async function registerAsset(
       // dispersion budget changes the base volatility, and the registered
       // definition has to be the one that produced the registered lattice.
       definition: calibrated.definition,
-      instrument: {
-        ...calibrated.instrument,
-        displayPrecision: request.displayPrecision ?? derivedPrecision,
-      },
+      instrument,
       evidence: calibrated.evidence,
       authored: {
         excessKurtosis: authored.achievedExcessKurtosis,

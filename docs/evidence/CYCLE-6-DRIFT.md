@@ -5,6 +5,14 @@ Produced: 2026-09-01
 Method: 100 replicates per asset, 90 simulated days each, 14 parallel processes
 Command: `node runner.mjs 90 100` against `packages/engine/dist`, seeds `drift-r0…99`
 
+> **Cycle Audit 6, CA6-36: that runner is not in the repository, so nothing here
+> can be re-executed.** The measurement stands as recorded and the conclusion it
+> supports — there is no drift, only dispersion — is corroborated independently
+> in [`CYCLE-7-DISPERSION.md`](CYCLE-7-DISPERSION.md), whose runner
+> (`tools/sim/src/dispersionEvidence.ts`) _is_ in the tree. The per-asset σ
+> column below has been superseded by that measurement: the single-seed rates it
+> was compared against were themselves 12% out on `eurusd`.
+
 ---
 
 ## Why this exists

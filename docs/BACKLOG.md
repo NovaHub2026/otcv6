@@ -58,3 +58,34 @@ updated in the same commit.
 | B-009 | product        | Sign the tick journal so its fingerprint proves authenticity, not just agreement                        | PH-9.3                   | **CLOSED 2026-09-01 by PH-12.** A signed Merkle commitment chain over the published record, with inclusion proofs: [ADR-0008](decisions/ADR-0008-full-delegation.md) delegated the decision, PH-12.1 built the tree, PH-12.2 the Ed25519 publishing key with structural separation from generation (INV-010), PH-12.3 the emission. A counterparty holding a tick, a proof and a public key establishes it was in the operator's committed record — no engine, no private key, no cooperation at verification time.                                                                                                                                                                                                                                                                                                                                        |
 | B-010 | process        | The gate's event-loop starvation failure is standing, not closed                                        | PH-10.3                  | **DOCUMENTED, not fixable by a guard.** B-005 fixed one _cause_; the _class_ recurs whenever a new test drives the engine for tens of seconds synchronously, as `latticeTies.stat.test.ts` did in PH-10.3 (btcusd, 25s). The gate detects it correctly — it exits 1 — but reports `Test Files 71 passed, Tests 1108 passed` above the error, so the cost is diagnosis time rather than detection. No static guard can see it: the loop bound is small and the per-iteration cost is unbounded, so it is indistinguishable from the many short driver loops that are fine. The convention now lives in `CLAUDE.md` §5 where an agent reads it before writing tests, together with the exact error string to search for.                                                                                                                                     |
 | B-011 | infrastructure | The quality gate had never passed on a clean checkout                                                   | ADR-0009                 | **CLOSED 2026-08-31.** `npm run gate` ran `format -> lint -> build -> test`, but the type-aware ESLint rules resolve workspace types through each package's emitted declarations. On a clean tree there are none, so `lint` reported 46 unresolved-type errors; locally it always passed because a previous build's `dist/` is always present. Reproduced in a fresh clone: `npm run lint` exit 1, `npm run build` exit 0, `npm run lint` exit 0. Every `GATE_EXIT=0` recorded through PH-10 was conditional on leftover artefacts. Fixed by ordering the gate `format -> build -> lint -> test` and building before both CI jobs. Found by the first CI run that ever executed, in under a minute. No local guard was added: CI _is_ the guard, and a local test shelling out to a fresh clone would run in the same environment that carried the defect. |
+
+## B-029 — `xauusd`'s realised spread exceeds its calibrated one by 20–33%
+
+Opened: 2026-09-01 (Cycle Audit 6 remediation, PH-19.3)
+Severity: material — it bounds how well any dispersion budget can be honoured
+
+Two independent measurements agree on the direction and rough size:
+
+| measurement                                  | realised / calibrated |
+| -------------------------------------------- | --------------------- |
+| `CYCLE-7-DISPERSION.md`, 40 runs × 3 days    | 1.196                 |
+| `dispersion.stat.test.ts`, 120 runs × 2 days | 1.329                 |
+
+`eurusd` and `gbpjpy` agree to within 4% in the same runs, so this is per-asset
+rather than a property of the estimator. `spx` reads 1.17 and 0.97 — consistent
+with noise at its sample size.
+
+Candidates not yet separated:
+
+- **No warm-up in the calibration.** `horizonReturnsCore` starts from cold
+  cascade state at the median multiplier, which is below the mean of a
+  heavy-tailed product. `xauusd` has the shortest cascade span in the catalogue
+  (4 h), so its replicates contain proportionally more cold state than any other
+  asset's.
+- **Stochastic rounding on the published lattice** adds `q²/6` of variance per
+  tick — computed at +0.86% in σ for this asset, an order of magnitude too small
+  to explain the gap.
+- Estimator noise at 40 runs, which the 120-run figure argues against.
+
+Until it is separated, `dispersion.stat.test.ts` bounds the systematic error at
+±25% pooled and says so, and CA6-17 is recorded as partly closed.

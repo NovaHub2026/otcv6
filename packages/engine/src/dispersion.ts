@@ -50,30 +50,39 @@ import type { PersonalityTraits } from './personality.js';
  * Measured on `spx`, whose cascade remembers for 44 hours, against a 30-day
  * reference and five seeds per span:
  *
- * | pooled span | turnovers | median | range        |
- * | ----------- | --------- | ------ | ------------ |
- * | 12 h        | 0.3       | 1.12   | 0.84 to 1.49 |
- * | 24 h        | 0.5       | 0.84   | 0.47 to 1.64 |
- * | 48 h        | 1.1       | 0.84   | 0.64 to 1.02 |
- * | 96 h        | 2.2       | 1.04   | 0.93 to 1.31 |
- * | 240 h       | 5.5       | 0.99   | 0.75 to 1.14 |
+ * **Cycle Audit 6, CA6-15/CA6-16, re-measured properly.** The first version of
+ * this table reported the observed *min–max of five seeds* and read it as a
+ * bound. Range grows with sample size: five draws from a 16%-sd distribution
+ * span about ±25% by construction, and the stable statistic — the standard
+ * deviation — was never quoted. An auditor re-derived it with 24 seeds per span
+ * on three assets with very different memories:
  *
- * The error is **variance, not bias** — the medians wander either side of one
- * and never settle away from it — which is the harder failure to notice. A
- * budget fitted from a third of a turnover is fitted to whichever volatility
- * level the window happened to contain, and PH-17.2's first acceptance run
- * produced a blue-chip index diffusing 4.9 times its budget for exactly that
- * reason. Nothing was biased; two short estimates missed in opposite directions
- * and multiplied.
+ * | turnovers | spx geo-sd | inside ±30% | xauusd | gbpjpy |
+ * | --------- | ---------- | ----------- | ------ | ------ |
+ * | 1         | 19.1%      | 21/24       |        |        |
+ * | 2         | 18.5%      | 22/24       |        |        |
+ * | 4         | 16.2%      | 21/24       | 18/24  | 20/24  |
+ * | 8         | 11.7%      | 23/24       |        |        |
+ * | 16        | 7.9%       | **24/24**   | 24/24  |        |
+ * | 32        | 5.4%       | 24/24       |        | 24/24  |
  *
- * Four turnovers is where the range is inside ±30%. It is not a precision the
- * budget needs — families are bands, not points — but it is the precision below
- * which the budget stops meaning anything.
+ * Four turnovers leaves a 16–34% standard deviation and puts three to six seeds
+ * of twenty-four outside ±30%. **Sixteen** is where all three assets reach
+ * 24/24, and the constant was roughly four times too small.
+ *
+ * The claim that "the error is variance, not bias" was also false, and in the
+ * direction that matters. The medians do not wander: they sit below one and
+ * climb monotonically — 0.68, 0.74, 0.77 for xauusd at half, two and four
+ * turnovers — because a mean of squares over few independent volatility epochs
+ * is strongly right-skewed. Since the rescale factor is `budget / measured`, a
+ * median asset fitted at four turnovers **overshot its declared budget by about
+ * 14%**, which is the mechanism behind PH-17.2's own acceptance median of 1.156.
  *
  * This is B-002 in a fourth guise: a long run is one realisation, not many
- * independent samples, whenever the quantity has memory.
+ * independent samples, whenever the quantity has memory. It is also the second
+ * time this project has read a min–max as a bound.
  */
-export const DISPERSION_FIT_TURNOVERS = 4;
+export const DISPERSION_FIT_TURNOVERS = 16;
 
 /**
  * Pooled simulated span a personality needs before its budget can be fitted.
@@ -87,6 +96,16 @@ export function minimumDispersionSpanMs(
   traits: Pick<PersonalityTraits, 'cascadeSpanMs'>,
   turnovers: number = DISPERSION_FIT_TURNOVERS,
 ): number {
+  if (!Number.isFinite(turnovers) || turnovers <= 0) {
+    // **Cycle Audit 6, CA6-21.** `dispersionTurnovers` was the one number on
+    // this path nobody validated, and `pooledMs < NaN` is `false` — so `0`,
+    // `-5` and `NaN` each silently switched the guard off and registered an
+    // asset whose budget was fitted to whatever the window happened to hold.
+    throw new RangeError(
+      `Dispersion turnovers must be a positive number, received ${turnovers}. A non-positive ` +
+        `or unusable value disables the span guard rather than relaxing it.`,
+    );
+  }
   return turnovers * traits.cascadeSpanMs;
 }
 

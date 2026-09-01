@@ -44,7 +44,7 @@ const INTERNAL: Record<string, readonly string[]> = {
   // A binary entry point and the two evidence generators it drives. `@otc/sim`
   // is a tool: nothing imports it, and its surface is the `otc-sim` command
   // plus the statistical tests in the same package.
-  '@otc/sim': ['cli.ts', 'horizonCoverage.ts', 'horizonEvidence.ts'],
+  '@otc/sim': ['cli.ts', 'dispersionEvidence.ts', 'horizonCoverage.ts', 'horizonEvidence.ts'],
 };
 
 interface Package {
