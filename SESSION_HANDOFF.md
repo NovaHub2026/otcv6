@@ -6,37 +6,40 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                     |
-| ------------------ | --------------------------------------------------------- |
-| Last clean session | 2026-09-01                                                |
-| Branch             | `main` — every phase branch merged and deleted            |
-| Remote             | `origin` → NovaHub2026/otcv6 — public, hosted CI running  |
-| Active cycle       | Cycle 5, **3 of 3** phases approved                       |
-| Active phase       | none — Cycle Audit 5 is the current work                  |
-| Active subphase    | none                                                      |
-| Cycle Audit        | 005 **ACTIVE** — begins automatically, independent agents |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)        |
+| Field              | Value                                                    |
+| ------------------ | -------------------------------------------------------- |
+| Last clean session | 2026-09-01                                               |
+| Branch             | `main` — every phase branch merged and deleted           |
+| Remote             | `origin` → NovaHub2026/otcv6 — public, hosted CI running |
+| Active cycle       | Cycle 5, **3 of 3** phases approved                      |
+| Active phase       | Cycle Audit 5 remediation                                |
+| Active subphase    | none                                                     |
+| Cycle Audit        | 005 **ACTIVE** — ~50 findings, remediation in progress   |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)       |
 
 ## Continuation point
 
 Read `CURRENT_STATE.md` for the authoritative position; this is the short form.
 
-**Run Cycle Audit 5.** No authorization is required and none should be requested.
+**Continue Cycle Audit 5 remediation.** Seven independent auditors found roughly
+fifty material findings against a tree whose `npm run gate` exited 0 — more than
+Cycle Audits 3 and 4 combined. Four of the most serious are fixed; the rest are
+listed in `CURRENT_STATE.md` and detailed in `docs/audits/CYCLE-AUDIT-005.md`.
 
-Cycle 5 is complete: PH-13, PH-14 and PH-15 are all approved. The audit runs
-automatically (ADR-0008) and must use **independent agents** (ADR-0011) — the
-authoring agent found 1 material finding in Cycle Audit 3; ten independent
-agents found 31 in Cycle Audit 2 and seven found 12 in Cycle Audit 4.
+The two worth reading first, because they falsify a phase objective rather than
+a detail:
 
-Cycle 5 is the largest surface yet audited. Places to look hardest:
+- **CA5-06.** `assertIndependentFamilies` checks four **strings**. No attack
+  family is ever constructed. The standing verdict reports `clean` on a record
+  whose direction is a published function of the clock.
+- **CA5-05.** `singleWriter.test.ts` strips block comments before scanning, so
+  two string constants blind it to a plain static engine import. An auditor gave
+  a follower a real engine and measured leader against follower: **120 of 120
+  instants disagreed.**
 
-- The **SQLite store** has met two real processes only in one test. Its
-  conformance battery is PH-14's, unmodified — check that it really is.
-- **Key rotation**: the non-decreasing epoch rule is the whole reason rotation
-  is worth doing. Try to sign later history with a retired key.
-- **Retention** is the first thing in this repository that permits deletion.
-- The **standing verdict**'s floor is computed, not read. Try to make it lie.
-- PH-14's **seam**: the only way past a sequence gap. Try to close one silently.
+**Cycle Audit 6 gives each auditor its own worktree.** Seven sharing one is
+B-006's hazard reconstituted, three auditors reported it independently, and one
+had a restore clobbered mid-campaign.
 
 ## What Cycle 5 has established so far
 

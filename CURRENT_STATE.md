@@ -23,7 +23,7 @@ Last synchronized: 2026-09-01
 
 | Field                  | Value                                      |
 | ---------------------- | ------------------------------------------ |
-| Active phase           | None — PH-15 is next to create             |
+| Active phase           | Cycle Audit 5 remediation                  |
 | Phase lifecycle        | n/a                                        |
 | Active subphase        | None                                       |
 | Subphase lifecycle     | n/a                                        |
@@ -149,30 +149,46 @@ Cycle 1's numbers, and the coverage figure, are in
 
 ## EXACT NEXT LEGAL ACTION
 
-**Run Cycle Audit 5.**
+**Continue Cycle Audit 5 remediation.** The audit is recorded in
+[`docs/audits/CYCLE-AUDIT-005.md`](docs/audits/CYCLE-AUDIT-005.md); the open
+findings are listed there in full and each is confirmed by a constructed
+counterexample or an uncaught plant.
 
-**Cycle 5 is complete.** PH-13 (operator risk), PH-14 (multi-node consistency)
-and PH-15 (operations) are all APPROVED.
+**Cycle 5's three phases are APPROVED WITH OPEN FINDINGS.** They delivered their
+deliverables and several of their stated claims are false as built. That is the
+honest state and it is deliberately not "approved": a phase whose central claim
+an auditor falsified is not a phase whose approval should read the same as one
+whose claims held.
 
-**Cycle Audit 5 begins automatically.** There is no Human gate
-([ADR-0008](docs/decisions/ADR-0008-full-delegation.md)) and nothing is to be
-requested or waited for (`GOVERNANCE.md` §28). It must be conducted by
-**independent agents** ([ADR-0011](docs/decisions/ADR-0011-subagent-authority.md)),
-and the measurement behind that requirement is the reason to take it seriously:
+### Closed by remediation so far
 
-| Audit         | Method                   | Material findings |
-| ------------- | ------------------------ | ----------------- |
-| Cycle Audit 2 | ten independent agents   | 31                |
-| Cycle Audit 3 | the authoring agent      | 1                 |
-| Cycle Audit 4 | seven independent agents | 12                |
+| Finding | What it was                                                               |
+| ------- | ------------------------------------------------------------------------- |
+| CA5-01  | A routine failover killed the asset permanently and silently, at defaults |
+| CA5-02  | A retired key signed live history under a non-canonical hex alias         |
+| CA5-03  | Rotation was not bound to any position in the record                      |
+| CA5-04  | The append-only anchor was append-only only when nothing was appended     |
+| M-11/12 | `NOT APPROVED` read as approved; a live contradiction it could not see    |
 
-Cycle 5 is the largest surface yet audited: a multi-node design resting on an
-impossibility result, a store that has never met two real processes outside its
-own test, a key-rotation scheme, a retention policy that permits deletion, and a
-verdict the product's central claim rests on. Every one of those is a place
-where a guard could exist, be documented as sufficient, and have never been
-watched failing.
+### Open, in rough order of severity
 
-**On completion:** record it in `docs/audits/CYCLE-AUDIT-005.md`, fix every
-confirmed finding, reset the cycle counter, and begin Cycle 6 by deriving its
-phases.
+| Finding | What it is                                                               |
+| ------- | ------------------------------------------------------------------------ |
+| CA5-06  | The standing verdict runs no attack family — it checks four **names**    |
+| CA5-05  | A follower can generate; INV-002 broken at 120 of 120 sampled instants   |
+| CA5-07  | A profitable leak reports `undecided`, because it inflates its own floor |
+| CA5-08  | The operator's headline risk spread is understated by (1+r)/r ≈ 2×       |
+| CA5-09  | The limiter is defeated 39.6× by one millisecond of entry jitter         |
+| CA5-10  | Retention deletes entry ticks of settlements still under dispute         |
+| CA5-11  | Guardrail blind spots one syntactic form wide, across most guards        |
+| SQL-1   | `acquire`/`renew` read the clock outside the transaction they atomise    |
+| SQL-3   | The two `CoordinatedStore` implementations disagree on duplicate batches |
+
+CA5-12 bounds the blast radius of CA5-08 through CA5-10: nothing in `apps/` or
+`packages/runtime` calls the risk or retention modules yet. That is a reprieve,
+not a defence — the first time they are wired up is the first time those defects
+bite.
+
+**Cycle 6 does not begin until these are closed or explicitly deferred with a
+recorded reason.** No authorization is required for any of it and none should be
+requested (`GOVERNANCE.md` §28).

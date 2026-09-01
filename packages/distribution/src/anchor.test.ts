@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, type Tick } from '@otc/core';
 import { commit } from './commitment.js';
 import { AnchorError, buildAnchor, extendsAnchor, summarise, verifyAnchor } from './anchor.js';
-import { publishingKeyFromSeed, signCommitment, type SignedCommitment } from './signing.js';
+import {
+  publicKeyHex,
+  publishingKeyFromSeed,
+  signCommitment,
+  type SignedCommitment,
+} from './signing.js';
 
 const KEY = publishingKeyFromSeed('11'.repeat(32));
 const OTHER = publishingKeyFromSeed('22'.repeat(32));
@@ -124,31 +129,31 @@ describe('an anchor is checked against the chain it claims to summarise', () => 
 describe('the property a counterparty actually uses', () => {
   it('accepts an anchor that extends the one they kept', () => {
     const earlier = buildAnchor([chain('eurusd', 2)], AT);
-    const later = buildAnchor([chain('eurusd', 5)], AT + 1000);
-    expect(extendsAnchor(earlier, later)).toBeNull();
+    const laterChains = [chain('eurusd', 5)];
+    expect(extendsAnchor(earlier, buildAnchor(laterChains, AT + 1000), laterChains)).toBeNull();
   });
 
   it('accepts an unchanged anchor', () => {
-    const anchor = buildAnchor([chain('eurusd', 3)], AT);
-    expect(extendsAnchor(anchor, buildAnchor([chain('eurusd', 3)], AT + 1))).toBeNull();
+    const chains = [chain('eurusd', 3)];
+    const anchor = buildAnchor(chains, AT);
+    expect(extendsAnchor(anchor, buildAnchor(chains, AT + 1), chains)).toBeNull();
   });
 
   it('refuses a record that went backwards', () => {
     const earlier = buildAnchor([chain('eurusd', 5)], AT);
-    const later = buildAnchor([chain('eurusd', 3)], AT + 1000);
-    expect(extendsAnchor(earlier, later)).not.toBeNull();
+    const laterChains = [chain('eurusd', 3)];
+    expect(extendsAnchor(earlier, buildAnchor(laterChains, AT + 1000), laterChains)).not.toBeNull();
   });
 
   it('refuses a rewritten prefix at the same length', () => {
     const earlier = buildAnchor([chain('eurusd', 3)], AT);
-    const later = buildAnchor([chain('eurusd', 3, 1)], AT + 1000);
-    expect(extendsAnchor(earlier, later)).toMatch(/rewritten/);
+    const laterChains = [chain('eurusd', 3, 1)];
+    expect(extendsAnchor(earlier, buildAnchor(laterChains, AT + 1000), laterChains)).toMatch(
+      /different root/,
+    );
   });
 
   it('refuses the same range re-windowed into fewer commitments', () => {
-    // The case the sequence checks alone cannot see: `toSequence` is unchanged
-    // and the range is unchanged, but the roots a counterparty was shown no
-    // longer exist. Re-windowing a published record is rewriting it.
     const earlier = buildAnchor([chain('eurusd', 5)], AT);
     const rewindowed: SignedCommitment[] = (() => {
       const out: SignedCommitment[] = [];
@@ -162,33 +167,142 @@ describe('the property a counterparty actually uses', () => {
     })();
     const later = buildAnchor([rewindowed], AT + 1000);
     expect(later.entries[0]!.toSequence).toBe(earlier.entries[0]!.toSequence);
-    expect(extendsAnchor(earlier, later)).toMatch(/commitments have been removed/);
+    expect(extendsAnchor(earlier, later, [rewindowed])).toMatch(/commitments have been removed/);
   });
 
   it('refuses a chain that no longer starts where it did', () => {
-    const earlier = buildAnchor([chain('eurusd', 3)], AT);
+    const chains = [chain('eurusd', 3)];
+    const earlier = buildAnchor(chains, AT);
     const later = {
-      ...buildAnchor([chain('eurusd', 3)], AT + 1),
-      entries: [{ ...buildAnchor([chain('eurusd', 3)], AT + 1).entries[0]!, fromSequence: 9 }],
+      ...buildAnchor(chains, AT + 1),
+      entries: [{ ...buildAnchor(chains, AT + 1).entries[0]!, fromSequence: 9 }],
     };
-    expect(extendsAnchor(earlier, later)).toMatch(/no longer starts/);
+    expect(extendsAnchor(earlier, later, chains)).toMatch(/no longer starts/);
   });
 
   it('refuses an asset that has disappeared', () => {
     const earlier = buildAnchor([chain('eurusd', 2), chain('gbpusd', 2)], AT);
-    const later = buildAnchor([chain('eurusd', 3)], AT + 1000);
-    expect(extendsAnchor(earlier, later)).toMatch(/disappeared/);
+    const laterChains = [chain('eurusd', 3)];
+    expect(extendsAnchor(earlier, buildAnchor(laterChains, AT + 1000), laterChains)).toMatch(
+      /disappeared/,
+    );
   });
 
   it('accepts a new asset appearing', () => {
     const earlier = buildAnchor([chain('eurusd', 2)], AT);
-    const later = buildAnchor([chain('eurusd', 2), chain('gbpusd', 2)], AT + 1000);
-    expect(extendsAnchor(earlier, later)).toBeNull();
+    const laterChains = [chain('eurusd', 2), chain('gbpusd', 2)];
+    expect(extendsAnchor(earlier, buildAnchor(laterChains, AT + 1000), laterChains)).toBeNull();
   });
 
   it('refuses an anchor dated before the one it claims to extend', () => {
     const earlier = buildAnchor([chain('eurusd', 2)], AT);
-    const later = buildAnchor([chain('eurusd', 3)], AT - 1);
-    expect(extendsAnchor(earlier, later)).toMatch(/dated before/);
+    const laterChains = [chain('eurusd', 3)];
+    expect(extendsAnchor(earlier, buildAnchor(laterChains, AT - 1), laterChains)).toMatch(
+      /dated before/,
+    );
+  });
+});
+
+describe('Cycle Audit 5, F-1: the append-only claim needs the chain', () => {
+  it('refuses a record rewritten from window three and then extended', () => {
+    // The attack that worked. The head-root comparison was reachable only when
+    // the record had NOT grown — the one case where two anchors would not
+    // differ. An operator who rewrote history from window three, re-derived
+    // every root after it and appended five more windows was accepted.
+    const honest = chain('eurusd', 10);
+    const earlier = buildAnchor([honest], AT);
+
+    const rewritten: SignedCommitment[] = (() => {
+      const out: SignedCommitment[] = [];
+      let previousRoot = '';
+      for (let index = 0; index < 15; index += 1) {
+        const window = index < 3 ? ticks(index * 8 + 1, 8) : ticks(index * 8 + 1, 8, 1);
+        const commitment = commit('eurusd', window, previousRoot);
+        previousRoot = commitment.root;
+        out.push(signCommitment(commitment, KEY));
+      }
+      return out;
+    })();
+    const later = buildAnchor([rewritten], AT + 1000);
+
+    expect(later.entries[0]!.toSequence).toBeGreaterThan(earlier.entries[0]!.toSequence);
+    expect(later.entries[0]!.commitments).toBeGreaterThan(earlier.entries[0]!.commitments);
+    expect(extendsAnchor(earlier, later, [rewritten])).toMatch(/different root/);
+  });
+
+  it('refuses a total rewrite that grew by one window', () => {
+    const earlier = buildAnchor([chain('eurusd', 4)], AT);
+    const laterChains = [chain('eurusd', 5, 1)];
+    expect(extendsAnchor(earlier, buildAnchor(laterChains, AT + 1000), laterChains)).not.toBeNull();
+  });
+
+  it('refuses when no chain is supplied, rather than answering from the anchors alone', () => {
+    // The anchors cannot bear the relation. Saying so is the honest failure.
+    const earlier = buildAnchor([chain('eurusd', 2)], AT);
+    const later = buildAnchor([chain('eurusd', 5)], AT + 1000);
+    expect(extendsAnchor(earlier, later, [])).toMatch(/no chain was given/);
+  });
+
+  it('refuses a later record that dropped the window the earlier anchor summarised', () => {
+    const earlier = buildAnchor([chain('eurusd', 5)], AT);
+    const rewindowed: SignedCommitment[] = (() => {
+      const out: SignedCommitment[] = [];
+      let previousRoot = '';
+      for (let index = 0; index < 8; index += 1) {
+        const commitment = commit('eurusd', ticks(index * 7 + 1, 7), previousRoot);
+        previousRoot = commitment.root;
+        out.push(signCommitment(commitment, KEY));
+      }
+      return out;
+    })();
+    expect(extendsAnchor(earlier, buildAnchor([rewindowed], AT + 1), [rewindowed])).toMatch(
+      /no longer contains/,
+    );
+  });
+});
+
+describe('Cycle Audit 5, F-5 and F-7: what summarise and verifyAnchor must refuse', () => {
+  it('pins the head root and the key to the chain head, not the first link', () => {
+    const built = chain('eurusd', 4);
+    const entry = summarise(built);
+    expect(entry.headRoot).toBe(built[3]!.commitment.root);
+    expect(entry.publicKey).toBe(built[3]!.publicKey);
+    expect(entry.headRoot).not.toBe(built[0]!.commitment.root);
+  });
+
+  it('refuses a chain whose LATER windows differ, with the first window identical', () => {
+    // The battery's own comparison perturbed every window including the first,
+    // so a plant returning `chain[0].root` as the head survived it.
+    const honest = chain('eurusd', 4);
+    const forged: SignedCommitment[] = (() => {
+      const out: SignedCommitment[] = [];
+      let previousRoot = '';
+      for (let index = 0; index < 4; index += 1) {
+        const window = index === 0 ? ticks(1, 8) : ticks(index * 8 + 1, 8, 1);
+        const commitment = commit('eurusd', window, previousRoot);
+        previousRoot = commitment.root;
+        out.push(signCommitment(commitment, KEY));
+      }
+      return out;
+    })();
+    expect(forged[0]!.commitment.root).toBe(honest[0]!.commitment.root);
+    expect(verifyAnchor(buildAnchor([honest], AT), [forged])).toMatch(/head root/);
+  });
+
+  it('refuses to summarise an array that is not a chain', () => {
+    const mixed = [chain('eurusd', 1)[0]!, ...chain('gbpusd', 2)];
+    expect(() => summarise(mixed)).toThrow(AnchorError);
+    expect(verifyAnchor(buildAnchor([chain('eurusd', 1)], AT), [mixed])).not.toBeNull();
+  });
+
+  it('refuses a chain signed by a key that was never authorised, when told the genesis key', () => {
+    // Nothing in this module consulted a key at all: the anchor's `publicKey`
+    // and the chain's were both supplied by the same party.
+    const stranger = chain('eurusd', 2, 0, OTHER);
+    const anchor = buildAnchor([stranger], AT);
+    expect(verifyAnchor(anchor, [stranger])).toBeNull();
+    expect(verifyAnchor(anchor, [stranger], { genesisPublicKey: publicKeyHex(KEY) })).toMatch(
+      /never authorised/,
+    );
   });
 });

@@ -14,7 +14,7 @@ import {
   ENGINE_STREAM_PURPOSES,
   type RegisteredAsset,
 } from '@otc/engine';
-import { HostedMarket } from './hosted.js';
+import { DEFAULT_MAX_CATCH_UP_MS, HostedMarket } from './hosted.js';
 import {
   assertUsableRecord,
   DEFAULT_SEQUENCE_LEASE,
@@ -143,6 +143,30 @@ export async function resumeMarket(options: ResumeOptions): Promise<ResumeResult
         leaseBlocks,
       );
     }
+  }
+
+  // **Cycle Audit 5, finding 1.** A checkpoint staler than the catch-up bound
+  // cannot be resumed from: `HostedMarket` measures how far behind it is from
+  // the checkpoint's instant, so the first advance is refused, nothing moves
+  // `lastPublished` forward, and every advance after it is refused too. The
+  // asset stopped for good — no seam, no lost lease, and `apps/api` discarded
+  // the failure list, so nothing said why.
+  //
+  // ADR-0010 already decided what happens to an interval nobody observed: it is
+  // refused and the record shows a gap. That rule belonged here as well as in
+  // `advance`, and applying it turns a permanent wedge into the visible
+  // discontinuity the failover actually is.
+  const maxCatchUpMs = options.maxCatchUpMs ?? DEFAULT_MAX_CATCH_UP_MS;
+  const staleness = record.lastPublished === null ? 0 : clock.now() - record.lastPublished.instant;
+  if (staleness > maxCatchUpMs) {
+    return seamFrom(
+      options,
+      record,
+      `the checkpoint is ${Math.round(staleness / 1000)}s old, past the ` +
+        `${Math.round(maxCatchUpMs / 1000)}s catch-up bound, so the interval since it cannot ` +
+        `be generated`,
+      leaseBlocks,
+    );
   }
 
   return {

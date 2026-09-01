@@ -2,7 +2,7 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-14
-Status: APPROVED
+Status: APPROVED WITH OPEN FINDINGS
 Cycle: 5 (phase 2 of 3)
 Created: 2026-09-01
 Branch: `feature/ph-14-multi-node`

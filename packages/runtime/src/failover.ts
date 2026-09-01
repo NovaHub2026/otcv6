@@ -9,8 +9,18 @@ import {
 } from './resume.js';
 import type { SeamMarker } from './replication.js';
 
-/** How often a running session checkpoints, in market milliseconds. */
-export const DEFAULT_CHECKPOINT_INTERVAL_MS = 30_000;
+/**
+ * How often a running session checkpoints, in market milliseconds.
+ *
+ * **Strictly inside the catch-up bound, and that is the constraint.** At 30
+ * seconds — twice `DEFAULT_MAX_CATCH_UP_MS` — a successor routinely resumed
+ * from a checkpoint already too stale to catch up from, and the asset stopped
+ * permanently and silently (Cycle Audit 5, finding 1). Five seconds is the
+ * cadence `apps/api` had chosen for itself all along; the default now agrees
+ * with it, and `failoverBound.test.ts` asserts the relationship rather than
+ * leaving two constants to drift.
+ */
+export const DEFAULT_CHECKPOINT_INTERVAL_MS = 5_000;
 
 export interface TakeOverOptions extends Omit<ResumeOptions, 'store'> {
   readonly store: CoordinatedStore;

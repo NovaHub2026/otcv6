@@ -41,6 +41,19 @@ function rowValue(markdown: string, label: string): string | null {
   return null;
 }
 
+/**
+ * Whether a table cell states approval, rather than merely containing the word.
+ *
+ * A negation is the one thing a substring test cannot see, and it is the one
+ * thing that matters: `NOT APPROVED`, `never approved` and `un-approved` all
+ * contain `APPROVED`.
+ */
+function isApproved(cell: string): boolean {
+  const text = cell.toUpperCase();
+  if (/\b(NOT|NEVER|UN-?)\s*APPROVED\b/.test(text)) return false;
+  return /\bAPPROVED\b/.test(text);
+}
+
 interface PhaseRow {
   readonly id: string;
   readonly number: number;
@@ -58,7 +71,10 @@ function roadmapPhases(): PhaseRow[] {
     rows.push({
       id,
       number: Number.parseInt(id.slice(3), 10),
-      approved: /APPROVED/i.test(match[2]!),
+      // **Cycle Audit 5, M-11.** This was `/APPROVED/i`, which matches inside
+      // `NOT APPROVED` — so a phase marked as reverted read as approved to
+      // every check in this file, whose entire subject is phase states.
+      approved: isApproved(match[2]!),
     });
   }
   return rows;
@@ -120,12 +136,33 @@ describe('canonical state agrees with the roadmap', () => {
   });
 
   it('does not claim an active phase that the roadmap shows as approved', () => {
+    // **Cycle Audit 5, M-12.** This short-circuited on `/none/i` anywhere in the
+    // cell, and the cell CURRENT_STATE actually uses reads `None — PH-15 is next
+    // to create`. So the escape hatch written for "Active phase: None" swallowed
+    // every "None, and here is what's next" phrasing — which is the phrasing the
+    // document uses — and a live claim that an approved, merged phase was still
+    // to be created went unseen by the guard written for exactly that.
+    //
+    // The word `none` now excuses only a cell that says nothing else.
     const active = rowValue(current, 'Active phase') ?? '';
+    const saysOnlyNone = /^none\b[\s.—-]*$/i.test(active.trim());
     for (const phase of phases.filter((p) => p.approved)) {
-      if (new RegExp(`\\b${phase.id}\\b`).test(active) && !/none/i.test(active)) {
-        expect.unreachable(`CURRENT_STATE says ${phase.id} is active, roadmap says APPROVED`);
+      if (new RegExp(`\\b${phase.id}\\b`).test(active) && !saysOnlyNone) {
+        expect.unreachable(
+          `CURRENT_STATE's active phase names ${phase.id}, which the roadmap shows as APPROVED`,
+        );
       }
     }
     expect(true).toBe(true);
+  });
+
+  it('reads a negated status as not approved', () => {
+    // The guard's own defect, planted: a phase row saying NOT APPROVED must not
+    // count towards the approved total.
+    expect(isApproved('| APPROVED |')).toBe(true);
+    expect(isApproved('**APPROVED**')).toBe(true);
+    expect(isApproved('NOT APPROVED — reverted')).toBe(false);
+    expect(isApproved('never approved')).toBe(false);
+    expect(isApproved('not started')).toBe(false);
   });
 });

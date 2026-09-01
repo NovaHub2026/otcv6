@@ -340,12 +340,12 @@ So Cycle 5 is derived from what the _product_ needs rather than from what was
 left over, and the ordering is deliberate: **can you afford to run it, can you
 scale it, can you operate it.**
 
-| Phase | Title                                                        | State        |
-| ----- | ------------------------------------------------------------ | ------------ |
-| PH-13 | Operator risk: variance, correlated flow and capacity        | **APPROVED** |
-| PH-14 | Multi-node consistency and horizontal scale-out              | **APPROVED** |
-| PH-15 | Operations: the standing guarantee, running continuously     | **APPROVED** |
-| —     | **Cycle Audit 5** — automatic, independent agents (ADR-0011) | not started  |
+| Phase | Title                                                        | State                           |
+| ----- | ------------------------------------------------------------ | ------------------------------- |
+| PH-13 | Operator risk: variance, correlated flow and capacity        | **APPROVED WITH OPEN FINDINGS** |
+| PH-14 | Multi-node consistency and horizontal scale-out              | **APPROVED WITH OPEN FINDINGS** |
+| PH-15 | Operations: the standing guarantee, running continuously     | **APPROVED WITH OPEN FINDINGS** |
+| —     | **Cycle Audit 5** — automatic, independent agents (ADR-0011) | not started                     |
 
 ### PH-13 — Operator Risk: Variance, Correlated Flow and Capacity
 

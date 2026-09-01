@@ -1,4 +1,6 @@
-import type { SignedCommitment } from './signing.js';
+import { verifyChain } from './commitment.js';
+import { verifySignedChain, type SignedCommitment } from './signing.js';
+import type { SignedRotation } from './rotation.js';
 
 /**
  * An external anchor for the commitment chain.
@@ -63,10 +65,22 @@ export class AnchorError extends Error {
   }
 }
 
-/** Summarise one asset's chain. The chain must be non-empty and in order. */
+/**
+ * Summarise one asset's chain.
+ *
+ * The chain is checked structurally first. **Cycle Audit 5, F-7:** this read
+ * `assetId` and `fromSequence` from the first link and `toSequence` from the
+ * last and validated nothing in between, so it happily summarised an array that
+ * was not a chain at all — links for different assets, links that did not
+ * follow one another — and published a range that no single record covered.
+ */
 export function summarise(chain: readonly SignedCommitment[]): AnchorEntry {
   if (chain.length === 0) {
     throw new AnchorError('An empty chain cannot be anchored: there is nothing to attest.');
+  }
+  const structural = verifyChain(chain.map((link) => link.commitment));
+  if (structural !== null) {
+    throw new AnchorError(`That is not a chain, so it cannot be summarised: ${structural}`);
   }
   const first = chain[0]!.commitment;
   const last = chain[chain.length - 1]!;
@@ -107,9 +121,31 @@ export function buildAnchor(chains: readonly (readonly SignedCommitment[])[], at
  * verifier is often reading someone else's file and a malformed one is a
  * finding, not a crash.
  */
+export interface AnchorCheck {
+  /**
+   * The genesis publishing key, and the rotation log.
+   *
+   * **Cycle Audit 5, F-7.** Without these, nothing in this module consults a
+   * key at all: an anchor over a chain signed entirely by a stranger verified
+   * clean, because `verifyAnchor` only compared the anchor's `publicKey` field
+   * against the chain's — both supplied by the same party. Passing the genesis
+   * key makes the anchor's identity claim attested rather than asserted.
+   */
+  readonly genesisPublicKey?: string;
+  readonly rotations?: readonly SignedRotation[];
+  /**
+   * An anchor the reader kept earlier.
+   *
+   * Supplying it turns the append-only claim into a check against the record —
+   * see {@link extendsAnchor} for why the anchors alone cannot bear it.
+   */
+  readonly previous?: Anchor;
+}
+
 export function verifyAnchor(
   anchor: Anchor,
   chains: readonly (readonly SignedCommitment[])[],
+  check: AnchorCheck = {},
 ): string | null {
   if (anchor.version !== 1) return `Unknown anchor version ${String(anchor.version)}.`;
   const byAsset = new Map<string, AnchorEntry>();
@@ -145,6 +181,18 @@ export function verifyAnchor(
   if (byAsset.size > 0) {
     return `The anchor mentions ${[...byAsset.keys()].join(', ')}, for which no chain was given.`;
   }
+
+  if (check.genesisPublicKey !== undefined) {
+    for (const chain of chains) {
+      const signatures = verifySignedChain(chain, check.genesisPublicKey, check.rotations ?? []);
+      if (signatures !== null) {
+        return `${chain[0]!.commitment.assetId}: ${signatures}`;
+      }
+    }
+  }
+  if (check.previous !== undefined) {
+    return extendsAnchor(check.previous, anchor, chains);
+  }
   return null;
 }
 
@@ -153,12 +201,41 @@ export function verifyAnchor(
  *
  * The property an append-only anchor has to have, and the one a counterparty
  * actually uses: they keep the anchor they saw last quarter and check that
- * today's extends it. An entry that shrank, or whose earlier roots changed, is
- * a rewritten record however well-formed the new file is.
+ * today's extends it.
+ *
+ * **Cycle Audit 5, F-1. This needs the chain, and the first version did not
+ * take it.** The head-root comparison was reachable only when the record had
+ * *not* grown — which is the one case where two anchors would not differ in the
+ * first place. Whenever a window had been added, nothing looked at any root, and
+ * an operator who rewrote history from window three onward, re-derived every
+ * root after it and appended five more windows was accepted as having extended
+ * the record. So was a total rewrite, and so was re-windowing the same range.
+ *
+ * Comparing the head roots of two chains of different lengths yields nothing,
+ * and neither would the `rootsDigest` that PH-15.2 removed: what an append-only
+ * claim needs is a relation *between* the artefacts. The chain is hash-linked,
+ * so the relation is available — the window the earlier anchor summarised must
+ * still be in the later chain, with the same root. That is exactly a consistency
+ * proof, made cheap by the fact that the caller already holds the chain in order
+ * to verify anything at all.
  */
-export function extendsAnchor(earlier: Anchor, later: Anchor): string | null {
+export function extendsAnchor(
+  earlier: Anchor,
+  later: Anchor,
+  laterChains: readonly (readonly SignedCommitment[])[],
+): string | null {
+  if (earlier.version !== 1) return `Unknown earlier anchor version ${String(earlier.version)}.`;
+  // Checked on both, because a future format whose fields mean something else
+  // would otherwise be compared field-by-field against a v1 anchor.
+  if (later.version !== 1) return `Unknown later anchor version ${String(later.version)}.`;
   if (later.at < earlier.at) return 'The later anchor is dated before the earlier one.';
+
   const now = new Map(later.entries.map((entry) => [entry.assetId, entry]));
+  const chainOf = new Map<string, readonly SignedCommitment[]>();
+  for (const chain of laterChains) {
+    if (chain.length > 0) chainOf.set(chain[0]!.commitment.assetId, chain);
+  }
+
   for (const before of earlier.entries) {
     const after = now.get(before.assetId);
     if (after === undefined) return `${before.assetId} has disappeared from the anchor.`;
@@ -174,12 +251,29 @@ export function extendsAnchor(earlier: Anchor, later: Anchor): string | null {
       // rewritten chain: the roots a counterparty was shown no longer exist.
       return `${before.assetId}: commitments have been removed.`;
     }
-    if (
-      after.toSequence === before.toSequence &&
-      after.commitments === before.commitments &&
-      after.headRoot !== before.headRoot
-    ) {
-      return `${before.assetId}: the same range and window count now hash differently — the record was rewritten.`;
+
+    const chain = chainOf.get(before.assetId);
+    if (chain === undefined) {
+      return (
+        `${before.assetId}: no chain was given, so whether the record was rewritten cannot be ` +
+        `established. The anchors alone cannot answer it.`
+      );
+    }
+    // The window the earlier anchor summarised must still be there, unchanged.
+    // Because every root binds its predecessor, that one match certifies the
+    // whole prefix.
+    const at = chain.find((link) => link.commitment.toSequence === before.toSequence);
+    if (at === undefined) {
+      return (
+        `${before.assetId}: the record no longer contains a commitment ending at sequence ` +
+        `${before.toSequence}, which the earlier anchor summarised.`
+      );
+    }
+    if (at.commitment.root !== before.headRoot) {
+      return (
+        `${before.assetId}: the commitment ending at sequence ${before.toSequence} now has a ` +
+        `different root — the record was rewritten.`
+      );
     }
   }
   return null;

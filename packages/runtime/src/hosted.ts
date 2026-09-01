@@ -116,6 +116,14 @@ export class HostedMarket {
    */
   readonly #floorInstant: EpochMillis;
 
+  /**
+   * When this market was last advanced, or null before the first call.
+   *
+   * The catch-up bound is measured from here. See {@link HostedMarket.advanceTo}
+   * for why it is not measured from the last published tick.
+   */
+  #lastAdvancedAt: EpochMillis | null = null;
+
   constructor(options: HostedMarketOptions) {
     this.#engine = options.engine;
     this.#clock = options.clock;
@@ -200,12 +208,32 @@ export class HostedMarket {
     const published: Tick[] = [];
     // Always defined: falls back to where the engine itself starts, so the bound
     // applies from the first call rather than from the first publication.
-    const lastInstant =
-      this.#lastPublished?.instant ?? this.#lastPublishedInstant ?? this.#floorInstant;
-    const behind = now - lastInstant;
+    // How long since this runtime last looked at the clock — not how long since
+    // the last tick.
+    //
+    // **Cycle Audit 5, finding 1.** These were the same expression, and they are
+    // not the same quantity. The bound exists to stop a runtime that lost the
+    // CPU, or resumed from a stale checkpoint, from generating an interval
+    // nobody observed (ADR-0010). A market that is being advanced every five
+    // seconds has observed every one of them, however few ticks it chose to
+    // emit — arrivals are self-exciting and a quiet stretch longer than the
+    // bound is ordinary. Measuring from the last tick refused those markets, and
+    // refused them permanently: nothing published, so nothing moved the
+    // measurement forward, so the next advance was further behind than the last.
+    //
+    // Floored at the engine's own start, because a market cannot be behind a
+    // point earlier than where it begins. That is what lets a seam — which
+    // opens at the clock while still carrying the pre-seam sequence and price —
+    // escape the bound the outage put it past.
+    const since =
+      this.#lastAdvancedAt !== null && this.#lastAdvancedAt > this.#floorInstant
+        ? this.#lastAdvancedAt
+        : this.#floorInstant;
+    const behind = now - since;
     if (behind > this.#maxCatchUpMs) {
       throw new CatchUpTooLargeError(behind, this.#maxCatchUpMs);
     }
+    this.#lastAdvancedAt = now;
 
     for (;;) {
       if (this.#pending === null) {

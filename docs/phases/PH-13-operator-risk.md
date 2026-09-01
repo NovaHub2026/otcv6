@@ -2,7 +2,7 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-13
-Status: APPROVED
+Status: APPROVED WITH OPEN FINDINGS
 Cycle: 5 (phase 1 of 3)
 Created: 2026-09-01
 Branch: `feature/ph-13-operator-risk`

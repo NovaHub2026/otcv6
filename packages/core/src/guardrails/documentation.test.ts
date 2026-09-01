@@ -145,7 +145,21 @@ describe('phase states agree between documents and the roadmap', () => {
           new RegExp(`^\\|\\s*(\\*\\*)?${id.replace('.', '\\.')}(\\*\\*)?\\s*\\|`).test(line),
         );
       expect(row, `no roadmap row for ${id}`).toBeDefined();
-      expect(row!.toUpperCase(), `roadmap row for ${id}: ${row!}`).toContain(status.toUpperCase());
+      // **Cycle Audit 5, M-11.** This tested the whole row, so it passed when
+      // the word appeared in the description column, and it could not see a
+      // negation: `NOT APPROVED` contains `APPROVED`. The status is read from
+      // its own cell, and a negation must be matched by a negation.
+      const cells = row!.split('|').map((cell) => cell.trim());
+      const stated = cells[cells.length - 2] ?? '';
+      expect(stated.toUpperCase(), `roadmap status cell for ${id}: ${row!}`).toContain(
+        status.toUpperCase(),
+      );
+      if (/\bNOT\s+APPROVED\b/i.test(stated) !== /\bNOT\s+APPROVED\b/i.test(status)) {
+        expect.unreachable(
+          `roadmap and document disagree about whether ${id} is approved: ` +
+            `roadmap "${stated}", document "${status}"`,
+        );
+      }
     },
   );
 });

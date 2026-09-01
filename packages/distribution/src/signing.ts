@@ -204,6 +204,37 @@ export function verifySignedChain(
   if ('error' in authorised) return authorised.error;
   const epochOf = new Map(authorised.keys.map((key, epoch) => [key, epoch]));
 
+  // Where each rotation sits in *this* chain.
+  //
+  // **Cycle Audit 5, F-3.** Without this, "follows its rotation" meant only
+  // "appears later in the array the verifier was handed" — and the attacker
+  // chooses that array. An auditor holding only the retired genesis key
+  // produced a chain signed entirely at epoch 0, and a partially genuine one
+  // whose real epoch-0 prefix was continued with forged epoch-0 windows. Both
+  // verified. The rotation now names the head root in force when it was signed,
+  // which the hash-linking makes a position nobody can move.
+  const assetId = chain[0]!.commitment.assetId;
+  const rootIndex = new Map(chain.map((link, index) => [link.commitment.root, index]));
+  const requiredFrom = new Map<number, number>();
+  for (const [index, signed] of rotations.entries()) {
+    const targetEpoch = index + 1;
+    const head = signed.rotation.heads.find((entry) => entry.assetId === assetId);
+    if (head === undefined) {
+      // No head for this asset means it had published nothing when the rotation
+      // was signed, so every one of its commitments comes after it.
+      requiredFrom.set(targetEpoch, 0);
+      continue;
+    }
+    const at = rootIndex.get(head.root);
+    if (at === undefined) {
+      return (
+        `Rotation ${index} names a head root for ${assetId} that this chain does not contain, ` +
+        `so the chain is not the record the rotation was signed over.`
+      );
+    }
+    requiredFrom.set(targetEpoch, at + 1);
+  }
+
   let epoch = 0;
   for (let i = 0; i < chain.length; i += 1) {
     const link = chain[i]!;
@@ -219,6 +250,17 @@ export function verifySignedChain(
         `Commitment ${i} is signed by key epoch ${linkEpoch}, after the chain had reached ` +
         `epoch ${epoch}. A retired key cannot sign history that follows its rotation.`
       );
+    }
+    // And the epoch the *record* requires here, which the presented order
+    // cannot alter.
+    for (const [targetEpoch, from] of requiredFrom) {
+      if (i >= from && linkEpoch < targetEpoch) {
+        return (
+          `Commitment ${i} is signed by key epoch ${linkEpoch}, but it follows the head named ` +
+          `by rotation ${targetEpoch - 1}, so it must be signed at epoch ${targetEpoch} or ` +
+          `later. A retired key cannot sign history that follows its rotation.`
+        );
+      }
     }
     epoch = linkEpoch;
     if (!verifyCommitment(link, link.publicKey)) {

@@ -126,11 +126,22 @@ describe('a venue that is operated, not just built', () => {
     }
 
     // ---- PH-15.2: the chain survives a rotation ----------------------------
+    const chains = [...records].map(([assetId, ticks]) => chainOver(assetId, ticks, 2));
+    // The rotation names the head in force for every asset when it was signed.
+    // **Cycle Audit 5, F-3**: without that, "follows the rotation" means only
+    // "appears later in the array the verifier was handed".
     const rotation = signRotation(
-      { toPublicKey: publicKeyHex(KEY_B), epoch: 1, reason: 'scheduled quarterly rotation' },
+      {
+        toPublicKey: publicKeyHex(KEY_B),
+        epoch: 1,
+        reason: 'scheduled quarterly rotation',
+        heads: chains.map((chain) => ({
+          assetId: chain[0]!.commitment.assetId,
+          root: chain[1]!.commitment.root,
+        })),
+      },
       KEY_A,
     );
-    const chains = [...records].map(([assetId, ticks]) => chainOver(assetId, ticks, 2));
     for (const chain of chains) {
       expect(chain.length).toBeGreaterThan(3);
       // Signed by two different keys, and verified from the genesis key alone.
@@ -146,10 +157,23 @@ describe('a venue that is operated, not just built', () => {
     expect(verifyAnchor(anchor, chains)).toBeNull();
 
     const longer = [...records].map(([assetId, ticks]) => chainOver(assetId, ticks, 2));
-    expect(extendsAnchor(anchor, buildAnchor(longer, clock.now() + 1))).toBeNull();
+    expect(extendsAnchor(anchor, buildAnchor(longer, clock.now() + 1), longer)).toBeNull();
     // A record that lost a window is not an extension of one that had it.
+    // The chain is required: **Cycle Audit 5, F-1** showed the anchors alone
+    // cannot bear the append-only claim once the record has grown.
     const truncated = chains.map((chain) => chain.slice(0, chain.length - 1));
-    expect(extendsAnchor(anchor, buildAnchor(truncated, clock.now() + 1))).not.toBeNull();
+    expect(
+      extendsAnchor(anchor, buildAnchor(truncated, clock.now() + 1), truncated),
+    ).not.toBeNull();
+
+    // And the anchor's identity claim is checked against the genesis key and
+    // the rotation log, rather than against a field the same party supplied.
+    expect(
+      verifyAnchor(anchor, chains, {
+        genesisPublicKey: publicKeyHex(KEY_A),
+        rotations: [rotation],
+      }),
+    ).toBeNull();
 
     // ---- PH-15.2: retention keeps what a dispute could reach --------------
     const windows: JournalWindow[] = [...records].map(([assetId, ticks]) => ({
