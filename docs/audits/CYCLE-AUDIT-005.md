@@ -330,3 +330,24 @@ catch-up bound to a day; the standing battery's "never reports clean" assertion
 sits inside an `if` that never fires; the exposure simulation validates the model
 against the model's own quantity. In each case a test existed, was cited as
 evidence in an approval, and could not fail.
+
+## 9. Found during remediation
+
+**CA5-14 — the quality gate is not deterministic.**
+
+The remediation tree produced `Test Files 103 passed (103)`, `Tests 1722 passed
+(1722)`, and **`GATE_EXIT=1`**, with `Error: [vitest-worker]: Timeout calling
+"onTaskUpdate"`. The same tree exited 0 an hour earlier.
+
+Isolated: `calibration.stat.test.ts` runs 479 seconds, contains no `setImmediate`
+anywhere, and **exits 0 when run alone**. It starves the worker's RPC channel
+only when it runs beside `detectionPower.stat.test.ts`, which runs 478 seconds
+and does yield. So B-010 — recorded as "documented, not fixable by a guard" — is
+narrower than it was written: the hazard is not a long synchronous test, it is
+two long tests overlapping, and which two overlap depends on scheduling.
+
+That matters more than the diagnosis time B-010 accounts for. `npm run gate` is
+the authority for an approval in this project. An authority that returns a
+different answer on the same tree depending on which suites happen to overlap is
+not one, and every `GATE_EXIT=0` in the repository was recorded from a single
+run. Tracked as B-021.
