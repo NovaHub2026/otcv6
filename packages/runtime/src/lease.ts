@@ -1,7 +1,16 @@
 import type { Clock, EpochMillis, Tick } from '@otc/core';
 import { epochMillis } from '@otc/core';
 import { StaleFenceError, type FenceToken } from './fence.js';
-import { RecordForkError, sameTick, type ReplicationLog } from './replication.js';
+import {
+  entrySequence,
+  lowerBound,
+  RecordForkError,
+  sameTick,
+  SeamError,
+  type RecordEntry,
+  type ReplicationLog,
+  type SeamMarker,
+} from './replication.js';
 import { CorruptRecordError, type MarketStateRecord, type StateStore } from './state.js';
 
 /**
@@ -119,6 +128,22 @@ export interface CoordinatedStore extends LeaseStore, StateStore, ReplicationLog
   saveFenced(record: MarketStateRecord, token: FenceToken): Promise<void>;
 }
 
+/**
+ * One asset's record.
+ *
+ * `expectNext` is carried rather than derived from `head`, because after a seam
+ * they differ: the head is the last sequence before the discontinuity and the
+ * next append must start at the seam's resuming sequence, which is far beyond
+ * it. Deriving one from the other is precisely the assumption a seam breaks.
+ */
+interface RecordState {
+  entries: RecordEntry[];
+  /** Tick sequence to its index in `entries`. Seams are not addressable. */
+  readonly indexBySequence: Map<number, number>;
+  head: number | null;
+  expectNext: number | null;
+}
+
 interface StoredGrant {
   readonly holder: string;
   readonly token: FenceToken;
@@ -137,8 +162,8 @@ interface StoredGrant {
  */
 export class MemoryCoordinatedStore implements CoordinatedStore {
   readonly #grants = new Map<string, StoredGrant>();
-  /** The published record, per asset, oldest first and gapless. */
-  readonly #record = new Map<string, Tick[]>();
+  /** The published record, per asset: ticks, and the seams between them. */
+  readonly #record = new Map<string, RecordState>();
   /** Highest token ever issued per asset, retained after release and expiry. */
   readonly #highWater = new Map<string, FenceToken>();
   readonly #records = new Map<string, string>();
@@ -267,50 +292,104 @@ export class MemoryCoordinatedStore implements CoordinatedStore {
     if (refusal !== null) return Promise.reject(refusal);
     if (ticks.length === 0) return Promise.resolve();
 
-    const record = this.#record.get(assetId) ?? [];
-    const first = record.length === 0 ? null : record[0]!.sequence;
+    const state = this.#recordFor(assetId);
     // Validate the whole batch before mutating anything. A partial append would
     // leave the record in a state no single writer could have produced.
     const pending: Tick[] = [];
-    let head = record.length === 0 ? null : record[record.length - 1]!.sequence;
+    let head = state.head;
+    let expectNext = state.expectNext;
     for (const tick of ticks) {
-      if (first !== null && head !== null && tick.sequence <= head) {
-        const recorded = record[tick.sequence - first];
-        if (recorded === undefined) {
-          // Older than anything retained. Nothing can be checked against it, so
-          // it is refused rather than assumed to match.
+      if (head !== null && tick.sequence <= head) {
+        const index = state.indexBySequence.get(tick.sequence);
+        if (index === undefined) {
+          // Inside a seam gap, or older than anything held. Nothing can be
+          // checked against it, so it is refused rather than assumed to match.
           return Promise.reject(
             new RangeError(
-              `Cannot append sequence ${tick.sequence} to ${assetId}: it precedes the retained ` +
-                `record, which starts at ${first}.`,
+              `Cannot append sequence ${tick.sequence} to ${assetId}: the record holds no tick ` +
+                `there to compare against, so a match cannot be established.`,
             ),
           );
         }
-        if (!sameTick(recorded, tick)) {
-          return Promise.reject(new RecordForkError(assetId, tick.sequence, recorded, tick));
+        const recorded = state.entries[index]!;
+        if (recorded.kind !== 'tick' || !sameTick(recorded.tick, tick)) {
+          return Promise.reject(
+            new RecordForkError(
+              assetId,
+              tick.sequence,
+              recorded.kind === 'tick' ? recorded.tick : tick,
+              tick,
+            ),
+          );
         }
         continue; // Identical replay of a tick already recorded.
       }
-      const expected = head === null ? tick.sequence : head + 1;
+      const expected = expectNext ?? tick.sequence;
       if (tick.sequence !== expected) {
         return Promise.reject(
           new RangeError(
             `Cannot append sequence ${tick.sequence} to ${assetId} after ${String(head)}: a gap ` +
-              `in the record would be served to every observer as though it were the market.`,
+              `in the record would be served to every observer as though it were the market. ` +
+              `Past a genuine discontinuity, record a seam.`,
           ),
         );
       }
       pending.push(tick);
       head = tick.sequence;
+      expectNext = tick.sequence + 1;
     }
-    if (pending.length > 0) {
-      record.push(...pending);
-      this.#record.set(assetId, record);
+    for (const tick of pending) {
+      state.indexBySequence.set(tick.sequence, state.entries.length);
+      state.entries.push({ kind: 'tick', tick });
     }
+    state.head = head;
+    state.expectNext = expectNext;
     return Promise.resolve();
   }
 
-  readTicks(assetId: string, fromSequence: number, limit: number): Promise<readonly Tick[]> {
+  recordSeam(assetId: string, token: FenceToken, seam: SeamMarker): Promise<void> {
+    const refusal = this.#fenceRefusal(assetId, token);
+    if (refusal !== null) return Promise.reject(refusal);
+
+    const state = this.#recordFor(assetId);
+    if (seam.assetId !== assetId) {
+      return Promise.reject(new SeamError(assetId, `it names asset ${seam.assetId}`));
+    }
+    // A seam that claimed a different last sequence would be rewriting history
+    // rather than extending it, and the rewrite would be invisible afterwards.
+    if (seam.lastSequence !== state.head) {
+      return Promise.reject(
+        new SeamError(
+          assetId,
+          `it continues from ${String(seam.lastSequence)} but the record's head is ` +
+            `${String(state.head)}`,
+        ),
+      );
+    }
+    if (!Number.isInteger(seam.resumesAtSequence) || seam.resumesAtSequence < 1) {
+      return Promise.reject(
+        new SeamError(assetId, `it resumes at sequence ${seam.resumesAtSequence}`),
+      );
+    }
+    if (state.head !== null && seam.resumesAtSequence <= state.head) {
+      return Promise.reject(
+        new SeamError(
+          assetId,
+          `it resumes at ${seam.resumesAtSequence}, at or before the head ${state.head} — a seam ` +
+            `moves forward or it is not a seam`,
+        ),
+      );
+    }
+    state.entries.push({ kind: 'seam', seam });
+    state.expectNext = seam.resumesAtSequence;
+    return Promise.resolve();
+  }
+
+  readRecord(
+    assetId: string,
+    fromSequence: number,
+    limit: number,
+  ): Promise<readonly RecordEntry[]> {
     if (!Number.isInteger(fromSequence) || fromSequence < 1) {
       return Promise.reject(
         new RangeError(`A sequence must be a positive integer, received ${fromSequence}.`),
@@ -319,11 +398,10 @@ export class MemoryCoordinatedStore implements CoordinatedStore {
     if (!Number.isInteger(limit) || limit < 1) {
       return Promise.reject(new RangeError(`A read limit must be a positive integer.`));
     }
-    const record = this.#record.get(assetId) ?? [];
-    if (record.length === 0) return Promise.resolve([]);
-    const first = record[0]!.sequence;
-    const offset = fromSequence - first;
-    if (offset < 0) {
+    const state = this.#record.get(assetId);
+    if (state === undefined || state.entries.length === 0) return Promise.resolve([]);
+    const first = entrySequence(state.entries[0]!);
+    if (fromSequence < first) {
       return Promise.reject(
         new RangeError(
           `Sequence ${fromSequence} for ${assetId} precedes the retained record, which starts ` +
@@ -331,13 +409,29 @@ export class MemoryCoordinatedStore implements CoordinatedStore {
         ),
       );
     }
-    return Promise.resolve(record.slice(offset, offset + limit));
+    const from = lowerBound(state.entries, fromSequence);
+    return Promise.resolve(state.entries.slice(from, from + limit));
   }
 
   recordHead(assetId: string): Promise<number | null> {
-    const record = this.#record.get(assetId);
-    if (record === undefined || record.length === 0) return Promise.resolve(null);
-    return Promise.resolve(record[record.length - 1]!.sequence);
+    return Promise.resolve(this.#record.get(assetId)?.head ?? null);
+  }
+
+  seams(assetId: string): Promise<readonly SeamMarker[]> {
+    const state = this.#record.get(assetId);
+    if (state === undefined) return Promise.resolve([]);
+    return Promise.resolve(
+      state.entries.filter((e) => e.kind === 'seam').map((e) => (e as { seam: SeamMarker }).seam),
+    );
+  }
+
+  #recordFor(assetId: string): RecordState {
+    let state = this.#record.get(assetId);
+    if (state === undefined) {
+      state = { entries: [], indexBySequence: new Map(), head: null, expectNext: null };
+      this.#record.set(assetId, state);
+    }
+    return state;
   }
 
   /**

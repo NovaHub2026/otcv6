@@ -1,4 +1,4 @@
-import type { Tick } from '@otc/core';
+import type { EpochMillis, Tick } from '@otc/core';
 import type { FenceToken } from './fence.js';
 
 /**
@@ -27,6 +27,59 @@ export class RecordForkError extends Error {
 }
 
 /**
+ * A recorded discontinuity.
+ *
+ * PH-5.2's seam moves the sequence past the reserved block on purpose — "the gap
+ * is visible and free; a duplicate is neither" — and PH-14.2's log refuses a gap
+ * because one served to observers is indistinguishable from the market. Both
+ * rules are right and they contradict.
+ *
+ * They are reconciled by making the discontinuity a thing the record *holds*
+ * rather than a hole in it. The only way to write past a seam is to record one,
+ * so a gap cannot be silent.
+ */
+export interface SeamMarker {
+  readonly assetId: string;
+  /** Last sequence in the record before the seam, or null if it had none. */
+  readonly lastSequence: number | null;
+  /** Instant of that last tick, or null. */
+  readonly lastInstant: EpochMillis | null;
+  /** First sequence the record carries after the seam. */
+  readonly resumesAtSequence: number;
+  /** Instant the market reopens at. */
+  readonly resumesAtInstant: EpochMillis;
+  /** Why the market could not continue. Carried verbatim from `RecoveryOutcome`. */
+  readonly reason: string;
+}
+
+/** One thing the record holds: almost always a tick, occasionally a seam. */
+export type RecordEntry =
+  | { readonly kind: 'tick'; readonly tick: Tick }
+  | { readonly kind: 'seam'; readonly seam: SeamMarker };
+
+/**
+ * Where an entry sits in the sequence space.
+ *
+ * A seam occupies the position just past the last sequence before it, so a
+ * client asking for a sequence that fell inside a gap is given the seam before
+ * the ticks that follow. Nobody reads across a discontinuity without being told.
+ */
+export function entrySequence(entry: RecordEntry): number {
+  return entry.kind === 'tick' ? entry.tick.sequence : (entry.seam.lastSequence ?? 0) + 1;
+}
+
+/** Thrown when a seam does not continue the record it claims to continue. */
+export class SeamError extends Error {
+  constructor(
+    readonly assetId: string,
+    readonly detail: string,
+  ) {
+    super(`Seam for ${assetId} refused: ${detail}. The record was not modified.`);
+    this.name = 'SeamError';
+  }
+}
+
+/**
  * The durable, sequence-addressed record every node reads.
  *
  * Followers replicate through this and through nothing else. A second channel
@@ -44,18 +97,49 @@ export interface ReplicationLog {
    * identical, which is the normal outcome of the resume path replaying ticks
    * it generated before a crash. A differing tick raises {@link RecordForkError}.
    * Anything past the head must continue it exactly; a gap is refused, because
-   * the record cannot invent what it was not given.
+   * the record cannot invent what it was not given, and the only way past one is
+   * {@link ReplicationLog.recordSeam}.
    */
   appendTicks(assetId: string, token: FenceToken, ticks: readonly Tick[]): Promise<void>;
 
-  /** Ticks from `fromSequence` onwards, at most `limit` of them. */
-  readTicks(assetId: string, fromSequence: number, limit: number): Promise<readonly Tick[]>;
+  /**
+   * Record a discontinuity, under the current grant.
+   *
+   * Fenced like an append, and refused unless it continues the record's own
+   * head: a seam that claimed a different last sequence would be rewriting
+   * history rather than extending it.
+   */
+  recordSeam(assetId: string, token: FenceToken, seam: SeamMarker): Promise<void>;
 
-  /** The newest sequence in the record, or null if the asset has none. */
+  /** Entries from `fromSequence` onwards, at most `limit` of them. */
+  readRecord(assetId: string, fromSequence: number, limit: number): Promise<readonly RecordEntry[]>;
+
+  /** The newest tick sequence in the record, or null if the asset has none. */
   recordHead(assetId: string): Promise<number | null>;
+
+  /** Every seam recorded for an asset, oldest first. */
+  seams(assetId: string): Promise<readonly SeamMarker[]>;
 }
 
 /** Whether two ticks are the same tick. */
 export function sameTick(a: Tick, b: Tick): boolean {
   return a.sequence === b.sequence && a.instant === b.instant && a.price === b.price;
+}
+
+/**
+ * The first index whose entry sits at or past `sequence`.
+ *
+ * `entrySequence` is non-decreasing across the entry list, so this is a binary
+ * search. It is a binary search rather than a scan because the follower calls it
+ * on every pull, and a linear one made the INV-002 test quadratic once already.
+ */
+export function lowerBound(entries: readonly RecordEntry[], sequence: number): number {
+  let low = 0;
+  let high = entries.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (entrySequence(entries[middle]!) < sequence) low = middle + 1;
+    else high = middle;
+  }
+  return low;
 }

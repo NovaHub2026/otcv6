@@ -387,7 +387,7 @@ moment, same price, for everyone.
 | -------- | ------------------------------------------------------ | -------- |
 | PH-14.1  | The leader lease, and why generation is single-writer  | APPROVED |
 | PH-14.2  | Followers serve the record; INV-002 across nodes       | APPROVED |
-| PH-14.3  | Failover: no fork, no duplicate stream, a visible seam | ACTIVE   |
+| PH-14.3  | Failover: no fork, no duplicate stream, a visible seam | APPROVED |
 
 ### PH-15 — Operations: The Standing Guarantee, Running Continuously
 
