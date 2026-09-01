@@ -9,7 +9,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Field              | Value                                                    |
 | ------------------ | -------------------------------------------------------- |
 | Last clean session | 2026-09-01                                               |
-| Branch             | `feature/ph-14-multi-node` — approved, ready to merge    |
+| Branch             | `main` — every phase branch merged and deleted           |
 | Remote             | `origin` → NovaHub2026/otcv6 — public, hosted CI running |
 | Active cycle       | Cycle 5, **2 of 3** phases approved                      |
 | Active phase       | none — PH-15 next to create                              |
@@ -21,9 +21,8 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 Read `CURRENT_STATE.md` for the authoritative position; this is the short form.
 
-**Merge `feature/ph-14-multi-node` into `main`, push, then create the PH-15
-Phase Context Document** on `feature/ph-15-operations`. No authorization is
-required and none should be requested.
+**Create the PH-15 Phase Context Document** on `feature/ph-15-operations`. No
+authorization is required and none should be requested.
 
 PH-15 — **Operations: the standing guarantee, running continuously** — is the
 third and final phase of Cycle 5. Its subject is the gap between what an

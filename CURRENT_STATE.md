@@ -143,13 +143,13 @@ Cycle 1's numbers, and the coverage figure, are in
 | ADR-0012 | Generation is single-writer per asset; leadership is a fenced lease (APPROVED) |
 | Backlog  | `docs/BACKLOG.md` B-001 … B-011 — **all closed**                               |
 | Roadmap  | `docs/phases/ROADMAP.md`                                                       |
-| Branch   | `feature/ph-14-multi-node` — to merge into `main`                              |
+| Branch   | `main` — every phase branch merged and deleted                                 |
 
 ---
 
 ## EXACT NEXT LEGAL ACTION
 
-**Merge `feature/ph-14-multi-node` into `main`, then create PH-15.**
+**Create PH-15.**
 
 PH-14 is APPROVED: all three subphases approved from executed evidence, the
 integrated cluster verification passing, and the phase gate at exit 0. It

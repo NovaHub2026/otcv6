@@ -167,6 +167,14 @@ in that order, on a clean tree. **Exit 0.**
 | ----------- | ----- | ----- |
 | unit        | 66    | 1,312 |
 | statistical | 27    | 202   |
+| **total**   | 93    | 1,514 |
+
+Executed on merged `main`, after the phase branch was integrated — not on the
+branch and then hoped for. An earlier run on the branch exited **1**, on four
+state-consistency assertions: `CURRENT_STATE.md` still described the project as
+it stood before this phase. That guard exists because exactly this drift reached
+`main` twice before, and it is the reason the gate is recorded from a run whose
+exit code was read rather than from the run that was expected to pass.
 
 Build precedes lint, and that ordering is load-bearing (ADR-0009, B-011).
 
