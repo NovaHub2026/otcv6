@@ -168,7 +168,7 @@ Run time: 1714s.
 **Forty of forty cells policed below 0.2513pp.** Worst |z| across the forty is
 2.64 (btcusd, 10m); Benjamini–Hochberg at q = 0.05 rejects nothing.
 
-Total across all three runs: **2.5 billion ticks**, roughly 62 asset-years.
+Total across all three runs: **3.12 billion ticks**, 63.9 asset-years. The forty policed cells are runs 1 and 2 alone: **2.0 billion ticks**, 52.0 asset-years, which is the figure every other document carries. (Cycle Audit 5 finding 4: this line previously read 2.5 billion / 62 asset-years, which is neither total. The test that advertises itself as re-deriving this record parses the run headers and the table rows and never touched the summary line.)
 
 ## Interpretation
 

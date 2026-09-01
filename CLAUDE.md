@@ -95,7 +95,7 @@ apps/web                   Next.js observer frontend and trading chart
 ## 5. Commands
 
 ```bash
-npm install            # install workspace dependencies (Node >= 22, developed on 24)
+npm install            # install workspace dependencies (Node >= 24)
 
 npm run build          # tsc -b across all composite projects (also full typecheck)
 npm run typecheck      # same graph, no pretty output

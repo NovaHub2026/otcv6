@@ -333,7 +333,8 @@ evidence in an approval, and could not fail.
 
 ## 9. Found during remediation
 
-**CA5-14 — the quality gate is not deterministic.**
+**CA5-14 — the quality gate is not deterministic, and the cause is worse than
+first diagnosed.**
 
 The remediation tree produced `Test Files 103 passed (103)`, `Tests 1722 passed
 (1722)`, and **`GATE_EXIT=1`**, with `Error: [vitest-worker]: Timeout calling
@@ -351,3 +352,78 @@ the authority for an approval in this project. An authority that returns a
 different answer on the same tree depending on which suites happen to overlap is
 not one, and every `GATE_EXIT=0` in the repository was recorded from a single
 run. Tracked as B-021.
+
+The seventh auditor measured it properly, on an **idle** box in a clean clone:
+`npx vitest run --project unit` failed **2 of 8 runs**, and
+`packages/engine/src/rhythm.test.ts` alone failed **3 of 12**. Observed durations
+for one co-varied solve: 1820 … 3155, then **5079, 5319, 6111 ms** against a
+5,000 ms timeout.
+
+So the RPC starvation recorded above is the rarer of two causes. The common one
+is that **ten unit tests sit between 2.5s and 4.2s against a 5s timeout** —
+deliberate deterministic computation with no headroom at all. `GOVERNANCE.md`
+§40.1 says the gate "is deterministic and reproducible… anyone with the
+repository can re-run it and get the same numbers". Every `GATE_EXIT=0` in
+Cycle 5 was a single sample from a roughly 80%-pass distribution.
+
+**Fixed.** The unit timeout is 20s. The timeout was doing two jobs and doing one
+of them badly: catching _accidental_ cost is `testCost.test.ts`'s job, which it
+does by reading the code rather than by timing it. Three consecutive unit runs
+now pass.
+
+## 10. The cold start
+
+A fresh agent following `CLAUDE.md` §1 **can** determine the project, the
+invariants, the active phase and the next legal action. It would also have been
+misled about five things, all now fixed:
+
+| Was                                                                                             | Now                                                                                                                                                                                                              |
+| ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CLAUDE.md` and `PROJECT_CONTEXT.md` said Node ≥ 22; `package.json` requires ≥ 24 since PH-15.1 | Both say 24. A fresh agent on Node 22 gets a repository whose coordinated store cannot run.                                                                                                                      |
+| The verification tables recorded the **PH-14** gate — 66/1,312 and 27/202                       | The PH-15 gate: 73/1,495 and 29/204. Commit `b983727` was titled "phase gate recorded from the merged tree" and never touched either table.                                                                      |
+| `PH-11-HORIZON-COVERAGE.md` claimed "2.5 billion ticks, roughly 62 asset-years"                 | 3.12 billion across three runs; 2.0 billion for the forty policed cells. Neither figure in the sentence was right, and the test that advertises itself as re-deriving the record never touched the summary line. |
+| `PH-15.3` claimed twelve plants over an eleven-row table                                        | Eleven.                                                                                                                                                                                                          |
+| `PH-14.1` contained `[[guard-not-finished-until-watched-failing]]`                              | A wiki-link into agent-local memory, inside a repository document. Removed.                                                                                                                                      |
+
+**CA5-15 — the conformance battery specified six of thirteen members.**
+
+`describeCoordinatedStore` contained **zero occurrences of "seam"** and never
+called `appendTicks`, `recordSeam` or `readRecord`. PH-15.1 cited it as the
+evidence that the deployment store is correct, and this audit cited its being
+"unmodified" as the strength of that evidence.
+
+Measured cost: three guards in `sqliteStore.ts` could be deleted with the entire
+1,495-test suite green — including **the fence on `recordSeam`**. The in-memory
+store's equivalents were covered, so PH-14.3's plant table fired honestly against
+the store the venue does not run.
+
+**Fixed.** The battery now covers the replication log, and the four plants that
+were invisible each fail it.
+
+## 11. Still open from the cold-start audit
+
+- **`npm run test:cov` exits 1 and produces no coverage table at all** — B-003's
+  closed state has regressed. Three throughput floors are not coverage-aware
+  where `CLAUDE.md` says one is, two statistical tests time out at 900s, and the
+  run emits ten `onTaskUpdate` timeouts.
+- **`docs/architecture/` was never touched by Cycle 5.** Leader lease, followers,
+  failover, the durable store, rotation, retention, ruin, exposure limits and the
+  standing verdict are all absent, and `DOCS_INDEX.md` tells the reader in as many
+  words that _"a missing architecture document means that layer does not exist
+  yet"_. This is CA4-10 recurring at three times the scale.
+- **ADR-0008 is superseded in part and says so nowhere.** Its title still reads
+  "no hosted CI" and its status is APPROVED with no forward pointer to ADR-0009.
+- **`GOVERNANCE.md` §40 states the pre-fix gate order** — "format, lint, build" —
+  in the sentence that defines the verification authority, six lines below the
+  section recording the fix. Governance is the Human Owner's to amend.
+- **`docs/BACKLOG.md` says GitHub Issues are not enabled**; they are, on a public
+  repository, and both documented migration triggers have fired.
+- **PH-13's three subphases record no planted-defect evidence at all**, against
+  the standing rule `SESSION_HANDOFF.md` states first.
+- **The ROADMAP has a malformed Cycle 3 table** (two-column header over
+  three-column rows, so three phases render with no state cell), a stale revision
+  date, and a "Protected Human decisions on the horizon" section listing
+  decisions ADR-0008 abolished.
+- **`CURRENT_STATE.md`'s 0.562pp per-asset floor does not reproduce** — measured
+  0.563 … 0.568, inherited from the pre-PH-10 catalogue.
+- **"46 unresolved-type errors" is 44, across two files**, in four documents.

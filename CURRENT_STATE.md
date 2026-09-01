@@ -89,7 +89,7 @@ PH-10 was conditional on a previous build's `dist/` being present.
 
 ## Verification state
 
-Executed 2026-09-01 at the PH-14 phase gate.
+Executed 2026-09-01 at the PH-15 phase gate, on merged `main`.
 
 | Check                            | Status                         |
 | -------------------------------- | ------------------------------ |
@@ -97,8 +97,8 @@ Executed 2026-09-01 at the PH-14 phase gate.
 | `npm run format:check`           | PASSED (exit 0)                |
 | `npm run build` (full typecheck) | PASSED (exit 0)                |
 | `npm run lint`                   | PASSED (exit 0), warning-free  |
-| Unit suite                       | PASSED — 66 files, 1,312 tests |
-| Statistical suite                | PASSED — 27 files, 202 tests   |
+| Unit suite                       | PASSED — 73 files, 1,495 tests |
+| Statistical suite                | PASSED — 29 files, 204 tests   |
 | Unhandled errors                 | none                           |
 
 Cycle 1's numbers, and the coverage figure, are in

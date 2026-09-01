@@ -35,7 +35,7 @@ The product succeeds when the generated markets are simultaneously:
 
 | Concern         | Choice                                                                               |
 | --------------- | ------------------------------------------------------------------------------------ |
-| Runtime         | Node.js ≥ 22 (developed on 24), ESM                                                  |
+| Runtime         | Node.js ≥ 24, ESM                                                                    |
 | Language        | TypeScript 5.8, `strict` + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes` |
 | Repository      | Single repository, npm workspaces monorepo, composite TS project references          |
 | Test runner     | Vitest 3, two projects: `unit` (fast) and `statistical` (slow, seeded)               |

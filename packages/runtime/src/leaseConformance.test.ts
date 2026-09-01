@@ -9,6 +9,7 @@ import {
   type CoordinatedStore,
   type LeaseGrant,
 } from './lease.js';
+import { RecordForkError, SeamError, type SeamMarker } from './replication.js';
 import { STATE_RECORD_VERSION, type MarketStateRecord } from './state.js';
 
 /**
@@ -27,6 +28,15 @@ export interface StoreUnderTest {
   readonly termMs: number;
 }
 
+/** A tick, for exercising the replication half of the contract. */
+export function stubTick(sequence: number, price = 100_000 + sequence) {
+  return {
+    sequence,
+    instant: epochMillis(1_776_000_000_000 + sequence * 1_000),
+    price: price as unknown as import('@otc/core').LogPrice,
+  };
+}
+
 /** A record shaped enough to be written; the fence never inspects its contents. */
 export function stubRecord(assetId: string, savedAt: EpochMillis): MarketStateRecord {
   return {
@@ -38,6 +48,17 @@ export function stubRecord(assetId: string, savedAt: EpochMillis): MarketStateRe
     lastPublished: null,
     leasedBlocks: { sign: '1:0' },
     leasedSequence: 1,
+  };
+}
+
+function seamAt(lastSequence: number | null, resumesAtSequence: number): SeamMarker {
+  return {
+    assetId: 'eurusd',
+    lastSequence,
+    lastInstant: lastSequence === null ? null : stubTick(lastSequence).instant,
+    resumesAtSequence,
+    resumesAtInstant: epochMillis(1_776_000_000_000 + 9_000_000),
+    reason: 'snapshot rejected',
   };
 }
 
@@ -322,6 +343,132 @@ export function describeCoordinatedStore(name: string, create: () => StoreUnderT
           expect(current.grantedAt).toBeGreaterThanOrEqual(previous.grantedAt);
           expect(current.token).toBeGreaterThan(previous.token);
         }
+      });
+    });
+
+    describe('the replication log', () => {
+      // **Cycle Audit 5, finding 3.** This battery had zero occurrences of
+      // "seam" and never called `appendTicks`, `recordSeam` or `readRecord`. It
+      // covered mutual exclusion, expiry, fence tokens and leases — six of the
+      // interface's thirteen members — while PH-15 cited it as the evidence that
+      // the deployment store is correct.
+      //
+      // The cost was measured: three guards in the SQLite store could be
+      // deleted with the whole 1,495-test suite green, including the fence on
+      // `recordSeam`. The in-memory store's equivalents were covered, so the
+      // plants in PH-14.3's table fired — against the store the venue does not
+      // run.
+
+      it('records and reads back ticks', async () => {
+        const harness = create();
+        const token = (await mustAcquire(harness.store, ASSET, 'node-a#1')).token;
+        await harness.store.appendTicks(ASSET, token, [stubTick(1), stubTick(2)]);
+        expect(await harness.store.recordHead(ASSET)).toBe(2);
+        expect((await harness.store.readRecord(ASSET, 1, 10)).map((e) => e.kind)).toEqual([
+          'tick',
+          'tick',
+        ]);
+      });
+
+      it('refuses a gap, and a seam is the only way past one', async () => {
+        const harness = create();
+        const token = (await mustAcquire(harness.store, ASSET, 'node-a#1')).token;
+        await harness.store.appendTicks(ASSET, token, [stubTick(1)]);
+        await expect(harness.store.appendTicks(ASSET, token, [stubTick(500)])).rejects.toThrow();
+        await harness.store.recordSeam(ASSET, token, seamAt(1, 500));
+        await harness.store.appendTicks(ASSET, token, [stubTick(500)]);
+        expect(await harness.store.recordHead(ASSET)).toBe(500);
+      });
+
+      it('refuses a differing tick at a recorded sequence', async () => {
+        const harness = create();
+        const token = (await mustAcquire(harness.store, ASSET, 'node-a#1')).token;
+        await harness.store.appendTicks(ASSET, token, [stubTick(1), stubTick(2)]);
+        await expect(
+          harness.store.appendTicks(ASSET, token, [stubTick(2, 999_999)]),
+        ).rejects.toBeInstanceOf(RecordForkError);
+        // Identical replay is accepted: that is the resume path working.
+        await harness.store.appendTicks(ASSET, token, [stubTick(2), stubTick(3)]);
+        expect(await harness.store.recordHead(ASSET)).toBe(3);
+      });
+
+      it('fences the append, the seam and the checkpoint alike', async () => {
+        const harness = create();
+        const stranded = (await mustAcquire(harness.store, ASSET, 'node-a#1')).token;
+        await harness.store.appendTicks(ASSET, stranded, [stubTick(1)]);
+        harness.advance(harness.termMs);
+        await mustAcquire(harness.store, ASSET, 'node-b#1');
+
+        await expect(harness.store.appendTicks(ASSET, stranded, [stubTick(2)])).rejects.toThrow();
+        await expect(harness.store.recordSeam(ASSET, stranded, seamAt(1, 500))).rejects.toThrow();
+        await expect(
+          harness.store.saveFenced(stubRecord(ASSET, epochMillis(2)), stranded),
+        ).rejects.toThrow();
+        expect(await harness.store.recordHead(ASSET)).toBe(1);
+        expect(await harness.store.seams(ASSET)).toEqual([]);
+      });
+
+      it('refuses a seam that does not continue the record', async () => {
+        const harness = create();
+        const token = (await mustAcquire(harness.store, ASSET, 'node-a#1')).token;
+        await harness.store.appendTicks(ASSET, token, [stubTick(1), stubTick(2)]);
+        await expect(harness.store.recordSeam(ASSET, token, seamAt(1, 500))).rejects.toBeInstanceOf(
+          SeamError,
+        );
+        await expect(
+          harness.store.recordSeam(ASSET, token, seamAt(null, 500)),
+        ).rejects.toBeInstanceOf(SeamError);
+      });
+
+      it('refuses a seam that does not move forward', async () => {
+        const harness = create();
+        const token = (await mustAcquire(harness.store, ASSET, 'node-a#1')).token;
+        await harness.store.appendTicks(ASSET, token, [stubTick(1), stubTick(2)]);
+        await expect(harness.store.recordSeam(ASSET, token, seamAt(2, 2))).rejects.toBeInstanceOf(
+          SeamError,
+        );
+        await expect(harness.store.recordSeam(ASSET, token, seamAt(2, 1))).rejects.toBeInstanceOf(
+          SeamError,
+        );
+      });
+
+      it.each([0, -1, 1.5])('refuses a seam resuming at sequence %s', async (resumesAt) => {
+        const harness = create();
+        const token = (await mustAcquire(harness.store, ASSET, 'node-a#1')).token;
+        await harness.store.appendTicks(ASSET, token, [stubTick(1)]);
+        await expect(
+          harness.store.recordSeam(ASSET, token, seamAt(1, resumesAt)),
+        ).rejects.toBeInstanceOf(SeamError);
+      });
+
+      it('refuses a seam naming another asset', async () => {
+        const harness = create();
+        const token = (await mustAcquire(harness.store, ASSET, 'node-a#1')).token;
+        await harness.store.appendTicks(ASSET, token, [stubTick(1)]);
+        await expect(
+          harness.store.recordSeam(ASSET, token, { ...seamAt(1, 500), assetId: 'gbpusd' }),
+        ).rejects.toBeInstanceOf(SeamError);
+      });
+
+      it('hands a reader the seam before the ticks that follow it', async () => {
+        const harness = create();
+        const token = (await mustAcquire(harness.store, ASSET, 'node-a#1')).token;
+        await harness.store.appendTicks(ASSET, token, [stubTick(1), stubTick(2)]);
+        await harness.store.recordSeam(ASSET, token, seamAt(2, 500));
+        await harness.store.appendTicks(ASSET, token, [stubTick(500), stubTick(501)]);
+        expect((await harness.store.readRecord(ASSET, 3, 10)).map((e) => e.kind)).toEqual([
+          'seam',
+          'tick',
+          'tick',
+        ]);
+        expect(await harness.store.seams(ASSET)).toHaveLength(1);
+      });
+
+      it('reports no record for an asset that has none', async () => {
+        const { store } = create();
+        expect(await store.recordHead(ASSET)).toBeNull();
+        expect(await store.readRecord(ASSET, 1, 10)).toEqual([]);
+        expect(await store.seams(ASSET)).toEqual([]);
       });
     });
 

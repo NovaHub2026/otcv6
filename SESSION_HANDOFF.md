@@ -60,8 +60,9 @@ records under `docs/audits/`. This document is not the place for them.
 
 ## Last executed verification
 
-`npm run gate` at the PH-14 phase gate, 2026-09-01: **exit 0**. Unit 66 files /
-1,312 tests; statistical 27 files / 202 tests. Format, build and lint all exit 0,
+`npm run gate` at the PH-15 phase gate, 2026-09-01: **exit 0**. Unit 73 files /
+1,495 tests; statistical 29 files / 204 tests. **That run is not reproducible**:
+see B-021 — the gate fails roughly one run in five. Format, build and lint all exit 0,
 in that order — build before lint, because the type-aware rules resolve workspace
 types through emitted declarations.
 

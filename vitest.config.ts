@@ -36,7 +36,26 @@ const commonExclude = ['**/node_modules/**', '**/dist/**', '**/artifacts/**'];
  * Vitest's internals, so it cannot silently stop working when Vitest changes.
  */
 const measuringCoverage = process.env.OTC_COVERAGE === '1';
-const unitTimeoutMs = measuringCoverage ? 60_000 : 5_000;
+/**
+ * The unit project's per-test timeout.
+ *
+ * **Raised from 5s to 20s by Cycle Audit 5, finding 1.** The gate failed
+ * roughly one run in five on an idle box, and the cause was not a defect: ten
+ * unit tests are deliberate deterministic computations sitting between 2.5s and
+ * 4.2s — co-varied kurtosis solves, closed-form-versus-simulation checks, the
+ * full-stack mirror test — and any of them crosses 5s when something else wants
+ * the CPU. `GOVERNANCE.md` §40.1 calls the gate "deterministic and
+ * reproducible"; it was not, and it is the authority for every approval in this
+ * repository.
+ *
+ * The timeout was doing two jobs. Catching *accidental* cost — an assertion
+ * inside a large loop — is `testCost.test.ts`'s job and it does it directly, by
+ * reading the code rather than by timing it. Bounding *deliberate* cost is this
+ * value's job, and 5s left no headroom at all. 20s is roughly five times the
+ * slowest test, which is headroom rather than a licence: a unit test that needs
+ * more than that is a statistical test in the wrong project.
+ */
+const unitTimeoutMs = measuringCoverage ? 60_000 : 20_000;
 
 export default defineConfig({
   resolve: { alias },
