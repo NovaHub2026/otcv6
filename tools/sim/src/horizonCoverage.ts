@@ -38,7 +38,19 @@ import {
  * PH-11.1 measured that assumption to hold for direction — across *independent
  * runs*. A live venue is one continuous record, so this measures the design
  * effect across **contiguous segments of one market's history**, which is the
- * setting that actually applies and the more conservative of the two.
+ * setting that actually applies.
+ *
+ * **It is not the more conservative of the two, and this file said it was.**
+ * Cycle Audit 4 (Material 3) showed that a component shared by every segment is
+ * removed by the sample variance by construction: the estimator reads 1.000
+ * while the pooled z carries 11.6× its assumed variance. Sharing across
+ * replicates *lowers* the reading.
+ *
+ * So segmentation licenses the error bar against dependence at lags shorter than
+ * a segment, and nothing longer. The run-wide component — the path displacement
+ * this file's own `pathBiasZ` column measures — is invisible to it. That the
+ * pooled z is nevertheless honest was established separately, across 400
+ * genuinely independent realisations, not by this.
  *
  * Segments also buy resolution where PH-11.1 had least: at 100 segments the
  * design effect carries a ±14% relative standard error instead of ±23%.

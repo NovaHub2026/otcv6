@@ -107,8 +107,8 @@ npx vitest run --project unit          # fast unit suite      (~90s)
 npx vitest run --project statistical   # slow statistical suite (~10min)
 npm test                               # both projects          (~12min)
 
-npm run gate           # format:check + lint + build + both suites (~13min)
-npm run test:cov       # coverage, both projects; excludes tools/
+npm run gate           # format:check + build + lint + both suites (~13min)
+npm run test:cov       # coverage over packages/ and tools/, both projects
 ```
 
 **Budget the time.** `npm run gate` runs the statistical suite and takes roughly
@@ -116,17 +116,30 @@ thirteen minutes — it has not hung. Run it in the background rather than under
 short command timeout. During subphase work use a **targeted** gate (a justified
 subset — see `GOVERNANCE.md` §21); the full gate belongs at phase boundaries.
 
-**The gate is the verification authority.** There is no hosted CI: the repository
-is private and the account has no paid Actions allowance, so it was removed from
-the verification model rather than left open as a blocker (ADR-0008). Nothing
-outside this session runs anything, which means a claim is only as true as the
-run behind it. Never write "PASSED" from a command whose exit code you did not
-see — `| tail -1` discards it, and that is how a failing `npm run lint` survived
-two subphase approvals in PH-4.
+**Build precedes lint, and that ordering is load-bearing.** The type-aware ESLint
+rules resolve workspace types through each package's emitted declarations, so on
+a clean checkout `lint` before `build` reports 46 unresolved-type errors. It
+passed locally for four cycles only because a previous build's `dist/` is always
+lying around — meaning **every `GATE_EXIT=0` recorded through PH-10 was
+conditional on leftover artefacts** (ADR-0009, B-011).
 
-Coverage measures `packages/*/src` only. `tools/sim` is excluded by
-`vitest.config.ts`, and a file exercised solely by statistical tests reads as
-uncovered unless coverage is run over both projects.
+**Two verification layers, and neither replaces the other.** `npm run gate` is
+what a claim of "verified" means here, because it is what an agent can run before
+recording an approval. **Hosted CI also runs**: the repository is public, so
+GitHub Actions is free, and `.github/workflows/ci.yml` runs the quality gate and
+the statistical gate on every push to `main` (ADR-0009). CI is a _required
+corroborating_ layer — a red CI on a green local gate is a finding about the
+gate.
+
+A claim is only as true as the run behind it. Never write "PASSED" from a command
+whose exit code you did not see — `| tail -1` discards it, and that is how a
+failing `npm run lint` survived two subphase approvals in PH-4.
+
+Coverage measures `packages/*/src` **and** `tools/*/src` (PH-11.3 closed B-003).
+Run it with `npm run test:cov`, which sets `OTC_COVERAGE=1` — instrumentation
+makes wall-clock assertions meaningless, so that variable relaxes the unit
+timeout and stands down one throughput floor. A file exercised solely by
+statistical tests reads as uncovered unless coverage is run over both projects.
 
 ### Test conventions
 

@@ -32,6 +32,9 @@ const ALLOWED: Record<string, readonly string[]> = {
   '@otc/distribution': ['@otc/core'],
   '@otc/chart': ['@otc/core'],
   '@otc/api': ['@otc/core', '@otc/engine', '@otc/runtime', '@otc/distribution', '@otc/chart'],
+  // The browser bundle. `@otc/lab` and `@otc/fixtures` must never appear here:
+  // one carries the attack battery, the other the planted-defect corpus.
+  '@otc/web': ['@otc/core', '@otc/chart'],
   '@otc/sim': [
     '@otc/core',
     '@otc/engine',
@@ -55,13 +58,29 @@ const FORBIDDEN_BELOW_APPS =
 
 interface Workspace {
   readonly name: string;
+  /** `packages`, `tools` or `apps`. Frameworks are permitted only in `apps`. */
+  readonly group: string;
   readonly dir: string;
   readonly declared: readonly string[];
 }
 
+/**
+ * Every workspace, **including `apps/`**.
+ *
+ * Cycle Audit 4 found this enumerating `packages` and `tools` only, which made
+ * the `'@otc/api'` entry in {@link ALLOWED} unenforced configuration that reads
+ * as policy, and left `'@otc/web'` with no entry at all. An auditor planted
+ * `@otc/lab` into `apps/api/package.json` — a dependency that would drag the
+ * planted-defect fixture corpus into the running venue — and the guard stayed
+ * silent through 38 passing tests. The control plant into `packages/trading`
+ * fired correctly, so the rule worked; it simply never looked at `apps/`.
+ *
+ * That is the project's most repeated defect once more: a guard that exists, is
+ * documented as sufficient, and has a blind spot exactly one directory wide.
+ */
 function workspaces(): Workspace[] {
   const found: Workspace[] = [];
-  for (const group of ['packages', 'tools']) {
+  for (const group of ['packages', 'tools', 'apps']) {
     const base = path.join(repoRoot, group);
     for (const entry of readdirSync(base)) {
       const dir = path.join(base, entry);
@@ -74,6 +93,7 @@ function workspaces(): Workspace[] {
       };
       found.push({
         name: parsed.name,
+        group,
         dir,
         declared: [
           ...Object.keys(parsed.dependencies ?? {}),
@@ -206,7 +226,10 @@ describe('dependencies only point down', () => {
     },
   );
 
-  it.each(all.map((w) => [w.name, w] as const))(
+  // Frameworks are permitted in `apps/` and nowhere else — that is the rule's
+  // whole content. Before Cycle Audit 4 it read as "every workspace", which was
+  // accidentally correct only because `apps/` was never enumerated.
+  it.each(all.filter((w) => w.group !== 'apps').map((w) => [w.name, w] as const))(
     '%s imports no framework or server',
     (name, workspace) => {
       const offenders: string[] = [];
@@ -239,7 +262,18 @@ describe('dependencies only point down', () => {
   );
 
   it('has no cycle', () => {
-    const edges = new Map(all.map((w) => [w.name, (ALLOWED[w.name] ?? []).slice()]));
+    // **Cycle Audit 4, m-7.** This walked `ALLOWED` — a constant in this file —
+    // so it only ever tested whether someone had written a cycle into the
+    // policy. An auditor declared a real `core <-> engine` cycle in both
+    // `package.json` manifests and this test stayed green; a sibling test caught
+    // it, but this one, whose entire subject is cycles, did not.
+    //
+    // The graph now comes from the manifests, which is where a cycle would
+    // actually be introduced. `ALLOWED` is still the policy; the *edges* are
+    // what the repository declares.
+    const internal = (workspace: Workspace): string[] =>
+      workspace.declared.filter((d) => d.startsWith('@otc/'));
+    const edges = new Map(all.map((w) => [w.name, internal(w)]));
     const state = new Map<string, 'open' | 'done'>();
     const visit = (node: string, trail: string[]): void => {
       if (state.get(node) === 'done') return;

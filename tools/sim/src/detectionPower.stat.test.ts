@@ -39,7 +39,24 @@ import {
 
 const ASSET = ASSET_CATALOGUE[0]!;
 const GENESIS = 1_776_000_000_000;
-const REPLICATES = 40;
+/**
+ * Replicates, chosen for the power to see the value that would break the phase.
+ *
+ * **Cycle Audit 4, Material 4.** At 40 the design-effect estimate carries a ±23%
+ * relative error, so the acceptance band was [0.32, 1.68] — wide enough to admit
+ * `deff = 1.5`, which is precisely the value that breaks the headline. A true
+ * 1.5 makes every floor √1.5 = 1.22× coarser, and **all five 15-minute cells
+ * cross the 0.2513pp payout threshold**: "forty of forty policed" fails. The
+ * guard would have missed it 70% of the time.
+ *
+ * At 100 the relative error is 14.2%, the band is [0.57, 1.43], and a true 1.5
+ * sits 3.5 standard errors outside it — roughly 90% power against the case that
+ * matters. The cost is about 140 seconds.
+ *
+ * An acceptance band must be narrower than the effect it is meant to exclude.
+ * This one was not.
+ */
+const REPLICATES = 100;
 /** Windows at the slowest horizon; sets each replicate's simulated length. */
 const SLOWEST_WINDOWS = 800;
 const YIELD_TICKS = 250_000;
@@ -103,8 +120,10 @@ describe('the independent error bar is honest for direction', () => {
       );
 
       // Three relative standard errors. A design effect is a variance estimate
-      // and variance estimates are noisy; at 40 replicates the ratio carries a
-      // ±23% relative error, so 1.2 and 1.0 are the same reading.
+      // and variance estimates are noisy — but the band must still be narrower
+      // than the effect it excludes. At 100 replicates it is ±43%, which puts
+      // `deff = 1.5` (the value that would break the phase's headline) outside
+      // it. See the note on REPLICATES.
       const tolerance = 3 * direction.relativeStandardError;
       if (Math.abs(direction.designEffect - 1) > tolerance) {
         directionFailures.push(

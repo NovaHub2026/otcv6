@@ -15,7 +15,21 @@ import {
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../../..');
 
-/** Packages whose code generates or transforms market data. */
+/**
+ * Packages whose code generates, carries or transforms market data.
+ *
+ * **Widened by Cycle Audit 4 (M-4).** This listed `core`, `engine` and
+ * `fixtures` only, so `runtime`, `trading`, `distribution` and everything under
+ * `apps/` were unscanned — and those are precisely where economic state lives.
+ * An auditor put a module-level channel in `packages/core/src/market/`, wrote it
+ * from `packages/trading/src/settle.ts`, and read it back into the engine. The
+ * write side was in a directory this scan never opened.
+ *
+ * Scanning a package does not make it economically blind; the behavioural tests
+ * do that. It makes the *vocabulary* rules — no ambient time, no ambient mutable
+ * state, no non-portable numerics — apply everywhere they should have applied
+ * all along.
+ */
 const GENERATION_ROOTS = [
   'packages/core/src',
   'packages/engine/src',
@@ -24,7 +38,34 @@ const GENERATION_ROOTS = [
   // would not be reproducible. Their intended violation — reading a sign — is
   // caught by the mirror test in PH-3, not by this scanner.
   'packages/fixtures/src',
+  'packages/distribution/src',
+  'packages/chart/src',
 ];
+
+/**
+ * Packages that must stay replayable, which is a wider set than the price path.
+ *
+ * `runtime` schedules markets and persists them; `trading` settles against the
+ * published record. Neither generates prices, so neither is bound by the
+ * economic-vocabulary rule — `trading` is *about* payouts, and scanning it for
+ * the word would be nonsense. Both are still bound by the rules that make a
+ * record reproducible: no ambient clock, no ambient mutable state, no
+ * non-portable numerics.
+ *
+ * Cycle Audit 4 (M-4) found neither being scanned at all.
+ */
+const REPLAYABLE_ROOTS = [...GENERATION_ROOTS, 'packages/runtime/src', 'packages/trading/src'];
+
+/**
+ * `publishingKeyFromEnvironment` is the sanctioned reader of ambient state.
+ *
+ * A publishing key has to come from somewhere outside the process, and reading
+ * `OTC_MASTER_SECRET` there is the *defence* — it is how the loader refuses a
+ * publishing key equal to the generation secret (INV-010). Moving the check
+ * somewhere unscanned to keep this list short would trade a guaranteed refusal
+ * for a tidier scan. `publishingKey.test.ts` asserts the refusal still exists.
+ */
+const AMBIENT_STATE_ALLOWLIST = ['packages/distribution/src/signing.ts'];
 
 /**
  * `SystemClock` is the single sanctioned reader of ambient time: something must
@@ -60,10 +101,21 @@ function isTestFile(file: string): boolean {
   return file.endsWith('.test.ts');
 }
 
-function generationSources(): { file: string; source: string }[] {
-  return GENERATION_ROOTS.flatMap(listSourceFiles)
+function sourcesUnder(roots: readonly string[]): { file: string; source: string }[] {
+  return roots
+    .flatMap(listSourceFiles)
     .filter((f) => !isTestFile(f))
     .map((file) => ({ file, source: readFileSync(path.join(repoRoot, file), 'utf8') }));
+}
+
+/** The price path: bound by every rule, including economic blindness. */
+function generationSources(): { file: string; source: string }[] {
+  return sourcesUnder(GENERATION_ROOTS);
+}
+
+/** Everything that must stay reproducible, price path or not. */
+function replayableSources(): { file: string; source: string }[] {
+  return sourcesUnder(REPLAYABLE_ROOTS);
 }
 
 function describeViolations(violations: Violation[]): string {
@@ -160,7 +212,10 @@ describe('guardrail scanner', () => {
 });
 
 describe('generation code is replayable', () => {
-  const sources = generationSources();
+  // The replayability rules apply to everything that must reproduce, which is
+  // wider than the price path: `runtime` schedules and persists markets,
+  // `trading` settles against the published record.
+  const sources = replayableSources();
 
   it('scans a non-empty set of files', () => {
     expect(sources.length).toBeGreaterThan(5);
@@ -187,9 +242,11 @@ describe('generation code is replayable', () => {
     // through `globalThis`, armed by `process.env`, and watched every
     // import-based and vocabulary-based guardrail pass it. Ambient state is a
     // channel into the price path that names nothing and imports nothing.
-    const violations = sources.flatMap(({ file, source }) =>
-      scanSource(file, source, AMBIENT_RULES).filter((v) => v.rule === 'no-ambient-state'),
-    );
+    const violations = sources
+      .filter(({ file }) => !AMBIENT_STATE_ALLOWLIST.includes(file))
+      .flatMap(({ file, source }) =>
+        scanSource(file, source, AMBIENT_RULES).filter((v) => v.rule === 'no-ambient-state'),
+      );
     expect(describeViolations(violations)).toBe('');
   });
 

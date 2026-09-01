@@ -1,6 +1,6 @@
 import type { KeyObject } from 'node:crypto';
 import type { Tick } from '@otc/core';
-import { commit, CommitmentError } from './commitment.js';
+import { assertAssetId, assertPreviousRoot, commit, CommitmentError } from './commitment.js';
 import { signCommitment, type SignedCommitment } from './signing.js';
 
 /**
@@ -72,7 +72,11 @@ export class CommitmentPublisher {
         `Window size must be a positive integer, received ${options.windowTicks}.`,
       );
     }
-    if (options.assetId.length === 0) throw new CommitmentError('A publisher needs an asset id.');
+    // Validated at construction, not at first commit: a publisher that accepted a
+    // hostile id and only failed once a window filled would already have created
+    // its directory (Cycle Audit 4, M-5).
+    assertAssetId(options.assetId);
+    if (options.previousRoot !== undefined) assertPreviousRoot(options.previousRoot);
     if (options.previousRoot !== undefined && options.nextSequence === undefined) {
       throw new CommitmentError(
         'A publisher resuming from a chain tip must be told the sequence the next window ' +

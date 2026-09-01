@@ -62,7 +62,7 @@ describe('a commitment identifies exactly one record', () => {
 
   it('refuses an empty range and a nameless asset', () => {
     expect(() => commit('eurusd', [])).toThrow(CommitmentError);
-    expect(() => commit('', ticks(1, 4))).toThrow(/asset id/);
+    expect(() => commit('', ticks(1, 4))).toThrow(/not permitted/);
   });
 });
 
@@ -286,5 +286,106 @@ describe('the chain is append-only', () => {
 
   it('reports an empty chain rather than passing it', () => {
     expect(verifyChain([])).toBe('The chain is empty.');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cycle Audit 4 regressions
+// ---------------------------------------------------------------------------
+
+/**
+ * Every test below reproduces a defect an independent auditor found in the
+ * shipped code, and each one FAILED before the fix. They are grouped rather than
+ * scattered because they share one root cause worth naming once:
+ *
+ * **Delimiter framing over fields nobody validated.** The root preimage
+ * separated `assetId` from what followed with a single 0x00 byte, and the
+ * signing encoding joined fields with a newline. Both are unambiguous only if
+ * the field cannot contain the delimiter — and `assetId` and `previousRoot` are
+ * free strings the operator controls.
+ *
+ * The 89 tests that existed all passed. They exercised one-field mutations, and
+ * every attack here is a *coordinated multi-field* change that leaves the
+ * concatenation identical.
+ */
+describe('the root preimage cannot be re-partitioned (F-1)', () => {
+  it('refuses an asset id that could shift a field boundary', () => {
+    // The auditor's construction absorbed 25 bytes of
+    // `0x00 || u64 from || u64 to || u64 count` into the asset id and emptied
+    // `previousRoot` to match. Both tuples hashed to one root, and both
+    // verifiers accepted them.
+    const smuggled = `EURUSD${String.fromCharCode(0).repeat(8)}d`;
+    expect(() => commit(smuggled, ticks(100, 10))).toThrow(/not permitted/);
+    expect(() => commit('eur\nusd', ticks(100, 10))).toThrow(/not permitted/);
+    expect(() => commit('../../escape', ticks(100, 10))).toThrow(/not permitted/);
+    // Upper case is refused too: the id reaches a file path, and a
+    // case-insensitive filesystem would collide two ids that hash differently.
+    expect(() => commit('EURUSD', ticks(100, 10))).toThrow(/not permitted/);
+  });
+
+  it('refuses a previousRoot that is not empty or a digest', () => {
+    // `Buffer.from(x, 'hex')` truncates silently, so an unvalidated field
+    // commits to fewer bytes than it appears to hold (M-2).
+    expect(() => commit('eurusd', ticks(1, 4), 'not hex at all')).toThrow(/64 hex/);
+    expect(() => commit('eurusd', ticks(1, 4), 'abc')).toThrow(/64 hex/);
+    expect(() => commit('eurusd', ticks(1, 4), 'ab'.repeat(31))).toThrow(/64 hex/);
+    expect(() => commit('eurusd', ticks(1, 4), 'ab'.repeat(32))).not.toThrow();
+    expect(() => commit('eurusd', ticks(1, 4), '')).not.toThrow();
+  });
+
+  it('gives a different root to every framing of the same bytes', () => {
+    // The structural half, independent of validation: with length prefixes no
+    // reassignment of bytes between assetId and previousRoot can collide.
+    const roots = new Set<string>();
+    for (const assetId of ['a', 'ab', 'abc', 'a.b', 'a-b']) {
+      for (const previousRoot of ['', 'cd'.repeat(32), 'ef'.repeat(32)]) {
+        roots.add(commit(assetId, ticks(100, 10), previousRoot).root);
+      }
+    }
+    expect(roots.size).toBe(15);
+  });
+});
+
+describe('verifyInclusion answers hostile input rather than throwing (M-3)', () => {
+  const record = ticks(1, 16);
+  const commitment = commit('eurusd', record);
+  const proof = proveInclusion(record, 5);
+
+  it.each([
+    ['a non-integer instant', { ...proof, instant: 1.5 }],
+    ['a non-integer price', { ...proof, price: 0.5 }],
+    ['a null in the path', { ...proof, path: [null as unknown as string] }],
+    ['a non-array path', { ...proof, path: 'nope' as unknown as string[] }],
+    ['a NaN index', { ...proof, index: Number.NaN }],
+    ['an unrepresentable sequence', { ...proof, sequence: Number.MAX_VALUE }],
+  ])('returns false for %s', (_name, hostile) => {
+    expect(verifyInclusion(commitment, hostile)).toBe(false);
+  });
+
+  it('returns false rather than throwing on a malformed commitment', () => {
+    expect(verifyInclusion({ ...commitment, count: -1 }, proof)).toBe(false);
+    expect(verifyInclusion({ ...commitment, count: 1.5 }, proof)).toBe(false);
+  });
+});
+
+describe('the chain checks its own head and its arithmetic (M-1, M-4)', () => {
+  it('inspects the genesis previousRoot, which was skipped entirely', () => {
+    const link = commit('eurusd', ticks(1, 8));
+    expect(verifyChain([{ ...link, previousRoot: 'not a digest' }])).toMatch(
+      /neither empty nor a digest/,
+    );
+  });
+
+  it('does not let float precision hide an overlap at 2^53', () => {
+    // `previous.toSequence + 1 === previous.toSequence` up there, so the naive
+    // tiling check accepted two windows that both commit sequence 2^53.
+    const edge = Number.MAX_SAFE_INTEGER;
+    const first = { ...commit('eurusd', ticks(1, 11)), fromSequence: edge - 10, toSequence: edge };
+    const second = {
+      ...commit('eurusd', ticks(1, 11), first.root),
+      fromSequence: edge,
+      toSequence: edge + 10,
+    };
+    expect(verifyChain([first, second])).not.toBeNull();
   });
 });

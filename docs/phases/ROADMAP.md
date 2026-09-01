@@ -330,6 +330,64 @@ connects the journal to the service that actually runs.
 
 ---
 
+## Cycle 5 — Make it a venue someone can operate
+
+Cycles 1–3 proved the engine and made its guarantee standing. Cycle 4 closed
+every item the first four cycles had written down and deferred; `docs/BACKLOG.md`
+ended it empty for the first time.
+
+So Cycle 5 is derived from what the _product_ needs rather than from what was
+left over, and the ordering is deliberate: **can you afford to run it, can you
+scale it, can you operate it.**
+
+| Phase | Title                                                        | State       |
+| ----- | ------------------------------------------------------------ | ----------- |
+| PH-13 | Operator risk: variance, correlated flow and capacity        | not started |
+| PH-14 | Multi-node consistency and horizontal scale-out              | not started |
+| PH-15 | Operations: the standing guarantee, running continuously     | not started |
+| —     | **Cycle Audit 5** — automatic, independent agents (ADR-0011) | not started |
+
+### PH-13 — Operator Risk: Variance, Correlated Flow and Capacity
+
+The project has proved that the operator's expected edge is exactly the payout
+margin and nothing else. **It has never asked what the distribution around that
+expectation looks like.**
+
+`packages/lab/src/economics.ts` computes expectation per trade — breakeven win
+rate, expected value, profitability ratio — and stops there. A venue is not ruined
+by a bad expectation; it is ruined by variance on correlated flow. Every trader
+taking the same side of the same asset at the same expiry is one bet, not many,
+and the engine's economic blindness guarantees nothing about that.
+
+This is the first question a real operator asks and the project cannot currently
+answer it: how much capital does running this require, and what concentration of
+flow makes ruin likely?
+
+It is also the one phase where the anti-predictability theorem gives no comfort.
+`P(up) = P(down)` exactly means the _expectation_ is safe; it says nothing about
+the tail.
+
+### PH-14 — Multi-Node Consistency and Horizontal Scale-Out
+
+The venue is single-node. PH-7 established INV-002 across concurrent observers, a
+real socket and two nodes under clock skew — but those nodes each generated their
+own market from the same key. Nothing has been designed or tested for a cluster
+sharing state under load, failover, or partition.
+
+The invariant at risk is the product's most visible promise: same asset, same
+moment, same price, for everyone.
+
+### PH-15 — Operations: The Standing Guarantee, Running Continuously
+
+PH-9 made the verdict re-derivable and PH-12 made the record provable. Both are
+things an operator _can_ do; neither is something the venue _does_.
+
+Three explicit exclusions are carried from PH-12 and land here: where commitment
+roots are published, key rotation procedure, and journal retention. Alongside
+them, the assurance battery becomes a scheduled run against accumulated history
+rather than a thing invoked by hand — which is what "standing guarantee" has
+meant since PH-9 and has never quite been.
+
 ## Major dependencies
 
 ```

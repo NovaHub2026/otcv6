@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, MasterKeyring, type InstrumentSpec, type Tick } from '@otc/core';
 import { datasetFromTicks } from '../observer.js';
 import { runBatteryAsync } from './battery.js';
-import { withheldFamilies } from './withheld.js';
+import { WITHHELD_FAMILY_NAMES, withheldFamilies } from './withheld.js';
 
 /**
  * Calibrating the withheld families.
@@ -193,4 +193,55 @@ describe('the withheld families are calibrated, not decorative', () => {
     expect(verdict.clean).toBe(false);
     expect(verdict.exploitable.map((f) => f.family)).toContain('wh-cross-asset');
   }, 900_000);
+});
+
+describe('the recorded family names are the families that exist', () => {
+  /**
+   * **Cycle Audit 4.** `WITHHELD_FAMILY_NAMES` was exported, re-exported by the
+   * barrel, and read by no production code and no test — the exact shape of the
+   * `MEASURED_LATTICE_TIE_RATES` defect PH-10 found, where a documented constant
+   * went stale the moment the thing it described changed and nothing failed.
+   *
+   * It carries a safety claim: these are the families deliberately withheld from
+   * all engine tuning (PH-9 §5). An unread list making that claim is an
+   * unfalsifiable one — rename a family or add a fifth and it silently stops
+   * being true.
+   */
+  it('matches what withheldFamilies produces when every family is available', () => {
+    // Two of the four are conditional: `wh-seam-proximity` needs seam indices
+    // and `wh-cross-asset` needs a reference series, because neither question
+    // exists without them. The default call yields two, which is why a naive
+    // equality against the constant fails — and is exactly the kind of
+    // relationship an unread constant lets drift.
+    const produced = withheldFamilies({
+      sequenceModulus: 7,
+      seamIndices: [1_000],
+      reference: {
+        instants: new Float64Array([0, 1_000]),
+        prices: Int32Array.from([0, 1]),
+      },
+    }).map((family) => family.name);
+    expect([...produced].sort()).toEqual([...WITHHELD_FAMILY_NAMES].sort());
+  });
+
+  it('yields only the unconditional families with no options', () => {
+    // The conditional half, asserted so the split is recorded rather than
+    // discovered again by the next person who writes the obvious test.
+    expect([...withheldFamilies().map((f) => f.name)].sort()).toEqual([
+      'wh-arrival-gap',
+      'wh-sequence-residue',
+    ]);
+  });
+
+  it('is the set PH-9 withheld, by name', () => {
+    // Spelled out rather than derived, because the *point* of the list is that
+    // these specific families never informed a tuning decision. Deriving it from
+    // the code would make the test agree with any future change.
+    expect([...WITHHELD_FAMILY_NAMES].sort()).toEqual([
+      'wh-arrival-gap',
+      'wh-cross-asset',
+      'wh-seam-proximity',
+      'wh-sequence-residue',
+    ]);
+  });
 });

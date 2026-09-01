@@ -6,16 +6,16 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                 |
-| ------------------ | ----------------------------------------------------- |
-| Last clean session | 2026-08-31                                            |
-| Branch             | `feature/ph-12-verifiable-publication`                |
-| Remote             | `origin` → NovaHub2026/otcv6 — pushed, in sync        |
-| Active cycle       | Cycle 4, **3 of 3** phases approved                   |
-| Active phase       | none — Cycle Audit 4 running                          |
-| Active subphase    | none                                                  |
-| Cycle Audit        | 003 APPROVED — 004 runs **automatically** after PH-12 |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)    |
+| Field              | Value                                              |
+| ------------------ | -------------------------------------------------- |
+| Last clean session | 2026-08-31                                         |
+| Branch             | `main` — every phase branch merged and deleted     |
+| Remote             | `origin` → NovaHub2026/otcv6 — pushed, in sync     |
+| Active cycle       | Cycle 4, **3 of 3** phases approved                |
+| Active phase       | none — Cycle Audit 4 running                       |
+| Active subphase    | none                                               |
+| Cycle Audit        | **004 ACTIVE**, with independent agents (ADR-0011) |
+| Blockers           | none, and none possible — no Human gate (ADR-0008) |
 
 ## Completed
 
@@ -85,11 +85,6 @@ Full gate green at the close of Cycle Audit 001 — `format:check`, `lint`,
 verdict clean at a 0.217pp detection floor, realism 15/15, mirror test zero
 divergences. Recorded in
 [`docs/evidence/CYCLE-1-VERIFICATION.md`](docs/evidence/CYCLE-1-VERIFICATION.md).
-
-Hosted CI has still never executed. `main` was pushed on 2026-08-31 and the
-workflow triggered, but GitHub Actions refused to start the job: "recent account
-payments have failed or your spending limit needs to be increased". This needs
-the Human Owner (`docs/BACKLOG.md` B-001).
 
 ## Continuation point
 

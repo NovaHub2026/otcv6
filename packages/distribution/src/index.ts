@@ -8,6 +8,8 @@ export {
   type TickFeedOptions,
 } from './feed.js';
 export {
+  assertAssetId,
+  assertPreviousRoot,
   commit,
   proveInclusion,
   verifyChain,

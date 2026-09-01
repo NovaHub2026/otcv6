@@ -11,10 +11,11 @@ Status: Living document — **interim substitute for GitHub Issues**
 technical debt, blockers, deferred work and non-critical audit findings, and
 prohibits maintaining a competing `BACKLOG.md` **when Issues are available**.
 
-A private remote is configured (`origin → https://github.com/NovaHub2026/otcv6`)
-but the repository is empty and Issues have not been enabled or populated, so
-Issues are not yet usable as the canonical backlog. This file is the single
-interim backlog. It is deliberately minimal.
+The remote exists and is **public**: `origin → https://github.com/NovaHub2026/otcv6`.
+GitHub Issues have still not been enabled or populated, so this file remains the
+single interim backlog. Cycle Audit 4 found the paragraph here still describing a
+private, empty repository — the documented migration trigger had fired and been
+missed.
 
 **Migration rule:** when Issues become available, every open entry below is filed
 as a GitHub Issue, this file is reduced to a pointer, and `DOCS_INDEX.md` is

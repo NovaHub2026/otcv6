@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { durationMillis } from '@otc/core';
+import { durationMillis, epochMillis, priceAtOrBefore } from '@otc/core';
 import { HorizonAccumulator } from './horizonTally.js';
 import { BINARY_HORIZONS } from './horizons.js';
 
@@ -28,16 +28,33 @@ describe('the accumulator classifies windows the way settlement does', () => {
     expect(outcome!.tieRate).toBeCloseTo(1 / 3, 12);
   });
 
-  it('closes a window at the last price strictly before the boundary', () => {
-    // The tick that lands exactly on the boundary belongs to the next window.
-    // Settlement uses "the price at or before the expiry instant", so a tick at
-    // the boundary must not be the one that decides the window it opens.
+  it('closes a window at the last price AT or before the boundary', () => {
+    // Cycle Audit 4 found this test asserting the opposite, and the code
+    // matching it. Settlement's `priceAtOrBefore` is inclusive
+    // (`instants[i] <= instant`), so a tick landing exactly on the boundary *is*
+    // the closing price. Excluding it made a tally and a settlement disagree
+    // about which side a contract landed on — this exact input scored a tie by
+    // the tally and an UP by settlement.
     const acc = new HorizonAccumulator([spec('10', 10)], 0, 100);
     acc.observe(9, 100); // still flat at 9
-    acc.observe(10, 500); // arrives at the boundary; must not count for [0,10)
+    acc.observe(10, 500); // lands ON the boundary, so it closes [0,10)
     const [outcome] = acc.outcomes();
-    expect(outcome!.ties).toBe(1);
-    expect(outcome!.ups).toBe(0);
+    expect(outcome!.ups).toBe(1);
+    expect(outcome!.ties).toBe(0);
+  });
+
+  it('agrees with settlement on a boundary tick', () => {
+    // The property the rule exists for, asserted directly against the settlement
+    // helper rather than against a restatement of it.
+    const instants = new Float64Array([0, 9, 10]);
+    const prices = Int32Array.from([100, 100, 500]);
+    const settled = priceAtOrBefore(instants, prices, epochMillis(10));
+    const acc = new HorizonAccumulator([spec('10', 10)], 0, 100);
+    acc.observe(9, 100);
+    acc.observe(10, 500);
+    const [outcome] = acc.outcomes();
+    expect(settled?.price).toBe(500);
+    expect(outcome!.ups).toBe(1); // both say the window closed above its open
   });
 
   it('tiles the timeline rather than sliding along it', () => {

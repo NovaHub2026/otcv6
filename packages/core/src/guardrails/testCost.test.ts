@@ -245,7 +245,30 @@ describe('statistical tests use the yielding driver', () => {
           offenders.push(`${path.relative(repoRoot, file)} imports ${driver}`);
         }
       }
+      // **Cycle Audit 4, m-8.** The named-import check above was the whole rule,
+      // and an auditor walked past it two ways:
+      //   import * as lab from '@otc/lab';  lab.runBattery(x)
+      //   const { runBattery } = await import('@otc/lab');
+      // Both reach the same synchronous driver without ever writing
+      // `import { runBattery } from`. The docstring claimed static visibility
+      // "is the whole of what this checks" — it was, and the check was too
+      // narrow. A call is what matters, so calls are what get counted.
+      const called = new RegExp(`(?<![A-Za-z0-9_$.])${driver}\\s*\\(`, 'g');
+      const namespaced = new RegExp(`\\.\\s*${driver}\\s*\\(`, 'g');
+      const destructured = new RegExp(
+        `\\{[^}]*\\b${driver}\\b[^}]*\\}\\s*=\\s*await\\s+import`,
+        'g',
+      );
+      for (const [pattern, how] of [
+        [called, 'calls'],
+        [namespaced, 'calls through a namespace'],
+        [destructured, 'destructures from a dynamic import'],
+      ] as const) {
+        if (pattern.test(source)) {
+          offenders.push(`${path.relative(repoRoot, file)} ${how} ${driver}`);
+        }
+      }
     }
-    expect(offenders).toEqual([]);
+    expect([...new Set(offenders)]).toEqual([]);
   });
 });

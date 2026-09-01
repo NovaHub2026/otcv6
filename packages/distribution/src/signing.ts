@@ -52,26 +52,54 @@ export interface SignedCommitment {
 }
 
 /**
- * Exactly what is signed.
+ * Exactly what is signed, framed so it can be read only one way.
  *
- * Every field of the commitment, newline-separated and in fixed order. A
- * signature over the root alone would leave the surrounding claims — asset,
- * range, count, predecessor — unattested, and those are the fields that say what
- * the root *means*.
+ * Every field of the commitment, in fixed order. A signature over the root alone
+ * would leave the surrounding claims — asset, range, count, predecessor —
+ * unattested, and those are the fields that say what the root *means*.
+ *
+ * ## Why length prefixes rather than a separator
+ *
+ * **Cycle Audit 4, F-2.** The first version joined the fields with `\n`. Two of
+ * them are free strings, so a newline inside one made the partition ambiguous
+ * and **one signature attested two different commitments** — a published
+ * `EURUSD` window over range 100..109, and a never-signed reframing of the same
+ * bytes as a different asset over range 900..909. Both verified.
+ *
+ * The existing tests mutated one field at a time, and a single-field change
+ * always changes the joined string. The attack is a *coordinated* multi-field
+ * change that preserves it.
+ *
+ * That defeats the guarantee PH-12.2 rests on — "an operator cannot present a
+ * different history without producing a second signature over a conflicting
+ * root, which is itself the evidence." With an ambiguous encoding there is no
+ * second signature: the operator plants the ambiguity once and can afterwards
+ * say the signature was over the other reading.
+ *
+ * A separator delimits a field only if the field cannot contain the separator.
+ * A length prefix delimits it unconditionally.
  */
 function canonicalEncoding(commitment: Commitment): Buffer {
-  return Buffer.from(
-    [
-      'otc-commitment-v1',
-      commitment.assetId,
-      String(commitment.fromSequence),
-      String(commitment.toSequence),
-      String(commitment.count),
-      commitment.previousRoot,
-      commitment.root,
-    ].join('\n'),
-    'utf8',
-  );
+  const framed = (value: string): Buffer => {
+    const bytes = Buffer.from(value, 'utf8');
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(bytes.length);
+    return Buffer.concat([length, bytes]);
+  };
+  const u64 = (value: number): Buffer => {
+    const out = Buffer.alloc(8);
+    out.writeBigUInt64BE(BigInt(value));
+    return out;
+  };
+  return Buffer.concat([
+    framed('otc-commitment-v2'),
+    framed(commitment.assetId),
+    u64(commitment.fromSequence),
+    u64(commitment.toSequence),
+    u64(commitment.count),
+    framed(commitment.previousRoot),
+    framed(commitment.root),
+  ]);
 }
 
 /** Ed25519 private key from a 32-byte hex seed. */

@@ -103,7 +103,15 @@ async function main(): Promise<void> {
     });
     const seconds = ((Date.now() - assetStarted) / 1000).toFixed(0);
     process.stderr.write(`${asset.definition.id}: done in ${seconds}s\n`);
-    sections.push(`${formatHorizonCoverage(coverage)}\n\nRun time: ${seconds}s.`);
+    // The label is recorded with the numbers, not just accepted as an argument.
+    // Cycle Audit 4 (Minor 7) found the btcusd replication — the phase's single
+    // most load-bearing result — existing only as four numbers in prose, with no
+    // label, seed or table. Nobody could regenerate it.
+    sections.push(
+      `${formatHorizonCoverage(coverage)}\n\nRun label: \`${options.label}\` ` +
+        `(regenerate with \`--assets ${asset.definition.id} --windows ${options.windows} ` +
+        `--segments ${options.segments} --label ${options.label}\`). Run time: ${seconds}s.`,
+    );
   }
 
   const body = sections.join('\n\n');

@@ -146,10 +146,38 @@ Across a thirtyfold range of horizons the diagnostic moves by about a tenth,
 exactly as the cancellation predicts, and its magnitude orders the assets by how
 consistent their observed signs are.
 
-**So the effective number of independent tests here is closer to five than to
-forty.** Treating the forty cells as forty tests overstates the evidence, and the
-Benjamini–Hochberg correction above is conservative in a way that partly
-compensates but was not designed to.
+**Corrected by Cycle Audit 4 (CA4-02).** The paragraph above argued from the
+mechanism and then guessed at its size, concluding "closer to five tests than to
+forty". That was wrong by a factor of about five, and it was wrong in the
+dangerous direction.
+
+Measured — 400 independent realisations of eurusd and 200 of btcusd, all eight
+horizon z-scores per path:
+
+| Quantity                                        | eurusd | btcusd |
+| ----------------------------------------------- | ------ | ------ |
+| Mean off-diagonal correlation between horizons  | 0.664  | 0.584  |
+| Effective independent horizons (Li–Ji spectral) | 5.29   | 5.89   |
+| Variance of z explained by path displacement    | 28-41% | 16-29% |
+
+The horizons correlate at ρ ≈ 0.6, **not** at 1. Path displacement explains only
+a third of it; most of the rest comes from a mechanism the original paragraph
+never named — a 30-second window and a one-minute window literally **share
+increments**, they are nested, not merely summing to the same total.
+
+Across the full design of five independent assets by eight correlated horizons,
+the effective number of independent tests is **≈ 26 of 40**, not 5.
+
+**Benjamini–Hochberg over m = 40 is therefore very nearly the correct
+correction**, not the large over-correction the original text apologised for. The
+family-wise error rate for the observed worst cell is 0.194 — nothing
+significant, and the conclusion is unchanged.
+
+**Acting on the withdrawn claim would have manufactured a false positive.** At
+m = 5, btcusd 10m (p = 0.0083) crosses 0.05/5 and is _rejected_ — by both BH and
+Bonferroni. The phase spent a whole subphase establishing that this cell is path
+displacement rather than a leak; quoting "five tests" would have undone that
+finding with arithmetic.
 
 ### The one pattern that needed settling
 
@@ -184,10 +212,15 @@ narrower question much harder.
 
 ### Known limitations
 
-- The path-bias diagnostic is a first-order projection. It predicts sign and
-  flatness reliably; its magnitude runs between 0.8× and 3.3× the observed z
-  depending on the asset, because `σ²` is inflated by tail events that carry no
-  proportionate sign information.
+- ~~The path-bias diagnostic's magnitude runs between 0.8× and 3.3× the observed
+  z.~~ **Withdrawn by Cycle Audit 4.** That compared single draws against a
+  quantity with a residual standard deviation of 0.82 — reading noise as bias.
+  Measured properly, the regression slope of observed z on `pathBiasZ` is
+  **1.04 ± 0.07** (eurusd) and 0.87–0.94 (btcusd): the projection predicts
+  magnitude correctly, and the derivation is exact rather than first-order.
+- The prose above says the expected excess of up-windows is `D · E|X| / σ²`. That
+  is `ups − downs`; the excess over `n/2` is half it. The code is self-consistent;
+  the sentence is loose by a factor of two.
 - `btcusd` ran twelve years and the others ten. The asymmetry is recorded rather
   than smoothed: btcusd needed the extra history because its measured design
   effect was the highest in the catalogue.

@@ -115,16 +115,33 @@ Measured on a four-million-tick control run at a five-second mean tick interval
 | 5m      | 39,796  | 0.702pp         | no                               |
 | 15m     | 13,300  | 1.215pp         | no                               |
 
-**Only the shortest horizon is currently policed to the promotional-payout
-threshold.** The number of independent samples at a horizon is fixed by simulated
-_duration_, not by tick count, so the long horizons need proportionally more
-simulated time: policing 15m at 0.25pp needs roughly a hundred times the history
-of the run above.
+That table is a **battery** run, and it shows what a short run buys. It is not
+the project's coverage claim, and Cycle Audit 4 found this section still stating
+the opposite of what PH-11 established.
 
-This is stated rather than hidden. A clean verdict at 15m today means "no edge
-above 1.2 percentage points", which is a real statement and a weak one. Closing
-that gap is a matter of buying simulated years, and it is what PH-9's continuous
-integrity runs against accumulated production history are for.
+**Every horizon the product sells is now policed to the payout threshold.** All
+forty asset/horizon cells sit below 0.2513pp — 2.0 billion ticks, roughly 52
+asset-years, recorded in
+[`PH-11-HORIZON-COVERAGE.md`](../evidence/PH-11-HORIZON-COVERAGE.md). B-002 is
+closed.
+
+The reasoning that made it look prohibitive was half right. The number of
+independent samples at a horizon is fixed by simulated _duration_, so 15 minutes
+does need roughly a hundred times the history — but the engine produces 730,000
+ticks a second, and a simulated year costs about 31 seconds. A hundred times a
+cheap thing is still cheap.
+
+The real obstacle was never compute. It was whether the **error bar** survived at
+long horizons: PH-10 had just found the lattice tie rate carrying four times its
+binomial variance, and applying that lesson uncritically to direction would have
+inflated every floor in the project by a factor that is not there. PH-11.1
+measured the direction design effect at 1 across all eight horizons, with the tie
+rate at 4.62 from the same windows as a control.
+
+The distinction is worth keeping: **a tie's probability tracks the volatility
+level, which is autocorrelated over days; a direction's probability is 1/2
+regardless of volatility.** One statistic of this market is dependent and the
+other is not, and they are computed from the same ticks.
 
 ## Cost
 

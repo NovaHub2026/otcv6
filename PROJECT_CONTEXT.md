@@ -48,19 +48,19 @@ Durable rationale lives in `docs/decisions/`.
 
 ## 4. Package boundaries (stable facts)
 
-| Package             | Responsibility                                                                                                                                  | May depend on                                           |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `@otc/core`         | Deterministic kernel: canonical time, entropy/random-stream architecture, market domain primitives (price, tick, candle), timeframe aggregation | nothing                                                 |
-| `@otc/engine`       | Market generation model: latent market state, regimes, volatility, structure, microstructure, asset personalities                               | `@otc/core`                                             |
-| `@otc/fixtures`     | Planted-edge generators and the symmetric control: markets with known, quantified defects, used to calibrate the battery                        | `@otc/core`                                             |
-| `@otc/lab`          | Adversarial predictability battery, realism metrics and the outcome/economics model                                                             | `@otc/core`                                             |
-| `@otc/runtime`      | Framework-free market runtime: hosted markets that advance with the clock, venue supervision, sealed state persistence                          | `@otc/core`, `@otc/engine`                              |
-| `@otc/trading`      | Contracts and deterministic settlement, computed from the published tick record alone — no keys, no engine, no latent state                     | `@otc/core`                                             |
-| `@otc/distribution` | Sequence-addressed tick distribution: ordered gapless delivery, exact resumption, and the consistency contract                                  | `@otc/core`                                             |
-| `@otc/chart`        | The rendering contract: reduction of a tick record to drawable columns that invent no price, hide no extreme, and synthesise no empty bar       | `@otc/core`                                             |
-| `@otc/sim`          | Offline simulation runner and statistical evidence generation                                                                                   | `@otc/core`, `@otc/engine`, `@otc/fixtures`, `@otc/lab` |
-| `apps/api`          | NestJS runtime: market hosting, streaming, trading, settlement, persistence                                                                     | `@otc/core`, `@otc/engine`                              |
-| `apps/web`          | Next.js client: charting and trading UI                                                                                                         | HTTP/WS contracts only                                  |
+| Package             | Responsibility                                                                                                                                  | May depend on                                                   |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `@otc/core`         | Deterministic kernel: canonical time, entropy/random-stream architecture, market domain primitives (price, tick, candle), timeframe aggregation | nothing                                                         |
+| `@otc/engine`       | Market generation model: latent market state, regimes, volatility, structure, microstructure, asset personalities                               | `@otc/core`                                                     |
+| `@otc/fixtures`     | Planted-edge generators and the symmetric control: markets with known, quantified defects, used to calibrate the battery                        | `@otc/core`                                                     |
+| `@otc/lab`          | Adversarial predictability battery, realism metrics and the outcome/economics model                                                             | `@otc/core`, `@otc/fixtures`                                    |
+| `@otc/runtime`      | Framework-free market runtime: hosted markets that advance with the clock, venue supervision, sealed state persistence                          | `@otc/core`, `@otc/engine`                                      |
+| `@otc/trading`      | Contracts and deterministic settlement, computed from the published tick record alone — no keys, no engine, no latent state                     | `@otc/core`                                                     |
+| `@otc/distribution` | Sequence-addressed tick distribution: ordered gapless delivery, exact resumption, and the consistency contract                                  | `@otc/core`                                                     |
+| `@otc/chart`        | The rendering contract: reduction of a tick record to drawable columns that invent no price, hide no extreme, and synthesise no empty bar       | `@otc/core`                                                     |
+| `@otc/sim`          | Offline simulation runner and statistical evidence generation                                                                                   | every package                                                   |
+| `apps/api`          | NestJS venue: market hosting, streaming, persistence, publication                                                                               | `@otc/core`, `@otc/engine`, `@otc/runtime`, `@otc/distribution` |
+| `apps/web`          | Next.js observer frontend: charting and trading UI                                                                                              | `@otc/core`, `@otc/chart`                                       |
 
 **Dependency rule:** information flows _outward_ from the price core. Nothing in
 `@otc/core`'s price path or `@otc/engine` may depend on trading, position,
@@ -91,3 +91,12 @@ Restated from `PROJECT_INTRODUCTION.md` §31 because they are load-bearing:
 - not a per-timeframe generator;
 - not a visually random but statistically exploitable system;
 - not a memoryless noise generator.
+
+## A note on this table
+
+Cycle Audit 4 found every row above diverging from the policy that is actually
+enforced in `packages/core/src/guardrails/dependencies.test.ts`, which derives
+the graph from the workspace manifests and fails on an undeclared edge. **The
+guardrail is canonical; this table is a summary of it.** Where they disagree,
+the guardrail is right and this file is stale — which is exactly what the audit
+found, four rows out of four.

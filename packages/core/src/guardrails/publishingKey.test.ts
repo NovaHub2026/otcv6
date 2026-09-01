@@ -25,9 +25,22 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../../..');
 
 /** Everything on the signing path. */
+/**
+ * Everything on the signing path.
+ *
+ * **Cycle Audit 4, m-6.** This was a hardcoded pair and the composition root was
+ * not on it. An auditor rewrote `apps/api/src/publication.service.ts` to derive
+ * the publishing seed from `OTC_MASTER_SECRET` through `MasterKeyring.deriveKey`
+ * — the exact "one secret to rotate instead of two" refactor this guard exists
+ * to prevent — and nothing fired. The equality refusal never triggers for a
+ * *derived* key, because a derived key is not equal to the master secret.
+ */
 const SIGNING_MODULES = [
   'packages/distribution/src/signing.ts',
   'packages/distribution/src/commitment.ts',
+  'packages/distribution/src/publicationWriter.ts',
+  'packages/distribution/src/publisher.ts',
+  'apps/api/src/publication.service.ts',
 ];
 
 /**
@@ -79,13 +92,24 @@ describe('the publishing key cannot derive the market', () => {
   });
 
   it('keeps the refusal that the exemption exists for', () => {
-    // If someone removes the equality check, the scan above would go green and
-    // the separation would be gone. This is the half that notices.
+    // If someone removes the equality check, the scan above goes green and the
+    // separation is gone. This is the half that notices.
+    //
+    // **Cycle Audit 4, m-5.** The first version scanned raw source, so deleting
+    // the whole refusal block and leaving a comment — "Operators must ensure
+    // OTC_PUBLISHING_KEY is never equal to OTC_MASTER_SECRET" — kept it green.
+    // A guard satisfiable by a sentence *about* the defence is not a guard.
+    // Comments are stripped here for the same reason the scan above strips them.
     const source = readFileSync(
       path.join(repoRoot, 'packages/distribution/src/signing.ts'),
       'utf8',
     );
-    expect(source, 'the publishing key must refuse to equal the generation secret').toContain(
+    const code = source
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('//'))
+      .join('\n');
+    expect(code, 'the publishing key must refuse to equal the generation secret').toContain(
       REQUIRED_REFUSAL,
     );
   });

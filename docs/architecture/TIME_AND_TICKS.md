@@ -3,7 +3,7 @@
 Type: SUPPORTING DOCUMENTATION (living)
 Describes: what exists in `packages/core/src/time/` today
 
-> **Scope note.** Ticks and candle aggregation arrive in PH-1.3. This document
+> **Scope note.** Ticks and candle aggregation arrived in PH-1.3 and live in `packages/core/src/market/` (`tick.ts`, `candle.ts`, `replay.ts`, `query.ts`). This document
 > currently describes the time model only, and will be extended rather than
 > replaced. A missing section means the layer does not exist yet, not that it is
 > undocumented.

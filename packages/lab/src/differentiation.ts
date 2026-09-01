@@ -279,7 +279,10 @@ export function measureDifferentiation(
 /**
  * Significance of an observed accuracy, against a **permutation** null.
  *
- * This replaces a binomial tail, and the reason is worth keeping. The binomial
+ * **Superseded by the identical-personality control (Cycle Audit 4). Retained
+ * for comparison; do not quote it as evidence.** See the note below.
+ *
+ * This replaced a binomial tail, and that reason is still worth keeping. The binomial
  * assumed `windowsPerAsset x assets` independent trials. They are neither
  * independent nor identically informative: the windows are contiguous slices of
  * a handful of realisations, and each is classified against a centroid built
@@ -290,9 +293,40 @@ export function measureDifferentiation(
  * one personality.
  *
  * Shuffling the asset labels across the pooled signatures and re-running the
- * classifier carries that dependence structure automatically: the permuted runs
- * are drawn from exactly the same data, with exactly the same correlations, and
- * differ only in whether the labels mean anything.
+ * classifier carries *some* of that dependence structure. It does not carry all
+ * of it, and Cycle Audit 4 measured the consequence.
+ *
+ * ## This p-value does not control what it appears to control
+ *
+ * **Measured, on the identical-personality control across eight stream families:
+ * this returns p <= 0.01 in three of them.** The control is five copies of one
+ * personality. A test that declares significant differentiation between five
+ * copies of the same market, three times in eight, is not a significance test
+ * for differentiation.
+ *
+ * The reason is exchangeability. Each asset's windows are contiguous slices of
+ * **one continuous realisation**, so they share slow-moving state — the cascade
+ * level, the volatility regime — and are genuinely more alike than windows drawn
+ * from different runs. That similarity is present *under the null*. Shuffling
+ * destroys it, so permuted arrangements are systematically less separable than
+ * the observed one even when the assets are identical, and the observed accuracy
+ * sits in the tail for reasons that have nothing to do with the labels meaning
+ * anything.
+ *
+ * This is the same error Cycle Audit 2 found in the binomial it replaced, one
+ * level further in: an assumption of exchangeability that the data does not
+ * satisfy.
+ *
+ * ## Use the control distribution instead
+ *
+ * The honest null is the one the project already builds: the
+ * identical-personality control, measured across several stream families. It
+ * reproduces every dependence in the real measurement because it *is* the real
+ * measurement, with the only difference being whether the personalities differ.
+ * `multiAsset.stat.test.ts` compares the two distributions directly.
+ *
+ * **Retained for comparison, like {@link differentiationPValue} before it.** Do
+ * not quote it as evidence.
  *
  * Returns the fraction of permutations scoring at least the observed accuracy,
  * with the observed run counted — so the smallest reportable value is

@@ -10,15 +10,25 @@ Describes: the system as it exists today
 ## Layering
 
 ```
-        apps/web        Next.js client                     (built in PH-5/PH-6 — see RUNTIME_AND_TRADING.md)
-            │  transport contracts only
-        apps/api        NestJS runtime, streaming,          (built in PH-5/PH-6 — see RUNTIME_AND_TRADING.md)
-            │           trading, settlement, persistence
+        apps/web        Next.js observer frontend            ✅ (PH-8, APPROVED)
+            │           depends on @otc/chart + @otc/core only
+        apps/api        NestJS venue: hosting, streaming,    ✅ (PH-5, APPROVED)
+            │           persistence, publication
             ▼
-      @otc/engine       generative market model             ✅ (PH-3, APPROVED)
-            │
+   @otc/distribution    sequence-addressed tick feed         ✅ (PH-7, APPROVED)
+            │           + Merkle commitments, Ed25519        ✅ (PH-12, APPROVED)
+            │             signing, journal publication
+      @otc/runtime      hosted markets, scheduling,          ✅ (PH-5, APPROVED)
+            │           sealed state, restart continuity
+      @otc/trading      contracts and deterministic          ✅ (PH-6, APPROVED)
+            │           settlement against the record
+       @otc/chart       extreme-preserving reduction         ✅ (PH-8, APPROVED)
+            │           to columns; the rendering contract
             ▼
-       @otc/core        deterministic substrate             (PH-1, APPROVED)
+      @otc/engine       generative market model              ✅ (PH-3, APPROVED)
+            │           + per-asset personality and rhythm   ✅ (PH-4, PH-10)
+            ▼
+       @otc/core        deterministic substrate              ✅ (PH-1, APPROVED)
                         ├── time/       instants, clocks, timeframes      ✅
                         ├── entropy/    keyring, streams, cursor lease    ✅
                         ├── math/       portable exp / ln / pow           ✅
@@ -27,10 +37,22 @@ Describes: the system as it exists today
                         │               snapshot and replay
                         └── guardrails/ architecture tests                ✅
 
-    @otc/fixtures       planted-edge corpus + control       ✅
+    @otc/fixtures       planted-edge corpus + control        ✅
        @otc/lab         predictability and realism batteries ✅ (PH-2, APPROVED)
-       tools/sim        simulation runner and edge estimator ✅
+       tools/sim        simulation runner, evidence          ✅
+                        generators, phase acceptance
 ```
+
+**This diagram is enforced, not merely drawn.** `dependencies.test.ts` derives
+the graph from the workspace manifests and fails on an edge that is not declared
+policy. Cycle Audit 4 found it enumerating `packages/` and `tools/` only, so
+`apps/` was outside it entirely; that is fixed, and `@otc/web` now has a declared
+policy of exactly `@otc/core` and `@otc/chart`.
+
+**And it had gone stale.** The same audit found this document listing five of
+nine workspaces — `runtime`, `trading`, `distribution` and `chart` were absent,
+under a header stating that layers not appearing here do not exist. Four approved
+phases were invisible to a reader following the document's own rule.
 
 ## The dependency rule
 

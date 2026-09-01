@@ -133,13 +133,29 @@ export class HorizonAccumulator {
     }
     for (const state of this.#states) {
       while (instant >= state.boundary) {
-        const move = this.#last - state.open;
+        // A tick landing *exactly* on the boundary is at-or-before it, so it is
+        // the closing price.
+        //
+        // **Cycle Audit 4.** This used `#last` unconditionally, which excluded
+        // such a tick — while settlement's `priceAtOrBefore` includes it
+        // (`instants[i] <= instant`). The docstring claimed the accumulator used
+        // "the same rule settlement uses, so a tally and a settlement cannot
+        // disagree", and an auditor built the disagreeing case: a 30-second
+        // window scored a tie by the tally and an UP by settlement.
+        //
+        // Measured frequency on the real engine: 6 windows in 18,939 at the
+        // 30-second horizon, about 0.03%. Direction-neutral, so it created no
+        // edge and threatened no verdict — but the justification was false as
+        // written, and it is the load-bearing reason this tally is claimed to
+        // measure what the product actually settles.
+        const closing = instant === state.boundary ? price : this.#last;
+        const move = closing - state.open;
         if (move > 0) state.ups += 1;
         else if (move < 0) state.downs += 1;
         else state.ties += 1;
         state.sumAbs += Math.abs(move);
         state.sumSquared += move * move;
-        state.open = this.#last;
+        state.open = closing;
         state.boundary += state.spec.durationMs;
       }
     }

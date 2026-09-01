@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { KeyObject } from 'node:crypto';
 import type { Tick } from '@otc/core';
 import { CommitmentPublisher, type ClosedWindow } from './publisher.js';
+import { assertAssetId } from './commitment.js';
 import { publicKeyHex, type SignedCommitment } from './signing.js';
 
 /**
@@ -53,6 +54,11 @@ export class PublicationWriter {
     this.#directory = options.directory;
     this.#identity = publicKeyHex(options.privateKey);
     for (const spec of options.assets) {
+      // Cycle Audit 4, M-5: an unsanitised asset id is a path component. An id of
+      // `../../escaped` wrote journals outside the publication directory
+      // entirely. `packages/runtime/src/fileStore.ts` already required this shape
+      // of a persisted asset; the guard existed and had not been applied here.
+      assertAssetId(spec.assetId);
       mkdirSync(path.join(options.directory, spec.assetId), { recursive: true });
       this.#specs.set(spec.assetId, spec);
       this.#publishers.set(

@@ -37,6 +37,40 @@ import { minimumDetectableEffect } from './statistics.js';
  * Compare that with the variance actually observed across replicates. Their
  * ratio is the design effect: 1 means the error bar is honest, 4 means the
  * effective sample size is a quarter of the nominal one.
+ *
+ * ## What it cannot see, and this is not a small caveat
+ *
+ * **Cycle Audit 4, Material 3.** A component shared by *every* replicate is
+ * removed by the sample variance `Σ(pᵢ − p̄)²` **by construction**. Measured
+ * against planted dependence at R = 100, n = 105,000:
+ *
+ * | Planted structure                    | This reads | True inflation of the pooled z |
+ * | ------------------------------------ | ---------- | ------------------------------ |
+ * | Independent per-replicate rates       | 1.42       | 1.42 (correct)                 |
+ * | Run-wide common component (τ = 0.0005) | **1.000**  | **11.6**                       |
+ *
+ * So sharing across replicates makes the reading *lower*, not higher. Any claim
+ * that measuring across contiguous segments of one path is "the more
+ * conservative" choice is backwards, and `horizonCoverage.ts` said exactly that
+ * until this audit.
+ *
+ * This matters more than a generic caveat, because the mode it cannot see is
+ * **the path-displacement channel PH-11.2 builds its `pathBiasZ` column
+ * around**. The instrument validating the error bar is blind to the mechanism
+ * the same phase says dominates.
+ *
+ * `dependence.test.ts` calibrates only against a beta-binomial with independent
+ * per-replicate rates — the mode this *can* see. There is no positive control
+ * for the mode it cannot, and constructing one would require replicates that are
+ * not independent, which is a different instrument.
+ *
+ * ## What to do about it
+ *
+ * Use this to license an error bar **only** against dependence at lags shorter
+ * than a replicate. For a run-wide component, measure the pooled statistic's
+ * variance across genuinely independent runs instead — which is what PH-11.1's
+ * 40-independent-run configuration does, and what Cycle Audit 4 did at ten times
+ * the resolution to confirm the direction design effect really is 1.
  */
 export interface DesignEffectResult {
   readonly replicates: number;

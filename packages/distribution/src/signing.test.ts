@@ -184,3 +184,65 @@ describe('a signed chain verifies end to end', () => {
     expect(verifySignedChain([], identity)).toBe('The chain is empty.');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cycle Audit 4 regression: F-2
+// ---------------------------------------------------------------------------
+
+/**
+ * One signature must attest exactly one commitment.
+ *
+ * The shipped encoding joined the six fields with a newline. An independent
+ * auditor showed that **one Ed25519 signature verified against two different
+ * commitments** — a published `eurusd` window over 100..109, and a never-signed
+ * reframing of the same bytes as a different asset over 900..909. Both returned
+ * true from `verifyCommitment`, and `verifySignedChain` accepted both.
+ *
+ * That defeats the guarantee PH-12.2 rests on: "an operator cannot present a
+ * different history without producing a second signature over a conflicting
+ * root, which is itself the evidence." With an ambiguous encoding there is no
+ * second signature — the operator plants the ambiguity once and afterwards says
+ * the signature was over the other reading.
+ *
+ * The existing mutation tests all changed **one** field, and any single-field
+ * change alters the joined string. The attack is a coordinated multi-field
+ * change that preserves it.
+ */
+describe('a signature attests exactly one commitment (F-2)', () => {
+  const key = publishingKeyFromSeed(SEED_A);
+  const identity = publicKeyHex(key);
+
+  it('cannot be transferred by re-partitioning the encoded fields', () => {
+    const published = commit('eurusd', ticks(100, 10));
+    const signed = signCommitment(published, key);
+
+    // The auditor's reframing: fold the range and predecessor into the asset id
+    // and re-cut the boundaries. Under a newline join these encode identically.
+    const reframed = {
+      ...published,
+      assetId: `eurusd\n${published.fromSequence}\n${published.toSequence}\n${published.count}\n${published.previousRoot}`,
+      fromSequence: 900,
+      toSequence: 909,
+    };
+    expect(verifyCommitment({ ...signed, commitment: reframed }, identity)).toBe(false);
+  });
+
+  it('gives a different encoding to every framing of the same characters', () => {
+    // The structural half. Length prefixes make the partition unique, so these
+    // must all produce distinct signatures.
+    const base = commit('eurusd', ticks(1, 8));
+    const signatures = new Set<string>();
+    for (const assetId of ['a', 'ab', 'abc']) {
+      for (const from of [1, 12, 123]) {
+        signatures.add(signCommitment({ ...base, assetId, fromSequence: from }, key).signature);
+      }
+    }
+    expect(signatures.size).toBe(9);
+  });
+
+  it('refuses to build a commitment carrying the ambiguity in the first place', () => {
+    // Defence in depth: the framing makes the attack unconstructable, and asset
+    // id validation makes it unplantable.
+    expect(() => commit('eurusd\n900\n909', ticks(1, 8))).toThrow(/not permitted/);
+  });
+});

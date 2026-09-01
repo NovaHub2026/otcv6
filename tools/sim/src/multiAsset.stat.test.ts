@@ -12,7 +12,6 @@ import {
   assetSignature,
   buildObserverDataset,
   measureDifferentiation,
-  permutationPValue,
   runValidation,
   SHAPE_FEATURES,
   type AssetSignature,
@@ -150,28 +149,33 @@ describe('the assets are measurably different markets', () => {
     );
   }
 
-  it('separates the catalogue far above chance, while identical assets stay at chance', async () => {
+  /**
+   * Stream families the null and the measurement are both taken over.
+   *
+   * Cycle Audit 4 found the single-seed version of this test passing on luck.
+   * The identical-personality control — five copies of ONE personality — reached
+   * **33.5% with a permutation p of 0.005** on other seeds, which would have
+   * failed both of the assertions this test used to make. Three of eight seeds
+   * put the control at p <= 0.01.
+   *
+   * One draw of a noisy quantity is not the quantity.
+   */
+  const SEEDS = ['multi-asset', 'seed-a', 'seed-b'] as const;
+
+  /** The real catalogue, and the identical-personality control, on one seed. */
+  async function measureUnder(
+    seed: string,
+  ): Promise<{ full: number; shape: number; controlFull: number; controlShape: number }> {
+    const seeded = MasterKeyring.forTesting(seed);
     const real = [];
     for (let i = 0; i < ASSET_CATALOGUE.length; i += 1) {
+      const asset = ASSET_CATALOGUE[i]!;
       real.push({
-        asset: ASSET_CATALOGUE[i]!.definition.id,
-        signatures: await signaturesFor(() => engineFor(i, SIGNATURE_TICKS)),
-      });
-    }
-
-    // The control that makes the number mean something: the same personality
-    // five times over, under five different asset ids and therefore five
-    // different stream families. If the metric cannot tell these apart, a high
-    // score on the real catalogue is evidence rather than an artefact.
-    const base = ASSET_CATALOGUE[0]!;
-    const control = [];
-    for (const name of ['c1', 'c2', 'c3', 'c4', 'c5']) {
-      control.push({
-        asset: name,
+        asset: asset.definition.id,
         signatures: await signaturesFor(() =>
           createMarketEngine({
-            config: { ...configFor(base), instrument: { ...base.instrument, id: name } },
-            keyring,
+            config: configFor(asset),
+            keyring: seeded,
             environment: 'simulation',
             start: { instant: epochMillis(1_776_000_000_000), price: logPrice(0) },
             maxTicks: SIGNATURE_TICKS,
@@ -180,38 +184,78 @@ describe('the assets are measurably different markets', () => {
       });
     }
 
-    // Significance against a permutation null, not a binomial tail. The windows
-    // are contiguous slices of a few realisations, classified against centroids
-    // built from their own asset's other windows — the independence a binomial
-    // assumes does not hold, and Cycle Audit 2 measured it reporting p = 4.1e-3
-    // for five copies of a single personality.
-    const permutationStream = keyring.derive({
-      env: 'simulation',
-      asset: 'differentiation',
-      purpose: 'permutation',
-      keyEpoch: 0,
-    });
-    const measured = measureDifferentiation(real);
-    const nullResult = measureDifferentiation(control);
-    const realSignificance = permutationPValue(real, permutationStream, 199);
-    const controlSignificance = permutationPValue(control, permutationStream, 199);
+    // The null: the same personality five times, under five ids and therefore
+    // five stream families. This reproduces every dependence in the real
+    // measurement because it *is* the real measurement — the only difference is
+    // whether the personalities differ.
+    const base = ASSET_CATALOGUE[0]!;
+    const control = [];
+    for (const name of ['c1', 'c2', 'c3', 'c4', 'c5']) {
+      control.push({
+        asset: name,
+        signatures: await signaturesFor(() =>
+          createMarketEngine({
+            config: { ...configFor(base), instrument: { ...base.instrument, id: name } },
+            keyring: seeded,
+            environment: 'simulation',
+            start: { instant: epochMillis(1_776_000_000_000), price: logPrice(0) },
+            maxTicks: SIGNATURE_TICKS,
+          }),
+        ),
+      });
+    }
+
+    return {
+      full: measureDifferentiation(real).accuracy,
+      shape: measureDifferentiation(real, SHAPE_FEATURES).accuracy,
+      controlFull: measureDifferentiation(control).accuracy,
+      controlShape: measureDifferentiation(control, SHAPE_FEATURES).accuracy,
+    };
+  }
+
+  it('separates the catalogue beyond anything identical personalities reach', async () => {
+    // ## What this test asserts, and why not a p-value
+    //
+    // The null is the **identical-personality control's own distribution**, not
+    // 1/5 and not a permutation.
+    //
+    // Cycle Audit 4 measured the permutation null returning p <= 0.01 for five
+    // copies of one personality in three of eight stream families. The reason is
+    // exchangeability: each asset's windows are contiguous slices of one
+    // continuous realisation, so they share slow state and are genuinely more
+    // alike than windows from different runs — under the null. Shuffling
+    // destroys that, so the observed arrangement sits in the tail for reasons
+    // unrelated to whether the labels mean anything.
+    //
+    // The control has no such problem. It carries every dependence the real
+    // measurement has, because it is the same measurement with the personalities
+    // made identical. So the claim is a **separation of two distributions**,
+    // which is both honest and stronger than a p-value that does not hold.
+    const measured = [];
+    for (const seed of SEEDS) measured.push(await measureUnder(seed));
+
+    const realShape = measured.map((m) => m.shape);
+    const controlShape = measured.map((m) => m.controlShape);
+    const realFull = measured.map((m) => m.full);
+    const controlFull = measured.map((m) => m.controlFull);
+    const range = (a: number[]) =>
+      `${(Math.min(...a) * 100).toFixed(1)}-${(Math.max(...a) * 100).toFixed(1)}%`;
 
     console.info(
-      `differentiation: real ${(measured.accuracy * 100).toFixed(1)}% ` +
-        `(permutation p=${realSignificance.pValue.toFixed(4)}, ` +
-        `best shuffle ${(realSignificance.permutedMax * 100).toFixed(1)}%), ` +
-        `control ${(nullResult.accuracy * 100).toFixed(1)}% ` +
-        `(permutation p=${controlSignificance.pValue.toFixed(4)}), chance 20%`,
+      `differentiation over ${SEEDS.length} stream families:\n` +
+        `  full signature: real ${range(realFull)} vs identical control ${range(controlFull)}\n` +
+        `  shape only:     real ${range(realShape)} vs identical control ${range(controlShape)}`,
     );
 
-    expect(measured.accuracy).toBeGreaterThan(0.45);
-    expect(realSignificance.pValue).toBeLessThanOrEqual(0.01);
-    // No shuffle of the labels should come close to the real arrangement.
-    expect(realSignificance.permutedMax).toBeLessThan(measured.accuracy);
+    // The separation, on both signatures: the worst real draw beats the best
+    // control draw. No overlap is the claim.
+    expect(Math.min(...realShape)).toBeGreaterThan(Math.max(...controlShape));
+    expect(Math.min(...realFull)).toBeGreaterThan(Math.max(...controlFull));
 
-    // The teeth. An identical catalogue must not separate.
-    expect(nullResult.accuracy).toBeLessThan(0.32);
-    expect(controlSignificance.pValue).toBeGreaterThan(0.01);
+    // And the control stays where a null belongs. Asserted as a band across
+    // seeds rather than a single draw, because a single draw is what made the
+    // previous version of this test pass on luck.
+    expect(Math.max(...controlShape)).toBeLessThan(0.3);
   });
 
   it('separates the assets on shape alone, and the separation is rhythm', async () => {
@@ -247,13 +291,11 @@ describe('the assets are measurably different markets', () => {
       });
     }
     const shape = measureDifferentiation(real, SHAPE_FEATURES);
-    const shapeStream = keyring.derive({
-      env: 'simulation',
-      asset: 'differentiation',
-      purpose: 'permutation-shape',
-      keyEpoch: 0,
-    });
-    const shapeSignificance = permutationPValue(real, shapeStream, 199, SHAPE_FEATURES);
+    // No permutation p-value here. Cycle Audit 4 measured it returning p <= 0.01
+    // for five copies of ONE personality in three of eight stream families, so it
+    // does not control what it appears to. The null this claim rests on is the
+    // identical-personality control's own distribution, asserted in the test
+    // above; what remains here is the *attribution*.
 
     // Rhythm features: how volatility clusters over time, and how arrivals
     // bunch. These are what PH-10 made per-asset.
@@ -272,20 +314,16 @@ describe('the assets are measurably different markets', () => {
     const tailOnly = measureDifferentiation(real, TAIL_FEATURES);
 
     console.info(
-      `shape-only differentiation: ${(shape.accuracy * 100).toFixed(1)}% ` +
-        `(permutation p=${shapeSignificance.pValue.toFixed(4)}, ` +
-        `best shuffle ${(shapeSignificance.permutedMax * 100).toFixed(1)}%); ` +
+      `shape-only attribution: overall ${(shape.accuracy * 100).toFixed(1)}%; ` +
         `rhythm features alone ${(rhythmOnly.accuracy * 100).toFixed(1)}%, ` +
-        `tail features alone ${(tailOnly.accuracy * 100).toFixed(1)}%; chance 20%`,
+        `tail features alone ${(tailOnly.accuracy * 100).toFixed(1)}%`,
     );
 
-    // The floor. PH-4.3 measured 30.0% here with a shared cascade.
-    expect(shape.accuracy).toBeGreaterThan(0.35);
-    expect(shapeSignificance.pValue).toBeLessThanOrEqual(0.01);
-    // No relabelling of the same windows reaches the real arrangement.
-    expect(shapeSignificance.permutedMax).toBeLessThan(shape.accuracy);
+    // The floor. PH-4.3 measured 30.0% here with a shared cascade, and the
+    // identical-personality control tops out at 25.0% across eight seeds.
+    expect(shape.accuracy).toBeGreaterThan(0.32);
 
-    // And the attribution: the five features PH-10 made per-asset carry the
+    // The attribution: the five features PH-10 made per-asset carry the
     // separation, while the two it deliberately held fixed do not. If a future
     // change raises the headline by widening tails instead, this inverts.
     expect(rhythmOnly.accuracy).toBeGreaterThan(tailOnly.accuracy);

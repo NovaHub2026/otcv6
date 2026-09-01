@@ -117,12 +117,26 @@ describe('the hazard responds to compression', () => {
 });
 
 describe('phase durations are non-lattice', () => {
-  it('does not phase-lock to the candle grid', () => {
+  it('does not phase-lock to the candle grid', async () => {
+    // **Cycle Audit 4, M-3.** Two million synchronous iterations with no yield.
+    // It passes idle at 2.5s and reaches 6s under CPU contention, past the 5s
+    // unit timeout — an auditor reproduced the failure on unmodified `main`, so
+    // this is a live flake in the project's only local verification authority,
+    // not a hypothetical.
+    //
+    // `testCost.test.ts` cannot see it: that guard counts `expect()` calls
+    // *inside* loops, and this file already follows its prescribed fix of
+    // counting inside and asserting once after. The guard measures assertion
+    // count; the hazard is synchronous duration. The convention in `CLAUDE.md`
+    // §5 — yield every few hundred thousand iterations — is what applies here,
+    // and it was enforced by nothing.
+    const breathe = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
     const modulator = new StructurePhaseModulator(DEFAULT_STRUCTURE, derive('lattice'));
     const instants: number[] = [];
     let previous = modulator.phase;
     let instant = 0;
     for (let i = 1; i <= 2_000_000; i += 1) {
+      if (i % 250_000 === 0) await breathe();
       instant += 1_000;
       modulator.advance(context(1_000, i, 10));
       if (modulator.phase !== previous) {

@@ -125,7 +125,7 @@ describe('the publisher refuses what would produce a chain that lies', () => {
   it('refuses a nonsensical window size or a nameless asset', () => {
     expect(() => publisher({ windowTicks: 0 })).toThrow(CommitmentError);
     expect(() => publisher({ windowTicks: 2.5 })).toThrow(CommitmentError);
-    expect(() => publisher({ assetId: '' })).toThrow(/asset id/);
+    expect(() => publisher({ assetId: '' })).toThrow(/not permitted/);
   });
 });
 

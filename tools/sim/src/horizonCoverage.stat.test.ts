@@ -79,6 +79,7 @@ describe('the coverage method still works', () => {
 interface RecordedRow {
   readonly asset: string;
   readonly horizon: string;
+  readonly simulatedDays: number;
   readonly decided: number;
   readonly upRate: number;
   readonly edgePoints: number;
@@ -95,9 +96,10 @@ function readRecordedRows(): RecordedRow[] {
   const rows: RecordedRow[] = [];
   let asset: string | null = null;
   let threshold = Number.NaN;
+  let simulatedDays = Number.NaN;
 
   const header =
-    /^(\w+): [\d,]+ ticks, [\d.]+ simulated days \([\d.]+ years\), \d+ segments, payout threshold ([\d.]+)pp, net displacement -?[\d,]+ steps$/;
+    /^(\w+): [\d,]+ ticks, ([\d.]+) simulated days \([\d.]+ years\), \d+ segments, payout threshold ([\d.]+)pp, net displacement -?[\d,]+ steps$/;
   // Whitespace-tolerant on purpose: every markdown file here is Prettier
   // formatted, and Prettier pads table cells to the widest entry in the column.
   // A parser written against one run's column widths silently matches nothing
@@ -112,7 +114,8 @@ function readRecordedRows(): RecordedRow[] {
     const h = header.exec(line);
     if (h !== null) {
       asset = h[1]!;
-      threshold = Number.parseFloat(h[2]!);
+      simulatedDays = Number.parseFloat(h[2]!);
+      threshold = Number.parseFloat(h[3]!);
       continue;
     }
     const m = row.exec(line);
@@ -120,6 +123,7 @@ function readRecordedRows(): RecordedRow[] {
     rows.push({
       asset,
       horizon: m[1]!,
+      simulatedDays,
       decided: Number.parseInt(m[2]!.replace(/,/g, ''), 10),
       upRate: Number.parseFloat(m[3]!),
       edgePoints: Number.parseFloat(m[4]!),
@@ -192,12 +196,87 @@ describe('the recorded evidence re-derives from itself', () => {
           `${asset}: path bias z ranges ${Math.min(...values)}..${Math.max(...values)}`,
         );
       }
-      // And every horizon of one asset must agree on the direction of the bias.
-      if (new Set(values.map((v) => Math.sign(v))).size > 1) {
-        drifting.push(`${asset}: path bias z changes sign across horizons`);
+      // The sign check that used to sit here was vacuous, and Cycle Audit 4
+      // (Minor 8) proved it: `pathBiasZ = netDisplacement · sumAbs /
+      // (√windows · sumSquared)`, where `netDisplacement` is ONE scalar per
+      // asset and every other term is non-negative. The sign is therefore
+      // identical across all eight rows **by construction**, and the assertion
+      // could only fire on an exact zero. It could never have been watched
+      // failing — the standing hazard this project records.
+      //
+      // What has teeth instead: the diagnostic must actually track the observed
+      // z. If the derivation behind "these horizons are one test" were wrong,
+      // the two would decouple.
+      const observed = forAsset.map((r) => r.z);
+      const bias = forAsset.map((r) => r.pathBiasZ);
+      const meanObserved = observed.reduce((a, b) => a + b, 0) / observed.length;
+      const meanBias = bias.reduce((a, b) => a + b, 0) / bias.length;
+      if (Math.abs(meanBias) > 0.3 && Math.sign(meanObserved) !== Math.sign(meanBias)) {
+        drifting.push(
+          `${asset}: path bias z averages ${meanBias.toFixed(2)} but observed z averages ` +
+            `${meanObserved.toFixed(2)} — the diagnostic and the measurement disagree in sign`,
+        );
       }
     }
     expect(drifting).toEqual([]);
+  });
+
+  it('re-derives every z from its own columns, so it cannot be edited downward', () => {
+    // **Cycle Audit 4, CA4-03.** The record was forgeable in the one direction
+    // that matters. An auditor lowered four btcusd z values from 2.64 to 0.10,
+    // leaving `decided`, `Up rate`, `Edge`, `Design effect` and `Floor`
+    // untouched, and this file reported "worst |z| 1.74, 0 rejections" and
+    // passed 8 of 8.
+    //
+    // The guard was asymmetric: an *inflated* z would have tripped the
+    // Benjamini-Hochberg assertion below, but a *suppressed* one sailed through
+    // — and suppression is the failure mode a self-approving autonomous loop
+    // actually produces.
+    //
+    // z is fully determined by the other recorded columns, so it gets derived.
+    const wrong: string[] = [];
+    for (const row of rows) {
+      const effective = row.decided / Math.max(row.designEffect, 1);
+      const derived = (row.upRate - 0.5) / Math.sqrt(0.25 / effective);
+      // The up rate is recorded to five decimals, which is worth about 0.03 of z.
+      if (Math.abs(derived - row.z) > 0.05) {
+        wrong.push(
+          `${row.asset} ${row.horizon}: recorded z ${row.z}, derived ${derived.toFixed(3)}`,
+        );
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+
+  it('ties every sample count to the run length it claims', () => {
+    // The same audit replaced a whole asset's table with an invented run and
+    // falsified its header from 4375 simulated days to 87.5 — a fiftyfold
+    // arithmetic impossibility, since 87.5 days cannot contain 12.5 million
+    // 30-second windows. Nothing checked, and the file passed.
+    const seconds: Record<string, number> = {
+      '30s': 30,
+      '1m': 60,
+      '2m': 120,
+      '3m': 180,
+      '4m': 240,
+      '5m': 300,
+      '10m': 600,
+      '15m': 900,
+    };
+    const wrong: string[] = [];
+    for (const row of rows) {
+      const windows = (row.simulatedDays * 86_400) / seconds[row.horizon]!;
+      // Decided windows are the total less ties, so the count must sit just
+      // under the number the run length allows, and nowhere near above it.
+      const ratio = row.decided / windows;
+      if (!(ratio > 0.9 && ratio <= 1.0)) {
+        wrong.push(
+          `${row.asset} ${row.horizon}: ${row.decided} decided against ${Math.round(windows)} ` +
+            `windows in ${row.simulatedDays} days (ratio ${ratio.toFixed(3)})`,
+        );
+      }
+    }
+    expect(wrong).toEqual([]);
   });
 
   it('finds no significant edge across all 40 recorded tests', () => {

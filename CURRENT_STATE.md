@@ -105,11 +105,11 @@ It is a positioning decision, so it stays with them (§5.1). Recorded in
 
 ## Verification state
 
-Executed 2026-08-31 at the PH-10 phase gate.
+Executed 2026-09-01 at the PH-12 phase gate.
 
 | Check                            | Status                                     |
 | -------------------------------- | ------------------------------------------ |
-| `npm run gate`                   | **PASSED (exit 0)** — 1108 tests, 71 files |
+| `npm run gate`                   | **PASSED (exit 0)** — 1250 tests, 80 files |
 | `npm run format:check`           | PASSED (exit 0)                            |
 | `npm run lint`                   | PASSED (exit 0), and now warning-free      |
 | `npm run build` (full typecheck) | PASSED (exit 0)                            |
@@ -139,56 +139,54 @@ Audit 2 re-executed them and found both re-checkable rows false.
 
 ## Relevant records
 
-| Kind     | Reference                                                                    |
-| -------- | ---------------------------------------------------------------------------- |
-| ADR-0001 | Repository, toolchain and package architecture (APPROVED)                    |
-| ADR-0002 | Deterministic entropy architecture (APPROVED)                                |
-| ADR-0003 | Conditional sign symmetry as the anti-predictability architecture (APPROVED) |
-| ADR-0004 | Canonical price representation: an integer log lattice (APPROVED)            |
-| ADR-0005 | A multifractal cascade as the volatility process (APPROVED)                  |
-| ADR-0006 | A layered sign-blind market model (APPROVED)                                 |
-| ADR-0007 | At-the-money settlement: a tie is refunded (APPROVED, Human Owner)           |
-| Backlog  | `docs/BACKLOG.md` B-001 … B-005                                              |
-| Roadmap  | `docs/phases/ROADMAP.md`                                                     |
-| Branch   | `main` — every phase branch merged and deleted                               |
+| Kind     | Reference                                                                     |
+| -------- | ----------------------------------------------------------------------------- |
+| ADR-0001 | Repository, toolchain and package architecture (APPROVED)                     |
+| ADR-0002 | Deterministic entropy architecture (APPROVED)                                 |
+| ADR-0003 | Conditional sign symmetry as the anti-predictability architecture (APPROVED)  |
+| ADR-0004 | Canonical price representation: an integer log lattice (APPROVED)             |
+| ADR-0005 | A multifractal cascade as the volatility process (APPROVED)                   |
+| ADR-0006 | A layered sign-blind market model (APPROVED)                                  |
+| ADR-0007 | At-the-money settlement: a tie is refunded (APPROVED, Human Owner)            |
+| ADR-0008 | Full delegation: automatic audits, autonomous decisions (APPROVED)            |
+| ADR-0009 | Hosted CI reinstated after the repository was made public (APPROVED)          |
+| ADR-0010 | The catch-up bound: no unobserved burst may span a contract (APPROVED)        |
+| ADR-0011 | Subagents are an engineering decision; audits use independent ones (APPROVED) |
+| Backlog  | `docs/BACKLOG.md` B-001 … B-011 — **all closed**                              |
+| Roadmap  | `docs/phases/ROADMAP.md`                                                      |
+| Branch   | `main` — every phase branch merged and deleted                                |
 
 ---
 
 ## EXACT NEXT LEGAL ACTION
 
-Cycle Audits [001](docs/audits/CYCLE-AUDIT-001.md),
-[002](docs/audits/CYCLE-AUDIT-002.md) and
-[003](docs/audits/CYCLE-AUDIT-003.md) are APPROVED and closed. Read Cycle Audit
-2's §2 before any session that runs subagents — a deliberately planted INV-001
-backdoor reached `main` through a concurrent `git add -A`. It never reached
-`origin`, and the rule it produced is standing: **never `git add -A` while
-subagents are running, and keep audit plants in an isolated clone.**
+**Cycle 4 is complete.** PH-10 (per-asset market rhythm), PH-11 (detection power
+across every horizon) and PH-12 (verifiable publication) are all APPROVED and
+merged. `docs/BACKLOG.md` closed its last open item; every entry B-001 through
+B-011 is closed.
 
-Read Cycle Audit 3's §1 too: it was conducted by the agent that wrote the code,
-found one finding against Cycle Audit 2's thirty-one, and says plainly that the
-difference is probably method rather than quality. **Cycle Audit 4 must use
-independent agents** (B-008).
+**Cycle Audit 4 is ACTIVE and is the current work.** It runs automatically —
+there is no Human gate (ADR-0008) — and it is being conducted by **independent
+agents** as ADR-0011 now requires, after Cycle Audit 3 measured what a
+self-conducted audit is worth: one finding against Cycle Audit 2's thirty-one.
 
-**PH-10 is APPROVED.** Assets now differ in rhythm, not only in pace and scale:
-scale-free shape differentiation rose from 30.0% to **40.5%** against a 20% null,
-permutation p = 0.005, with every asset's tail weight and realised amplitude
-pinned to its PH-4 value so the gain is attributable to time structure alone.
-B-004 is closed.
+That decision has already paid for itself. The audit has produced material
+findings against code approved hours earlier, including two forgeries of the
+PH-12 commitment scheme and a demonstration that the PH-11 evidence record could
+be edited downward without failing its own guard.
 
-**Create the PH-11 Phase Context Document** — detection power across every
-horizon the product sells — and continue. It closes B-002 and B-003.
+**On completion of the audit:** record it in `docs/audits/CYCLE-AUDIT-004.md`,
+fix every confirmed finding, reset the cycle counter, and begin Cycle 5 by
+deriving its phases. No authorization is required and none should be requested
+(`GOVERNANCE.md` §28).
 
-PH-11 should start from what PH-10 established rather than from B-002's original
-framing: **every statistic of this market is limited by simulated duration, not
-by sample count**, because the volatility process has memory measured in days.
-That single fact is behind Cycle Audit 2's binomial finding on INV-007, behind
-B-002's hundred-fold history requirement at the 15-minute horizon, and behind the
-lattice tie rates PH-10.2 had to re-measure over 15 replicates. Simulating longer
-is one answer; an estimator that respects the dependence is probably a better one.
+## Verification standing
 
-**There is no longer a Human item and no longer a gate.** Cycle Audit 4 runs
-automatically once PH-12 is approved, and every code and product decision belongs
-to the Development Agent (ADR-0008). The audit must state its own method
-limitation and, where independent agents are available, use them (B-008) — with
-the gate removed, the audit's adversarial discipline is the only external check
-that remains.
+Two layers, and neither substitutes for the other:
+
+- `npm run gate` — the authority for an approval, because it is what an agent can
+  run before recording one.
+- **Hosted CI** — required corroboration since ADR-0009. The repository is
+  public, so Actions is free, and both the quality gate and the statistical gate
+  run on every push to `main`. A red CI on a green local gate is a finding about
+  the gate, which is exactly how B-011 was found.
