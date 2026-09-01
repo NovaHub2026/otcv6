@@ -77,4 +77,5 @@ is undocumented.
 | [ADR-0009](docs/decisions/ADR-0009-hosted-ci-reinstated.md)                  | Hosted CI reinstated after the repository was made public; the gate had never passed on a clean checkout   | APPROVED |
 | [ADR-0010](docs/decisions/ADR-0010-catch-up-bound.md)                        | The catch-up bound is 15s: no unobserved burst may span a complete contract                                | APPROVED |
 | [ADR-0011](docs/decisions/ADR-0011-subagent-authority.md)                    | Subagents are an engineering decision; Cycle Audits must use independent agents                            | APPROVED |
+| [ADR-0012](docs/decisions/ADR-0012-single-writer-generation.md)              | Generation is single-writer per asset; leadership is a fenced, expiring lease                              | APPROVED |
 | [DECISION-LOG](docs/decisions/DECISION-LOG.md)                               | Running record of autonomous decisions that do not warrant a full ADR                                      | LIVING   |

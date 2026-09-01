@@ -343,7 +343,7 @@ scale it, can you operate it.**
 | Phase | Title                                                        | State        |
 | ----- | ------------------------------------------------------------ | ------------ |
 | PH-13 | Operator risk: variance, correlated flow and capacity        | **APPROVED** |
-| PH-14 | Multi-node consistency and horizontal scale-out              | **ACTIVE**   |
+| PH-14 | Multi-node consistency and horizontal scale-out              | **APPROVED** |
 | PH-15 | Operations: the standing guarantee, running continuously     | not started  |
 | —     | **Cycle Audit 5** — automatic, independent agents (ADR-0011) | not started  |
 
@@ -382,6 +382,12 @@ sharing state under load, failover, or partition.
 
 The invariant at risk is the product's most visible promise: same asset, same
 moment, same price, for everyone.
+
+| Subphase | Title                                                  | State    |
+| -------- | ------------------------------------------------------ | -------- |
+| PH-14.1  | The leader lease, and why generation is single-writer  | APPROVED |
+| PH-14.2  | Followers serve the record; INV-002 across nodes       | APPROVED |
+| PH-14.3  | Failover: no fork, no duplicate stream, a visible seam | APPROVED |
 
 ### PH-15 — Operations: The Standing Guarantee, Running Continuously
 

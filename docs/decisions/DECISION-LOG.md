@@ -115,6 +115,12 @@ and it needs one word from the Human Owner.**
 
 **Revisit when:** a paid allowance exists, or the repository becomes public.
 
+**Revisited 2026-09-01.** The Human Owner made the repository public, and hosted
+CI was reinstated as required corroboration
+([ADR-0009](ADR-0009-hosted-ci-reinstated.md)). The limitation this entry records
+no longer holds; the entry stays because the reasoning about manufactured
+independence does.
+
 ---
 
 ## 2026-08-31 — Cycle Audit 4 will name its own method limitation
@@ -131,3 +137,67 @@ remains.
 
 **Revisit when:** independent agents are used (B-008), at which point the caveat
 becomes a record of method rather than a warning about it.
+
+---
+
+## 2026-09-01 — The lease term is tied to the catch-up bound, not chosen
+
+**Decided:** `DEFAULT_LEASE_TERM_MS` equals `DEFAULT_MAX_CATCH_UP_MS` — 15
+seconds — and the equality is asserted by a test rather than left as a
+coincidence two constants happen to share.
+
+**Why:** the tie is the argument. A leader that has failed to renew for a full
+term has been out of contact for longer than ADR-0010 permits it to catch up, so
+its next advance would be refused anyway; losing the lease takes away nothing the
+bound had not already taken. And the maximum leaderless window then equals the
+maximum catch-up burst, so failover cannot produce a gap larger than one the
+running system already tolerates. Any other number would need its own
+justification; this one inherits ADR-0010's.
+
+**Revisit when:** the catch-up bound changes. The test fails if it does, which is
+the point.
+
+---
+
+## 2026-09-01 — A follower's inability to generate is structural, not documented
+
+**Decided:** `packages/runtime/src/follower.ts` and everything it transitively
+imports may not reach `@otc/engine` or name any key-material identifier, enforced
+by `packages/core/src/guardrails/singleWriter.test.ts`.
+
+**Why:** PH-14 §9 names "a follower silently generating" as a hazard that would
+fork the record invisibly. The plausible way it happens is not malice — it is a
+future edit adding an engine "just to fill the gap during failover", which is the
+most natural wrong instinct in this phase. A comment is no defence against that.
+
+The guard earned itself immediately: it failed on its first run against real
+code, on the type-only path
+`follower -> replication -> lease -> state -> @otc/engine`. Type-only is exactly
+why that would have been waved through, and it is one word from being real.
+
+**Revisit when:** never, in the direction of relaxation. A follower that needs
+the engine is a design error, not a guard that needs an exception.
+
+---
+
+## 2026-09-01 — A discontinuity is recorded, never inferred
+
+**Decided:** the replication log holds `SeamMarker` entries, and the only way to
+append past a sequence gap is to record one. `readRecord` returns entries rather
+than ticks so no client can read across a discontinuity without being handed it.
+
+**Why:** two correct rules contradicted. PH-5.2's seam moves the sequence past
+the reserved block deliberately — "the gap is visible and free; a duplicate is
+neither" — and PH-14.2's log refuses a gap, because one served to observers is
+indistinguishable from the market. Relaxing either would have been wrong. Making
+the discontinuity a thing the record _holds_ satisfies both and turns the
+contradiction into the property the phase needed: a gap cannot be silent.
+
+The follow-on consequences were not obvious in advance and are the more valuable
+part: `priceAt` must return null inside a seam, because reporting the pre-seam
+price answers for a window in which no node was generating; and `spansSeam` has
+to exist, because ADR-0010's criterion — no unobserved interval may span a
+contract — is something the settlement path has to be able to _ask_, not assume.
+
+**Revisit when:** a deployment store implements the log. The seam is part of the
+`CoordinatedStore` contract and its conformance battery.
