@@ -53,3 +53,4 @@ export {
   type FollowerMarketOptions,
   type ServeResult,
 } from './follower.js';
+export { SqliteCoordinatedStore } from './sqliteStore.js';

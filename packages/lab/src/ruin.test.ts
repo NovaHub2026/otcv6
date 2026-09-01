@@ -61,16 +61,12 @@ describe('ruin decays exponentially in the cushion', () => {
     expect(ruinProbability(book({ bankroll: 0.99 })).probability).toBeGreaterThan(0.9);
   });
 
-  it('bounds a simulation of the same walk', () => {
-    // Lundberg is an upper bound that tightens with capital. A finite horizon
-    // can only ruin fewer paths than an infinite one, so the simulation must
-    // come in at or below it.
-    const inputs = book({ bankroll: 40 });
-    const bound = ruinProbability(inputs).probability;
-    const simulated = simulateRuin(inputs, 20_000, derive('walk'), 2_000);
-    expect(simulated).toBeLessThanOrEqual(bound + 0.02);
-    expect(bound).toBeLessThan(1);
-  });
+  // The Monte Carlo check that this bound holds against a simulated walk lives
+  // in `ruinSimulation.stat.test.ts`. It is 20,000 paths of up to 2,000 steps —
+  // a statistical assertion by every definition this project uses, and it sat
+  // at 2.5s solo against the unit project's 5s timeout. It failed the moment
+  // the suite got busier, which is the exact failure `testCost.test.ts`
+  // documents and was written to prevent.
 });
 
 describe('the same money is more dangerous when concentrated', () => {

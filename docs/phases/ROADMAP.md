@@ -344,7 +344,7 @@ scale it, can you operate it.**
 | ----- | ------------------------------------------------------------ | ------------ |
 | PH-13 | Operator risk: variance, correlated flow and capacity        | **APPROVED** |
 | PH-14 | Multi-node consistency and horizontal scale-out              | **APPROVED** |
-| PH-15 | Operations: the standing guarantee, running continuously     | not started  |
+| PH-15 | Operations: the standing guarantee, running continuously     | **ACTIVE**   |
 | —     | **Cycle Audit 5** — automatic, independent agents (ADR-0011) | not started  |
 
 ### PH-13 — Operator Risk: Variance, Correlated Flow and Capacity
@@ -399,6 +399,16 @@ roots are published, key rotation procedure, and journal retention. Alongside
 them, the assurance battery becomes a scheduled run against accumulated history
 rather than a thing invoked by hand — which is what "standing guarantee" has
 meant since PH-9 and has never quite been.
+
+PH-14 adds a fourth: its `CoordinatedStore` is proved against an in-memory
+reference, so the multi-node design has never met a store two processes can
+share.
+
+| Subphase | Title                                                      | State       |
+| -------- | ---------------------------------------------------------- | ----------- |
+| PH-15.1  | A durable coordinated store, and the contract it must pass | APPROVED    |
+| PH-15.2  | Publication, rotation and retention                        | ACTIVE      |
+| PH-15.3  | The standing guarantee: assurance on a schedule            | not started |
 
 ## Major dependencies
 
