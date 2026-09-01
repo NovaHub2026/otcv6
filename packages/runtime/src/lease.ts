@@ -1,5 +1,7 @@
-import type { Clock, EpochMillis } from '@otc/core';
+import type { Clock, EpochMillis, Tick } from '@otc/core';
 import { epochMillis } from '@otc/core';
+import { StaleFenceError, type FenceToken } from './fence.js';
+import { RecordForkError, sameTick, type ReplicationLog } from './replication.js';
 import { CorruptRecordError, type MarketStateRecord, type StateStore } from './state.js';
 
 /**
@@ -19,16 +21,6 @@ export const DEFAULT_LEASE_TERM_MS = 15_000;
  * Three attempts per term, so two lost round-trips are survivable.
  */
 export const DEFAULT_LEASE_RENEWAL_MS = 5_000;
-
-/**
- * A fence token: monotone per asset, strictly increasing across every grant.
- *
- * Monotonicity is the whole safety argument. Because no two grants for an asset
- * ever share a token, a writer holding a token from a superseded grant cannot
- * match the current one, so the store can refuse it without knowing anything
- * about who is alive.
- */
-export type FenceToken = number;
 
 /** One grant of leadership over one asset. */
 export interface LeaseGrant {
@@ -57,23 +49,6 @@ export type AcquireOutcome =
 export type RenewOutcome =
   | { readonly kind: 'renewed'; readonly grant: LeaseGrant }
   | { readonly kind: 'lost'; readonly current: LeaseGrant | null };
-
-/** Thrown when a write is refused because its token is not the current grant. */
-export class StaleFenceError extends Error {
-  constructor(
-    readonly assetId: string,
-    readonly presented: FenceToken,
-    readonly current: FenceToken | null,
-    readonly detail: string,
-  ) {
-    super(
-      `Write to ${assetId} refused: fence token ${presented} is not the current grant ` +
-        `(${current === null ? 'no grant' : `token ${current}`}, ${detail}). The record ` +
-        `was not written.`,
-    );
-    this.name = 'StaleFenceError';
-  }
-}
 
 /** Thrown when a holder id cannot identify one process unambiguously. */
 export class LeaseHolderError extends Error {
@@ -132,7 +107,7 @@ export interface LeaseStore {
  * is not fencing; it is a race with a comment. Co-locating them is exactly what
  * ADR-0012 means by "a shared store".
  */
-export interface CoordinatedStore extends LeaseStore, StateStore {
+export interface CoordinatedStore extends LeaseStore, StateStore, ReplicationLog {
   /**
    * Write a record, but only under the current grant.
    *
@@ -162,6 +137,8 @@ interface StoredGrant {
  */
 export class MemoryCoordinatedStore implements CoordinatedStore {
   readonly #grants = new Map<string, StoredGrant>();
+  /** The published record, per asset, oldest first and gapless. */
+  readonly #record = new Map<string, Tick[]>();
   /** Highest token ever issued per asset, retained after release and expiry. */
   readonly #highWater = new Map<string, FenceToken>();
   readonly #records = new Map<string, string>();
@@ -257,26 +234,110 @@ export class MemoryCoordinatedStore implements CoordinatedStore {
   }
 
   saveFenced(record: MarketStateRecord, token: FenceToken): Promise<void> {
-    const now = this.#clock.now();
-    const grant = this.#grants.get(record.assetId);
-    if (grant === undefined) {
-      return Promise.reject(
-        new StaleFenceError(record.assetId, token, null, 'the asset has never been led'),
-      );
-    }
-    if (now >= grant.expiresAt) {
-      this.#grants.delete(record.assetId);
-      return Promise.reject(
-        new StaleFenceError(record.assetId, token, grant.token, 'that grant has expired'),
-      );
-    }
-    if (grant.token !== token) {
-      return Promise.reject(
-        new StaleFenceError(record.assetId, token, grant.token, `held by ${grant.holder}`),
-      );
-    }
+    const refusal = this.#fenceRefusal(record.assetId, token);
+    if (refusal !== null) return Promise.reject(refusal);
     this.#records.set(record.assetId, JSON.stringify(record));
     return Promise.resolve();
+  }
+
+  /**
+   * The fence check every write shares.
+   *
+   * Returns nothing and throws nothing; the caller turns a refusal into a
+   * rejection so that a method typed `Promise` never throws synchronously.
+   */
+  #fenceRefusal(assetId: string, token: FenceToken): StaleFenceError | null {
+    const now = this.#clock.now();
+    const grant = this.#grants.get(assetId);
+    if (grant === undefined) {
+      return new StaleFenceError(assetId, token, null, 'the asset has never been led');
+    }
+    if (now >= grant.expiresAt) {
+      this.#grants.delete(assetId);
+      return new StaleFenceError(assetId, token, grant.token, 'that grant has expired');
+    }
+    if (grant.token !== token) {
+      return new StaleFenceError(assetId, token, grant.token, `held by ${grant.holder}`);
+    }
+    return null;
+  }
+
+  appendTicks(assetId: string, token: FenceToken, ticks: readonly Tick[]): Promise<void> {
+    const refusal = this.#fenceRefusal(assetId, token);
+    if (refusal !== null) return Promise.reject(refusal);
+    if (ticks.length === 0) return Promise.resolve();
+
+    const record = this.#record.get(assetId) ?? [];
+    const first = record.length === 0 ? null : record[0]!.sequence;
+    // Validate the whole batch before mutating anything. A partial append would
+    // leave the record in a state no single writer could have produced.
+    const pending: Tick[] = [];
+    let head = record.length === 0 ? null : record[record.length - 1]!.sequence;
+    for (const tick of ticks) {
+      if (first !== null && head !== null && tick.sequence <= head) {
+        const recorded = record[tick.sequence - first];
+        if (recorded === undefined) {
+          // Older than anything retained. Nothing can be checked against it, so
+          // it is refused rather than assumed to match.
+          return Promise.reject(
+            new RangeError(
+              `Cannot append sequence ${tick.sequence} to ${assetId}: it precedes the retained ` +
+                `record, which starts at ${first}.`,
+            ),
+          );
+        }
+        if (!sameTick(recorded, tick)) {
+          return Promise.reject(new RecordForkError(assetId, tick.sequence, recorded, tick));
+        }
+        continue; // Identical replay of a tick already recorded.
+      }
+      const expected = head === null ? tick.sequence : head + 1;
+      if (tick.sequence !== expected) {
+        return Promise.reject(
+          new RangeError(
+            `Cannot append sequence ${tick.sequence} to ${assetId} after ${String(head)}: a gap ` +
+              `in the record would be served to every observer as though it were the market.`,
+          ),
+        );
+      }
+      pending.push(tick);
+      head = tick.sequence;
+    }
+    if (pending.length > 0) {
+      record.push(...pending);
+      this.#record.set(assetId, record);
+    }
+    return Promise.resolve();
+  }
+
+  readTicks(assetId: string, fromSequence: number, limit: number): Promise<readonly Tick[]> {
+    if (!Number.isInteger(fromSequence) || fromSequence < 1) {
+      return Promise.reject(
+        new RangeError(`A sequence must be a positive integer, received ${fromSequence}.`),
+      );
+    }
+    if (!Number.isInteger(limit) || limit < 1) {
+      return Promise.reject(new RangeError(`A read limit must be a positive integer.`));
+    }
+    const record = this.#record.get(assetId) ?? [];
+    if (record.length === 0) return Promise.resolve([]);
+    const first = record[0]!.sequence;
+    const offset = fromSequence - first;
+    if (offset < 0) {
+      return Promise.reject(
+        new RangeError(
+          `Sequence ${fromSequence} for ${assetId} precedes the retained record, which starts ` +
+            `at ${first}.`,
+        ),
+      );
+    }
+    return Promise.resolve(record.slice(offset, offset + limit));
+  }
+
+  recordHead(assetId: string): Promise<number | null> {
+    const record = this.#record.get(assetId);
+    if (record === undefined || record.length === 0) return Promise.resolve(null);
+    return Promise.resolve(record[record.length - 1]!.sequence);
   }
 
   /**

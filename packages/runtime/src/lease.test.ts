@@ -1,6 +1,7 @@
 // Invariant evidence: INV-002 (shared market), INV-010 (private generator state).
 import { describe, expect, it } from 'vitest';
 import { durationMillis, epochMillis, SteppableClock } from '@otc/core';
+import { StaleFenceError } from './fence.js';
 import {
   AssetLease,
   assertHolder,
@@ -8,7 +9,6 @@ import {
   DEFAULT_LEASE_TERM_MS,
   LeaseHolderError,
   MemoryCoordinatedStore,
-  StaleFenceError,
 } from './lease.js';
 import { DEFAULT_MAX_CATCH_UP_MS } from './hosted.js';
 import { stubRecord } from './leaseConformance.test.js';

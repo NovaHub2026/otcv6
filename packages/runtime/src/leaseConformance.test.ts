@@ -1,13 +1,12 @@
 // Invariant evidence: INV-002 (shared market), INV-009 (reproducible settlement).
 import { describe, expect, it } from 'vitest';
 import { epochMillis, SteppableClock, type EpochMillis } from '@otc/core';
+import { StaleFenceError, type FenceToken } from './fence.js';
 import {
   AssetLease,
   DEFAULT_LEASE_TERM_MS,
   MemoryCoordinatedStore,
-  StaleFenceError,
   type CoordinatedStore,
-  type FenceToken,
   type LeaseGrant,
 } from './lease.js';
 import { STATE_RECORD_VERSION, type MarketStateRecord } from './state.js';

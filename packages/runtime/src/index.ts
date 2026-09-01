@@ -39,11 +39,17 @@ export {
   DEFAULT_LEASE_TERM_MS,
   LeaseHolderError,
   MemoryCoordinatedStore,
-  StaleFenceError,
   type AcquireOutcome,
   type CoordinatedStore,
-  type FenceToken,
   type LeaseGrant,
   type LeaseStore,
   type RenewOutcome,
 } from './lease.js';
+export { RecordForkError, sameTick, type ReplicationLog } from './replication.js';
+export {
+  DEFAULT_FOLLOWER_RETAIN_TICKS,
+  FollowerMarket,
+  ReplicationGapError,
+  type FollowerMarketOptions,
+  type ServeResult,
+} from './follower.js';
