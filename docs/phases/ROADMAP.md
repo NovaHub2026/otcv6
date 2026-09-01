@@ -408,7 +408,7 @@ share.
 | -------- | ---------------------------------------------------------- | -------- |
 | PH-15.1  | A durable coordinated store, and the contract it must pass | APPROVED |
 | PH-15.2  | Publication, rotation and retention                        | APPROVED |
-| PH-15.3  | The standing guarantee: assurance on a schedule            | ACTIVE   |
+| PH-15.3  | The standing guarantee: assurance on a schedule            | APPROVED |
 
 ## Major dependencies
 
