@@ -45,7 +45,25 @@ export {
   type LeaseStore,
   type RenewOutcome,
 } from './lease.js';
-export { RecordForkError, sameTick, type ReplicationLog } from './replication.js';
+export { StaleFenceError, type FenceToken } from './fence.js';
+export {
+  entrySequence,
+  lowerBound,
+  RecordForkError,
+  sameTick,
+  SeamError,
+  type RecordEntry,
+  type ReplicationLog,
+  type SeamMarker,
+} from './replication.js';
+export {
+  DEFAULT_CHECKPOINT_INTERVAL_MS,
+  LeaderSession,
+  LeadershipLostError,
+  type SessionAdvance,
+  type TakeOverOptions,
+  type TakeOverResult,
+} from './failover.js';
 export {
   DEFAULT_FOLLOWER_RETAIN_TICKS,
   FollowerMarket,
@@ -53,3 +71,4 @@ export {
   type FollowerMarketOptions,
   type ServeResult,
 } from './follower.js';
+export { SqliteCoordinatedStore } from './sqliteStore.js';

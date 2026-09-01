@@ -177,7 +177,12 @@ describe('a signed chain verifies end to end', () => {
     const chain = signedChain(4, 20);
     const impostor = publishingKeyFromSeed(SEED_B);
     chain[2] = signCommitment(chain[2]!.commitment, impostor);
-    expect(verifySignedChain(chain, identity)).toMatch(/Commitment 2 is not signed/);
+    // PH-15.2 made this refusal more precise. With key rotation, "the wrong
+    // key" splits into two distinct findings — a key that was never authorised
+    // to publish at all, and a key that was authorised once and has since been
+    // retired — and a verifier needs to know which. The behaviour is unchanged:
+    // the link is refused, and the index is named.
+    expect(verifySignedChain(chain, identity)).toMatch(/Commitment 2 is signed by a key/);
   });
 
   it('reports an empty chain rather than passing it', () => {

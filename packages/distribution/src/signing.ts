@@ -1,6 +1,7 @@
 import { createPrivateKey, createPublicKey, sign, verify, type KeyObject } from 'node:crypto';
 import type { Commitment } from './commitment.js';
 import { verifyChain } from './commitment.js';
+import { authorisedKeys, type SignedRotation } from './rotation.js';
 
 /**
  * Signing a commitment, with a key that cannot generate a market.
@@ -189,13 +190,39 @@ export function verifyCommitment(signed: SignedCommitment, publicKeyHexValue?: s
 export function verifySignedChain(
   chain: readonly SignedCommitment[],
   publicKeyHexValue: string,
+  rotations: readonly SignedRotation[] = [],
 ): string | null {
   if (chain.length === 0) return 'The chain is empty.';
   const structural = verifyChain(chain.map((link) => link.commitment));
   if (structural !== null) return structural;
+
+  // `publicKeyHexValue` is the *genesis* key — the only thing a verifier has to
+  // be told out of band. Every key after it is attested by the key it retires,
+  // so a chain spanning a rotation verifies from the same starting point as one
+  // that never rotated.
+  const authorised = authorisedKeys(publicKeyHexValue, rotations);
+  if ('error' in authorised) return authorised.error;
+  const epochOf = new Map(authorised.keys.map((key, epoch) => [key, epoch]));
+
+  let epoch = 0;
   for (let i = 0; i < chain.length; i += 1) {
-    if (!verifyCommitment(chain[i]!, publicKeyHexValue)) {
-      return `Commitment ${i} is not signed by the expected publishing key.`;
+    const link = chain[i]!;
+    const linkEpoch = epochOf.get(link.publicKey);
+    if (linkEpoch === undefined) {
+      return `Commitment ${i} is signed by a key that was never authorised to publish.`;
+    }
+    // Non-decreasing, and this is the property that makes rotation worth doing.
+    // Without it, compromising any key the venue has ever held still lets an
+    // attacker sign new history, and retiring a key buys nothing.
+    if (linkEpoch < epoch) {
+      return (
+        `Commitment ${i} is signed by key epoch ${linkEpoch}, after the chain had reached ` +
+        `epoch ${epoch}. A retired key cannot sign history that follows its rotation.`
+      );
+    }
+    epoch = linkEpoch;
+    if (!verifyCommitment(link, link.publicKey)) {
+      return `Commitment ${i} is not signed by the key it names.`;
     }
   }
   return null;

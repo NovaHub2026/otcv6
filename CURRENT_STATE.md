@@ -15,20 +15,20 @@ Last synchronized: 2026-09-01
 | Field                            | Value                                                                   |
 | -------------------------------- | ----------------------------------------------------------------------- |
 | Active development cycle         | Cycle 5                                                                 |
-| Approved phases in current cycle | **2 of 3**                                                              |
-| Cycle Audit state                | None active — 004 APPROVED; next runs when PH-15 closes the cycle       |
+| Approved phases in current cycle | **3 of 3**                                                              |
+| Cycle Audit state                | Cycle Audit 5 is the current work — begins automatically                |
 | Last Cycle Audit                 | [Cycle Audit 004](docs/audits/CYCLE-AUDIT-004.md) — APPROVED 2026-09-01 |
 
 ## Phase and subphase
 
-| Field                  | Value                                                    |
-| ---------------------- | -------------------------------------------------------- |
-| Active phase           | None — PH-15 is next to create                           |
-| Phase lifecycle        | n/a                                                      |
-| Active subphase        | None                                                     |
-| Subphase lifecycle     | n/a                                                      |
-| Last approved phase    | PH-14 — Multi-Node Consistency and Horizontal Scale-Out  |
-| Last approved subphase | PH-14.3 — Failover: no fork, no duplicate stream, a seam |
+| Field                  | Value                                      |
+| ---------------------- | ------------------------------------------ |
+| Active phase           | None — PH-15 is next to create             |
+| Phase lifecycle        | n/a                                        |
+| Active subphase        | None                                       |
+| Subphase lifecycle     | n/a                                        |
+| Last approved phase    | PH-15 — Operations: The Standing Guarantee |
+| Last approved subphase | PH-15.3 — The standing guarantee           |
 
 ## Cycle 1 result
 
@@ -143,34 +143,36 @@ Cycle 1's numbers, and the coverage figure, are in
 | ADR-0012 | Generation is single-writer per asset; leadership is a fenced lease (APPROVED) |
 | Backlog  | `docs/BACKLOG.md` B-001 … B-011 — **all closed**                               |
 | Roadmap  | `docs/phases/ROADMAP.md`                                                       |
-| Branch   | `main` — every phase branch merged and deleted                                 |
+| Branch   | `feature/ph-15-operations` — to merge into `main`                              |
 
 ---
 
 ## EXACT NEXT LEGAL ACTION
 
-**Create PH-15.**
+**Merge `feature/ph-15-operations` into `main`, then run Cycle Audit 5.**
 
-PH-14 is APPROVED: all three subphases approved from executed evidence, the
-integrated cluster verification passing, and the phase gate at exit 0. It
-established [ADR-0012](docs/decisions/ADR-0012-single-writer-generation.md) —
-generation is single-writer per asset, because two nodes cannot independently
-generate the same asset and stay identical across a restart.
+**Cycle 5 is complete.** PH-13 (operator risk), PH-14 (multi-node consistency)
+and PH-15 (operations) are all APPROVED.
 
-**PH-15 — Operations: the standing guarantee, running continuously** is the
-third and final phase of Cycle 5. Three exclusions carried from PH-12 land
-there: where commitment roots are published, key rotation procedure, and journal
-retention. Alongside them, the assurance battery becomes a scheduled run against
-accumulated history rather than a thing invoked by hand, and PH-14's
-`CoordinatedStore` needs a deployment backend that passes its conformance
-battery.
+**Cycle Audit 5 begins automatically.** There is no Human gate
+([ADR-0008](docs/decisions/ADR-0008-full-delegation.md)) and nothing is to be
+requested or waited for (`GOVERNANCE.md` §28). It must be conducted by
+**independent agents** ([ADR-0011](docs/decisions/ADR-0011-subagent-authority.md)),
+and the measurement behind that requirement is the reason to take it seriously:
 
-**When PH-15 is approved, Cycle 5 is complete and Cycle Audit 5 begins
-automatically.** It must be conducted by **independent agents**
-([ADR-0011](docs/decisions/ADR-0011-subagent-authority.md)) — Cycle Audit 3
-measured what a self-conducted audit is worth: one finding against Cycle Audit
-2's thirty-one, and Cycle Audit 4's seven independent agents found twelve
-against code approved hours earlier.
+| Audit         | Method                   | Material findings |
+| ------------- | ------------------------ | ----------------- |
+| Cycle Audit 2 | ten independent agents   | 31                |
+| Cycle Audit 3 | the authoring agent      | 1                 |
+| Cycle Audit 4 | seven independent agents | 12                |
 
-No authorization is required for any of this and none should be requested
-(`GOVERNANCE.md` §28).
+Cycle 5 is the largest surface yet audited: a multi-node design resting on an
+impossibility result, a store that has never met two real processes outside its
+own test, a key-rotation scheme, a retention policy that permits deletion, and a
+verdict the product's central claim rests on. Every one of those is a place
+where a guard could exist, be documented as sufficient, and have never been
+watched failing.
+
+**On completion:** record it in `docs/audits/CYCLE-AUDIT-005.md`, fix every
+confirmed finding, reset the cycle counter, and begin Cycle 6 by deriving its
+phases.

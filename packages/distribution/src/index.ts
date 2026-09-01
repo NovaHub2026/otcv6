@@ -35,3 +35,30 @@ export {
   type AssetPublicationSpec,
   type PublicationWriterOptions,
 } from './publicationWriter.js';
+export {
+  authorisedKeys,
+  RotationError,
+  signRotation,
+  verifyRotation,
+  type KeyRotation,
+  type SignedRotation,
+} from './rotation.js';
+export {
+  AnchorError,
+  buildAnchor,
+  extendsAnchor,
+  summarise,
+  verifyAnchor,
+  type Anchor,
+  type AnchorEntry,
+} from './anchor.js';
+export {
+  commitmentIsPruneable,
+  DEFAULT_DISPUTE_WINDOW_MS,
+  DEFAULT_RETENTION,
+  journalIsPruneable,
+  partitionForRetention,
+  RetentionError,
+  type JournalWindow,
+  type RetentionPolicy,
+} from './retention.js';

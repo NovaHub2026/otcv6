@@ -6,7 +6,7 @@
   "description": "Continuous multi-asset synthetic OTC market engine for fixed-expiration binary-options trading",
   "license": "UNLICENSED",
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=24.0.0"
   },
   "workspaces": [
     "packages/*",

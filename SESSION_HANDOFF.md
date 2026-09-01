@@ -6,39 +6,38 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                    |
-| ------------------ | -------------------------------------------------------- |
-| Last clean session | 2026-09-01                                               |
-| Branch             | `main` — every phase branch merged and deleted           |
-| Remote             | `origin` → NovaHub2026/otcv6 — public, hosted CI running |
-| Active cycle       | Cycle 5, **2 of 3** phases approved                      |
-| Active phase       | none — PH-15 next to create                              |
-| Active subphase    | none                                                     |
-| Cycle Audit        | 004 **APPROVED** — 12 material findings, all closed      |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)       |
+| Field              | Value                                                     |
+| ------------------ | --------------------------------------------------------- |
+| Last clean session | 2026-09-01                                                |
+| Branch             | `feature/ph-15-operations` — approved, ready to merge     |
+| Remote             | `origin` → NovaHub2026/otcv6 — public, hosted CI running  |
+| Active cycle       | Cycle 5, **3 of 3** phases approved                       |
+| Active phase       | none — Cycle Audit 5 is the current work                  |
+| Active subphase    | none                                                      |
+| Cycle Audit        | 005 **ACTIVE** — begins automatically, independent agents |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)        |
 
 ## Continuation point
 
 Read `CURRENT_STATE.md` for the authoritative position; this is the short form.
 
-**Create the PH-15 Phase Context Document** on `feature/ph-15-operations`. No
-authorization is required and none should be requested.
+**Merge `feature/ph-15-operations` into `main`, push, then run Cycle Audit 5.**
+No authorization is required and none should be requested.
 
-PH-15 — **Operations: the standing guarantee, running continuously** — is the
-third and final phase of Cycle 5. Its subject is the gap between what an
-operator _can_ do and what the venue _does_:
+Cycle 5 is complete: PH-13, PH-14 and PH-15 are all approved. The audit runs
+automatically (ADR-0008) and must use **independent agents** (ADR-0011) — the
+authoring agent found 1 material finding in Cycle Audit 3; ten independent
+agents found 31 in Cycle Audit 2 and seven found 12 in Cycle Audit 4.
 
-- Three exclusions carried from PH-12: where commitment roots are published, key
-  rotation procedure, and journal retention.
-- The assurance battery as a scheduled run against accumulated history rather
-  than a thing invoked by hand.
-- A deployment backend for PH-14's `CoordinatedStore`. The contract is already
-  executable — `describeCoordinatedStore` is a battery any implementation must
-  pass — but only the in-memory reference exists, so the multi-node design has
-  never met a real store.
+Cycle 5 is the largest surface yet audited. Places to look hardest:
 
-**When PH-15 is approved, Cycle 5 is complete and Cycle Audit 5 begins
-automatically**, conducted by **independent agents** (ADR-0011).
+- The **SQLite store** has met two real processes only in one test. Its
+  conformance battery is PH-14's, unmodified — check that it really is.
+- **Key rotation**: the non-decreasing epoch rule is the whole reason rotation
+  is worth doing. Try to sign later history with a retired key.
+- **Retention** is the first thing in this repository that permits deletion.
+- The **standing verdict**'s floor is computed, not read. Try to make it lie.
+- PH-14's **seam**: the only way past a sequence gap. Try to close one silently.
 
 ## What Cycle 5 has established so far
 
