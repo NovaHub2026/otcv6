@@ -143,13 +143,13 @@ Cycle 1's numbers, and the coverage figure, are in
 | ADR-0012 | Generation is single-writer per asset; leadership is a fenced lease (APPROVED) |
 | Backlog  | `docs/BACKLOG.md` B-001 … B-011 — **all closed**                               |
 | Roadmap  | `docs/phases/ROADMAP.md`                                                       |
-| Branch   | `feature/ph-15-operations` — to merge into `main`                              |
+| Branch   | `main` — every phase branch merged and deleted                                 |
 
 ---
 
 ## EXACT NEXT LEGAL ACTION
 
-**Merge `feature/ph-15-operations` into `main`, then run Cycle Audit 5.**
+**Run Cycle Audit 5.**
 
 **Cycle 5 is complete.** PH-13 (operator risk), PH-14 (multi-node consistency)
 and PH-15 (operations) are all APPROVED.

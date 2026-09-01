@@ -9,7 +9,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Field              | Value                                                     |
 | ------------------ | --------------------------------------------------------- |
 | Last clean session | 2026-09-01                                                |
-| Branch             | `feature/ph-15-operations` — approved, ready to merge     |
+| Branch             | `main` — every phase branch merged and deleted            |
 | Remote             | `origin` → NovaHub2026/otcv6 — public, hosted CI running  |
 | Active cycle       | Cycle 5, **3 of 3** phases approved                       |
 | Active phase       | none — Cycle Audit 5 is the current work                  |
@@ -21,8 +21,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 Read `CURRENT_STATE.md` for the authoritative position; this is the short form.
 
-**Merge `feature/ph-15-operations` into `main`, push, then run Cycle Audit 5.**
-No authorization is required and none should be requested.
+**Run Cycle Audit 5.** No authorization is required and none should be requested.
 
 Cycle 5 is complete: PH-13, PH-14 and PH-15 are all approved. The audit runs
 automatically (ADR-0008) and must use **independent agents** (ADR-0011) — the
