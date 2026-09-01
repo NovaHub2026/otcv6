@@ -2,7 +2,7 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-14
-Status: ACTIVE
+Status: APPROVED
 Cycle: 5 (phase 2 of 3)
 Created: 2026-09-01
 Branch: `feature/ph-14-multi-node`
@@ -107,3 +107,87 @@ the seam that failover creates is visible in the published record.
 | A follower silently generating            | Would fork invisibly. Structural: a follower must not be able to construct an engine at all.                                                         |
 | Failover hiding a gap                     | ADR-0010's reasoning applies unchanged — an unobserved interval is refused, not invented.                                                            |
 | Building a consensus protocol by accident | Real. The lease is a compare-and-set on a store, and anything more is out of scope.                                                                  |
+
+---
+
+## 10. Integrated phase verification
+
+`packages/runtime/src/cluster.test.ts` — three nodes, five assets, four
+crashes, four recoveries, one damaged checkpoint, and a process suspended past
+its lease term.
+
+It is not a summary of the subphases. Each of them proved its own mechanism in
+isolation, and the phase's claim only exists where they meet: nodes competing
+for leases, leaders dying without releasing anything, successors taking over
+from whatever the record holds, and followers serving throughout.
+
+Asserted **at every step**, not at the end, because a divergence that heals is
+still a divergence somebody was served:
+
+- **Single writer.** No two live nodes hold a session for the same asset.
+- **Prefix.** Every follower's history is a prefix of the record — checked
+  incrementally so the run stays linear.
+
+Asserted over the finished record:
+
+- No sequence appears twice, however many nodes led the asset.
+- Sequences strictly increase, and **every jump is accounted for by a recorded
+  seam** — the two lists are compared element for element.
+- Instants never move backwards across any takeover.
+- The damaged checkpoint really did force a seam, so that comparison ran on two
+  non-empty lists rather than being vacuously true.
+- The suspended process was refused every time it tried to publish, by **both**
+  defences independently.
+
+### Two findings from building the integrated test
+
+**A zombie that can reach the store is not a zombie.** The first draft kept
+driving the crashed node's sessions every step and measured _zero_ refusals:
+`advance` renews before it generates, so a process that can still reach the
+store keeps leading — correctly. The hazard is the other one, a process
+suspended past its term that wakes believing it still leads. Modelled as a
+pause, it is refused every time.
+
+**The renewal check and the fence are independent, and only one was reached.**
+Removing the fence from `appendTicks` entirely left this test green: the woken
+session throws at the renewal step and never reaches the write. So the test now
+_also_ writes directly under the stale token, going round the first defence to
+land on the second. With that write present, the same plant fails it.
+
+Both are the same lesson the project keeps relearning: a guard is not finished
+until it has been watched failing, and watching it fail is what tells you which
+guard you were actually testing.
+
+## 11. Phase quality gate
+
+`npm run gate` — format:check, build, lint, unit suite and statistical suite,
+in that order, on a clean tree. **Exit 0.**
+
+| Suite       | Files | Tests |
+| ----------- | ----- | ----- |
+| unit        | 66    | 1,312 |
+| statistical | 27    | 202   |
+
+Build precedes lint, and that ordering is load-bearing (ADR-0009, B-011).
+
+## 12. Invariants, and where the evidence is
+
+| Invariant | Evidence                                                                                         |
+| --------- | ------------------------------------------------------------------------------------------------ |
+| INV-002   | `multiNode.test.ts`, `cluster.test.ts` — every node agrees on the price at every covered instant |
+| INV-003   | `RecordForkError`; `cluster.test.ts` proves no sequence is ever held twice                       |
+| INV-008   | seams are recorded, never hidden; instants never move backwards across a takeover                |
+| INV-009   | the record is the settlement source, and a takeover changes it by nothing                        |
+| INV-010   | `singleWriter.test.ts` — a follower reaches no engine and no key material, transitively          |
+
+## 13. What this phase decided
+
+[ADR-0012](../decisions/ADR-0012-single-writer-generation.md). Generation is
+single-writer per asset, permanently, and the argument is an impossibility
+result rather than a preference: two nodes cannot independently generate the
+same asset and stay identical across a restart.
+
+## 14. Approval
+
+**APPROVED** 2026-09-01, from executed evidence. All three subphases approved,
+integrated verification passing, phase gate exit 0.

@@ -343,7 +343,7 @@ scale it, can you operate it.**
 | Phase | Title                                                        | State        |
 | ----- | ------------------------------------------------------------ | ------------ |
 | PH-13 | Operator risk: variance, correlated flow and capacity        | **APPROVED** |
-| PH-14 | Multi-node consistency and horizontal scale-out              | **ACTIVE**   |
+| PH-14 | Multi-node consistency and horizontal scale-out              | **APPROVED** |
 | PH-15 | Operations: the standing guarantee, running continuously     | not started  |
 | —     | **Cycle Audit 5** — automatic, independent agents (ADR-0011) | not started  |
 

@@ -6,111 +6,70 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                               |
-| ------------------ | --------------------------------------------------- |
-| Last clean session | 2026-08-31                                          |
-| Branch             | `main` — every phase branch merged and deleted      |
-| Remote             | `origin` → NovaHub2026/otcv6 — pushed, in sync      |
-| Active cycle       | Cycle 5, **1 of 3** phases approved                 |
-| Active phase       | PH-14 — next to be created                          |
-| Active subphase    | none                                                |
-| Cycle Audit        | 004 **APPROVED** — 12 material findings, all closed |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)  |
-
-## Completed
-
-- **PH-1 APPROVED** — deterministic substrate: canonical time, keyed
-  counter-addressable entropy with cursor leasing, portable elementary
-  functions, distribution samplers, the integer log-lattice market domain,
-  tick-to-OHLC projection, snapshot and replay across a restart seam,
-  architecture guardrails, a simulation runner and the planted-edge corpus.
-- **PH-2 APPROVED** — the validation laboratory: observer dataset, economic edge
-  metric, statistical core with FDR and block bootstrap, twenty attack families
-  across four feature kinds, a held-out confirmation split, the realism battery,
-  and a combined report.
-- **PH-3 APPROVED** — the generative market model: sign-blind magnitude and a
-  fair coin, a multifractal volatility cascade, volatility regimes, structure
-  phases, self-exciting arrivals, duration coupling, and the mirror test.
-- **Cycle Audit 001 APPROVED** — fourteen findings, all resolved within the
-  audit. Five were material: INV-005 had no enforcement at all, the composed
-  snapshot/restore path was never exercised, two of five packages were missing
-  from canonical documentation, no invariant→evidence map existed, and the Git
-  remote was misdescribed in twelve documents. Two guardrails were added so the
-  same class of defect fails the build rather than waiting for an audit.
-- **PH-4 APPROVED** — the asset personality system: seven bounded traits per
-  asset, an analytic volatility-inflation gate that rejects unsafe combinations
-  in microseconds, per-asset lattice calibration derived from each asset's own
-  30-second return distribution, a five-asset catalogue, and a differentiation
-  metric with a reachable null. INV-007 promoted to enforced.
-- **PH-5 APPROVED** — the runtime: hosted markets that advance with the clock
-  rather than with polling, sealed state persistence with an explicit recovery
-  policy, and a NestJS service that survives SIGKILL and resumes every market.
-- **PH-6 APPROVED** — the trading boundary: contracts, deterministic settlement
-  computed from the published record alone, and the demonstration that closes
-  INV-001. Identical tick streams between a quiet market and one under heavy
-  adversarial trading, on all five assets.
-- **PH-8 APPROVED** — the observer frontend: a rendering contract that invents no
-  price and hides no extreme, a client that reconstructs the server's record
-  across a disconnection, Next.js 15 and React 19 scaffolded.
-- **PH-7 APPROVED** — public market distribution: a sequence-addressed feed that
-  disconnects rather than degrades, exact resumption, and INV-002 re-established
-  across concurrent observers, a real socket, and two nodes under clock skew.
-- **PH-9 APPROVED** — continuous integrity assurance: attack families withheld
-  from all tuning, a guardrail suite audited by mutation, and a verdict a
-  counterparty can recompute from the published record with no key.
-- **Cycle Audit 003 APPROVED** — one material finding, fixed. Its §1 records that
-  it was run by the authoring agent and that Cycle 4's must not be (B-008).
-- **PH-10 APPROVED** — per-asset market rhythm. The cascade's time structure,
-  regime tempo and arrival memory moved into the personality vector; the
-  catalogue was re-authored so the five assets differ in the ladder of timescales
-  their volatility moves on. Scale-free shape differentiation 30.0% to 40.5%
-  against a 20% null, p = 0.005, with amplitude and tail weight pinned so the
-  gain is attributable. B-004 closed.
-- **Cycle Audit 002 APPROVED** — 31 material findings, all fixed; 103 claims
-  re-executed and held. Read §2 first: an audit plant reached `main` via a
-  concurrent `git add -A`, was never pushed, and was excised.
-- ADRs 0001–0007 persisted. ADR-0007 records the Human Owner's at-the-money
-  decision: a tie is refunded.
-
-## Incomplete
-
-Nothing is in progress. Cycle 2 is complete and development is paused at the
-Governance Human Gate.
-
-## Last executed verification
-
-Full gate green at the close of Cycle Audit 001 — `format:check`, `lint`,
-`build`, and `test:cov` across both projects: **713 tests, 44 files, 0 failed**,
-98.04% statement coverage. Phase acceptance run: 24M ticks, 327 simulated days,
-verdict clean at a 0.217pp detection floor, realism 15/15, mirror test zero
-divergences. Recorded in
-[`docs/evidence/CYCLE-1-VERIFICATION.md`](docs/evidence/CYCLE-1-VERIFICATION.md).
+| Field              | Value                                                    |
+| ------------------ | -------------------------------------------------------- |
+| Last clean session | 2026-09-01                                               |
+| Branch             | `feature/ph-14-multi-node` — approved, ready to merge    |
+| Remote             | `origin` → NovaHub2026/otcv6 — public, hosted CI running |
+| Active cycle       | Cycle 5, **2 of 3** phases approved                      |
+| Active phase       | none — PH-15 next to create                              |
+| Active subphase    | none                                                     |
+| Cycle Audit        | 004 **APPROVED** — 12 material findings, all closed      |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)       |
 
 ## Continuation point
 
-Read `CURRENT_STATE.md`. Cycle 1 is closed and its audit is approved, so
-development continues **without further Human authorization**
-(`GOVERNANCE.md` §32).
+Read `CURRENT_STATE.md` for the authoritative position; this is the short form.
 
-Read `CURRENT_STATE.md`. Cycle 2 is closed and its audit approved, so development
-continues **without further Human authorization** (`GOVERNANCE.md` §32).
+**Merge `feature/ph-14-multi-node` into `main`, push, then create the PH-15
+Phase Context Document** on `feature/ph-15-operations`. No authorization is
+required and none should be requested.
 
-Create the **PH-11 Phase Context Document** — detection power across every
-horizon the product sells — on `feature/ph-11-detection-power`. It closes B-002
-(only the 30-second horizon is policed to the threshold the 99% payout implies)
-and B-003 (`tools/*` is excluded from coverage measurement).
+PH-15 — **Operations: the standing guarantee, running continuously** — is the
+third and final phase of Cycle 5. Its subject is the gap between what an
+operator _can_ do and what the venue _does_:
 
-Start from what PH-10 established, not from B-002's original framing: **every
-statistic of this market is limited by simulated duration, not by sample count.**
-The volatility process has memory measured in days, so consecutive observations
-are never independent draws. That one fact is behind Cycle Audit 2's binomial
-finding on INV-007, behind B-002's hundred-fold history requirement at 15
-minutes, and behind the lattice tie rates PH-10.2 had to re-measure over 15
-replicates. Simulating longer is one answer; an estimator that respects the
-dependence is probably a better one.
+- Three exclusions carried from PH-12: where commitment roots are published, key
+  rotation procedure, and journal retention.
+- The assurance battery as a scheduled run against accumulated history rather
+  than a thing invoked by hand.
+- A deployment backend for PH-14's `CoordinatedStore`. The contract is already
+  executable — `describeCoordinatedStore` is a battery any implementation must
+  pass — but only the in-memory reference exists, so the multi-node design has
+  never met a real store.
 
-**Governance changed on 2026-08-31** ([ADR-0008](docs/decisions/ADR-0008-full-delegation.md)).
-Read this before anything else about process:
+**When PH-15 is approved, Cycle 5 is complete and Cycle Audit 5 begins
+automatically**, conducted by **independent agents** (ADR-0011).
+
+## What Cycle 5 has established so far
+
+- **PH-13 APPROVED** — operator risk: the settlement event as the unit of risk
+  rather than the contract, a Lundberg adjustment coefficient for ruin, capacity
+  and growth-optimal fraction, and enforcement that is provably blind to price
+  generation.
+- **PH-14 APPROVED** — multi-node consistency. It rests on an impossibility
+  result ([ADR-0012](docs/decisions/ADR-0012-single-writer-generation.md)): two
+  nodes cannot independently generate the same asset and stay identical across a
+  restart, because `resumeMarket` seams forward to the resuming node's own
+  clock. So generation is single-writer per asset, leadership is a fenced
+  expiring lease, followers serve the record and cannot construct an engine at
+  all, and a failover seam is recorded rather than hidden.
+
+Earlier phases and audits are summarised in `docs/phases/ROADMAP.md` and the
+records under `docs/audits/`. This document is not the place for them.
+
+## Last executed verification
+
+`npm run gate` at the PH-14 phase gate, 2026-09-01: **exit 0**. Unit 66 files /
+1,312 tests; statistical 27 files / 202 tests. Format, build and lint all exit 0,
+in that order — build before lint, because the type-aware rules resolve workspace
+types through emitted declarations.
+
+## Process, in force
+
+Governance changed on 2026-08-31
+([ADR-0008](docs/decisions/ADR-0008-full-delegation.md)) and again on 2026-09-01
+([ADR-0011](docs/decisions/ADR-0011-subagent-authority.md)):
 
 - **There is no three-phase Human gate.** Cycle Audits run automatically. Stop
   normal development at the boundary, run the audit, continue. Never wait for
@@ -122,23 +81,22 @@ Read this before anything else about process:
 - **Two things are still the Human Owner's**: amendments to Governance itself,
   and commitments that bind them outside the repository (legal, contractual,
   real-money, custody, paid services).
-- **There is no hosted CI.** `npm run gate` is the verification authority, and
-  nothing independent runs anything. A claim is only as true as the run behind
-  it — never write PASSED from a command whose exit code you did not see.
+- **Subagents are an engineering decision**, and a Cycle Audit must use
+  independent ones.
+- **Hosted CI runs.** The repository is public, so Actions is free, and
+  `.github/workflows/ci.yml` runs the quality gate and the statistical gate on
+  every push to `main` (ADR-0009). It corroborates `npm run gate`; it does not
+  replace it. A red CI on a green local gate is a finding about the gate.
 
-Removing the gate removed one of the project's two external checks. The audit's
-method is now the whole of what remains, and the project has measured what that
-is worth: ten independent agents found **31** material findings in Cycle Audit 2;
-the authoring agent found **one** in Cycle Audit 3.
-
-Standing rules, all learned the hard way:
+## Standing rules, all learned the hard way
 
 - **A guard is not finished until it has been watched failing.** Every material
   finding in Cycle Audit 2 was a guard that existed, was documented as
   sufficient, and had never been tested against the thing it guarded against.
-- **A recorded number that nothing reads is a comment.** PH-10 found
-  `MEASURED_LATTICE_TIE_RATES` — the rate at which stakes are refunded — stale
-  and unfalsifiable.
+  PH-14 found two more of these in its own new tests.
+- **A claim is only as true as the run behind it.** Never write PASSED from a
+  command whose exit code you did not see — `| tail -1` discards it.
+- **A recorded number that nothing reads is a comment.**
 - **Never `git add -A` while subagents are running**, and keep audit plants in an
   isolated clone.
 - **A long test body must yield to the event loop** (`CLAUDE.md` §5). The gate
