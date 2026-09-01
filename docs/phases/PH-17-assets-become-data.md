@@ -47,7 +47,9 @@ step.
 ## 4. Dispersion budgets, not price ceilings
 
 [`CYCLE-6-DRIFT.md`](../evidence/CYCLE-6-DRIFT.md) measured what a price does over
-90 days: the median is within half a percent of zero on all five assets, and the
+90 days: every median is a small fraction of that asset's own spread — four of
+the five within half a percent of zero and btcusd at +1.5% against a 75.6%
+dispersion, which is 0.02σ (corrected by Cycle Audit 6, CA6-38) — and the
 dispersion runs from 1.7% (spx) to 75.6% (btcusd).
 
 A price ceiling was considered and refused — near a boundary `P(down) > P(up)`,

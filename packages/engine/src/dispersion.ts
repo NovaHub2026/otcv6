@@ -13,11 +13,15 @@ import type { PersonalityTraits } from './personality.js';
  * as the square root of elapsed time.
  *
  * [`CYCLE-6-DRIFT.md`](../../../docs/evidence/CYCLE-6-DRIFT.md) measured this the
- * expensive way — a hundred 90-day replicates per asset — and found the median
- * terminal move within half a percent of zero on all five, with the spread
- * running from 1.7% to 75.6%. Those two facts are the whole story: there is no
- * drift to cap, and the spread is what "volatile" means rather than a defect
- * beside it.
+ * expensive way — a hundred 90-day replicates per asset — and found every median
+ * a small fraction of that asset's own spread: four of the five within half a
+ * percent of zero, and btcusd at +1.5% against a 75.6% dispersion, which is
+ * 0.02σ. The spread itself runs from 1.7% to 75.6%. Those two facts are the
+ * whole story: there is no drift to cap, and the spread is what "volatile" means
+ * rather than a defect beside it.
+ *
+ * (The "within half a percent on **all five**" this used to say was contradicted
+ * by the table it cited — Cycle Audit 6, CA6-38.)
  *
  * ## Why a price ceiling is not available
  *

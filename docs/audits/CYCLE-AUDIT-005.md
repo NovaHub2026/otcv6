@@ -1,7 +1,8 @@
 # Cycle Audit 005
 
 Type: CYCLE AUDIT
-Status: ACTIVE — findings recorded, remediation in progress
+Status: CLOSED — remediation recorded in PH-16, the remainder carried in `docs/BACKLOG.md`
+Closed: 2026-09-01, by Cycle Audit 6 (CA6-42), which found this record still open
 Cycle: 5 (PH-13, PH-14, PH-15)
 Started: 2026-09-01
 Method: **seven independent agents**, adversarial, working in an isolated worktree
