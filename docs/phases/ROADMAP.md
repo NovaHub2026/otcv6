@@ -423,8 +423,8 @@ follower cannot generate when it can.
 | Phase | Title                                                | State        |
 | ----- | ---------------------------------------------------- | ------------ |
 | PH-16 | Close what the audit falsified                       | **APPROVED** |
-| PH-17 | Assets become data: families, sampling, history      | **ACTIVE**   |
-| PH-18 | The admin panel: Preview                             | not started  |
+| PH-17 | Assets become data: families, sampling, history      | **APPROVED** |
+| PH-18 | The admin panel: Preview                             | **ACTIVE**   |
 | —     | **Cycle Audit 6** — one worktree per auditor (B-020) | not started  |
 
 ### PH-16 — Close What the Audit Falsified

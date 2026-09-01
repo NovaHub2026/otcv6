@@ -202,7 +202,7 @@ describe('a catalogue drawn from the archetypes', () => {
     }
   }, 600_000);
 
-  it('is structurally sign-blind, asset by asset', () => {
+  it('is structurally sign-blind, asset by asset', async () => {
     // The guarantee that matters, and the one no statistical battery replaces.
     // These personalities were drawn by a generator rather than reasoned about
     // by anyone, which is exactly why each of them has to be checked: negate
@@ -223,6 +223,12 @@ describe('a catalogue drawn from the archetypes', () => {
       );
       expect(result.divergences, entry.asset.definition.id).toEqual([]);
       expect(result.mirrored, entry.asset.definition.id).toBe(true);
+      // Twenty-four mirror tests of 120,000 ticks each is half a minute of
+      // uninterrupted CPU, and a synchronous block that long starves the test
+      // worker's own progress channel: every test passes and the run still
+      // exits 1 with `Timeout calling "onTaskUpdate"`. It cost PH-4 a phase
+      // gate (B-005), recurred in PH-10.3, and recurred here.
+      await new Promise((resolve) => setImmediate(resolve));
     }
   }, 900_000);
 

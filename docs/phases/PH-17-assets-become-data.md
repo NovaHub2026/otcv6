@@ -2,7 +2,7 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-17
-Status: ACTIVE
+Status: APPROVED
 Cycle: 6 (phase 2 of 3)
 Created: 2026-09-01
 Branch: `feature/ph-17-assets-as-data`
@@ -68,3 +68,50 @@ dispersion budget instead, chosen at authoring time, blind to price and outcome.
 - **INV-003** — two assets with one id derive one keystream, refused at identity.
 - **INV-009** — a calibrated quantum decides every settlement for its asset, so
   the registration records what it was derived from.
+
+## 7. Integrated phase verification
+
+`tools/sim/src/assetLifecycle.stat.test.ts` runs the whole chain once, on an
+asset that exists nowhere in source, in a fixture, or in the test file:
+
+1. a personality **drawn** from the `metal` archetype;
+2. **registered** — safety gate, personality solve, lattice calibration,
+   dispersion fit against the family band, INV-007 differentiation;
+3. **backfilled** seven days, 356,471 ticks into 10,079 minute bars and 167
+   hourly ones;
+4. **served** at every timeframe the product offers, each contiguous and of the
+   expected length, from storage rather than from the ticks;
+5. **carried forward** live from the checkpoint, with every sequence consecutive
+   and every instant increasing across the join.
+
+Its dispersion, measured from the published prices as realised quadratic
+variation, is **5.51% a quarter against a budget of 6.32%** — the family band
+drawn at authoring time, the volatility fitted to it from twelve turnovers of
+simulation, and the market that resulted, agreeing to 13%.
+
+## 8. Approval
+
+**APPROVED** 2026-09-01, from executed evidence.
+
+`npm run gate` — **exit 0**, 113 test files, 1,963 tests, 361 seconds.
+
+| Check                       | Command                | Exit |
+| --------------------------- | ---------------------- | ---- |
+| Formatting                  | `npm run format:check` | 0    |
+| Build and typecheck         | `npm run build`        | 0    |
+| Lint (type-aware)           | `npm run lint`         | 0    |
+| Unit and statistical suites | `npm test`             | 0    |
+
+The gate's first run exited 1 with every test passing, on
+`Timeout calling "onTaskUpdate"` — a synchronous block long enough to starve the
+worker's own progress channel. Twenty-four mirror tests of 120,000 ticks in one
+test body, and a two-hour live continuation in another. It cost PH-4 a phase gate
+as B-005, recurred in PH-10.3, and has now recurred in PH-17: the hazard is
+standing and returns with every new long test, so both bodies now yield.
+
+## 9. What the phase leaves for PH-18
+
+The catalogue is now data, so an admin panel has something to administer:
+registration is a job with named stages that each refuse for their own reason,
+archetypes are the vocabulary an operator picks from, and a new asset arrives
+with ninety days of chart. What does not exist yet is the surface.
