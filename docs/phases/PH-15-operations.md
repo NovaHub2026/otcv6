@@ -2,7 +2,7 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-15
-Status: ACTIVE
+Status: APPROVED
 Cycle: 5 (phase 3 of 3)
 Created: 2026-09-01
 Branch: `feature/ph-15-operations`
@@ -165,3 +165,93 @@ without a verifier seeing a forgery.
 | Rotation indistinguishable from compromise       | Fatal to the chain's purpose. The rotation belongs inside the chain, signed by the outgoing key.                                |
 | `node:sqlite` weakening the conformance contract | Real: the temptation is to relax the battery to fit the backend. The battery is unchanged, or the backend is wrong.             |
 | Retention set by storage rather than by dispute  | The window is a product decision; sizing storage first would decide it by accident.                                             |
+
+---
+
+## 15. Integrated phase verification
+
+`tools/sim/src/operations.stat.test.ts` — a venue that is operated rather than
+built. It runs two catalogue assets on the SQLite store for an hour of market
+time, closes the process, reopens the database, commits the record in windows
+across a **key rotation**, verifies the chain from the genesis key alone, builds
+and extends an anchor, applies the retention policy, and produces a standing
+verdict.
+
+The claim it exists to check is that the three subphases are one system. Each
+proved its own mechanism; a venue left running uses them together.
+
+What it asserts that no subphase battery could:
+
+- The record survives the process that wrote it, and is read back by a **second
+  connection** after the first is closed.
+- A chain whose windows are signed by two different keys verifies from the
+  genesis key **and the rotation log**, and is refused without the log.
+- An anchor over that chain extends itself, and refuses a truncated successor.
+- Every journal is retained today and pruneable after 200 days, while **no age
+  makes a commitment discardable**.
+- The standing verdict on an hour of history is **`undecided`**, not `clean` —
+  the honest answer, and the one the system would get wrong if it borrowed
+  confidence from PH-3's 327-day run.
+- Within that verdict, the 30-second horizon has more trials and a finer floor
+  than the 15-minute one, which is PH-11's finding reproduced by a live record
+  rather than asserted.
+
+## 16. A guardrail this phase had to add
+
+`publicSurface.test.ts`. PH-14.3's entire leader loop — `LeaderSession` — was
+missing from `@otc/runtime`'s index, and it was found only because this
+integrated test happened to import it.
+
+Nothing else would have. Tests inside a package import their neighbours by
+relative path, so a module can be complete, tested, approved and unreachable
+from outside all at once.
+
+The cause is the repository's most repeated one: an edit whose anchor no longer
+matched because Prettier had reformatted the surrounding lines, reporting
+success and doing nothing. It defeated six edits to `CURRENT_STATE.md` between
+PH-4 and PH-6, and it did it again here. The surface is now checked, and a module
+that is genuinely internal has to be named as such — three were, each with a
+reason.
+
+## 17. Phase quality gate
+
+`npm run gate` — format:check, build, lint, unit suite and statistical suite, in
+that order, on a clean tree. **Exit 0.**
+
+| Suite       | Files | Tests |
+| ----------- | ----- | ----- |
+| unit        | 73    | 1,495 |
+| statistical | 29    | 204   |
+| **total**   | 102   | 1,699 |
+
+## 18. Invariants, and where the evidence is
+
+| Invariant | Evidence                                                                                                |
+| --------- | ------------------------------------------------------------------------------------------------------- |
+| INV-002   | the SQLite store passes PH-14's conformance battery unmodified, and admits one leader across processes  |
+| INV-006   | the standing verdict reports `exploitable` at any power, and `undecided` rather than `clean`            |
+| INV-009   | retention keeps the journal for the dispute window and the chain forever                                |
+| INV-010   | rotation moves publishing keys only; `publishingKeyFromEnvironment` still refuses the generation secret |
+
+## 19. What this phase decided
+
+- The **dispute window is 90 days**, and retention derives from it rather than
+  from storage. Journals may be pruned; commitments never.
+- **Key rotation is recorded inside the chain**, signed by the outgoing key, and
+  epochs are non-decreasing so a retired key cannot sign later history.
+- The **standing verdict has three outcomes**, and `undecided` is the one that
+  makes the other two honest.
+- The standing run **refuses to produce a verdict without the withheld
+  families**, making PH-9.1's independence structural rather than procedural.
+- `engines` is **Node >= 24**, because `node:sqlite` needs an experimental flag
+  before then and a store whose correctness depends on a flag being passed is
+  not one.
+
+## 20. Approval
+
+**APPROVED** 2026-09-01, from executed evidence. All three subphases approved,
+integrated verification passing, phase gate exit 0.
+
+**Cycle 5 is complete.** PH-13, PH-14 and PH-15 are approved and merged, so
+Cycle Audit 5 begins automatically — conducted by independent agents, as
+[ADR-0011](../decisions/ADR-0011-subagent-authority.md) requires.
