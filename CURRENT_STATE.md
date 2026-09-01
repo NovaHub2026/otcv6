@@ -15,20 +15,20 @@ Last synchronized: 2026-08-31
 | Field                            | Value                                                                   |
 | -------------------------------- | ----------------------------------------------------------------------- |
 | Active development cycle         | Cycle 5                                                                 |
-| Approved phases in current cycle | **0 of 3**                                                              |
+| Approved phases in current cycle | **1 of 3**                                                              |
 | Cycle Audit state                | None active — 004 APPROVED; next after PH-15                            |
 | Last Cycle Audit                 | [Cycle Audit 003](docs/audits/CYCLE-AUDIT-003.md) — APPROVED 2026-08-31 |
 
 ## Phase and subphase
 
-| Field                  | Value                                   |
-| ---------------------- | --------------------------------------- |
-| Active phase           | None — PH-13 is next to be created      |
-| Phase lifecycle        | n/a                                     |
-| Active subphase        | None                                    |
-| Subphase lifecycle     | n/a                                     |
-| Last approved phase    | PH-12 — Verifiable Publication          |
-| Last approved subphase | PH-12.3 — The service emits the journal |
+| Field                  | Value                                         |
+| ---------------------- | --------------------------------------------- |
+| Active phase           | PH-14 — Multi-node consistency                |
+| Phase lifecycle        | n/a                                           |
+| Active subphase        | None                                          |
+| Subphase lifecycle     | n/a                                           |
+| Last approved phase    | PH-13 — Operator Risk                         |
+| Last approved subphase | PH-13.3 — Enforcement, with INV-001 preserved |
 
 ## Cycle 1 result
 

@@ -2,7 +2,7 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-13
-Status: ACTIVE
+Status: APPROVED
 Cycle: 5 (phase 1 of 3)
 Created: 2026-09-01
 Branch: `feature/ph-13-operator-risk`
@@ -141,3 +141,75 @@ is not.
 | The flow model is invented and the numbers inherit it | Real. A capacity figure is only as good as its assumed flow, and the phase must state the assumption at every result rather than burying it.             |
 | Correlation structure is subtler than the grouping    | Traders may cluster across assets and expiries in ways the settlement-event grouping does not capture. Measured, not assumed.                            |
 | A limit that never binds                              | A limit calibrated so loosely it never refuses anything is theatre. It must be shown refusing.                                                           |
+
+---
+
+## 10. Phase approval record
+
+**APPROVED** from executed evidence, 2026-09-01.
+
+| Check          | Result                                       |
+| -------------- | -------------------------------------------- |
+| `npm run gate` | **exit 0** — 1341 passed, 85 files, 0 errors |
+
+### The result the phase existed to produce
+
+The question a real operator asks first, answered with numbers rather than
+reassurance.
+
+| Finding                                          | Value                  |
+| ------------------------------------------------ | ---------------------- |
+| Risk difference between two books of equal stake | **×31.6**              |
+| Effective bets, 1,000 contracts at one expiry    | **1.0**                |
+| Operator edge per event at 99% payout            | **0.5% of stake**      |
+| Growth-optimal capital at risk per event         | **under 1%**           |
+| Ruin probability at a fair (1.00) payout         | **1, at any bankroll** |
+
+| Subphase | Title                                            | State    |
+| -------- | ------------------------------------------------ | -------- |
+| PH-13.1  | The exposure model                               | APPROVED |
+| PH-13.2  | Risk of ruin, capacity, and the limits           | APPROVED |
+| PH-13.3  | Enforcement in the venue, with INV-001 preserved | APPROVED |
+
+### Phase invariants
+
+**INV-001 ends demonstrably stronger than it began**, which was the phase's real
+subject. PH-6 showed identical ticks between a quiet market and one under heavy
+adversarial trading — but trading could only _add_ contracts. This phase gives
+the venue economic state and has it **make decisions from that state**, reading
+net exposure on every tick, and the market is still bit-identical across all five
+assets.
+
+### What the phase learned
+
+**Volume is not risk; concentration is.** The number an operator would naturally
+quote — how much is on the table — cannot distinguish a book that is safe from
+one that is thirty times more dangerous. The unit of risk is the settlement
+event, because contracts sharing one resolve on the same price comparison, and
+the quantity that matters is the sum of _netted_ per-event exposure, which can be
+zero on a book of any size.
+
+**The theorem gives no comfort here, and that is worth stating plainly.**
+`P(up) = P(down)` exactly is what makes the market fair and says nothing about
+survival. A fair coin with a thin house edge is a wonderful long-run business and
+a fragile short-run one. Blindness is also why the market will never protect the
+operator from a crowded book: it cannot see the book.
+
+**Netting is the subtle half of a limiter.** The naive rule — refuse anything
+touching an event at its limit — is _worse than no limiter_ for the case that
+matters, because it blocks exactly the hedges that would restore balance.
+
+**Two defects surfaced the way defects should.** A grid recursion that timed out,
+which was the algorithm telling the truth about being the wrong algorithm; and an
+O(n²) admission path found by a demonstration that could not finish. Both were
+replaced rather than tuned.
+
+### Known limitations carried forward
+
+- The limit is one number per venue. A real operator wants it per asset and per
+  trader.
+- Nothing expires settled contracts out of the book, so exposure only
+  accumulates. That is where the book meets the settlement path.
+- Capacity assumes one exposure size repeated; a real book has a distribution,
+  and the largest event dominates in a way a single figure hides.
+- Overlapping windows on one asset are counted, not modelled.
