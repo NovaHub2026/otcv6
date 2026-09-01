@@ -8,8 +8,8 @@ import { dispersionLogSigma } from './dispersion.js';
 const base = ASSET_CATALOGUE[0]!.definition;
 const QUICK = { replicates: 1, simulatedMs: 2 * 86_400_000 } as const;
 
-function calibrate(volatility: number, seed = 'rescale-spec') {
-  const keyring = MasterKeyring.forTesting(seed);
+function calibrate(volatility: number) {
+  const keyring = MasterKeyring.forTesting('rescale-spec');
   return calibrateAsset(
     { ...base, traits: { ...base.traits, volatility } },
     (purpose) =>
@@ -23,18 +23,6 @@ function calibrate(volatility: number, seed = 'rescale-spec') {
   );
 }
 
-/**
- * Rescaling is only worth having if it is the same answer as simulating.
- *
- * The property is load-bearing: `registerAsset` hits a dispersion budget by
- * measuring once and multiplying, where the obvious implementation searches and
- * pays a full calibration per iteration. If the two ever diverge, the recorded
- * lattice stops being the lattice the definition produces, and INV-009's promise
- * that a settlement can be recomputed from the record goes with it.
- *
- * So the check is against a *real* recalibration at the scaled volatility, not
- * against the algebra that motivated the shortcut.
- */
 describe('a calibration can be moved to another volatility without simulating', () => {
   const factor = 3.7;
   const measured = calibrate(base.traits.volatility);
