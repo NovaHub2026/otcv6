@@ -39,9 +39,19 @@ jobs:
   statistical-gate:
     name: Statistical Gate
     runs-on: ubuntu-latest
-    # Statistical suites are long-running simulations. They gate integration into
-    # main and can be triggered on demand, but do not block every push.
-    if: github.event_name != 'push'
+    # Runs on every push to main as well as on pull requests.
+    #
+    # It was skipped on push while the repository was private, because Actions
+    # minutes cost money and these are long-running simulations. The repository
+    # is public now and standard-runner minutes are free, so the reason is gone —
+    # and this suite is where every substantive claim in the project lives: the
+    # adversarial battery, the mirror test, the withheld red-team families, the
+    # economic-blindness demonstration, the long-horizon coverage.
+    #
+    # Leaving it off `main` would mean the project's actual evidence was still
+    # attested only by the operator who produced it, which is the thing hosted CI
+    # was reinstated to fix (ADR-0009).
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

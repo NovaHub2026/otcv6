@@ -270,8 +270,8 @@ holding nothing but the one item that needs the Human Owner.
 | Phase | Title                                                         | State        |
 | ----- | ------------------------------------------------------------- | ------------ |
 | PH-10 | Per-asset market rhythm                                       | **APPROVED** |
-| PH-11 | Detection power across every horizon the product sells        | **ACTIVE**   |
-| PH-12 | Verifiable publication and the journal in the running service | not started  |
+| PH-11 | Detection power across every horizon the product sells        | **APPROVED** |
+| PH-12 | Verifiable publication and the journal in the running service | **ACTIVE**   |
 | —     | **Cycle Audit 4** — automatic (ADR-0008)                      | not started  |
 
 | Phase | Closes                                                                     |
@@ -310,11 +310,11 @@ The product sells 30s to 15m. Only 30s has ever been policed to the threshold th
 99% payout implies. PH-11 either closes the other horizons or states, per horizon
 and per asset, exactly what remains unpoliced.
 
-| Subphase | Title                                                    | State       |
-| -------- | -------------------------------------------------------- | ----------- |
-| PH-11.1  | Is the independent error bar honest?                     | APPROVED    |
-| PH-11.2  | The long-horizon evidence run                            | ACTIVE      |
-| PH-11.3  | Coverage over `tools/`, and evidence that records itself | not started |
+| Subphase | Title                                                    | State    |
+| -------- | -------------------------------------------------------- | -------- |
+| PH-11.1  | Is the independent error bar honest?                     | APPROVED |
+| PH-11.2  | The long-horizon evidence run                            | APPROVED |
+| PH-11.3  | Coverage over `tools/`, and evidence that records itself | APPROVED |
 
 ### PH-12 — Verifiable Publication and the Journal in the Running Service
 

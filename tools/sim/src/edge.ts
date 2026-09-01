@@ -41,12 +41,27 @@ export interface EdgeReport {
  * i.i.d. confidence interval on overlapping windows is the single easiest way to
  * produce a green gate that means nothing. Default is `stride = horizon`.
  */
-export function estimateDirectionalEdge(
+/**
+ * Generator core, so the estimator can yield to the event loop.
+ *
+ * This walks a price series once per horizon; on a 24-million-tick series with a
+ * unit stride that is hundreds of millions of iterations, and under v8 coverage
+ * instrumentation every one of them is rewritten. A block that long starves the
+ * Vitest worker's own RPC channel and the run fails with
+ * `Timeout calling "onTaskUpdate"` while reporting every test as passed.
+ *
+ * It is the same defect as B-005 and B-010, met a third time in the heaviest
+ * code path in the project. `calibrateAssetCore` and `runBatteryAsync` already
+ * follow this shape; the estimator was the last long synchronous walk that did
+ * not.
+ */
+function* estimateDirectionalEdgeCore(
   prices: Int32Array,
   horizons: readonly number[],
-  label = 'unnamed',
-  stride?: number,
-): EdgeReport {
+  label: string,
+  stride: number | undefined,
+  chunk: number,
+): Generator<void, EdgeReport> {
   const out: EdgeAtHorizon[] = [];
   for (const horizon of horizons) {
     if (!Number.isInteger(horizon) || horizon <= 0) {
@@ -56,12 +71,18 @@ export function estimateDirectionalEdge(
     let up = 0;
     let down = 0;
     let ties = 0;
+    let sinceYield = 0;
     for (let i = 0; i + horizon < prices.length; i += step) {
       const entry = prices[i]!;
       const expiry = prices[i + horizon]!;
       if (expiry > entry) up += 1;
       else if (expiry < entry) down += 1;
       else ties += 1;
+      sinceYield += 1;
+      if (sinceYield >= chunk) {
+        sinceYield = 0;
+        yield;
+      }
     }
     const decided = up + down;
     const upProbability = decided === 0 ? 0.5 : up / decided;
@@ -75,8 +96,46 @@ export function estimateDirectionalEdge(
       standardError,
       z: decided === 0 ? 0 : (upProbability - 0.5) / standardError,
     });
+    yield;
   }
   return { label, horizons: out };
+}
+
+/** Samples walked between yields in the async variant. */
+export const EDGE_CHUNK_SAMPLES = 2_000_000;
+
+export function estimateDirectionalEdge(
+  prices: Int32Array,
+  horizons: readonly number[],
+  label = 'unnamed',
+  stride?: number,
+): EdgeReport {
+  const run = estimateDirectionalEdgeCore(prices, horizons, label, stride, Number.MAX_SAFE_INTEGER);
+  for (;;) {
+    const step = run.next();
+    if (step.done === true) return step.value;
+  }
+}
+
+/**
+ * The same estimate, yielding to the event loop as it goes.
+ *
+ * Prefer this anywhere something else shares the loop — a test runner's progress
+ * channel today, a runtime's request handling later.
+ */
+export async function estimateDirectionalEdgeAsync(
+  prices: Int32Array,
+  horizons: readonly number[],
+  label = 'unnamed',
+  stride?: number,
+  chunk: number = EDGE_CHUNK_SAMPLES,
+): Promise<EdgeReport> {
+  const run = estimateDirectionalEdgeCore(prices, horizons, label, stride, chunk);
+  for (;;) {
+    const step = run.next();
+    if (step.done === true) return step.value;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
 }
 
 export interface ConditionalBucket {

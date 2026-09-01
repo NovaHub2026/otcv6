@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, MasterKeyring, type InstrumentSpec, type Tick } from '@otc/core';
 import { datasetFromTicks } from '../observer.js';
-import { runBattery } from './battery.js';
+import { runBatteryAsync } from './battery.js';
 import { withheldFamilies } from './withheld.js';
 
 /**
@@ -83,12 +83,23 @@ function buildTicks(
   return ticks;
 }
 
-function verdictFor(
+/**
+ * Async on purpose. `runBattery` walks the whole dataset for every family and
+ * horizon without returning to the event loop; the cross-asset case here took
+ * **627 seconds** of uninterrupted CPU under v8 coverage instrumentation, which
+ * starves the Vitest worker's own RPC channel and fails the run with
+ * `Timeout calling "onTaskUpdate"` while reporting every test as passed.
+ *
+ * `runBatteryAsync` exists for exactly this and this file simply never used it —
+ * the same omission as B-005 and B-010, which is why the convention is now in
+ * `CLAUDE.md` §5 rather than only in the functions that already follow it.
+ */
+async function verdictFor(
   ticks: Tick[],
   families: ReturnType<typeof withheldFamilies>,
   minimumBucketSamples?: number,
 ) {
-  return runBattery(datasetFromTicks(INSTRUMENT, ticks), {
+  return runBatteryAsync(datasetFromTicks(INSTRUMENT, ticks), {
     families,
     trainingFraction: 0.3,
     ...(minimumBucketSamples === undefined ? {} : { minimumBucketSamples }),
@@ -96,10 +107,10 @@ function verdictFor(
 }
 
 describe('the withheld families are calibrated, not decorative', () => {
-  it('returns clean on a fair market', () => {
+  it('returns clean on a fair market', async () => {
     // The control. If this fired, every detection below would be meaningless.
     const fair = buildTicks('control', () => 0.5);
-    const verdict = verdictFor(fair, withheldFamilies({ sequenceModulus: 7 }));
+    const verdict = await verdictFor(fair, withheldFamilies({ sequenceModulus: 7 }));
     expect(verdict.coverage.hypothesesTested).toBeGreaterThan(10);
     expect(
       verdict.clean,
@@ -107,23 +118,23 @@ describe('the withheld families are calibrated, not decorative', () => {
     ).toBe(true);
   }, 900_000);
 
-  it('catches an edge keyed to inter-arrival time', () => {
+  it('catches an edge keyed to inter-arrival time', async () => {
     // Expressible only in arrival-gap conditioning: no price, level, or
     // wall-clock family could see it.
     const planted = buildTicks('gap-edge', ({ fast }) => (fast ? 0.62 : 0.38));
-    const verdict = verdictFor(planted, withheldFamilies({ sequenceModulus: 7 }));
+    const verdict = await verdictFor(planted, withheldFamilies({ sequenceModulus: 7 }));
     expect(verdict.clean).toBe(false);
     expect(verdict.exploitable.map((f) => f.family)).toContain('wh-arrival-gap');
   }, 900_000);
 
-  it('catches an edge keyed to the sequence counter', () => {
+  it('catches an edge keyed to the sequence counter', async () => {
     const planted = buildTicks('residue-edge', ({ index }) => (index % 7 < 3 ? 0.63 : 0.37));
-    const verdict = verdictFor(planted, withheldFamilies({ sequenceModulus: 7 }));
+    const verdict = await verdictFor(planted, withheldFamilies({ sequenceModulus: 7 }));
     expect(verdict.clean).toBe(false);
     expect(verdict.exploitable.map((f) => f.family)).toContain('wh-sequence-residue');
   }, 900_000);
 
-  it('catches an edge concentrated around a restart seam', () => {
+  it('catches an edge concentrated around a restart seam', async () => {
     // Wide enough that the seam-adjacent buckets clear the 500-sample floor. The
     // first version used ±3,000 ticks and the family produced ZERO hypotheses:
     // the battery evaluates non-overlapping contracts, so 260,000 ticks yield
@@ -144,7 +155,7 @@ describe('the withheld families are calibrated, not decorative', () => {
     // That is the battery working exactly as PH-2 designed it. What it means for
     // this family is recorded rather than tuned away: **wh-seam-proximity needs
     // more history than the others before its findings can be acted on.**
-    const verdict = verdictFor(
+    const verdict = await verdictFor(
       planted,
       withheldFamilies({ seamIndices: seams, sequenceModulus: 7 }),
       200,
@@ -153,7 +164,7 @@ describe('the withheld families are calibrated, not decorative', () => {
     expect(verdict.exploitable.map((f) => f.family)).toContain('wh-seam-proximity');
   }, 900_000);
 
-  it('catches an edge that follows a second asset', () => {
+  it('catches an edge that follows a second asset', async () => {
     // The shape of leak Cycle Audit 2 planted by hand: a global one market writes
     // and another reads.
     const reference = buildTicks('reference', () => 0.5);
@@ -173,7 +184,7 @@ describe('the withheld families are calibrated, not decorative', () => {
     const planted = buildTicks('follower', ({ instant }) =>
       referenceMoveAt(instant) >= 0 ? 0.62 : 0.38,
     );
-    const verdict = verdictFor(
+    const verdict = await verdictFor(
       planted,
       withheldFamilies({
         reference: { instants: refInstants, prices: refPrices, lookbackMs: 30_000 },
