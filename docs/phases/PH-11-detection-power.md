@@ -2,7 +2,7 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-11
-Status: ACTIVE
+Status: APPROVED
 Cycle: 4 (phase 2 of 3)
 Created: 2026-08-31
 Branch: `feature/ph-11-detection-power`
@@ -133,3 +133,80 @@ reached, saying so with the sample count that earned it.
 | An edge appears at a long horizon                  | Structurally impossible under ADR-0003, which is exactly what was said about the leverage effect. Recorded, not tuned.                                  |
 | The streaming estimator's conditioning is too weak | Real. It is a different instrument from the battery, not a better one, and the phase must not let a large clean number imply more than it shows.        |
 | Run cost                                           | Measured before planning: ~31 s per simulated year. Five assets to full power at 15 m is around an hour, offline.                                       |
+
+---
+
+## 10. Phase approval record
+
+**APPROVED** from executed evidence, 2026-08-31.
+
+| Check              | Result                                        |
+| ------------------ | --------------------------------------------- |
+| `npm run gate`     | **exit 0** — 1154 passed, 75 files, 0 errors  |
+| `npm run test:cov` | exit 0 — 93.84% overall, `packages/core` 100% |
+| Hosted CI          | green on `main` (ADR-0009)                    |
+
+### The result the phase existed to produce
+
+**Every horizon the product sells is policed to the threshold its payout
+implies.** Forty of forty asset/horizon cells below 0.2513pp, recorded in
+[`PH-11-HORIZON-COVERAGE.md`](../evidence/PH-11-HORIZON-COVERAGE.md): 2.0 billion
+ticks, ~52 asset-years, worst |z| 2.64, no Benjamini–Hochberg rejections.
+
+| Subphase | Title                                         | State    |
+| -------- | --------------------------------------------- | -------- |
+| PH-11.1  | Is the independent error bar honest?          | APPROVED |
+| PH-11.2  | The long-horizon evidence run                 | APPROVED |
+| PH-11.3  | Coverage over `tools/`, and phase integration | APPROVED |
+
+**B-002 and B-003 closed. The open backlog is empty for the first time.**
+
+### Phase invariants
+
+- **INV-006** established at every expiration the product sells, at a stated
+  floor, for every asset — where before only the 30-second horizon reached it.
+- **INV-005** unaffected: the horizon is an observation parameter throughout;
+  nothing in the estimator or the accumulator reaches generation.
+
+### What the phase learned
+
+**B-002 was two problems and only one was real.** The item read "roughly a
+hundred times the history", which sounded prohibitive. Measured first: the engine
+produces 730,638 ticks a second, so a simulated year costs 31 seconds. Compute
+was never the obstacle.
+
+The real obstacle was that nobody had checked whether the **error bar** survived
+at long horizons. PH-10 had just found the lattice tie rate carrying four times
+its binomial variance; applying that lesson uncritically to direction would have
+inflated every floor in the project by a factor that is not there. Measured, the
+direction design effect is 1 across all eight horizons, with the tie rate at 4.62
+from the same windows as a control.
+
+The distinction is exact and worth keeping: **a tie's probability tracks the
+volatility level, which is autocorrelated over days; a direction's probability is
+1/2 regardless of volatility.** One statistic of this market is dependent and the
+other is not, and they are computed from the same ticks.
+
+**A consistent sign across every horizon is a property of one path.** btcusd came
+back positive at all eight, and nothing was significant after correction — the
+easy move was to say so. Instead the phase derived what the pattern should look
+like if benign: non-overlapping window returns telescope, so conditioning on the
+terminal displacement gives an up-window excess in which the horizon dependence
+cancels. That became a measured column, and then an independent realisation of
+the same asset flipped all eight negative with the diagnostic flipping too.
+
+The consequence outlives btcusd: **the forty cells are closer to five tests than
+to forty**, and the evidence record says so instead of quoting the larger number.
+
+**Measuring coverage detected something that was not coverage.** Instrumentation
+slows execution five to tenfold, which turns a synchronous block that always
+survived at 3 seconds into a failure at 30. That surfaced the third recurrence of
+B-005's class and, with it, the guard B-010 had recorded as impossible — right
+about loops, wrong about entry points.
+
+### Known limitations carried forward
+
+- The long-horizon instrument conditions on **nothing**. A clean result there is
+  not stronger evidence than a clean battery verdict.
+- Only btcusd has been replicated; the other four rest on one realisation each.
+- `tools/sim` coverage is 56.55% because two entry points are unexercised.

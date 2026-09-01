@@ -19,7 +19,7 @@
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:cov": "vitest run --coverage",
+    "test:cov": "OTC_COVERAGE=1 vitest run --coverage",
     "test:stat": "vitest run --project statistical",
     "evidence:horizons": "npm run build && node tools/sim/dist/horizonEvidence.js",
     "lint": "eslint .",

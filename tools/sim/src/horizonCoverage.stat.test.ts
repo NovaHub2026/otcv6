@@ -83,6 +83,7 @@ interface RecordedRow {
   readonly upRate: number;
   readonly edgePoints: number;
   readonly z: number;
+  readonly pathBiasZ: number;
   readonly designEffect: number;
   readonly floorPoints: number;
   readonly policed: boolean;
@@ -96,9 +97,16 @@ function readRecordedRows(): RecordedRow[] {
   let threshold = Number.NaN;
 
   const header =
-    /^(\w+): [\d,]+ ticks, [\d.]+ simulated days \([\d.]+ years\), \d+ segments, payout threshold ([\d.]+)pp$/;
-  const row =
-    /^\| (\S+) \| ([\d,]+) \| ([\d.]+) \| ([+-][\d.]+) \| (-?[\d.]+) \| ([\d.]+) ±\d+% \| ([\d.]+) \| (yes|no) \|$/;
+    /^(\w+): [\d,]+ ticks, [\d.]+ simulated days \([\d.]+ years\), \d+ segments, payout threshold ([\d.]+)pp, net displacement -?[\d,]+ steps$/;
+  // Whitespace-tolerant on purpose: every markdown file here is Prettier
+  // formatted, and Prettier pads table cells to the widest entry in the column.
+  // A parser written against one run's column widths silently matches nothing
+  // after the next reformat — the exact hazard that produced a stale
+  // CURRENT_STATE.md three times before `stateConsistency.test.ts` existed.
+  const row = new RegExp(
+    '^\\|\\s*(\\S+)\\s*\\|\\s*([\\d,]+)\\s*\\|\\s*([\\d.]+)\\s*\\|\\s*([+-][\\d.]+)\\s*\\|' +
+      '\\s*(-?[\\d.]+)\\s*\\|\\s*(-?[\\d.]+)\\s*\\|\\s*([\\d.]+) ±\\d+%\\s*\\|\\s*([\\d.]+)\\s*\\|\\s*(yes|no)\\s*\\|$',
+  );
 
   for (const line of text.split('\n')) {
     const h = header.exec(line);
@@ -116,9 +124,10 @@ function readRecordedRows(): RecordedRow[] {
       upRate: Number.parseFloat(m[3]!),
       edgePoints: Number.parseFloat(m[4]!),
       z: Number.parseFloat(m[5]!),
-      designEffect: Number.parseFloat(m[6]!),
-      floorPoints: Number.parseFloat(m[7]!),
-      policed: m[8] === 'yes',
+      pathBiasZ: Number.parseFloat(m[6]!),
+      designEffect: Number.parseFloat(m[7]!),
+      floorPoints: Number.parseFloat(m[8]!),
+      policed: m[9] === 'yes',
       thresholdPoints: threshold,
     });
   }
@@ -165,6 +174,30 @@ describe('the recorded evidence re-derives from itself', () => {
       .filter((row) => Math.abs((row.upRate - 0.5) * 100 - row.edgePoints) > 0.006)
       .map((row) => `${row.asset} ${row.horizon}`);
     expect(wrong).toEqual([]);
+  });
+
+  it('has a path-bias diagnostic that stays flat across horizons', () => {
+    // The whole point of the column: the horizon dependence cancels, so within
+    // one asset it should barely move. If it starts varying with horizon, the
+    // derivation behind it is wrong and the "eight horizons are one test"
+    // reading has to be withdrawn.
+    const drifting: string[] = [];
+    for (const asset of new Set(rows.map((r) => r.asset))) {
+      const forAsset = rows.filter((r) => r.asset === asset);
+      const values = forAsset.map((r) => r.pathBiasZ);
+      const spread = Math.max(...values) - Math.min(...values);
+      const magnitude = Math.max(...values.map(Math.abs));
+      if (spread > 0.6 * Math.max(magnitude, 0.2)) {
+        drifting.push(
+          `${asset}: path bias z ranges ${Math.min(...values)}..${Math.max(...values)}`,
+        );
+      }
+      // And every horizon of one asset must agree on the direction of the bias.
+      if (new Set(values.map((v) => Math.sign(v))).size > 1) {
+        drifting.push(`${asset}: path bias z changes sign across horizons`);
+      }
+    }
+    expect(drifting).toEqual([]);
   });
 
   it('finds no significant edge across all 40 recorded tests', () => {

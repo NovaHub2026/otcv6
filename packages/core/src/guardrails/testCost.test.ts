@@ -29,6 +29,27 @@ const repoRoot = path.resolve(here, '../../../..');
 /** Loop bound above which a per-iteration assertion is a problem. */
 const LOOP_BOUND_LIMIT = 20_000;
 
+/** Every `*.stat.test.ts` in the workspace. */
+function statisticalTestFiles(): string[] {
+  const found: string[] = [];
+  const walk = (absolute: string): void => {
+    for (const entry of readdirSync(absolute)) {
+      if (entry === 'node_modules' || entry === 'dist') continue;
+      const child = path.join(absolute, entry);
+      if (statSync(child).isDirectory()) walk(child);
+      else if (entry.endsWith('.stat.test.ts')) found.push(child);
+    }
+  };
+  for (const group of ['packages', 'tools', 'apps']) {
+    try {
+      walk(path.join(repoRoot, group));
+    } catch {
+      // A group that does not exist yet is not a failure.
+    }
+  }
+  return found.sort();
+}
+
 function unitTestFiles(): string[] {
   const found: string[] = [];
   const walk = (absolute: string): void => {
@@ -151,5 +172,80 @@ describe('the fast suite stays fast', () => {
       'count inside the loop and assert once after it — a matcher call is ~25us, ' +
         'and this has already caused two timeouts that looked like unrelated failures',
     ).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PH-11.3: the synchronous-driver rule
+// ---------------------------------------------------------------------------
+
+/**
+ * A statistical test must not drive the engine through a synchronous entry point
+ * when a yielding one exists.
+ *
+ * ## Why this guard exists, and why it did not before
+ *
+ * This defect has now recurred three times:
+ *
+ * - **B-005** (PH-4) — calibration loops that never returned to the event loop.
+ *   Cost a phase gate.
+ * - **B-010** (PH-10.3) — `latticeTies.stat.test.ts` drove btcusd for 25 seconds
+ *   synchronously.
+ * - **PH-11.3** — `withheld.stat.test.ts` used `runBattery` instead of
+ *   `runBatteryAsync`; under coverage instrumentation that was **627 seconds**
+ *   of uninterrupted CPU.
+ *
+ * Each time the symptom is the most confusing failure this project produces: the
+ * worker's own RPC channel starves, and the run fails with
+ * `Timeout calling "onTaskUpdate"` **while reporting every test as passed**.
+ *
+ * B-010 concluded that no static guard could see it, because the offending loop
+ * is bounded at a small number and the per-iteration cost is unbounded — the
+ * source looks identical to the many short driver loops that are fine.
+ *
+ * That conclusion was right about *loops* and wrong about *entry points*. Every
+ * recurrence went through a function whose yielding twin already existed and was
+ * two characters away in the import list. That is statically visible, and it is
+ * the whole of what this checks.
+ *
+ * ## The escape hatch, and why it is spelled the way it is
+ *
+ * `catalogue.stat.test.ts` legitimately imports the synchronous variant, to
+ * assert that it rejects bad input. Renaming it on import —
+ * `calibrateAsset as calibrateAssetSync` — is how a test says the synchronous
+ * behaviour is the subject rather than the vehicle. An alias whose name contains
+ * `Sync` is therefore allowed, and it makes the intent visible at the call site
+ * instead of in a config file nobody reads.
+ */
+describe('statistical tests use the yielding driver', () => {
+  /** Entry points that walk a whole dataset and have an `...Async` twin. */
+  const SYNCHRONOUS_DRIVERS = [
+    'runBattery',
+    'runSimulation',
+    'calibrateAsset',
+    'estimateDirectionalEdge',
+  ] as const;
+
+  const statisticalTests = statisticalTestFiles();
+
+  it('finds statistical tests to check', () => {
+    expect(statisticalTests.length).toBeGreaterThan(5);
+  });
+
+  it.each(SYNCHRONOUS_DRIVERS)('no statistical test imports %s without saying so', (driver) => {
+    const offenders: string[] = [];
+    for (const file of statisticalTests) {
+      const source = readFileSync(file, 'utf8');
+      for (const block of source.matchAll(/import\s*\{([^}]*)\}\s*from/g)) {
+        for (const specifier of block[1]!.split(',')) {
+          const [imported, alias] = specifier.split(/\s+as\s+/).map((part) => part.trim());
+          if (imported !== driver) continue;
+          // The async twin is a different identifier and never matches here.
+          if (alias !== undefined && /sync/i.test(alias)) continue;
+          offenders.push(`${path.relative(repoRoot, file)} imports ${driver}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });

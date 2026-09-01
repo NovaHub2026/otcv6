@@ -15,20 +15,20 @@ Last synchronized: 2026-08-31
 | Field                            | Value                                                                   |
 | -------------------------------- | ----------------------------------------------------------------------- |
 | Active development cycle         | Cycle 4                                                                 |
-| Approved phases in current cycle | **1 of 3**                                                              |
+| Approved phases in current cycle | **2 of 3**                                                              |
 | Cycle Audit state                | None active — runs automatically after PH-12 (ADR-0008)                 |
 | Last Cycle Audit                 | [Cycle Audit 003](docs/audits/CYCLE-AUDIT-003.md) — APPROVED 2026-08-31 |
 
 ## Phase and subphase
 
-| Field                  | Value                                                       |
-| ---------------------- | ----------------------------------------------------------- |
-| Active phase           | PH-11 — Detection Power Across Every Horizon                |
-| Phase lifecycle        | ACTIVE — context document next                              |
-| Active subphase        | None                                                        |
-| Subphase lifecycle     | n/a                                                         |
-| Last approved phase    | PH-10 — Per-Asset Market Rhythm                             |
-| Last approved subphase | PH-10.3 — Revalidation: every asset, every guarantee, again |
+| Field                  | Value                                                 |
+| ---------------------- | ----------------------------------------------------- |
+| Active phase           | PH-12 — Verifiable Publication                        |
+| Phase lifecycle        | ACTIVE — context document next                        |
+| Active subphase        | None                                                  |
+| Subphase lifecycle     | n/a                                                   |
+| Last approved phase    | PH-11 — Detection Power Across Every Horizon          |
+| Last approved subphase | PH-11.3 — Coverage over tools/, and phase integration |
 
 ## Cycle 1 result
 

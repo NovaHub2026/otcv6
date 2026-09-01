@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { epochMillis, MasterKeyring, type InstrumentSpec } from '@otc/core';
 import { fixtureByName, LEVEL_ANCHOR_CELL_STEPS } from '@otc/fixtures';
-import { estimateConditionalEdge, estimateDirectionalEdge } from './edge.js';
+import { estimateConditionalEdge, estimateDirectionalEdgeAsync } from './edge.js';
 import { runSimulationAsync } from './runner.js';
 
 /**
@@ -64,7 +64,7 @@ async function prices(name: string, strength: number, ticks = TICKS): Promise<In
 
 async function unconditionalZ(name: string, strength: number, horizon: number): Promise<number> {
   const series = await prices(name, strength);
-  return estimateDirectionalEdge(series, [horizon], name).horizons[0]!.z;
+  return (await estimateDirectionalEdgeAsync(series, [horizon], name)).horizons[0]!.z;
 }
 
 async function worstConditionalZ(
@@ -102,7 +102,7 @@ const cellHalf = (p: Int32Array, i: number): number => {
 
 describe('the control has no directional edge', () => {
   it('shows none at any supported horizon', async () => {
-    const report = estimateDirectionalEdge(
+    const report = await estimateDirectionalEdgeAsync(
       await prices('symmetricControl', 0),
       [1, 5, 30, 60, 300, 900],
       'symmetricControl',
@@ -209,6 +209,12 @@ describe('simulation throughput', () => {
     );
     expect(result.tickCount).toBe(1_000_000);
     expect(result.candles.get('1m')!.length).toBeGreaterThan(1000);
-    expect(perSecond).toBeGreaterThan(200_000);
+    // Not asserted while measuring coverage: v8 instrumentation rewrites every
+    // function, so this would be measuring the instrumentation rather than the
+    // generator. The work still runs — the point under coverage is to exercise
+    // the path, not to judge its speed. Measured uninstrumented: 730,000/s.
+    if (process.env.OTC_COVERAGE !== '1') {
+      expect(perSecond).toBeGreaterThan(200_000);
+    }
   });
 });

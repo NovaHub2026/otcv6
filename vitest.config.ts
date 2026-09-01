@@ -23,6 +23,21 @@ const alias = {
 
 const commonExclude = ['**/node_modules/**', '**/dist/**', '**/artifacts/**'];
 
+/**
+ * Coverage instrumentation rewrites every function to record which lines ran.
+ * That is what makes it useful, and it is also what makes a wall-clock timeout
+ * measure the instrumentation rather than the code: a test that takes one second
+ * normally can exceed a five-second limit under it.
+ *
+ * PH-11.3 found `npm run test:cov` failing on exactly that, which meant coverage
+ * was still effectively unmeasured (B-003) even after `tools/` was added to it.
+ *
+ * The signal is an explicit variable set by the `test:cov` script, not a guess at
+ * Vitest's internals, so it cannot silently stop working when Vitest changes.
+ */
+const measuringCoverage = process.env.OTC_COVERAGE === '1';
+const unitTimeoutMs = measuringCoverage ? 60_000 : 5_000;
+
 export default defineConfig({
   resolve: { alias },
   test: {
@@ -39,6 +54,7 @@ export default defineConfig({
             'apps/*/src/**/*.test.ts',
           ],
           exclude: [...commonExclude, '**/*.stat.test.ts'],
+          testTimeout: unitTimeoutMs,
         },
       },
       {

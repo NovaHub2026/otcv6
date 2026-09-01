@@ -73,10 +73,23 @@ export interface HorizonCoverageRow {
    * rather than eight, and a path that happens to end up displaced looks like a
    * consistent edge at every expiry the product sells.
    *
-   * PH-11.2 needed this. btcusd came back positive at all eight horizons with a
-   * roughly flat z, which is exactly this signature and not a directional leak.
-   * No normality is assumed: `E|X|` and `σ` are both measured from the windows
-   * themselves, which matters at an excess kurtosis of 150.
+   * **What it predicts, and what it does not.** The derivation is a first-order
+   * projection, so it is reliable for the *sign* of the bias and for its
+   * *flatness across horizons* — both of which are strongly borne out — and not
+   * for its magnitude. Measured, the observed z runs between 0.8x and 3.3x this
+   * value depending on the asset, because σ² is inflated by tail events that
+   * carry no proportionate sign information.
+   *
+   * Read it as: **how strongly this path's displacement biases every horizon in
+   * the same direction.** Measured across the catalogue, |pathBiasZ| predicts how
+   * consistent the observed signs are — btcusd at 0.85 came back 8/8 the same
+   * way, spx at 0.64 came back 6/8, and the assets near 0.15 came back mixed.
+   *
+   * PH-11.2 needed this. btcusd was positive at all eight horizons; an
+   * independent realisation of the same asset flipped all eight negative, and
+   * this diagnostic changed sign with them. No normality is assumed: `E|X|` and
+   * `σ` are both measured from the windows themselves, which matters at an
+   * excess kurtosis of 150.
    */
   readonly pathBiasZ: number;
   readonly designEffect: number;
