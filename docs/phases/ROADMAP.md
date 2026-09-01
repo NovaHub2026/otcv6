@@ -340,12 +340,12 @@ So Cycle 5 is derived from what the _product_ needs rather than from what was
 left over, and the ordering is deliberate: **can you afford to run it, can you
 scale it, can you operate it.**
 
-| Phase | Title                                                        | State       |
-| ----- | ------------------------------------------------------------ | ----------- |
-| PH-13 | Operator risk: variance, correlated flow and capacity        | **ACTIVE**  |
-| PH-14 | Multi-node consistency and horizontal scale-out              | not started |
-| PH-15 | Operations: the standing guarantee, running continuously     | not started |
-| —     | **Cycle Audit 5** — automatic, independent agents (ADR-0011) | not started |
+| Phase | Title                                                        | State        |
+| ----- | ------------------------------------------------------------ | ------------ |
+| PH-13 | Operator risk: variance, correlated flow and capacity        | **APPROVED** |
+| PH-14 | Multi-node consistency and horizontal scale-out              | **ACTIVE**   |
+| PH-15 | Operations: the standing guarantee, running continuously     | not started  |
+| —     | **Cycle Audit 5** — automatic, independent agents (ADR-0011) | not started  |
 
 ### PH-13 — Operator Risk: Variance, Correlated Flow and Capacity
 
@@ -366,6 +366,12 @@ flow makes ruin likely?
 It is also the one phase where the anti-predictability theorem gives no comfort.
 `P(up) = P(down)` exactly means the _expectation_ is safe; it says nothing about
 the tail.
+
+| Subphase | Title                                            | State    |
+| -------- | ------------------------------------------------ | -------- |
+| PH-13.1  | The exposure model                               | APPROVED |
+| PH-13.2  | Risk of ruin, capacity, and the limits           | APPROVED |
+| PH-13.3  | Enforcement in the venue, with INV-001 preserved | APPROVED |
 
 ### PH-14 — Multi-Node Consistency and Horizontal Scale-Out
 

@@ -11,8 +11,8 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Last clean session | 2026-08-31                                          |
 | Branch             | `main` — every phase branch merged and deleted      |
 | Remote             | `origin` → NovaHub2026/otcv6 — pushed, in sync      |
-| Active cycle       | Cycle 5, **0 of 3** phases approved                 |
-| Active phase       | none — PH-13 is next to be created                  |
+| Active cycle       | Cycle 5, **1 of 3** phases approved                 |
+| Active phase       | PH-14 — next to be created                          |
 | Active subphase    | none                                                |
 | Cycle Audit        | 004 **APPROVED** — 12 material findings, all closed |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)  |
