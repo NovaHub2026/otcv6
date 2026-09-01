@@ -52,11 +52,11 @@ viewer can see.
 
 ## 4. Subphases
 
-| Subphase | Title                                                   | State       |
-| -------- | ------------------------------------------------------- | ----------- |
-| PH-18.1  | The engine's administrative surface                     | APPROVED    |
-| PH-18.2  | TradingView against PH-8's rendering contract           | ACTIVE      |
-| PH-18.3  | Live preview: selection, streaming, timeframe switching | not started |
+| Subphase | Title                                                   | State    |
+| -------- | ------------------------------------------------------- | -------- |
+| PH-18.1  | The engine's administrative surface                     | APPROVED |
+| PH-18.2  | TradingView against PH-8's rendering contract           | APPROVED |
+| PH-18.3  | Live preview: selection, streaming, timeframe switching | ACTIVE   |
 
 ## 5. Phase invariants
 

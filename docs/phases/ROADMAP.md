@@ -463,11 +463,11 @@ price ceiling was refused.
 One submenu. Select among the configured assets, watch them live, change the
 displayed timeframe in real time.
 
-| Subphase | Title                                                   | State       |
-| -------- | ------------------------------------------------------- | ----------- |
-| PH-18.1  | The engine's administrative surface                     | APPROVED    |
-| PH-18.2  | TradingView against PH-8's rendering contract           | ACTIVE      |
-| PH-18.3  | Live preview: selection, streaming, timeframe switching | not started |
+| Subphase | Title                                                   | State    |
+| -------- | ------------------------------------------------------- | -------- |
+| PH-18.1  | The engine's administrative surface                     | APPROVED |
+| PH-18.2  | TradingView against PH-8's rendering contract           | APPROVED |
+| PH-18.3  | Live preview: selection, streaming, timeframe switching | ACTIVE   |
 
 INV-004 already guarantees that changing the displayed timeframe never changes
 the market, and PH-8 built the rendering contract that invents no price and

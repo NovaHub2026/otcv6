@@ -17,6 +17,7 @@
     "build": "tsc -b",
     "clean": "tsc -b --clean && rimraf packages/*/dist tools/*/dist",
     "typecheck": "tsc -b --pretty false",
+    "typecheck:web": "tsc -p apps/web --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:cov": "OTC_COVERAGE=1 vitest run --coverage",
@@ -26,7 +27,7 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "gate": "npm run format:check && npm run build && npm run lint && npm run test"
+    "gate": "npm run format:check && npm run build && npm run typecheck:web && npm run lint && npm run test"
   },
   "devDependencies": {
     "@types/node": "^22.15.3",
