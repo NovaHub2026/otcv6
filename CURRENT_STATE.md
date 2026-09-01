@@ -143,7 +143,7 @@ Cycle 1's numbers, and the coverage figure, are in
 | ADR-0012 | Generation is single-writer per asset; leadership is a fenced lease (APPROVED) |
 | Backlog  | `docs/BACKLOG.md` — B-012 … B-020 **open** (Cycle Audit 5); B-001…B-011 closed |
 | Roadmap  | `docs/phases/ROADMAP.md`                                                       |
-| Branch   | `feature/ph-16-audit-remediation`                                              |
+| Branch   | `main` — PH-16 merged                                                          |
 
 ---
 

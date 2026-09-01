@@ -9,7 +9,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Field              | Value                                                    |
 | ------------------ | -------------------------------------------------------- |
 | Last clean session | 2026-09-01                                               |
-| Branch             | `feature/ph-16-audit-remediation`                        |
+| Branch             | `main` — PH-16 merged                                    |
 | Remote             | `origin` → NovaHub2026/otcv6 — public, hosted CI running |
 | Active cycle       | Cycle 6, **1 of 3** phases approved                      |
 | Active phase       | PH-17 — Assets become data                               |
