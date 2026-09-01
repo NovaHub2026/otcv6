@@ -60,9 +60,14 @@ records under `docs/audits/`. This document is not the place for them.
 
 ## Last executed verification
 
-`npm run gate` at the PH-15 phase gate, 2026-09-01: **exit 0**. Unit 73 files /
-1,495 tests; statistical 29 files / 204 tests. **That run is not reproducible**:
-see B-021 — the gate fails roughly one run in five. Format, build and lint all exit 0,
+`npm run gate` on the Cycle Audit 5 remediation tree, 2026-09-01: **exit 0** —
+103 files, 1,770 tests (unit 74/1,566, statistical 29/204).
+
+Before that run the gate was **not reproducible**: an auditor measured a ~25%
+failure rate on an idle box, because ten unit tests sat between 2.5s and 4.2s
+against a 5s timeout. The timeout is now 20s and eleven consecutive unit runs
+have passed. B-021's other half — the `onTaskUpdate` RPC starvation when two
+long statistical suites overlap — is still open. Format, build and lint all exit 0,
 in that order — build before lint, because the type-aware rules resolve workspace
 types through emitted declarations.
 

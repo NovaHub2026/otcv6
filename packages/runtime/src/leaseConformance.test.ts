@@ -1,6 +1,6 @@
 // Invariant evidence: INV-002 (shared market), INV-009 (reproducible settlement).
 import { describe, expect, it } from 'vitest';
-import { epochMillis, SteppableClock, type EpochMillis } from '@otc/core';
+import { epochMillis, logPrice, SteppableClock, type EpochMillis, type Tick } from '@otc/core';
 import { StaleFenceError, type FenceToken } from './fence.js';
 import {
   AssetLease,
@@ -29,11 +29,11 @@ export interface StoreUnderTest {
 }
 
 /** A tick, for exercising the replication half of the contract. */
-export function stubTick(sequence: number, price = 100_000 + sequence) {
+export function stubTick(sequence: number, price = 100_000 + sequence): Tick {
   return {
     sequence,
     instant: epochMillis(1_776_000_000_000 + sequence * 1_000),
-    price: price as unknown as import('@otc/core').LogPrice,
+    price: logPrice(price),
   };
 }
 
