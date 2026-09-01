@@ -18,6 +18,9 @@ const GENESIS = epochMillis(1_776_000_000_000);
 const keyring = MasterKeyring.forTesting('persistence-spec');
 const asset = ASSET_CATALOGUE[0]!;
 
+/** See the note in `hosted.test.ts`: these tests declare their catch-up bursts. */
+const TEST_CATCH_UP_MS = 86_400_000;
+
 function base(store: MemoryStateStore | FileStateStore, clock: SteppableClock) {
   return {
     asset,
@@ -26,6 +29,7 @@ function base(store: MemoryStateStore | FileStateStore, clock: SteppableClock) {
     clock,
     store,
     genesisInstant: GENESIS,
+    maxCatchUpMs: TEST_CATCH_UP_MS,
   };
 }
 

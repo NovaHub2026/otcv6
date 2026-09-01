@@ -2,7 +2,7 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-12
-Status: ACTIVE
+Status: APPROVED
 Cycle: 4 (phase 3 of 3)
 Created: 2026-09-01
 Branch: `feature/ph-12-verifiable-publication`
@@ -144,3 +144,70 @@ at verification time, without any private key, and without the whole journal.
 | Cryptography implying statistical fairness               | Real and rhetorical. Every claim about a commitment must say what it does _not_ cover (§3.3), including in the code comments and the verifier's output. |
 | Commitment cost in the tick path                         | Hashing every tick on the publishing path adds work to a loop that runs continuously. Measured, not assumed.                                            |
 | A root published too late to mean anything               | Addressed by cadence in market time (§3.4), and the property must be tested rather than documented.                                                     |
+
+---
+
+## 10. Phase approval record
+
+**APPROVED** from executed evidence, 2026-09-01.
+
+### The result the phase existed to produce
+
+**The published record is provably the record.** A counterparty holding a tick, a
+proof and a public key can establish it was in the operator's committed history —
+without the operator's cooperation, without any private key, and without the
+whole journal.
+
+| Subphase | Title                                                  | State    |
+| -------- | ------------------------------------------------------ | -------- |
+| PH-12.1  | A commitment over the journal, with inclusion proofs   | APPROVED |
+| PH-12.2  | The publishing key, and its separation from generation | APPROVED |
+| PH-12.3  | The service emits the journal; the venue gets policy   | APPROVED |
+
+**B-009 closed.** Two long-carried limitations closed with it: the journal is now
+emitted by the running service, and the catch-up bound has an owner and a policy
+(ADR-0010).
+
+### Phase invariants
+
+- **INV-010** — the publishing key is structurally incapable of deriving the
+  market: separate algorithm, separate input, a source guard that fails if the
+  signing path reaches the keyring, and a startup refusal if an operator supplies
+  the generation secret as the publishing key. Both halves watched failing.
+- **INV-009** strengthened from "anyone holding the record can recompute the
+  verdict" to "anyone can prove which record it was".
+- **INV-001** — the publisher sees ticks only after the venue has published them.
+  It holds no engine and no keyring.
+
+### What the phase learned
+
+**The decision was the easy part; the separation was the point.** Publishing
+verifiable proofs had been an open Protected Human Decision for four cycles.
+Deciding it took a paragraph. What took the work was making the publishing key
+_structurally_ unable to derive the market — because the convenient version of
+this feature, one secret to deploy and rotate, quietly converts a leaked signing
+key into a forward leak of future prices.
+
+**Three published attacks were closed by construction rather than by review.**
+Domain separation between leaf and node hashes; promotion instead of duplication
+for odd levels with the count bound into the root; and full framing of asset,
+range and predecessor. Each is a named historical break of a Merkle scheme, and
+each has a test that fails if the defence is removed.
+
+**A guard that only says "the attack is absent" misses the deletion of the
+defence.** The publishing-key guard's first version banned `OTC_MASTER_SECRET`
+from the signing path and fired on the line that _is_ the defence. It now bans
+what grants the capability and, separately, asserts the refusal is still present.
+Those are different claims and only the second notices a removal.
+
+**Cryptography reads as stronger than it is, and the phase says so repeatedly.**
+A commitment proves the record is the record. It says nothing about whether the
+market was generated fairly — that rests on ADR-0003, the mirror test and the
+battery, which the counterparty re-runs themselves. A commitment over a rigged
+market is a perfectly valid commitment, and every layer of this phase states it.
+
+### Known limitations carried forward
+
+- Where roots are published is a distribution decision, unaddressed.
+- Key rotation is supported by the format but has no procedure.
+- No retention or pruning policy for journals.

@@ -271,8 +271,8 @@ holding nothing but the one item that needs the Human Owner.
 | ----- | ------------------------------------------------------------- | ------------ |
 | PH-10 | Per-asset market rhythm                                       | **APPROVED** |
 | PH-11 | Detection power across every horizon the product sells        | **APPROVED** |
-| PH-12 | Verifiable publication and the journal in the running service | **ACTIVE**   |
-| —     | **Cycle Audit 4** — automatic (ADR-0008)                      | not started  |
+| PH-12 | Verifiable publication and the journal in the running service | **APPROVED** |
+| —     | **Cycle Audit 4** — automatic (ADR-0008)                      | **ACTIVE**   |
 
 | Phase | Closes                                                                     |
 | ----- | -------------------------------------------------------------------------- |
@@ -322,11 +322,11 @@ PH-9 produced a verdict a counterparty can recompute, and said plainly that its
 fingerprint proves agreement rather than authenticity. PH-12 closes that, and
 connects the journal to the service that actually runs.
 
-| Subphase | Title                                                  | State       |
-| -------- | ------------------------------------------------------ | ----------- |
-| PH-12.1  | A commitment over the journal, with inclusion proofs   | APPROVED    |
-| PH-12.2  | The publishing key, and its separation from generation | ACTIVE      |
-| PH-12.3  | The service emits the journal; the venue gets policy   | not started |
+| Subphase | Title                                                  | State    |
+| -------- | ------------------------------------------------------ | -------- |
+| PH-12.1  | A commitment over the journal, with inclusion proofs   | APPROVED |
+| PH-12.2  | The publishing key, and its separation from generation | APPROVED |
+| PH-12.3  | The service emits the journal; the venue gets policy   | APPROVED |
 
 ---
 
