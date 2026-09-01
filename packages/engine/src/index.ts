@@ -105,3 +105,13 @@ export {
   type AuthoringTargets,
   type RegisteredAsset,
 } from './catalogue.js';
+export {
+  ASSET_ID_PATTERN,
+  checkIdentity,
+  registerAsset,
+  type DifferentiationCheck,
+  type RegistrationOptions,
+  type RegistrationOutcome,
+  type RegistrationRequest,
+  type RegistrationStage,
+} from './registration.js';

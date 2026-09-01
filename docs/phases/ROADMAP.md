@@ -448,8 +448,8 @@ solve, lattice calibration, tie-rate measurement, INV-007 differentiation.
 
 | Subphase | Title                                                   | State       |
 | -------- | ------------------------------------------------------- | ----------- |
-| PH-17.1  | Runtime asset definitions and the creation pipeline     | not started |
-| PH-17.2  | Families, sampled personalities, and dispersion budgets | not started |
+| PH-17.1  | Runtime asset definitions and the creation pipeline     | APPROVED    |
+| PH-17.2  | Families, sampled personalities, and dispersion budgets | ACTIVE      |
 | PH-17.3  | Backdated history and continuous persistence at scale   | not started |
 
 Six to eight families, and per-asset personalities **sampled** within a family
