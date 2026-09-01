@@ -65,7 +65,12 @@ viewer can see.
 - **INV-004** — changing the displayed timeframe never changes the market. The
   panel switches timeframes by re-reading a view, never by re-generating.
 - **INV-001** — the panel is an operator surface, and nothing on it may reach
-  the price path. The guardrail scan is what keeps that true.
+  the price path. Two things keep that true, and **Cycle Audit 6 (CA6-11) found
+  this line naming one of them wrongly**: the guardrail scan's roots stopped at
+  `packages/`, so it never opened the directory this sentence cited it for. The
+  scan now covers `apps/api/src`; the browser bundle is protected instead by the
+  dependency guard, which may not import the engine, the laboratory or the
+  planted-defect corpus — and which CA6-12 fixed to read `.tsx` at all.
 
 ## 6. Integrated phase verification
 

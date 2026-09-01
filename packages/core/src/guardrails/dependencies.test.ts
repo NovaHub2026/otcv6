@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { moduleSpecifiers } from './sourceScan.js';
 
 /**
  * Dependency direction.
@@ -105,6 +106,20 @@ function workspaces(): Workspace[] {
   return found.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * What counts as a source file here.
+ *
+ * **Cycle Audit 6, CA6-12.** This read only `.ts`, so seven of `apps/web`'s nine
+ * files — every React component, including the whole browser bundle — were never
+ * opened. An auditor imported `@otc/fixtures`, the planted-defect corpus, into
+ * the shipped panel and every check in the repository stayed green; the same
+ * import into a `.ts` file two directories away was caught by name.
+ *
+ * `.mts`/`.cts` are included for the same reason `.tsx` now is: the guard should
+ * fail because a rule was broken, never because of how a file was spelled.
+ */
+const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts'] as const;
+
 function sourceFiles(dir: string): string[] {
   const found: string[] = [];
   const walk = (absolute: string): void => {
@@ -112,7 +127,7 @@ function sourceFiles(dir: string): string[] {
       if (entry === 'node_modules' || entry === 'dist') continue;
       const child = path.join(absolute, entry);
       if (statSync(child).isDirectory()) walk(child);
-      else if (entry.endsWith('.ts')) found.push(child);
+      else if (SOURCE_EXTENSIONS.some((extension) => entry.endsWith(extension))) found.push(child);
     }
   };
   const src = path.join(dir, 'src');
@@ -120,29 +135,8 @@ function sourceFiles(dir: string): string[] {
   return found;
 }
 
-/** Remove line and block comments, so prose about imports is not an import. */
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
-}
-
-/**
- * Every module specifier a file references, static or dynamic.
- *
- * The `\(?` matters. Cycle Audit 2 showed that the original pattern saw only
- * static forms, so `await import('@nestjs/common')` inside the engine and
- * `await import('@otc/engine')` inside trading both passed every check here —
- * the guardrail could be stepped around by writing the import differently.
- */
 function allSpecifiers(file: string): string[] {
-  // Comments are stripped first. Without that, this file's own prose about
-  // `import('@nestjs/common')` flagged @otc/core as importing a framework —
-  // a guardrail failing on its own explanation of itself.
-  const source = stripComments(readFileSync(file, 'utf8'));
-  const specifiers: string[] = [];
-  for (const match of source.matchAll(/(?:from|import|require)\s*\(?\s*['"]([^'"]+)['"]/g)) {
-    specifiers.push(match[1]!);
-  }
-  return specifiers;
+  return moduleSpecifiers(readFileSync(file, 'utf8'));
 }
 
 /** Bare specifiers only: package names, not relative paths. */

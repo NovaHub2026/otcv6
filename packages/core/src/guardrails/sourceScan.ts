@@ -47,11 +47,33 @@ export interface Violation {
  * that removes string contents too, and the specifier is a string. Scanning
  * character by character is the only way to tell a comment from a string that
  * looks like one.
+ *
+ * **Cycle Audit 6, CA6-03.** The first version knew a string from a comment and
+ * did not know a **regular-expression literal** — thirty lines above a function
+ * in this same file that does. A regex whose character class contains `/*` is
+ * valid JavaScript and needs no escape:
+ *
+ * ```ts
+ * const SEPARATOR = /[/*]/;
+ * import * as gen from '@otc/engine';
+ * const CLOSE = '*' + '/';
+ * ```
+ *
+ * Everything between vanished from the scan, including a plain static engine
+ * import. An auditor gave a follower a real engine, watched it produce ticks,
+ * and every one of the 297 guardrail tests stayed green — the same outcome
+ * CA5-05 produced, in the function written to fix CA5-05.
+ *
+ * The lesson recorded here rather than in a commit message: **a lexer that is
+ * nearly right is a lexer that is wrong**, and this file already contained the
+ * right one. The two scanners now handle the same three constructs and differ
+ * only in what they emit.
  */
 export function stripCommentsKeepingStrings(source: string): string {
   let out = '';
   let i = 0;
   const n = source.length;
+  let previousMeaningful = '';
   while (i < n) {
     const c = source[i]!;
     const next = source[i + 1];
@@ -86,9 +108,29 @@ export function stripCommentsKeepingStrings(source: string): string {
         out += source[i]!;
         i += 1;
       }
+      previousMeaningful = quote;
+      continue;
+    }
+    if (c === '/' && /[=(,:[!&|?{;+\-*%<>~^]/.test(previousMeaningful)) {
+      // A regular-expression literal, told from division by what precedes it.
+      // Its contents are dropped rather than kept: nothing executable can hide
+      // inside one, and keeping them would let `/createMarketEngine/` trip the
+      // identifier scan — a false positive is safe, but a needless one.
+      i += 1;
+      while (i < n && source[i] !== '/') {
+        if (source[i] === '\\') i += 1;
+        if (source[i] === '[') {
+          while (i < n && source[i] !== ']') i += 1;
+        }
+        i += 1;
+      }
+      i += 1;
+      out += '/ /';
+      previousMeaningful = '/';
       continue;
     }
     out += c;
+    if (!/\s/.test(c)) previousMeaningful = c;
     i += 1;
   }
   return out;
@@ -267,4 +309,106 @@ export function scanSource(file: string, source: string, rules: readonly Rule[])
     }
   }
   return violations;
+}
+
+/**
+ * Every module specifier a file references, static or dynamic.
+ *
+ * A scanner rather than a pattern, because the two things a pattern cannot tell
+ * apart are exactly the two that matter here: a specifier is a string, and a
+ * *test fixture describing* an import is also a string.
+ *
+ * **Cycle Audit 6, CA6-13.** The dependency guard used
+ * `/(?:from|import|require)\s*\(?\s*['"]([^'"]+)['"]/` over a comment-stripped
+ * source. Sharing the correct comment scanner immediately surfaced the other
+ * half of the problem: `singleWriter.test.ts` holds the string
+ * `"import * as engineModule from '@otc/engine';"` as a fixture, and the pattern
+ * read it as an import — a guardrail failing on another guardrail's evidence.
+ *
+ * So this walks tokens. A specifier is a string literal that follows `from`,
+ * `import` or `require` **in code**, with only whitespace or an opening
+ * parenthesis between. A string that merely contains those words is a string.
+ */
+export function moduleSpecifiers(source: string): string[] {
+  const out: string[] = [];
+  const n = source.length;
+  let i = 0;
+  let word = '';
+  let expectingSpecifier = false;
+  let previousMeaningful = '';
+
+  const endWord = (): void => {
+    if (word === 'from' || word === 'import' || word === 'require') expectingSpecifier = true;
+    else if (word.length > 0) expectingSpecifier = false;
+    if (word.length > 0) previousMeaningful = word[word.length - 1]!;
+    word = '';
+  };
+
+  while (i < n) {
+    const c = source[i]!;
+    const next = source[i + 1];
+
+    if (c === '/' && next === '/') {
+      endWord();
+      while (i < n && source[i] !== '\n') i += 1;
+      continue;
+    }
+    if (c === '/' && next === '*') {
+      endWord();
+      i += 2;
+      while (i < n && !(source[i] === '*' && source[i + 1] === '/')) i += 1;
+      i += 2;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') {
+      endWord();
+      const quote = c;
+      i += 1;
+      let value = '';
+      while (i < n && source[i] !== quote) {
+        if (source[i] === '\\') {
+          i += 1;
+          if (i < n) {
+            value += source[i]!;
+            i += 1;
+          }
+          continue;
+        }
+        value += source[i]!;
+        i += 1;
+      }
+      i += 1;
+      if (expectingSpecifier) out.push(value);
+      expectingSpecifier = false;
+      previousMeaningful = quote;
+      continue;
+    }
+    if (c === '/' && /[=(,:[!&|?{;+\-*%<>~^]/.test(previousMeaningful)) {
+      endWord();
+      i += 1;
+      while (i < n && source[i] !== '/') {
+        if (source[i] === '\\') i += 1;
+        if (source[i] === '[') {
+          while (i < n && source[i] !== ']') i += 1;
+        }
+        i += 1;
+      }
+      i += 1;
+      expectingSpecifier = false;
+      previousMeaningful = '/';
+      continue;
+    }
+    if (/[A-Za-z_$0-9]/.test(c)) {
+      word += c;
+      i += 1;
+      continue;
+    }
+    endWord();
+    // Whitespace and an opening parenthesis keep a keyword waiting, so both
+    // `import('x')` and `require ( 'x' )` are seen. Anything else ends it.
+    if (!/[\s(]/.test(c)) expectingSpecifier = false;
+    if (!/\s/.test(c)) previousMeaningful = c;
+    i += 1;
+  }
+  return out;
 }

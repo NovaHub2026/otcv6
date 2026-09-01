@@ -77,4 +77,10 @@ jobs:
         # precomputed feature frame, which needs more heap than the default.
         env:
           NODE_OPTIONS: --max-old-space-size=6144
-        run: npx vitest run --project statistical
+        # `npm run test:stat`, not a bare vitest invocation. The script carries
+        # `--no-file-parallelism`, and Cycle Audit 6 (CA6-01) found that the
+        # setting could not live in the config: Vitest 3 drops it inside a
+        # project block. Without it this job reported 4,664 seconds of test time
+        # inside a 718-second run — five files at a time on a two-core runner —
+        # and failed on a throughput floor that was measuring the contention.
+        run: npm run test:stat
