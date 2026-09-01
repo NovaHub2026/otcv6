@@ -44,6 +44,29 @@ import type { HorizonSpec } from './horizons.js';
  * The lesson from removing the old floor is the one this project keeps
  * relearning: a number that reads as a guarantee and is computed by the wrong
  * instrument is worse than no number, because it invites reliance.
+ *
+ * ## What `clean` means, and what it does not
+ *
+ * **Cycle Audit 6, CA6-04.** An auditor keyed the direction of each 60-second
+ * block to a bit of `splitmix32(blockIndex)` — public arithmetic anyone can
+ * recompute — and this function returned `clean` on a record paying an observer
+ * **+1.4% per trade**, 3.8 times the threshold it exports as
+ * {@link PRODUCT_MARGIN_PP}. Every temporal family conditioned on the clock's
+ * *phase*; none on the clock's **identity**. Three families now do
+ * (`block-index-digest-*`), and `blockIdentity.stat.test.ts` runs that exact
+ * record and requires `exploitable`.
+ *
+ * The general limit survives the fix and is stated here rather than left to be
+ * discovered again: **a battery tests the hypotheses it contains.** `clean` means
+ * *no hypothesis in this family set fired at this power* — never *there is no
+ * leak*. An adversary may key on any public function of the record, and no finite
+ * battery enumerates them all.
+ *
+ * What does carry an unconditional claim is the engine itself: ADR-0003 makes
+ * every sign an independent fair coin drawn from a stream the magnitude process
+ * cannot observe, so `P(up) = P(down)` exactly, under every public conditioning,
+ * whether or not a family for it exists. The battery is evidence that the
+ * implementation matches the theorem; it is not the source of the guarantee.
  */
 
 /** The bias that becomes profitable at the promotional payout: 0.2513pp. */
@@ -71,8 +94,23 @@ export interface HorizonStanding {
    * held, because it is a property of that history and the history grows.
    */
   readonly detectionFloorPp: number;
-  /** Whether that floor is finer than the margin the payout implies. */
+  /** Whether that floor is finer than the margin the battery's payout implies. */
   readonly sufficientForPayout: boolean;
+  /**
+   * Whether that floor is finer than **the product's** margin.
+   *
+   * **Cycle Audit 6, A6-03.** `classifyStanding` read `sufficientForPayout`,
+   * which the battery computes against whatever payout its caller handed it —
+   * and `PAYOUT_TYPICAL = 0.85` is a payout this repository ships. Measured: 33
+   * hours of a fair walk, judged at 0.85, reported **clean** with a detection
+   * floor of 4.040pp, sixteen times coarser than the 0.2513pp margin
+   * {@link PRODUCT_MARGIN_PP} exports — under the same word a year of history
+   * would earn.
+   *
+   * `PRODUCT_MARGIN_PP` was defined in this module, exported, asserted in one
+   * test for its numeric value, and read by nothing. It is read here now.
+   */
+  readonly sufficientForProductMargin: boolean;
 }
 
 /** A finding the battery judged both significant and economically material. */
@@ -141,6 +179,30 @@ export function assertIndependentFamilies(
         `shaped to survive, so a clean result from them is not independent evidence.`,
     );
   }
+}
+
+/**
+ * The family set a standing run is made from, and the refusal that guards it.
+ *
+ * **Cycle Audit 6, A6-05.** A refusal used to live at this point, written as
+ * `assertIndependentFamilies(withheld, [...built])` — where `available` was
+ * derived from `families`, so `missing` was always empty and no input to
+ * `runStandingAssurance` could make it throw. An auditor deleted the call and
+ * the whole laboratory suite stayed green.
+ *
+ * It is gone rather than moved, and that is the honest answer. Composition here
+ * is `[...ATTACK_FAMILIES, ...withheld]`: it cannot lose a family, so a check
+ * that it did not is decoration, and decoration in a guardrail is worse than
+ * nothing because it is cited as evidence. What actually protects the verdict is
+ * the rule that a withheld family which could not be **built** forces
+ * `undecided` (`classifyStanding`), and that rule is tested.
+ *
+ * `assertIndependentFamilies` stays exported for a caller that assembles its own
+ * family set, where the two lists are genuinely independent and the refusal can
+ * genuinely fire.
+ */
+export function composeFamilies(withheld: readonly AttackFamily[]): readonly AttackFamily[] {
+  return [...ATTACK_FAMILIES, ...withheld];
 }
 
 /** Whether a standing run is due, given when the last one happened. */
@@ -224,8 +286,7 @@ export async function runStandingAssurance(options: StandingRunOptions): Promise
   const withheld = withheldFamilies(options.withheld ?? {});
   const built = new Set(withheld.map((family) => family.name));
   const unavailable = WITHHELD_FAMILY_NAMES.filter((name) => !built.has(name));
-  assertIndependentFamilies(withheld, [...built]);
-  const families = [...ATTACK_FAMILIES, ...withheld];
+  const families = composeFamilies(withheld);
 
   const dataset = datasetFromTicks(options.instrument, ticks);
   const verdict: Verdict = await runBatteryAsync(dataset, {
@@ -239,6 +300,7 @@ export async function runStandingAssurance(options: StandingRunOptions): Promise
     samples: sensitivity.samples,
     detectionFloorPp: sensitivity.minimumDetectableEffectPoints,
     sufficientForPayout: sensitivity.sufficientForPayout,
+    sufficientForProductMargin: sensitivity.minimumDetectableEffectPoints < PRODUCT_MARGIN_PP,
   }));
 
   return {
@@ -294,6 +356,9 @@ export function classifyStanding(
   if (verdict.exploitable.length > 0) return 'exploitable';
   if (unavailable.length > 0) return 'undecided';
   if (horizons.length === 0) return 'undecided';
-  if (horizons.some((horizon) => !horizon.sufficientForPayout)) return 'undecided';
+  // The **product's** margin, not the battery caller's payout. A caller that
+  // hands the battery a 0.85 payout is asking a different question, and the
+  // answer to it must not be published under this word (A6-03).
+  if (horizons.some((horizon) => !horizon.sufficientForProductMargin)) return 'undecided';
   return verdict.clean ? 'clean' : 'undecided';
 }

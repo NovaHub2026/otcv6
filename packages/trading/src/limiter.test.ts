@@ -134,6 +134,36 @@ describe('Cycle Audit 5: one millisecond of jitter is not two hundred bets', () 
     expect(resolved.effectiveBets).toBeCloseTo(1, 5);
   });
 
+  it('the exported admit() and breaches() take the resolver too', () => {
+    // **Cycle Audit 6, A6-04.** PH-16.3 threaded the resolver through
+    // `exposureByEvent`, `assessBookRisk` and `ExposureBook`, and stopped there.
+    // These two are the module-level functions a venue calls to decide whether
+    // to take a trade and to audit a book it already holds, and both still
+    // grouped by the raw entry instant — so Cycle Audit 5's construction worked
+    // against them unchanged: 200 of 200 admitted, 39.6x the limit, and
+    // `breaches` reporting nothing at all.
+    const policy = { maxEventExposure: 500 };
+    const book = jittered(200);
+
+    const blind: Contract[] = [];
+    for (const c of book) {
+      if (admit(blind, c, policy).accepted) blind.push(c);
+    }
+    expect(blind).toHaveLength(200);
+    // What that book is actually worth on one settlement: 39.6x the limit.
+    const trueExposure = exposureByEvent(blind, resolve)[0]!.netExposure;
+    expect(trueExposure / policy.maxEventExposure).toBeGreaterThan(39);
+    expect(breaches(blind, policy)).toEqual([]);
+    expect(breaches(blind, policy, resolve)).toHaveLength(1);
+
+    const guarded: Contract[] = [];
+    for (const c of book) {
+      if (admit(guarded, c, policy, resolve).accepted) guarded.push(c);
+    }
+    expect(guarded.length).toBeLessThan(10);
+    expect(breaches(guarded, policy, resolve)).toEqual([]);
+  });
+
   it('the limiter caps a jittered book the same as an unjittered one', () => {
     const policy = { maxEventExposure: 500 };
     const withResolver = new ExposureBook(resolve);
