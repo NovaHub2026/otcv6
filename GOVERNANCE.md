@@ -17,6 +17,7 @@ changed and why.
 | ---------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | 2026-08-31 | **Full delegation.** The three-phase Human gate is removed, Cycle Audits run automatically, decision authority over all code and product matters is delegated to the Development Agent, and hosted CI is removed from the verification model. | [ADR-0008](docs/decisions/ADR-0008-full-delegation.md) |
 | 2026-08-31 | **Hosted CI reinstated.** The Human Owner made the repository public, restoring free GitHub Actions. §40 is reversed: CI is a required corroborating layer. Its first executing run found that the quality gate had never passed on a clean checkout. | [ADR-0009](docs/decisions/ADR-0009-hosted-ci-reinstated.md) |
+| 2026-09-01 | **Subagents unrestricted.** The Human Owner removed the environment restriction requiring them to request subagents. Spawning agents is an ordinary engineering decision; Cycle Audits must use independent agents where available. | [ADR-0011](docs/decisions/ADR-0011-subagent-authority.md) |
 
 ---
 
@@ -230,6 +231,46 @@ The primary Development Agent remains accountable for:
 - Governance compliance.
 
 Internal agent disagreement must be resolved autonomously unless the disagreement reaches a protected Human decision.
+
+## 4.1 Using them is the Development Agent's call
+
+**Amended 2026-09-01 (ADR-0011).** An environment restriction previously required
+the Human Owner to request subagents before any could be used. The Human Owner
+removed it: *"usa los agentes siempre que lo creas necesario para el producto."*
+
+Spawning agents is now an ordinary engineering decision, made like any other
+under §5 and recorded rather than requested.
+
+## 4.2 Where they are required, not merely permitted
+
+**The Cycle Audit must be conducted by independent agents wherever they are
+available.**
+
+This is not a preference. The project measured the difference: Cycle Audit 2, run
+by ten independent agents with adversarial verification, produced **31** material
+findings. Cycle Audit 3, run by the agent that had written the code, produced
+**one**. Nobody believes that cycle was thirty times cleaner — an author shares
+their own blind spots by construction, and an audit is the one activity where
+that is the whole problem.
+
+Removing the three-phase Human gate (ADR-0008) left the audit's method as the
+only external check in the project. So an audit conducted by the authoring agent
+is now a **degraded** audit, must say so in its first section, and must treat its
+own clean result with corresponding suspicion.
+
+## 4.3 The rule audit agents cost the project once
+
+**Never run `git add -A`, or any bulk staging, while subagents are active. Audit
+plants live in an isolated clone or worktree, never in the working tree.**
+
+Cycle Audit 2 planted a deliberate INV-001 backdoor to test whether the guardrails
+would catch it. They did. The orchestrator then committed the window between the
+plant and its restoration with `git add -A`, and the backdoor reached `main`. It
+never reached `origin`, and `main` was reset and re-committed clean, but it is the
+most serious process failure in the project's history (B-006).
+
+An agent that mutates the repository to test something must do it somewhere the
+orchestrator cannot accidentally commit.
 
 ---
 

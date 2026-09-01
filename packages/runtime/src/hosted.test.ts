@@ -26,9 +26,29 @@ function engineFor(index = 0, maxTicks?: number): MarketEngine {
   });
 }
 
+/**
+ * Tests advance the clock in large single steps to generate market quickly, which
+ * is a catch-up burst — exactly what `DEFAULT_MAX_CATCH_UP_MS` refuses in
+ * production (15 seconds, ADR-0010). They state a wide bound so the burst is
+ * declared rather than inherited: a test that silently relied on the production
+ * default would break the moment that policy changed, which is what happened when
+ * PH-12.3 decided it.
+ *
+ * The bound's own behaviour is tested explicitly, with explicit values, in
+ * 'refuses to invent a gap it was not asked for'.
+ */
+const TEST_CATCH_UP_MS = 86_400_000;
+
 function hosted(index = 0, maxTicks?: number): { market: HostedMarket; clock: SteppableClock } {
   const clock = new SteppableClock(START);
-  return { market: new HostedMarket({ engine: engineFor(index, maxTicks), clock }), clock };
+  return {
+    market: new HostedMarket({
+      engine: engineFor(index, maxTicks),
+      clock,
+      maxCatchUpMs: TEST_CATCH_UP_MS,
+    }),
+    clock,
+  };
 }
 
 describe('a hosted market advances with the clock, not with polling', () => {
@@ -105,8 +125,15 @@ describe('catch-up is bounded', () => {
     // Not a safety property — a policy one. The runtime will happily generate
     // three weeks of ticks in seconds; the question is whether a venue that was
     // down that long should publish them as though they had happened.
-    const { market, clock } = hosted();
-    clock.advance(durationMillis(60_000));
+    // The bound is the subject here, so it is stated rather than inherited from
+    // the helper's deliberately wide test value.
+    const clock = new SteppableClock(START);
+    const market = new HostedMarket({
+      engine: engineFor(),
+      clock,
+      maxCatchUpMs: DEFAULT_MAX_CATCH_UP_MS,
+    });
+    clock.advance(durationMillis(10_000));
     market.advance();
     clock.advance(durationMillis(DEFAULT_MAX_CATCH_UP_MS + 60_000));
     expect(() => market.advance()).toThrow(CatchUpTooLargeError);
@@ -159,7 +186,7 @@ describe('a venue hosts the catalogue', () => {
     const clock = new SteppableClock(START);
     const markets = ASSET_CATALOGUE.map((asset, index) => ({
       asset,
-      market: new HostedMarket({ engine: engineFor(index), clock }),
+      market: new HostedMarket({ engine: engineFor(index), clock, maxCatchUpMs: TEST_CATCH_UP_MS }),
     }));
     return { venue: new Venue({ clock, markets }), clock };
   }
@@ -209,7 +236,11 @@ describe('a venue hosts the catalogue', () => {
     // market. Scaling that same plant to 500ms per earlier tick fails this
     // assertion at 3,298 ticks against 3,211.
     const soloClock = new SteppableClock(START);
-    const solo = new HostedMarket({ engine: engineFor(2), clock: soloClock });
+    const solo = new HostedMarket({
+      engine: engineFor(2),
+      clock: soloClock,
+      maxCatchUpMs: TEST_CATCH_UP_MS,
+    });
 
     const { venue: v, clock } = venue();
 
@@ -238,8 +269,9 @@ describe('a venue hosts the catalogue', () => {
       market: new HostedMarket({
         engine: engineFor(index),
         clock,
-        // The middle asset is given a bound it will breach immediately.
-        ...(index === 1 ? { maxCatchUpMs: 5_000 } : {}),
+        // The middle asset is given a bound it will breach immediately; the
+        // others are given the wide test bound so exactly one market fails.
+        maxCatchUpMs: index === 1 ? 5_000 : TEST_CATCH_UP_MS,
       }),
     }));
     const v = new Venue({ clock, markets });

@@ -15,20 +15,20 @@ Last synchronized: 2026-08-31
 | Field                            | Value                                                                   |
 | -------------------------------- | ----------------------------------------------------------------------- |
 | Active development cycle         | Cycle 4                                                                 |
-| Approved phases in current cycle | **2 of 3**                                                              |
-| Cycle Audit state                | None active — runs automatically after PH-12 (ADR-0008)                 |
+| Approved phases in current cycle | **3 of 3**                                                              |
+| Cycle Audit state                | **Cycle Audit 4 ACTIVE** — automatic (ADR-0008)                         |
 | Last Cycle Audit                 | [Cycle Audit 003](docs/audits/CYCLE-AUDIT-003.md) — APPROVED 2026-08-31 |
 
 ## Phase and subphase
 
-| Field                  | Value                                                 |
-| ---------------------- | ----------------------------------------------------- |
-| Active phase           | PH-12 — Verifiable Publication                        |
-| Phase lifecycle        | ACTIVE — context document next                        |
-| Active subphase        | None                                                  |
-| Subphase lifecycle     | n/a                                                   |
-| Last approved phase    | PH-11 — Detection Power Across Every Horizon          |
-| Last approved subphase | PH-11.3 — Coverage over tools/, and phase integration |
+| Field                  | Value                                   |
+| ---------------------- | --------------------------------------- |
+| Active phase           | None — Cycle Audit 4 is running         |
+| Phase lifecycle        | n/a                                     |
+| Active subphase        | None                                    |
+| Subphase lifecycle     | n/a                                     |
+| Last approved phase    | PH-12 — Verifiable Publication          |
+| Last approved subphase | PH-12.3 — The service emits the journal |
 
 ## Cycle 1 result
 

@@ -17,6 +17,7 @@ import {
   type StateStore,
 } from '@otc/runtime';
 import { TickFeed } from '@otc/distribution';
+import { PublicationService } from './publication.service.js';
 
 /**
  * The service that makes the markets run.
@@ -54,6 +55,7 @@ export class VenueService implements OnModuleDestroy {
     private readonly clock: Clock = new SystemClock(),
     private readonly assets: readonly RegisteredAsset[] = ASSET_CATALOGUE,
     private readonly checkpointEveryMs = 5_000,
+    private readonly publication: PublicationService = new PublicationService(ASSET_CATALOGUE),
     /**
      * Where a *brand new* market starts. Only ever used on a first boot: a
      * resumed market takes its position from the snapshot, and a seamed one from
@@ -142,6 +144,9 @@ export class VenueService implements OnModuleDestroy {
       const last = ticks[ticks.length - 1];
       if (last !== undefined) this.latest.set(assetId, last);
       this.feed.publish(assetId, ticks);
+      // After publication, never before: the publisher sees the record, it does
+      // not participate in producing it (INV-001).
+      this.publication.observe(assetId, ticks);
     }
     if (this.clock.now() - this.lastCheckpointAt >= this.checkpointEveryMs) {
       await this.checkpoint();

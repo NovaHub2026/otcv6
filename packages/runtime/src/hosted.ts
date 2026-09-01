@@ -29,10 +29,17 @@ export interface HostedMarketOptions {
    * statement is that the venue was closed, not that a month of prices happened
    * while nobody was watching.
    *
-   * PH-5 does not decide where that line sits — it is a venue policy with
-   * business consequences, and it is surfaced in the phase document rather than
-   * chosen quietly here. This default exists so the runtime has defined
-   * behaviour, and it is deliberately generous.
+   * **Decided in PH-12.3** (ADR-0010), after being carried as an undecided
+   * default since PH-5.
+   *
+   * The bound is **shorter than the shortest contract the product sells**, so a
+   * catch-up burst can never contain both the entry and the expiry of any
+   * contract. That is the criterion; 15 seconds is half of the 30-second
+   * minimum expiry.
+   *
+   * It guards a *running* venue that lost the CPU — a suspended VM, a long
+   * pause, a descheduled process. It does not guard restarts: `resumeMarket`
+   * seams forward to now, so a restarted market has no backlog to replay.
    */
   readonly maxCatchUpMs?: number;
   /**
@@ -50,7 +57,20 @@ export interface HostedMarketOptions {
 }
 
 /** Default catch-up bound: one hour. */
-export const DEFAULT_MAX_CATCH_UP_MS = 3_600_000;
+/**
+ * Catch-up bound: 15 seconds, half the shortest expiry the product sells.
+ *
+ * The criterion is that **no burst may span a complete contract**. At 30 seconds
+ * a single catch-up could generate a whole contract's lifetime at once — entry
+ * and expiry both invented in a moment nobody observed — and the market's entire
+ * product is a record people settle against.
+ *
+ * The previous value was an hour, chosen in PH-5 to give the runtime defined
+ * behaviour while the policy was undecided. An hour means a venue starved for 59
+ * minutes silently generates 59 minutes of market on its next advance, which is
+ * the precise failure the bound exists to prevent.
+ */
+export const DEFAULT_MAX_CATCH_UP_MS = 15_000;
 
 export class CatchUpTooLargeError extends Error {
   constructor(
