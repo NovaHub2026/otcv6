@@ -16,7 +16,7 @@ import {
   panelTimeframe,
   toBars,
   type PanelTimeframeId,
-} from '../../lib/series.js';
+} from '@otc/chart';
 
 /**
  * One asset, one timeframe: stored history, then the live edge.

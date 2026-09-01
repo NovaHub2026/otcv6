@@ -1,4 +1,4 @@
-import type { HistoryCandle, InstrumentView } from './series.js';
+import type { HistoryCandle, InstrumentView } from '@otc/chart';
 
 /**
  * The panel's view of the engine, and it is read-only by construction.

@@ -467,7 +467,7 @@ displayed timeframe in real time.
 | -------- | ------------------------------------------------------- | -------- |
 | PH-18.1  | The engine's administrative surface                     | APPROVED |
 | PH-18.2  | TradingView against PH-8's rendering contract           | APPROVED |
-| PH-18.3  | Live preview: selection, streaming, timeframe switching | ACTIVE   |
+| PH-18.3  | Live preview: selection, streaming, timeframe switching | APPROVED |
 
 INV-004 already guarantees that changing the displayed timeframe never changes
 the market, and PH-8 built the rendering contract that invents no price and

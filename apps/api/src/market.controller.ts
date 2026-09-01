@@ -2,7 +2,9 @@ import {
   BadRequestException,
   Controller,
   Get,
+  Inject,
   NotFoundException,
+  Optional,
   Param,
   Query,
   Res,
@@ -35,7 +37,15 @@ import { VenueService } from './venue.service.js';
 export class MarketController {
   constructor(
     private readonly venue: VenueService,
-    private readonly history: HistoryService | null = null,
+    /**
+     * Declared explicitly because the type is nullable.
+     *
+     * Nest reads constructor types from `design:paramtypes`, and a union with
+     * `null` erases to `Object` — which it then tries to resolve as a provider
+     * and fails at boot. A default value does not help: the container never gets
+     * far enough to leave the parameter out.
+     */
+    @Optional() @Inject(HistoryService) private readonly history: HistoryService | null = null,
   ) {}
 
   @Get('health')

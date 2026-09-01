@@ -10,7 +10,7 @@ import {
   toBars,
   type HistoryCandle,
   type InstrumentView,
-} from './series.js';
+} from './bars.js';
 
 const instrument: InstrumentView = {
   logQuantum: 2.7511622644263434e-7,

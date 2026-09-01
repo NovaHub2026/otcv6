@@ -1,7 +1,16 @@
-import type { Tick } from '@otc/core/browser';
+import { exp, type Tick } from '@otc/core/browser';
 
 /**
  * The bridge between the record and a chart library, and it invents nothing.
+ *
+ * It lives beside `reduce.ts` rather than in the web app because it is the same
+ * concern: PH-8 built the extreme-preserving reduction of ticks to columns, and
+ * this is the extreme-preserving conversion of the record's own OHLC bars into
+ * whatever a chart library calls a candlestick. Both answer "what may a screen
+ * show", and the answer is the same in both: only what the record holds.
+ *
+ * Putting it here also puts it inside the root build and the type-aware lint,
+ * which `apps/web` was outside of until PH-18.2 noticed.
  *
  * TradingView Lightweight Charts draws OHLC bars. The record already holds OHLC
  * bars whose highs and lows are prices the market **actually visited** — never
@@ -54,7 +63,11 @@ export interface Bar {
 
 /** Display price for a canonical integer. One-way, never compared against. */
 export function displayPrice(price: number, instrument: InstrumentView): number {
-  return instrument.referencePrice * Math.exp(price * instrument.logQuantum);
+  // `exp` from the portable kernel, not `Math.exp`: ECMAScript does not specify
+  // the latter exactly, so two engines can disagree on the last bits — and a
+  // display price that differs between a viewer's browser and an operator's
+  // would be two answers to one question about one market.
+  return instrument.referencePrice * exp(price * instrument.logQuantum);
 }
 
 export class SeriesError extends Error {

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactElement } from 'react';
 import { fetchCatalogue, type CatalogueEntry } from '../../lib/api.js';
-import { PANEL_TIMEFRAMES, type PanelTimeframeId } from '../../lib/series.js';
+import { PANEL_TIMEFRAMES, type PanelTimeframeId } from '@otc/chart';
 import { PreviewChart } from './PreviewChart.js';
 
 /**
