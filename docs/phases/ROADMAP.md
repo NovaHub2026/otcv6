@@ -371,7 +371,7 @@ the tail.
 | -------- | ------------------------------------------------ | -------- |
 | PH-13.1  | The exposure model                               | APPROVED |
 | PH-13.2  | Risk of ruin, capacity, and the limits           | APPROVED |
-| PH-13.3  | Enforcement in the venue, with INV-001 preserved | ACTIVE   |
+| PH-13.3  | Enforcement in the venue, with INV-001 preserved | APPROVED |
 
 ### PH-14 — Multi-Node Consistency and Horizontal Scale-Out
 

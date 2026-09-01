@@ -22,3 +22,4 @@ export {
   type EventExposure,
   type SettlementEvent,
 } from './exposure.js';
+export { admit, breaches, ExposureBook, type Admission, type LimiterPolicy } from './limiter.js';
