@@ -79,6 +79,8 @@ describe('the coverage method still works', () => {
 interface RecordedRow {
   readonly asset: string;
   readonly horizon: string;
+  /** Which `## Run N` section this row came from. */
+  readonly run: number;
   readonly simulatedDays: number;
   readonly decided: number;
   readonly upRate: number;
@@ -97,6 +99,12 @@ function readRecordedRows(): RecordedRow[] {
   let asset: string | null = null;
   let threshold = Number.NaN;
   let simulatedDays = Number.NaN;
+  // The document records three runs, and one asset appears in two of them: the
+  // btcusd replication is the whole basis for reading its eight positive
+  // horizons as path displacement. Cycle Audit 4 (Minor 7) found that run
+  // present only as prose, so it is a table now — and the table gets checked.
+  let run = 0;
+  const runHeading = /^## Run (\d+)/;
 
   const header =
     /^(\w+): [\d,]+ ticks, ([\d.]+) simulated days \([\d.]+ years\), \d+ segments, payout threshold ([\d.]+)pp, net displacement -?[\d,]+ steps$/;
@@ -111,6 +119,11 @@ function readRecordedRows(): RecordedRow[] {
   );
 
   for (const line of text.split('\n')) {
+    const r = runHeading.exec(line);
+    if (r !== null) {
+      run = Number.parseInt(r[1]!, 10);
+      continue;
+    }
     const h = header.exec(line);
     if (h !== null) {
       asset = h[1]!;
@@ -123,6 +136,7 @@ function readRecordedRows(): RecordedRow[] {
     rows.push({
       asset,
       horizon: m[1]!,
+      run,
       simulatedDays,
       decided: Number.parseInt(m[2]!.replace(/,/g, ''), 10),
       upRate: Number.parseFloat(m[3]!),
@@ -139,7 +153,10 @@ function readRecordedRows(): RecordedRow[] {
 }
 
 describe('the recorded evidence re-derives from itself', () => {
-  const rows = readRecordedRows();
+  const all = readRecordedRows();
+  /** Runs 1 and 2 are the coverage claim; run 3 is the replication. */
+  const rows = all.filter((row) => row.run <= 2);
+  const replication = all.filter((row) => row.run === 3);
 
   it('covers every asset at every horizon', () => {
     expect(rows.length).toBe(ASSET_CATALOGUE.length * 8);
@@ -147,6 +164,25 @@ describe('the recorded evidence re-derives from itself', () => {
       const forAsset = rows.filter((r) => r.asset === asset.definition.id);
       expect(forAsset, `no rows for ${asset.definition.id}`).toHaveLength(8);
     }
+  });
+
+  it('records the replication that the btcusd reading depends on', () => {
+    // The claim: btcusd's eight positive horizons are path displacement, not a
+    // leak, because an independent realisation flipped all eight. That is the
+    // single most load-bearing result in the phase, and Cycle Audit 4 found it
+    // recorded as four numbers in prose with no table, label or seed.
+    expect(replication, 'the replication run is missing').toHaveLength(8);
+
+    const primary = rows.filter((r) => r.asset === 'btcusd');
+    const sign = (xs: RecordedRow[]) => Math.sign(xs.reduce((a, b) => a + b.edgePoints, 0));
+    expect(sign(primary), 'the primary run should be net positive').toBe(1);
+    expect(sign(replication), 'the replication should have flipped').toBe(-1);
+
+    // And the diagnostic must have flipped with them — that is what makes it
+    // path displacement rather than a coincidence of two runs.
+    const bias = (xs: RecordedRow[]) => Math.sign(xs.reduce((a, b) => a + b.pathBiasZ, 0));
+    expect(bias(primary)).toBe(1);
+    expect(bias(replication)).toBe(-1);
   });
 
   it('re-derives every floor from its own sample count and design effect', () => {
@@ -186,8 +222,12 @@ describe('the recorded evidence re-derives from itself', () => {
     // derivation behind it is wrong and the "eight horizons are one test"
     // reading has to be withdrawn.
     const drifting: string[] = [];
-    for (const asset of new Set(rows.map((r) => r.asset))) {
-      const forAsset = rows.filter((r) => r.asset === asset);
+    // Grouped by run, not by asset: btcusd appears in two runs with opposite
+    // path displacement, and mixing them would compare a bias to its own
+    // negation.
+    for (const key of new Set(all.map((r) => `${r.asset}#${r.run}`))) {
+      const [asset] = key.split('#');
+      const forAsset = all.filter((r) => `${r.asset}#${r.run}` === key);
       const values = forAsset.map((r) => r.pathBiasZ);
       const spread = Math.max(...values) - Math.min(...values);
       const magnitude = Math.max(...values.map(Math.abs));
@@ -211,7 +251,18 @@ describe('the recorded evidence re-derives from itself', () => {
       const bias = forAsset.map((r) => r.pathBiasZ);
       const meanObserved = observed.reduce((a, b) => a + b, 0) / observed.length;
       const meanBias = bias.reduce((a, b) => a + b, 0) / bias.length;
-      if (Math.abs(meanBias) > 0.3 && Math.sign(meanObserved) !== Math.sign(meanBias)) {
+      // The threshold is one residual standard deviation, not a number picked
+      // until this passed. Cycle Audit 4 measured the scatter of observed z
+      // about `pathBiasZ` at **0.82** per draw, so below that magnitude the
+      // sampling noise dominates the bias and sign agreement is not expected —
+      // gbpjpy sits at −0.38 with an observed z of +0.01, which is exactly what
+      // a small bias under noise looks like.
+      //
+      // Above it the two must agree, and that is where the assertion earns its
+      // place: both btcusd runs (+0.85 and −1.00) are in that regime, and they
+      // are the reason this check exists.
+      const RESIDUAL_SD = 0.8;
+      if (Math.abs(meanBias) > RESIDUAL_SD && Math.sign(meanObserved) !== Math.sign(meanBias)) {
         drifting.push(
           `${asset}: path bias z averages ${meanBias.toFixed(2)} but observed z averages ` +
             `${meanObserved.toFixed(2)} — the diagnostic and the measurement disagree in sign`,

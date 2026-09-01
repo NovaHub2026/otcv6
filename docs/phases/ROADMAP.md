@@ -267,12 +267,12 @@ closes an entry that a prior phase or audit wrote down and deferred, so the
 cycle's success criterion is unusually concrete — `docs/BACKLOG.md` should end it
 holding nothing but the one item that needs the Human Owner.
 
-| Phase | Title                                                         | State        |
-| ----- | ------------------------------------------------------------- | ------------ |
-| PH-10 | Per-asset market rhythm                                       | **APPROVED** |
-| PH-11 | Detection power across every horizon the product sells        | **APPROVED** |
-| PH-12 | Verifiable publication and the journal in the running service | **APPROVED** |
-| —     | **Cycle Audit 4** — automatic (ADR-0008)                      | **ACTIVE**   |
+| Phase | Title                                                         | State                                                 |
+| ----- | ------------------------------------------------------------- | ----------------------------------------------------- |
+| PH-10 | Per-asset market rhythm                                       | **APPROVED**                                          |
+| PH-11 | Detection power across every horizon the product sells        | **APPROVED**                                          |
+| PH-12 | Verifiable publication and the journal in the running service | **APPROVED**                                          |
+| —     | **Cycle Audit 4** — automatic (ADR-0008)                      | **APPROVED** — [record](../audits/CYCLE-AUDIT-004.md) |
 
 | Phase | Closes                                                                     |
 | ----- | -------------------------------------------------------------------------- |
@@ -342,7 +342,7 @@ scale it, can you operate it.**
 
 | Phase | Title                                                        | State       |
 | ----- | ------------------------------------------------------------ | ----------- |
-| PH-13 | Operator risk: variance, correlated flow and capacity        | not started |
+| PH-13 | Operator risk: variance, correlated flow and capacity        | **ACTIVE**  |
 | PH-14 | Multi-node consistency and horizontal scale-out              | not started |
 | PH-15 | Operations: the standing guarantee, running continuously     | not started |
 | —     | **Cycle Audit 5** — automatic, independent agents (ADR-0011) | not started |

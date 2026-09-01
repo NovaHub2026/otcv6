@@ -14,16 +14,16 @@ Last synchronized: 2026-08-31
 
 | Field                            | Value                                                                   |
 | -------------------------------- | ----------------------------------------------------------------------- |
-| Active development cycle         | Cycle 4                                                                 |
-| Approved phases in current cycle | **3 of 3**                                                              |
-| Cycle Audit state                | **Cycle Audit 4 ACTIVE** — automatic (ADR-0008)                         |
+| Active development cycle         | Cycle 5                                                                 |
+| Approved phases in current cycle | **0 of 3**                                                              |
+| Cycle Audit state                | None active — 004 APPROVED; next after PH-15                            |
 | Last Cycle Audit                 | [Cycle Audit 003](docs/audits/CYCLE-AUDIT-003.md) — APPROVED 2026-08-31 |
 
 ## Phase and subphase
 
 | Field                  | Value                                   |
 | ---------------------- | --------------------------------------- |
-| Active phase           | None — Cycle Audit 4 is running         |
+| Active phase           | None — PH-13 is next to be created      |
 | Phase lifecycle        | n/a                                     |
 | Active subphase        | None                                    |
 | Subphase lifecycle     | n/a                                     |

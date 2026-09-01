@@ -1,7 +1,7 @@
 # Cycle Audit 004
 
 Type: CYCLE AUDIT
-Status: ACTIVE
+Status: APPROVED
 Cycle: 4 (PH-10, PH-11, PH-12)
 Started: 2026-09-01
 Method: **seven independent agents**, adversarial, working in isolated clones
@@ -221,3 +221,54 @@ Recorded because a closed line of attack is worth as much as an open one.
   the values reproduce.
 - **All 129 relative markdown links resolve.** Zero broken.
 - **No TODO, FIXME, XXX or HACK anywhere** in `packages`, `apps` or `tools`.
+
+## 6. Closure
+
+**APPROVED from executed evidence, 2026-09-01.**
+
+| Check             | Result                                          |
+| ----------------- | ----------------------------------------------- |
+| `npm run gate`    | **exit 0** — 1289 passed, 81 files, 0 errors    |
+| Withheld red team | CLEAN — 90 hypotheses, worst \|z\| 3.27         |
+| Recorded evidence | 40 tests, worst \|z\| 2.64, 0 BH rejections     |
+| Differentiation   | real 38.0–40.5% vs identical control 19.0–25.0% |
+
+Twelve material findings, all fixed or documented. Every guard found empty has
+been watched failing against a plant.
+
+### What this audit cost, and what it bought
+
+Seven independent agents, roughly four hours of wall clock. They found:
+
+- **two cryptographic forgeries** in a scheme approved that morning, both
+  reproducible, both closed by length-prefixing what had been delimiter-framed;
+- **a class of defect the entire verification model could not observe** — a
+  production-gated leverage effect worth +1.78pp passing 1,470 green tests;
+- **a statistical claim wrong by a factor of five**, in the direction that would
+  have manufactured a false positive;
+- **an evidence record forgeable downward**, in the exact direction a
+  self-approving loop would forge it;
+- **four guards written that same session**, one of them incapable of failing
+  under any input.
+
+The comparison that justified ADR-0011 now has a third data point:
+
+| Audit | Method                       | Material findings |
+| ----- | ---------------------------- | ----------------- |
+| 002   | Ten independent agents       | 31                |
+| 003   | The authoring agent          | 1                 |
+| 004   | **Seven independent agents** | **12**            |
+
+Cycle 3 was not thirty times cleaner than Cycle 2, and Cycle 4 was not twelve
+times dirtier than Cycle 3. **The variable is the method, and it has now been
+measured three times.**
+
+### The lesson worth carrying
+
+The project already knew that _a recorded measurement nothing reads is a
+comment_ — PH-10 learned it from `MEASURED_LATTICE_TIE_RATES`. Two phases later
+it produced the btcusd replication: the single most load-bearing result in PH-11,
+recorded as four numbers in prose with no label, no parameters and no reader.
+
+**Knowing a rule is not the same as having something enforce it.** Every fix in
+this audit that will still be true in a year is a test, not a sentence.
