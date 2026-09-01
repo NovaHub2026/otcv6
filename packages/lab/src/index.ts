@@ -80,3 +80,13 @@ export {
   writeJournal,
   type TickJournal,
 } from './assurance.js';
+export {
+  adjustmentCoefficient,
+  capacity,
+  growthOptimalFraction,
+  logGrowthPerEvent,
+  ruinProbability,
+  simulateRuin,
+  type RuinInputs,
+  type RuinResult,
+} from './ruin.js';
