@@ -404,11 +404,11 @@ PH-14 adds a fourth: its `CoordinatedStore` is proved against an in-memory
 reference, so the multi-node design has never met a store two processes can
 share.
 
-| Subphase | Title                                                      | State       |
-| -------- | ---------------------------------------------------------- | ----------- |
-| PH-15.1  | A durable coordinated store, and the contract it must pass | APPROVED    |
-| PH-15.2  | Publication, rotation and retention                        | ACTIVE      |
-| PH-15.3  | The standing guarantee: assurance on a schedule            | not started |
+| Subphase | Title                                                      | State    |
+| -------- | ---------------------------------------------------------- | -------- |
+| PH-15.1  | A durable coordinated store, and the contract it must pass | APPROVED |
+| PH-15.2  | Publication, rotation and retention                        | APPROVED |
+| PH-15.3  | The standing guarantee: assurance on a schedule            | ACTIVE   |
 
 ## Major dependencies
 
