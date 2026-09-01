@@ -433,11 +433,11 @@ The least visible phase of the three, and the one that decides whether the other
 two mean anything. A hundred assets built on a broken INV-002 are a hundred
 assets with the same broken promise.
 
-| Subphase | Title                                                     | State       |
-| -------- | --------------------------------------------------------- | ----------- |
-| PH-16.1  | The standing verdict runs the battery it names            | APPROVED    |
-| PH-16.2  | A follower cannot generate, and settlement sees the seam  | ACTIVE      |
-| PH-16.3  | Operator risk, retention, and the guardrails' blind spots | not started |
+| Subphase | Title                                                     | State    |
+| -------- | --------------------------------------------------------- | -------- |
+| PH-16.1  | The standing verdict runs the battery it names            | APPROVED |
+| PH-16.2  | A follower cannot generate, and settlement sees the seam  | APPROVED |
+| PH-16.3  | Operator risk, retention, and the guardrails' blind spots | ACTIVE   |
 
 ### PH-17 — Assets Become Data
 

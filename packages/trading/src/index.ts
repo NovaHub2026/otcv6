@@ -13,6 +13,7 @@ export {
   settle,
   tally,
   type Ledger,
+  type RecordSeam,
   type TickRecord,
 } from './settle.js';
 export {

@@ -260,3 +260,48 @@ describe('settlement is direction-symmetric (the settlement mirror)', () => {
     expect(down).not.toBe('refund');
   });
 });
+
+describe('Cycle Audit 5: settlement refuses a window that touches a seam', () => {
+  // PH-14.3 built `spansSeam` with the docstring "the settlement path needs to
+  // be able to ask", and then nothing asked. An auditor produced a real
+  // 93-second failover gap and a contract whose expiry landed inside it: the
+  // price query returned null for that instant while the contract settled as a
+  // loss against the last pre-seam tick, for real money.
+  const instants = Float64Array.from([0, 1_000, 2_000, 95_000, 96_000]);
+  const prices = Int32Array.from([0, 5, 7, -40, -38]);
+  const seams = [{ lastInstant: 2_000, resumesAtInstant: 95_000 }];
+
+  const spanning = (entryInstant: number, horizonMs: number): Contract =>
+    contract({
+      id: `c-${entryInstant}-${horizonMs}`,
+      entryInstant: epochMillis(entryInstant),
+      horizonMs: durationMillis(horizonMs),
+    });
+
+  it('refuses a contract whose expiry falls inside the gap', () => {
+    expect(() => settle(spanning(1_000, 30_000), { instants, prices, seams })).toThrow(
+      NotSettleableError,
+    );
+  });
+
+  it('refuses a contract whose entry falls inside the gap', () => {
+    expect(() => settle(spanning(50_000, 45_000), { instants, prices, seams })).toThrow(
+      NotSettleableError,
+    );
+  });
+
+  it('refuses a contract that spans the whole gap', () => {
+    expect(() => settle(spanning(1_000, 94_500), { instants, prices, seams })).toThrow(
+      NotSettleableError,
+    );
+  });
+
+  it('settles a contract entirely on one side of the gap', () => {
+    expect(settle(spanning(0, 2_000), { instants, prices, seams }).outcome).toBeDefined();
+    expect(settle(spanning(95_000, 1_000), { instants, prices, seams }).outcome).toBeDefined();
+  });
+
+  it('a record with no seams behaves exactly as before', () => {
+    expect(settle(spanning(1_000, 30_000), { instants, prices }).outcome).toBeDefined();
+  });
+});

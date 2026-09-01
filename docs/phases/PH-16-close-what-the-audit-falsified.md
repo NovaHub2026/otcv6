@@ -27,11 +27,11 @@ the same broken promise.
 
 ## 3. Subphases
 
-| Subphase | Title                                                     | State       |
-| -------- | --------------------------------------------------------- | ----------- |
-| PH-16.1  | The standing verdict runs the battery it names            | APPROVED    |
-| PH-16.2  | A follower cannot generate, and settlement sees the seam  | ACTIVE      |
-| PH-16.3  | Operator risk, retention, and the guardrails' blind spots | not started |
+| Subphase | Title                                                     | State    |
+| -------- | --------------------------------------------------------- | -------- |
+| PH-16.1  | The standing verdict runs the battery it names            | APPROVED |
+| PH-16.2  | A follower cannot generate, and settlement sees the seam  | ACTIVE   |
+| PH-16.3  | Operator risk, retention, and the guardrails' blind spots | ACTIVE   |
 
 ## 4. Phase invariants
 

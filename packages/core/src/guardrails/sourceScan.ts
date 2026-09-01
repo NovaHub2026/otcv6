@@ -26,6 +26,74 @@ export interface Violation {
  * the three string forms, and regular-expression literals well enough for
  * TypeScript source that has already been formatted by Prettier.
  */
+/**
+ * Remove comments while leaving string contents intact.
+ *
+ * **Cycle Audit 5, CA5-05.** The follower guard stripped comments with
+ * `source.replace(/\/\*[\s\S]*?\*\//g, ' ')`, which is not aware of string
+ * literals. Two adjacent constants —
+ *
+ * ```ts
+ * const OPEN = '/*';
+ * import * as engineModule from '@otc/engine';
+ * const CLOSE = '*' + '/';
+ * ```
+ *
+ * — made a plain static engine import look like the inside of a comment, and
+ * the guard that exists to make a follower structurally unable to generate went
+ * green while an auditor gave one a real engine.
+ *
+ * Specifiers have to survive, so this cannot be {@link stripCommentsAndStrings}:
+ * that removes string contents too, and the specifier is a string. Scanning
+ * character by character is the only way to tell a comment from a string that
+ * looks like one.
+ */
+export function stripCommentsKeepingStrings(source: string): string {
+  let out = '';
+  let i = 0;
+  const n = source.length;
+  while (i < n) {
+    const c = source[i]!;
+    const next = source[i + 1];
+    if (c === '/' && next === '/') {
+      while (i < n && source[i] !== '\n') i += 1;
+      continue;
+    }
+    if (c === '/' && next === '*') {
+      i += 2;
+      while (i < n && !(source[i] === '*' && source[i + 1] === '/')) {
+        if (source[i] === '\n') out += '\n';
+        i += 1;
+      }
+      i += 2;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') {
+      const quote = c;
+      out += c;
+      i += 1;
+      while (i < n && source[i] !== quote) {
+        if (source[i] === '\\') {
+          out += source[i]!;
+          i += 1;
+        }
+        if (i < n) {
+          out += source[i]!;
+          i += 1;
+        }
+      }
+      if (i < n) {
+        out += source[i]!;
+        i += 1;
+      }
+      continue;
+    }
+    out += c;
+    i += 1;
+  }
+  return out;
+}
+
 export function stripCommentsAndStrings(source: string): string {
   let out = '';
   let i = 0;

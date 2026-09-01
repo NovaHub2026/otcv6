@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { stripCommentsKeepingStrings } from './sourceScan.js';
 
 /**
  * Generation is single-writer, and a follower must be *unable* to generate.
@@ -54,11 +55,50 @@ const FORBIDDEN_IDENTIFIERS = [
   'ASSET_CATALOGUE',
   'RegisteredAsset',
   'configFor',
+  // **Cycle Audit 5, CA5-05.** `@otc/core` is a permitted dependency and it
+  // exports the entropy surface, so naming only `MasterKeyring` left a follower
+  // free to import the primitives key material is made of. PH-14 §12 cites this
+  // guard as the evidence for INV-010.
+  'RandomStream',
+  'expandKey',
+  'expandNonce',
+  'chacha20Block',
+  'CursorLease',
+  'deriveKey',
 ];
 
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
-}
+/**
+ * Escape hatches, banned by construction rather than by what they name.
+ *
+ * **Cycle Audit 5, CA5-05.** Three of the four evasions an auditor found were
+ * not about *which* module was reached — they were about reaching it in a form
+ * no name-based scan can see: `await import(\`./resume.js\`)` with a template
+ * literal, `await import(['.', 'resume.js'].join('/'))`, and `createRequire`
+ * with an assembled specifier. Adding each name to a list would have caught none
+ * of them.
+ *
+ * So the rule is about the construct. A module that must be *provably* unable to
+ * reach the engine may not contain a dynamic escape hatch at all — there is no
+ * legitimate reason for one in a module whose entire job is to replay a record
+ * it was handed.
+ */
+const FORBIDDEN_CONSTRUCTS: readonly { readonly pattern: RegExp; readonly why: string }[] = [
+  { pattern: /\bimport\s*\(/, why: 'a dynamic import can name anything at run time' },
+  { pattern: /\brequire\s*\(/, why: 'so can require' },
+  { pattern: /\bcreateRequire\b/, why: 'and so can a require built from createRequire' },
+  { pattern: /\bFunction\s*\(/, why: 'the Function constructor evaluates arbitrary source' },
+  { pattern: /\beval\s*\(/, why: 'eval evaluates arbitrary source' },
+  { pattern: /\bglobalThis\b/, why: 'a global is a channel no import graph shows' },
+];
+
+/**
+ * **Cycle Audit 5, CA5-05.** This was a pair of regexes, and it was not aware of
+ * string literals: `const OPEN = '/*'` before an import and `const CLOSE` after
+ * it made a plain static engine import read as the inside of a comment. The
+ * guard stayed green while an auditor gave a follower a real engine and measured
+ * INV-002 broken at 120 of 120 sampled instants.
+ */
+const stripComments = stripCommentsKeepingStrings;
 
 function specifiers(source: string): string[] {
   const found: string[] = [];
@@ -135,6 +175,37 @@ describe('a follower cannot generate', () => {
       }
     }
     expect(offenders, 'a follower holds no key material and derives no price').toEqual([]);
+  });
+
+  it('contains no dynamic escape hatch, at any depth', () => {
+    // The rule that closes the class rather than the instance. Three of the four
+    // evasions found by Cycle Audit 5 were dynamic forms, and no list of module
+    // names or identifiers can see a specifier that is assembled at run time.
+    const offenders: string[] = [];
+    for (const [file, source] of reachable) {
+      const stripped = stripComments(source);
+      for (const { pattern, why } of FORBIDDEN_CONSTRUCTS) {
+        if (pattern.test(stripped)) offenders.push(`${file}: ${pattern.source} — ${why}`);
+      }
+    }
+    expect(
+      offenders,
+      'a follower that can construct a specifier at run time cannot be shown to reach nothing',
+    ).toEqual([]);
+  });
+
+  it('sees an import hidden behind string literals that look like comment markers', () => {
+    // The exact evasion, as a unit test on the stripper rather than a plant.
+    const hidden = [
+      "const OPEN = '/*';",
+      "import * as engineModule from '@otc/engine';",
+      "const CLOSE = '*' + '/';",
+    ].join('\n');
+    expect(stripComments(hidden)).toContain('@otc/engine');
+    // And a genuine comment is still removed.
+    expect(stripComments('/* import x from "@otc/engine" */ const a = 1;')).not.toContain(
+      '@otc/engine',
+    );
   });
 
   it('the rule would notice: the leader path it is contrasted with does import an engine', () => {

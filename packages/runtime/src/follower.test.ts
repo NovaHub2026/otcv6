@@ -327,3 +327,51 @@ describe('a follower across a seam', () => {
     expect(follower.seams).toHaveLength(1);
   });
 });
+
+describe('Cycle Audit 5: a window that touches a seam is not clean', () => {
+  it('reports a window with only its expiry inside the gap', () => {
+    // The audited case. `spansSeam` required the window to *contain* the seam,
+    // so a contract whose expiry landed inside a 93-second failover gap was
+    // reported clean — while `priceAt` refused to answer for that same instant.
+    const follower = new FollowerMarket({ assetId: ASSET });
+    follower.apply(entries(1, 5));
+    follower.apply([seamEntry(seam(5, 500))]);
+    follower.apply(entries(500, 502));
+    const gapMid = epochMillis(Math.floor((tick(5).instant + tick(500).instant) / 2));
+
+    expect(follower.priceAt(gapMid)).toBeNull();
+    // Entry before the gap, expiry inside it.
+    expect(follower.spansSeam(tick(3).instant, gapMid)).toBe(true);
+    // Entry inside the gap, expiry after it.
+    expect(follower.spansSeam(gapMid, tick(501).instant)).toBe(true);
+    // Both endpoints inside the gap.
+    expect(follower.spansSeam(gapMid, gapMid)).toBe(true);
+  });
+
+  it('agrees with priceAt on every instant it is asked about', () => {
+    // The two contradicted each other, and the permissive one was the one the
+    // settlement path is told to consult.
+    const follower = new FollowerMarket({ assetId: ASSET });
+    follower.apply(entries(1, 5));
+    follower.apply([seamEntry(seam(5, 500))]);
+    follower.apply(entries(500, 502));
+    for (let sequence = 1; sequence <= 502; sequence += 7) {
+      const at = tick(sequence).instant;
+      if (follower.priceAt(at) === null && follower.retained.length > 0) {
+        expect(follower.spansSeam(at, at)).toBe(true);
+      }
+    }
+  });
+
+  it('still reports a window entirely on one side as clean', () => {
+    const follower = new FollowerMarket({ assetId: ASSET });
+    follower.apply(entries(1, 5));
+    follower.apply([seamEntry(seam(5, 500))]);
+    follower.apply(entries(500, 502));
+    expect(follower.spansSeam(tick(1).instant, tick(4).instant)).toBe(false);
+    expect(follower.spansSeam(tick(501).instant, tick(502).instant)).toBe(false);
+    // The boundary instants themselves are real ticks, so a window that ends
+    // exactly at the last pre-seam tick has not entered the gap.
+    expect(follower.spansSeam(tick(1).instant, tick(5).instant)).toBe(false);
+  });
+});
