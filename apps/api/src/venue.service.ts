@@ -17,6 +17,7 @@ import {
   type StateStore,
 } from '@otc/runtime';
 import { TickFeed } from '@otc/distribution';
+import { HistoryService } from './history.service.js';
 import { PublicationService } from './publication.service.js';
 
 /**
@@ -57,6 +58,14 @@ export class VenueService implements OnModuleDestroy {
     private readonly checkpointEveryMs = 5_000,
     private readonly publication: PublicationService = new PublicationService(ASSET_CATALOGUE),
     /**
+     * The long history, or null when this deployment keeps none.
+     *
+     * Optional because the venue's job is to publish a market, and it published
+     * one for three phases before a history tier existed. Null is a deployment
+     * that streams and settles without keeping a chart.
+     */
+    private readonly history: HistoryService | null = null,
+    /**
      * Where a *brand new* market starts. Only ever used on a first boot: a
      * resumed market takes its position from the snapshot, and a seamed one from
      * the last published price.
@@ -66,11 +75,40 @@ export class VenueService implements OnModuleDestroy {
      * catch-up bound would correctly refuse.
      */
     private readonly genesisInstant: EpochMillis | null = null,
+    /**
+     * Days of history a brand-new asset is given before the venue starts.
+     *
+     * Zero by default, and that is a decision rather than an oversight: a
+     * backfill is genesis and refuses to run twice, so it is irreversible.
+     * Making an irreversible act the default behaviour of a process start would
+     * let booting the service in the wrong directory permanently decide what a
+     * market's past is.
+     */
+    private readonly backfillDays = 0,
   ) {}
 
   /** Resume every asset, then begin publishing. */
   async start(): Promise<void> {
     const genesis = this.genesisInstant ?? epochMillis(this.clock.now());
+    // Provisioning first, and here rather than in a caller: the checkpoint a
+    // backfill leaves is exactly what `resumeMarket` then continues from, so
+    // the ordering is a property of this method rather than something a caller
+    // has to remember.
+    if (this.history !== null && this.backfillDays > 0) {
+      const provisioned = await this.history.provision({
+        store: this.store,
+        keyring: this.keyring,
+        environment: 'production',
+        days: this.backfillDays,
+        now: epochMillis(this.clock.now()),
+      });
+      this.logger.log(
+        provisioned.length === 0
+          ? 'no asset needed provisioning; every market already has a record'
+          : `provisioned ${provisioned.length} market(s) with ${this.backfillDays} days: ` +
+              provisioned.join(', '),
+      );
+    }
     const markets: { asset: RegisteredAsset; market: HostedMarket }[] = [];
     for (const asset of this.assets) {
       const { market, outcome } = await resumeMarket({
@@ -145,8 +183,11 @@ export class VenueService implements OnModuleDestroy {
       if (last !== undefined) this.latest.set(assetId, last);
       this.feed.publish(assetId, ticks);
       // After publication, never before: the publisher sees the record, it does
-      // not participate in producing it (INV-001).
+      // not participate in producing it (INV-001). The same is true of the
+      // history: a chart is a view of what happened, and a view that could
+      // influence what happens next would be the whole product broken.
       this.publication.observe(assetId, ticks);
+      this.history?.observe(assetId, ticks);
     }
     if (this.clock.now() - this.lastCheckpointAt >= this.checkpointEveryMs) {
       await this.checkpoint();
@@ -159,6 +200,10 @@ export class VenueService implements OnModuleDestroy {
     for (const assetId of this.venue.assetIds) {
       await this.store.save(checkpointMarket(this.venue.marketFor(assetId), assetId, now));
     }
+    // Bars that closed since the last checkpoint. On the same cadence because a
+    // minute bar closes at most once a minute: flushing per tick would be
+    // thousands of empty writes for each real one.
+    await this.history?.flush();
     this.lastCheckpointAt = now;
   }
 

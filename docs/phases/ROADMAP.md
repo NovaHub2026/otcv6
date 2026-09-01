@@ -465,8 +465,8 @@ displayed timeframe in real time.
 
 | Subphase | Title                                                   | State       |
 | -------- | ------------------------------------------------------- | ----------- |
-| PH-18.1  | The engine's administrative surface                     | not started |
-| PH-18.2  | TradingView against PH-8's rendering contract           | not started |
+| PH-18.1  | The engine's administrative surface                     | APPROVED    |
+| PH-18.2  | TradingView against PH-8's rendering contract           | ACTIVE      |
 | PH-18.3  | Live preview: selection, streaming, timeframe switching | not started |
 
 INV-004 already guarantees that changing the displayed timeframe never changes

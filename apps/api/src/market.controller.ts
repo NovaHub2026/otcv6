@@ -9,7 +9,15 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { EvictedError } from '@otc/distribution';
-import { ASSET_CATALOGUE } from '@otc/engine';
+import {
+  ASSET_ARCHETYPES,
+  ASSET_CATALOGUE,
+  dispersionLogSigma,
+  dispersionPercent,
+} from '@otc/engine';
+import { epochMillis, isTimeframeId } from '@otc/core';
+import { HistoryError } from '@otc/runtime';
+import { HistoryService } from './history.service.js';
 import { VenueService } from './venue.service.js';
 
 /**
@@ -25,7 +33,10 @@ import { VenueService } from './venue.service.js';
  */
 @Controller()
 export class MarketController {
-  constructor(private readonly venue: VenueService) {}
+  constructor(
+    private readonly venue: VenueService,
+    private readonly history: HistoryService | null = null,
+  ) {}
 
   @Get('health')
   health(): { status: string; assets: number } {
@@ -58,6 +69,99 @@ export class MarketController {
    * order or to stop; sending this client a summary of what it missed would give
    * it a different market than everyone else has (INV-002).
    */
+  /**
+   * The vocabulary an operator picks from.
+   *
+   * Eight archetypes, each a *region* of trait space rather than a template, so
+   * two assets drawn from one of them are two markets rather than one under two
+   * names (INV-007). The dispersion band is quoted both ways because log units
+   * are where the arithmetic is honest and percent is where an operator thinks.
+   */
+  @Get('archetypes')
+  archetypes(): unknown {
+    return ASSET_ARCHETYPES.map((archetype) => ({
+      id: archetype.id,
+      label: archetype.label,
+      family: archetype.family,
+      character: archetype.character,
+      dispersion: {
+        min: archetype.dispersion.min,
+        max: archetype.dispersion.max,
+        minPercent: dispersionPercent(archetype.dispersion.min),
+        maxPercent: dispersionPercent(archetype.dispersion.max),
+      },
+      excessKurtosis: archetype.excessKurtosis,
+    }));
+  }
+
+  /**
+   * Every registered asset, with the evidence its registration produced.
+   *
+   * More than {@link MarketController.markets} reports, and deliberately: that
+   * endpoint answers "where is this market now" for anyone, this one answers
+   * "what kind of market is this" for whoever runs it. Both are read-only and
+   * neither is economic.
+   */
+  @Get('catalogue')
+  catalogue(): unknown {
+    const live = new Set(this.venue.assetIds);
+    return ASSET_CATALOGUE.map((asset) => ({
+      id: asset.definition.id,
+      displayName: asset.definition.displayName,
+      family: asset.definition.family,
+      live: live.has(asset.definition.id),
+      referencePrice: asset.instrument.referencePrice,
+      displayPrecision: asset.instrument.displayPrecision,
+      logQuantum: asset.instrument.logQuantum,
+      meanIntervalMs: asset.evidence.meanIntervalMs,
+      tieRate: asset.evidence.tieRate,
+      excessKurtosis: asset.evidence.predictedExcessKurtosis,
+      dispersion: {
+        quarterlyLogSigma: dispersionLogSigma(asset.evidence),
+        quarterlyPercent: dispersionPercent(dispersionLogSigma(asset.evidence)),
+      },
+    }));
+  }
+
+  /**
+   * Stored candle history, at any timeframe the product offers.
+   *
+   * Reading, never generating: the bars come from what was recorded, folded up
+   * from the tier that nests into the requested timeframe. Asking for something
+   * finer than the stored base is a 400 rather than a coarser series returned
+   * under the requested name — the displayed timeframe never changes the market
+   * (INV-004), and it must not change what the market appears to have been.
+   */
+  @Get('markets/:id/history')
+  async history_(
+    @Param('id') id: string,
+    @Query('timeframe') timeframe?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ): Promise<unknown> {
+    if (this.history === null) {
+      throw new NotFoundException('This deployment keeps no candle history.');
+    }
+    if (!ASSET_CATALOGUE.some((asset) => asset.definition.id === id)) {
+      throw new NotFoundException(`Unknown asset ${id}.`);
+    }
+    if (timeframe === undefined || !isTimeframeId(timeframe)) {
+      throw new BadRequestException(`timeframe must be one of the offered ids, got ${timeframe}.`);
+    }
+    const fromInstant = instantParam('from', from);
+    const toInstant = instantParam('to', to);
+    if (toInstant <= fromInstant) {
+      throw new BadRequestException(`to must be after from, got ${from} and ${to}.`);
+    }
+    try {
+      const candles = await this.history.read(id, timeframe, fromInstant, toInstant);
+      return { assetId: id, timeframe, from: fromInstant, to: toInstant, candles };
+    } catch (error) {
+      if (error instanceof HistoryError) throw new BadRequestException(error.message);
+      throw error;
+    }
+  }
+
   @Get('markets/:id/stream')
   stream(@Param('id') id: string, @Res() res: Response, @Query('from') from?: string): void {
     if (!this.venue.assetIds.includes(id)) {
@@ -145,4 +249,13 @@ function displayPrice(
   precision: number,
 ): string {
   return (referencePrice * Math.exp(price * logQuantum)).toFixed(precision);
+}
+
+function instantParam(name: string, raw: string | undefined): ReturnType<typeof epochMillis> {
+  if (raw === undefined) throw new BadRequestException(`${name} is required.`);
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new BadRequestException(`${name} must be a non-negative integer instant, got ${raw}.`);
+  }
+  return epochMillis(value);
 }
