@@ -383,6 +383,12 @@ sharing state under load, failover, or partition.
 The invariant at risk is the product's most visible promise: same asset, same
 moment, same price, for everyone.
 
+| Subphase | Title                                                  | State       |
+| -------- | ------------------------------------------------------ | ----------- |
+| PH-14.1  | The leader lease, and why generation is single-writer  | APPROVED    |
+| PH-14.2  | Followers serve the record; INV-002 across nodes       | ACTIVE      |
+| PH-14.3  | Failover: no fork, no duplicate stream, a visible seam | not started |
+
 ### PH-15 — Operations: The Standing Guarantee, Running Continuously
 
 PH-9 made the verdict re-derivable and PH-12 made the record provable. Both are

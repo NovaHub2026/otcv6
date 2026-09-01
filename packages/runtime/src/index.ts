@@ -31,3 +31,19 @@ export {
   type ResumeOptions,
   type ResumeResult,
 } from './resume.js';
+export {
+  AssetLease,
+  assertHolder,
+  isUsableHolder,
+  DEFAULT_LEASE_RENEWAL_MS,
+  DEFAULT_LEASE_TERM_MS,
+  LeaseHolderError,
+  MemoryCoordinatedStore,
+  StaleFenceError,
+  type AcquireOutcome,
+  type CoordinatedStore,
+  type FenceToken,
+  type LeaseGrant,
+  type LeaseStore,
+  type RenewOutcome,
+} from './lease.js';
