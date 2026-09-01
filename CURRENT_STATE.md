@@ -141,7 +141,7 @@ Cycle 1's numbers, and the coverage figure, are in
 | ADR-0010 | The catch-up bound: no unobserved burst may span a contract (APPROVED)         |
 | ADR-0011 | Subagents are an engineering decision; audits use independent ones (APPROVED)  |
 | ADR-0012 | Generation is single-writer per asset; leadership is a fenced lease (APPROVED) |
-| Backlog  | `docs/BACKLOG.md` B-001 … B-011 — **all closed**                               |
+| Backlog  | `docs/BACKLOG.md` — B-012 … B-020 **open** (Cycle Audit 5); B-001…B-011 closed |
 | Roadmap  | `docs/phases/ROADMAP.md`                                                       |
 | Branch   | `main` — every phase branch merged and deleted                                 |
 
