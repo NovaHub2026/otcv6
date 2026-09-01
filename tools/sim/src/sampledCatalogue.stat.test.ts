@@ -374,6 +374,13 @@ describe('a catalogue drawn from the archetypes', () => {
       `sampled ${realBySeed.map((v) => (100 * v).toFixed(1)).join(', ')} vs ` +
         `control ${controlBySeed.map((v) => (100 * v).toFixed(1)).join(', ')}`,
     );
-    expect(Math.min(...realBySeed)).toBeGreaterThan(Math.max(...controlBySeed));
+    //
+    // With a margin, because "greater than" alone is not enough here. PH-17.2's
+    // plant campaign shrank every archetype box to 2% of its width — a
+    // catalogue of near-clones, which is precisely the failure this phase
+    // exists to prevent — and the bare comparison survived it at 35.7% against
+    // 34.8%. The real separation is 11 points; five is comfortably below that
+    // and comfortably above the one point a near-clone catalogue produced.
+    expect(Math.min(...realBySeed)).toBeGreaterThan(Math.max(...controlBySeed) + 0.05);
   }, 1_800_000);
 });

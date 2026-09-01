@@ -75,17 +75,26 @@ describe('the archetypes themselves', () => {
   });
 
   it('refuses a box whose worst corner has no feasible spacing', () => {
-    // Deep, short-spanned and fast at once: the fastest component would land
-    // below half a tick however the spacing is drawn.
+    // Deliberately feasible at the *easy* corner — shallowest cascade, longest
+    // span, slowest tempo, where the ceiling is 14.6 against a spacing floor of
+    // 2.8 — and infeasible at the worst one, where it is 2.28. A check that
+    // looked at the wrong corner would pass this box and then admit samples
+    // whose fastest rung is faster than the tick.
     const impossible: AssetArchetype = {
       ...archetypeById('alt-crypto'),
       traits: {
         ...archetypeById('alt-crypto').traits,
-        cascadeDepth: { min: 14, max: 18 },
-        cascadeSpanMs: { min: 1_800_000, max: 3_600_000 },
-        tempoMs: { min: 900, max: 1_000 },
+        cascadeDepth: { min: 5, max: 12 },
+        cascadeSpanMs: { min: 1.5 * 3_600_000, max: 4 * 3_600_000 },
+        tempoMs: { min: 500, max: 1_000 },
       },
     };
+    const easiest = spacingCeiling(
+      impossible.traits.cascadeSpanMs.max,
+      impossible.traits.cascadeDepth.min,
+      impossible.traits.tempoMs.min,
+    );
+    expect(easiest).toBeGreaterThan(impossible.traits.cascadeSpacing.min);
     expect(() => assertArchetypeFeasible(impossible)).toThrow(/no feasible cascade spacing/);
   });
 
@@ -219,16 +228,28 @@ describe('sampling draws an asset rather than copying one', () => {
   });
 
   it('samples times on a log scale, so the range is not crowded at the top', () => {
-    // Linear sampling of `[500, 1000]` puts three quarters of the draws above
-    // 625; the meaningful distance between 500 ms and 1 s is the same as
-    // between 1 s and 2 s.
+    // The meaningful distance between 500 ms and 1 s is the same as between
+    // 1 s and 2 s, and linear sampling would put the typical draw a third of
+    // the way further up the range than it belongs.
+    //
+    // Asserted on the *mean*, because the two hypotheses are far apart there
+    // and close everywhere else. Over [500, 1000] a log-uniform mean is
+    // `(max - min) / ln(max / min)` = 721.3 and a uniform mean is 750; with
+    // 2,000 draws the standard error is about 3.2 ms, so the alternative sits
+    // nine of them away. A count either side of the midpoint separates the same
+    // two hypotheses by barely one.
     const source = stream('log-scale');
-    const archetype = archetypeById('alt-crypto');
-    const draws = Array.from({ length: 400 }, () => sampleTraits(archetype, source).tempoMs);
-    const midpoint = Math.sqrt(archetype.traits.tempoMs.min * archetype.traits.tempoMs.max);
-    const below = draws.filter((value) => value < midpoint).length;
-    expect(below).toBeGreaterThan(160);
-    expect(below).toBeLessThan(240);
+    const { min, max } = archetypeById('alt-crypto').traits.tempoMs;
+    const draws = Array.from(
+      { length: 2_000 },
+      () => sampleTraits(archetypeById('alt-crypto'), source).tempoMs,
+    );
+    const mean = draws.reduce((sum, value) => sum + value, 0) / draws.length;
+    const logUniformMean = (max - min) / Math.log(max / min);
+    const uniformMean = (max + min) / 2;
+    const standardError = (max - min) / Math.sqrt(12 * draws.length);
+    expect(Math.abs(mean - logUniformMean)).toBeLessThan(4 * standardError);
+    expect(Math.abs(mean - uniformMean)).toBeGreaterThan(5 * standardError);
   });
 });
 

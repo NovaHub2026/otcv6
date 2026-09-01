@@ -56,11 +56,11 @@ dispersion budget instead, chosen at authoring time, blind to price and outcome.
 
 ## 5. Subphases
 
-| Subphase | Title                                                   | State       |
-| -------- | ------------------------------------------------------- | ----------- |
-| PH-17.1  | Runtime asset definitions and the creation pipeline     | APPROVED    |
-| PH-17.2  | Families, sampled personalities, and dispersion budgets | ACTIVE      |
-| PH-17.3  | Backdated history and continuous persistence at scale   | not started |
+| Subphase | Title                                                   | State    |
+| -------- | ------------------------------------------------------- | -------- |
+| PH-17.1  | Runtime asset definitions and the creation pipeline     | APPROVED |
+| PH-17.2  | Families, sampled personalities, and dispersion budgets | APPROVED |
+| PH-17.3  | Backdated history and continuous persistence at scale   | ACTIVE   |
 
 ## 6. Phase invariants
 

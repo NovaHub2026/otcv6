@@ -446,11 +446,11 @@ TypeScript. The panel cannot exist until it is data, and asset creation is not a
 insert: it is a calibration job of order a minute — safety gate, personality
 solve, lattice calibration, tie-rate measurement, INV-007 differentiation.
 
-| Subphase | Title                                                   | State       |
-| -------- | ------------------------------------------------------- | ----------- |
-| PH-17.1  | Runtime asset definitions and the creation pipeline     | APPROVED    |
-| PH-17.2  | Families, sampled personalities, and dispersion budgets | ACTIVE      |
-| PH-17.3  | Backdated history and continuous persistence at scale   | not started |
+| Subphase | Title                                                   | State    |
+| -------- | ------------------------------------------------------- | -------- |
+| PH-17.1  | Runtime asset definitions and the creation pipeline     | APPROVED |
+| PH-17.2  | Families, sampled personalities, and dispersion budgets | APPROVED |
+| PH-17.3  | Backdated history and continuous persistence at scale   | ACTIVE   |
 
 Six to eight families, and per-asset personalities **sampled** within a family
 rather than copied from it — otherwise a hundred assets are twenty clones of
