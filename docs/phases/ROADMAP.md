@@ -367,6 +367,12 @@ It is also the one phase where the anti-predictability theorem gives no comfort.
 `P(up) = P(down)` exactly means the _expectation_ is safe; it says nothing about
 the tail.
 
+| Subphase | Title                                            | State       |
+| -------- | ------------------------------------------------ | ----------- |
+| PH-13.1  | The exposure model                               | APPROVED    |
+| PH-13.2  | Risk of ruin, capacity, and the limits           | ACTIVE      |
+| PH-13.3  | Enforcement in the venue, with INV-001 preserved | not started |
+
 ### PH-14 — Multi-Node Consistency and Horizontal Scale-Out
 
 The venue is single-node. PH-7 established INV-002 across concurrent observers, a

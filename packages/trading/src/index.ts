@@ -15,3 +15,10 @@ export {
   type Ledger,
   type TickRecord,
 } from './settle.js';
+export {
+  assessBookRisk,
+  exposureByEvent,
+  type BookRisk,
+  type EventExposure,
+  type SettlementEvent,
+} from './exposure.js';
