@@ -36,7 +36,29 @@ afterAll(async () => {
   for (const directory of directories) await rm(directory, { recursive: true, force: true });
 });
 
-async function boot(port: number): Promise<void> {
+/**
+ * Boot the service on a port nothing else holds.
+ *
+ * The port was a hard-coded constant per test, and a run of the full gate hit
+ * `EADDRINUSE` on it — reproducibly, on a clean tree, while `ss` showed the port
+ * free between runs. Whatever holds it, a test that fails because a number was
+ * taken is testing the machine rather than the code. It now walks forward until
+ * a port binds, and returns the one it got.
+ */
+async function boot(basePort: number): Promise<number> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const port = basePort + attempt;
+    try {
+      await bootOn(port);
+      return port;
+    } catch (error) {
+      if (!String((error as Error).message).includes('EADDRINUSE')) throw error;
+    }
+  }
+  throw new Error(`no free port from ${basePort}`);
+}
+
+async function bootOn(port: number): Promise<void> {
   const stateDir = await mkdtemp(path.join(tmpdir(), 'otc-join-'));
   directories.push(stateDir);
   const child = spawn(process.execPath, [entry], {
@@ -44,9 +66,17 @@ async function boot(port: number): Promise<void> {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   started.push(child);
+  // Keep what the child said. A test that reports `service exited (1)` and
+  // throws the reason away costs an hour every time it fires, which is the
+  // diagnosis cost this project keeps paying elsewhere for the same reason.
+  let output = '';
+  child.stdout?.on('data', (chunk: Buffer) => (output += chunk.toString()));
+  child.stderr?.on('data', (chunk: Buffer) => (output += chunk.toString()));
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`service exited (${child.exitCode})`);
+    if (child.exitCode !== null) {
+      throw new Error(`service exited (${child.exitCode}):\n${output.slice(-2_000)}`);
+    }
     try {
       if ((await fetch(`http://127.0.0.1:${port}/health`)).ok) return;
     } catch {
@@ -54,7 +84,7 @@ async function boot(port: number): Promise<void> {
     }
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
-  throw new Error('service never became healthy');
+  throw new Error(`service never became healthy:\n${output.slice(-2_000)}`);
 }
 
 /**
@@ -112,8 +142,7 @@ async function streamInto(
 
 describe('a client reconstructs the server record exactly', () => {
   it('survives a mid-stream disconnection and resumes without a hole', async () => {
-    const port = 34_301;
-    await boot(port);
+    const port = await boot(34_301);
 
     const window = new TickWindow({ capacity: 10_000 });
     await streamInto(port, window, 60);
@@ -146,8 +175,7 @@ describe('a client reconstructs the server record exactly', () => {
   it('renders what it received, preserving every extreme', async () => {
     // The full path: server -> HTTP -> window -> reduction. The rendered columns
     // must still contain the window's true high and low, at any resolution.
-    const port = 34_302;
-    await boot(port);
+    const port = await boot(34_301);
 
     const window = new TickWindow();
     await streamInto(port, window, 150);
@@ -167,8 +195,7 @@ describe('a client reconstructs the server record exactly', () => {
 
   it('two clients of the same server hold the same market', async () => {
     // INV-002 end to end: two independent HTTP clients, two independent windows.
-    const port = 34_303;
-    await boot(port);
+    const port = await boot(34_301);
 
     const first = new TickWindow();
     const second = new TickWindow();

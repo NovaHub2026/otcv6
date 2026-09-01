@@ -1,12 +1,12 @@
 // Invariant evidence: INV-006 (no exploitable directional rules), INV-009 (reproducible settlement).
 import { describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, MasterKeyring, type Tick } from '@otc/core';
-import { WITHHELD_FAMILY_NAMES } from './attacks/index.js';
-import type { TickJournal } from './assurance.js';
-import { BINARY_HORIZONS, horizonByLabel } from './horizons.js';
+import { ATTACK_FAMILIES, WITHHELD_FAMILY_NAMES } from './attacks/index.js';
+import type { AttackFamily } from './attacks/types.js';
+import type { PublicInstrument } from './observer.js';
 import {
   assertIndependentFamilies,
-  assessHorizon,
+  classifyStanding,
   DEFAULT_STANDING_CADENCE_MS,
   isStandingRunDue,
   PRODUCT_MARGIN_PP,
@@ -15,15 +15,22 @@ import {
 } from './standing.js';
 
 const GENESIS = 1_776_000_000_000;
-const ALL_FAMILIES = [...WITHHELD_FAMILY_NAMES, 'second-of-minute', 'run-length'];
+
+const INSTRUMENT: PublicInstrument = {
+  id: 'standing',
+  family: 'forex',
+  logQuantum: 1e-5,
+  displayPrecision: 5,
+  referencePrice: 1,
+};
 
 /**
- * A fair random walk on the lattice, seeded.
+ * A fair random walk, seeded.
  *
- * The keyring gives the same stream every run, so every number below is
- * reproducible. A statistical assertion that can fail randomly is a defect.
+ * `intervalMs` is short so a modest tick count still spans several 30-second
+ * windows; the battery needs windows, not ticks.
  */
-function walk(ticks: number, seed: string, drift = 0): TickJournal {
+function walk(count: number, seed: string, intervalMs = 1_000): Tick[] {
   const source = MasterKeyring.forTesting(seed).derive({
     env: 'test',
     asset: 'standing',
@@ -32,75 +39,94 @@ function walk(ticks: number, seed: string, drift = 0): TickJournal {
   });
   const out: Tick[] = [];
   let price = 0;
-  for (let index = 0; index < ticks; index += 1) {
-    // `drift` biases the coin. At 0 it is fair, which is what the engine
-    // guarantees structurally; above 0 it is the leak this run must catch.
-    price += source.nextFloat64() < 0.5 + drift ? 1 : -1;
+  for (let index = 0; index < count; index += 1) {
+    price += source.nextFloat64() < 0.5 ? 1 : -1;
     out.push({
       sequence: index + 1,
-      instant: epochMillis(GENESIS + index * 1_000),
+      instant: epochMillis(GENESIS + index * intervalMs),
       price: logPrice(price),
     });
   }
-  return { instrumentId: 'standing', logQuantum: 1e-5, ticks: out };
+  return out;
 }
 
 /**
- * A record whose blocks differ from each other: dependence, deliberately.
+ * A record whose direction is a published function of the clock.
  *
- * The drift alternates sign every twelfth of the record, so each replicate block
- * has its own up-rate and the block-to-block variance is far above what
- * independence predicts. This is what a design effect is for, and `walk` — an
- * independent fair coin — cannot exercise it.
+ * **Cycle Audit 5, CA5-06.** The auditor's construction, kept as a permanent
+ * test. The price marches one way for a whole hour, and the direction of hour
+ * `r` is the Thue-Morse parity of `r` — arithmetic any observer can do. Every
+ * contract at every horizon the product sells is won with certainty.
+ *
+ * The unconditional up-rate is 0.5 by construction, so the statistic the old
+ * implementation computed sees **nothing**, and it reported `clean`. Anything
+ * that reports `clean` here is not a standing guarantee.
  */
-function blockDrift(ticks: number, seed: string, amplitude: number): TickJournal {
-  const source = MasterKeyring.forTesting(seed).derive({
-    env: 'test',
-    asset: 'standing',
-    purpose: 'blocks',
-    keyEpoch: 0,
-  });
-  const blockSize = Math.floor(ticks / 12);
+function predictableByTheClock(hours: number, ticksPerHour = 60): Tick[] {
+  const parity = (n: number): number => {
+    let bits = 0;
+    for (let v = n; v > 0; v >>= 1) bits ^= v & 1;
+    return bits;
+  };
   const out: Tick[] = [];
   let price = 0;
-  for (let index = 0; index < ticks; index += 1) {
-    const block = Math.floor(index / blockSize);
-    const drift = block % 2 === 0 ? amplitude : -amplitude;
-    price += source.nextFloat64() < 0.5 + drift ? 1 : -1;
-    out.push({
-      sequence: index + 1,
-      instant: epochMillis(GENESIS + index * 1_000),
-      price: logPrice(price),
-    });
+  const interval = 3_600_000 / ticksPerHour;
+  for (let hour = 0; hour < hours; hour += 1) {
+    const step = parity(hour) === 0 ? 1 : -1;
+    for (let k = 0; k < ticksPerHour; k += 1) {
+      price += step;
+      out.push({
+        sequence: out.length + 1,
+        instant: epochMillis(GENESIS + Math.round((hour * ticksPerHour + k) * interval)),
+        price: logPrice(price),
+      });
+    }
   }
-  return { instrumentId: 'standing', logQuantum: 1e-5, ticks: out };
+  return out;
 }
 
+const family = (name: string): AttackFamily => ({ name }) as unknown as AttackFamily;
+
+/**
+ * Battery settings that let a unit-sized record test anything at all.
+ *
+ * The default `minimumBucketSamples` is 500, which at the 15-minute horizon
+ * needs five days of history per bucket — right for a venue, impossible for a
+ * fast test. Lowering the occupancy floor keeps every other part of the battery
+ * exactly as it runs in production, and the alternative would be a test that
+ * silently exercises nothing: a 4,000-tick record skipped **every** bucket and
+ * reported zero hypotheses tested.
+ */
+const SMALL = { minimumBucketSamples: 25 } as const;
+
 describe('the run refuses a verdict it could not stand behind', () => {
-  it('refuses a family set missing a withheld family', () => {
+  it('refuses a family set missing a withheld family it could have run', () => {
+    // The check now reads the family objects, not a list of strings a caller
+    // supplied — which is the whole of what CA5-06 found.
     for (const dropped of WITHHELD_FAMILY_NAMES) {
-      const partial = ALL_FAMILIES.filter((name) => name !== dropped);
-      expect(() => assertIndependentFamilies(partial)).toThrow(StandingAssuranceError);
+      const partial = WITHHELD_FAMILY_NAMES.filter((name) => name !== dropped).map(family);
+      expect(() => assertIndependentFamilies(partial, [...WITHHELD_FAMILY_NAMES])).toThrow(
+        StandingAssuranceError,
+      );
     }
   });
 
   it('refuses the tuning registry alone, however many families it holds', () => {
-    // A clean result from the families the engine was shaped to survive is not
-    // independent evidence of anything.
-    expect(() =>
-      assertIndependentFamilies(['second-of-minute', 'run-length', 'minute-of-hour']),
-    ).toThrow(StandingAssuranceError);
+    const tuning = ['second-of-minute', 'run-length', 'minute-of-hour'].map(family);
+    expect(() => assertIndependentFamilies(tuning, [...WITHHELD_FAMILY_NAMES])).toThrow(
+      StandingAssuranceError,
+    );
   });
 
-  it('accepts a set containing every withheld family', () => {
-    expect(() => assertIndependentFamilies(ALL_FAMILIES)).not.toThrow();
-    expect(() => assertIndependentFamilies([...WITHHELD_FAMILY_NAMES])).not.toThrow();
+  it('accepts exactly the families it could build', () => {
+    const built = WITHHELD_FAMILY_NAMES.map(family);
+    expect(() => assertIndependentFamilies(built, [...WITHHELD_FAMILY_NAMES])).not.toThrow();
   });
 
   it('names what is missing, so an operator can fix it', () => {
     const error = (() => {
       try {
-        assertIndependentFamilies(['second-of-minute']);
+        assertIndependentFamilies([family('second-of-minute')], [...WITHHELD_FAMILY_NAMES]);
         return null;
       } catch (thrown) {
         return thrown as Error;
@@ -109,173 +135,171 @@ describe('the run refuses a verdict it could not stand behind', () => {
     expect(error?.message).toContain('wh-arrival-gap');
   });
 
-  it('refuses a history too short to measure', () => {
-    expect(() =>
-      runStandingAssurance({
-        assetId: 'eurusd',
-        journal: { instrumentId: 'x', logQuantum: 1e-5, ticks: [] },
-        at: GENESIS,
-        familyNames: ALL_FAMILIES,
-      }),
-    ).toThrow(StandingAssuranceError);
+  it('refuses a history too short to measure', async () => {
+    await expect(
+      runStandingAssurance({ assetId: 'x', instrument: INSTRUMENT, ticks: [], at: GENESIS }),
+    ).rejects.toBeInstanceOf(StandingAssuranceError);
+  });
+
+  it('refuses an unusable instant rather than stamping it on a published verdict', async () => {
+    for (const at of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      await expect(
+        runStandingAssurance({
+          assetId: 'x',
+          instrument: INSTRUMENT,
+          ticks: walk(200, 'a'),
+          at,
+          battery: SMALL,
+        }),
+      ).rejects.toBeInstanceOf(StandingAssuranceError);
+    }
   });
 });
 
-describe('the floor is an output, not a constant', () => {
-  const horizon = horizonByLabel('30s');
-
-  it('is finer with more history', () => {
-    const short = assessHorizon(walk(2_000, 'a'), horizon);
-    const long = assessHorizon(walk(40_000, 'a'), horizon);
-    expect(long.trials).toBeGreaterThan(short.trials);
-    expect(long.detectionFloorPp).toBeLessThan(short.detectionFloorPp);
-  });
-
-  it('is coarser at a longer horizon on the same history', () => {
-    // The same record yields fewer non-overlapping windows at 15 minutes than at
-    // 30 seconds, so it can see less. This is PH-11's finding, restated by the
-    // measurement itself rather than asserted.
-    const journal = walk(40_000, 'a');
-    const fast = assessHorizon(journal, horizonByLabel('30s'));
-    const slow = assessHorizon(journal, horizonByLabel('15m'));
-    expect(slow.trials).toBeLessThan(fast.trials);
-    expect(slow.detectionFloorPp).toBeGreaterThan(fast.detectionFloorPp);
-  });
-
-  it('is infinite when nothing settled', () => {
-    const flat: TickJournal = {
-      instrumentId: 'x',
-      logQuantum: 1e-5,
-      ticks: Array.from({ length: 500 }, (_, i) => ({
-        sequence: i + 1,
-        instant: epochMillis(GENESIS + i * 1_000),
-        price: logPrice(7),
-      })),
-    };
-    const assessed = assessHorizon(flat, horizon);
-    expect(assessed.trials).toBe(0);
-    expect(assessed.detectionFloorPp).toBe(Number.POSITIVE_INFINITY);
-    // No power at all is `undecided`. A record that never moved has not been
-    // shown to be fair; it has not been measured.
-    expect(assessed.outcome).toBe('undecided');
-  });
-
-  it('reads close to 1 on an independent record, which is what independence means', () => {
-    const assessed = assessHorizon(walk(40_000, 'a'), horizon);
-    expect(assessed.designEffect).toBeGreaterThan(0);
-    expect(assessed.effectiveTrials).toBeLessThanOrEqual(assessed.trials);
-  });
-
-  it('sees dependence when it is there, and pays for it in the floor', () => {
-    // `walk` is an independent fair coin, so its true design effect is ~1 and a
-    // planted "assume independence" defect is invisible against it. This record
-    // has real block-level heterogeneity — alternating drift — which is exactly
-    // what a design effect exists to detect, and it must be paid for with a
-    // coarser floor rather than a more confident one.
-    const dependent = blockDrift(40_000, 'a', 0.12);
-    const assessed = assessHorizon(dependent, horizon);
-    expect(assessed.designEffect).toBeGreaterThan(3);
-    expect(assessed.effectiveTrials).toBeLessThan(assessed.trials);
-
-    const independent = assessHorizon(walk(40_000, 'a'), horizon);
-    expect(assessed.trials).toBeGreaterThan(0);
-    // Same amount of history, less information in it.
-    expect(assessed.detectionFloorPp).toBeGreaterThan(independent.detectionFloorPp);
-  });
-
-  it.each([0, 2, 1.5])('refuses %s replicate blocks', (blocks) => {
-    expect(() => assessHorizon(walk(1_000, 'a'), horizon, blocks)).toThrow(StandingAssuranceError);
-  });
-});
-
-describe('three verdicts, and the third is the one that matters', () => {
-  it('reports undecided on a young venue rather than clean', () => {
-    // The single most misleading thing this system could say is `clean` from a
-    // record with no power: indistinguishable from the same word after a year,
-    // and it is the word a counterparty acts on.
-    const verdict = runStandingAssurance({
-      assetId: 'eurusd',
-      journal: walk(600, 'a'),
+describe('the verdict is derived from families that actually ran', () => {
+  it('reports the families it built and the withheld ones it could not', async () => {
+    const verdict = await runStandingAssurance({
+      assetId: 'standing',
+      instrument: INSTRUMENT,
+      ticks: walk(4_000, 'a'),
       at: GENESIS,
-      familyNames: ALL_FAMILIES,
+      battery: SMALL,
     });
-    expect(verdict.outcome).toBe('undecided');
+    // With no seam indices and no reference series, two of the four withheld
+    // families cannot be constructed. That is recorded, not glossed.
+    expect(verdict.families.length).toBeGreaterThan(0);
+    for (const name of WITHHELD_FAMILY_NAMES.filter(
+      (n) => !verdict.withheldUnavailable.includes(n),
+    ))
+      expect(verdict.families).toContain(name);
+    expect(verdict.withheldUnavailable.length).toBeGreaterThan(0);
+    expect(verdict.hypothesesTested).toBeGreaterThan(0);
+    // The registry runs too, and the verdict names what it ran. Asserting only
+    // the withheld names let a plant hardcode them and pass.
+    expect(verdict.families).toContain('second-of-minute');
+    expect(verdict.families.length).toBeGreaterThan(WITHHELD_FAMILY_NAMES.length);
+  });
+
+  it('cannot report clean while a withheld family is unavailable', async () => {
+    // Four families were withheld from tuning. A clean result from two of them
+    // is a weaker claim, and reporting it under the same word overstates it.
+    const verdict = await runStandingAssurance({
+      assetId: 'standing',
+      instrument: INSTRUMENT,
+      ticks: walk(4_000, 'a'),
+      at: GENESIS,
+      battery: SMALL,
+    });
+    expect(verdict.withheldUnavailable.length).toBeGreaterThan(0);
+    expect(verdict.outcome).not.toBe('clean');
+  });
+
+  it('records the coverage it measured', async () => {
+    const ticks = walk(3_000, 'b');
+    const verdict = await runStandingAssurance({
+      assetId: 'standing',
+      instrument: INSTRUMENT,
+      ticks,
+      at: GENESIS + 500,
+      battery: SMALL,
+    });
+    expect(verdict.ticks).toBe(3_000);
+    expect(verdict.coveredMs).toBe(ticks[ticks.length - 1]!.instant - ticks[0]!.instant);
+    expect(verdict.at).toBe(GENESIS + 500);
+  });
+});
+
+describe('the detection floor is the battery own, and it moves with the history', () => {
+  it('carries a floor and a sufficiency flag on every horizon it tested', async () => {
+    const verdict = await runStandingAssurance({
+      assetId: 'standing',
+      instrument: INSTRUMENT,
+      ticks: walk(6_000, 'a'),
+      at: GENESIS,
+      battery: SMALL,
+    });
+    expect(verdict.horizons.length).toBeGreaterThan(0);
     for (const horizon of verdict.horizons) {
-      expect(horizon.detectionFloorPp).toBeGreaterThan(PRODUCT_MARGIN_PP);
+      expect(horizon.detectionFloorPp).toBeGreaterThan(0);
+      expect(horizon.samples).toBeGreaterThanOrEqual(0);
+      expect(typeof horizon.sufficientForPayout).toBe('boolean');
     }
   });
 
-  it('reports exploitable when the bias clears the floor, at any power', () => {
-    // A short, heavily biased record: little power, and an edge large enough to
-    // clear even a coarse floor. That is a finding whether or not the sample
-    // could have seen a smaller one.
-    const assessed = assessHorizon(walk(4_000, 'a', 0.25), horizonByLabel('30s'));
-    expect(assessed.observedBiasPp).toBeGreaterThan(assessed.detectionFloorPp);
-    expect(assessed.outcome).toBe('exploitable');
-  });
-
-  it('takes the worst outcome across horizons', () => {
-    const verdict = runStandingAssurance({
-      assetId: 'eurusd',
-      journal: walk(4_000, 'a', 0.25),
+  it('is finer with more history', async () => {
+    const short = await runStandingAssurance({
+      assetId: 'standing',
+      instrument: INSTRUMENT,
+      ticks: walk(3_000, 'a'),
       at: GENESIS,
-      familyNames: ALL_FAMILIES,
+      battery: SMALL,
     });
-    // Some horizons will be undecided for want of windows; a venue is not clean
-    // because most of it is, and it is not undecided when part of it is
-    // exploitable.
-    expect(verdict.outcome).toBe('exploitable');
-  });
-
-  it('never reports clean on a floor coarser than the product margin', () => {
-    for (const ticks of [600, 1_200, 3_000]) {
-      const verdict = runStandingAssurance({
-        assetId: 'eurusd',
-        journal: walk(ticks, 'b'),
-        at: GENESIS,
-        familyNames: ALL_FAMILIES,
-      });
-      for (const horizon of verdict.horizons) {
-        if (horizon.outcome === 'clean') {
-          expect(horizon.detectionFloorPp).toBeLessThanOrEqual(PRODUCT_MARGIN_PP);
-        }
-      }
-    }
+    const long = await runStandingAssurance({
+      assetId: 'standing',
+      instrument: INSTRUMENT,
+      ticks: walk(30_000, 'a'),
+      at: GENESIS,
+      battery: SMALL,
+    });
+    const floorAt = (v: typeof short, label: string): number =>
+      v.horizons.find((h) => h.horizon === label)!.detectionFloorPp;
+    expect(floorAt(long, '30s')).toBeLessThan(floorAt(short, '30s'));
   });
 
   it('states the margin it is judging against', () => {
-    // 0.2513pp: the bias that becomes profitable at the 99% promotional payout.
     expect(PRODUCT_MARGIN_PP).toBeCloseTo(0.2513, 3);
   });
 });
 
-describe('a verdict is a complete report', () => {
-  const verdict = runStandingAssurance({
-    assetId: 'eurusd',
-    journal: walk(20_000, 'a'),
-    at: GENESIS + 500,
-    familyNames: ALL_FAMILIES,
+describe('a record predictable from the clock is not clean', () => {
+  it('reports exploitable on a market whose direction is published arithmetic', async () => {
+    // The construction that broke the previous implementation, which reported
+    // `clean` because the unconditional up-rate is 0.5 by construction.
+    //
+    // Asserting `exploitable` rather than "not clean" on purpose. The weaker
+    // assertion passes for the wrong reason — a missing withheld family already
+    // forces `undecided` — and a test that cannot fail for the right reason is
+    // the defect Cycle Audit 5 found seven times. So every family is made
+    // available here, and the verdict has to be the alarm.
+    const reference = predictableByTheClock(600, 61);
+    const verdict = await runStandingAssurance({
+      assetId: 'standing',
+      instrument: INSTRUMENT,
+      ticks: predictableByTheClock(600),
+      at: GENESIS,
+      withheld: {
+        seamIndices: [1_000, 5_000],
+        reference: {
+          instants: Float64Array.from(reference.map((t) => t.instant)),
+          prices: Int32Array.from(reference.map((t) => t.price)),
+        },
+      },
+      battery: SMALL,
+    });
+    expect(verdict.withheldUnavailable).toEqual([]);
+    expect(verdict.outcome).toBe('exploitable');
+    expect(verdict.exploitable.length).toBeGreaterThan(0);
+    expect(Math.abs(verdict.worstZ ?? 0)).toBeGreaterThan(10);
+  }, 300_000);
+
+  it('runs the registry as well as the withheld families', () => {
+    // Measured: the withheld four alone returned 88 hypotheses and **zero**
+    // exploitable on the record above, worst z = -1.15. None of them conditions
+    // on wall-clock phase. The withheld families make the verdict independent
+    // evidence; the registry gives it coverage. Neither alone is a standing
+    // guarantee.
+    expect(ATTACK_FAMILIES.length).toBeGreaterThan(4);
   });
 
-  it('names every horizon the product sells', () => {
-    expect(verdict.horizons.map((h) => h.horizon)).toEqual(BINARY_HORIZONS.map((h) => h.label));
-  });
-
-  it('records what it was built from, so a reader can check the claim', () => {
-    expect(verdict.families).toEqual(ALL_FAMILIES);
-    for (const withheld of WITHHELD_FAMILY_NAMES) expect(verdict.families).toContain(withheld);
-  });
-
-  it('records the coverage it measured', () => {
-    expect(verdict.ticks).toBe(20_000);
-    expect(verdict.coveredMs).toBe(19_999 * 1_000);
-    expect(verdict.at).toBe(GENESIS + 500);
-  });
-
-  it('carries a floor on every horizon', () => {
-    for (const horizon of verdict.horizons) {
-      expect(horizon.detectionFloorPp).toBeGreaterThan(0);
-    }
+  it('a short fair record is not clean either, for want of power', async () => {
+    const verdict = await runStandingAssurance({
+      assetId: 'standing',
+      instrument: INSTRUMENT,
+      ticks: walk(600, 'a'),
+      at: GENESIS,
+      battery: SMALL,
+    });
+    expect(verdict.outcome).toBe('undecided');
   });
 });
 
@@ -302,5 +326,57 @@ describe('the cadence is decided from an injected instant', () => {
 
   it('refuses an unusable instant rather than guessing', () => {
     expect(() => isStandingRunDue(GENESIS, Number.NaN)).toThrow(StandingAssuranceError);
+  });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY])(
+    'refuses a stored last-run time of %s',
+    (lastRunAt) => {
+      // `NaN - x >= c` is false, so an unvalidated field meant "never due",
+      // forever, silently — the failure this module exists to prevent.
+      expect(() => isStandingRunDue(lastRunAt, GENESIS + 1e12)).toThrow(StandingAssuranceError);
+    },
+  );
+});
+
+describe('each rule of the classifier, on its own', () => {
+  // End to end these mask one another, and `clean` needs more history than a
+  // unit test can hold. Tested directly so every rule can fail for its own
+  // reason.
+  const powerful = [
+    { horizon: '30s', samples: 1e6, detectionFloorPp: 0.05, sufficientForPayout: true },
+    { horizon: '15m', samples: 1e5, detectionFloorPp: 0.2, sufficientForPayout: true },
+  ];
+  const weak = [{ horizon: '30s', samples: 100, detectionFloorPp: 12, sufficientForPayout: false }];
+  const oneFinding = { length: 1 };
+  const noFindings = { length: 0 };
+
+  it('reports clean only when everything holds', () => {
+    expect(classifyStanding({ clean: true, exploitable: noFindings }, powerful, [])).toBe('clean');
+  });
+
+  it('an unavailable withheld family alone forces undecided', () => {
+    expect(
+      classifyStanding({ clean: true, exploitable: noFindings }, powerful, ['wh-cross-asset']),
+    ).toBe('undecided');
+  });
+
+  it('an insufficient floor alone forces undecided', () => {
+    expect(classifyStanding({ clean: true, exploitable: noFindings }, weak, [])).toBe('undecided');
+  });
+
+  it('no horizons at all is undecided, not clean', () => {
+    expect(classifyStanding({ clean: true, exploitable: noFindings }, [], [])).toBe('undecided');
+  });
+
+  it('an exploitable finding wins over every other rule, at any power', () => {
+    expect(
+      classifyStanding({ clean: false, exploitable: oneFinding }, weak, ['wh-cross-asset']),
+    ).toBe('exploitable');
+  });
+
+  it('a battery that is not clean is not reported clean', () => {
+    expect(classifyStanding({ clean: false, exploitable: noFindings }, powerful, [])).toBe(
+      'undecided',
+    );
   });
 });

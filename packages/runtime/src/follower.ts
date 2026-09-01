@@ -157,10 +157,19 @@ export class FollowerMarket {
    * that was not being written in between.
    */
   spansSeam(from: EpochMillis, to: EpochMillis): boolean {
-    return this.#seams.some(
-      (seam) =>
-        seam.lastInstant !== null && from <= seam.lastInstant && to >= seam.resumesAtInstant,
-    );
+    // **Cycle Audit 5.** This required the window to *contain* the seam
+    // (`from <= last && to >= resumes`), so a contract with one endpoint inside
+    // the gap was reported clean — while `priceAt` refused to answer for that
+    // same instant. The two contradicted each other, and the permissive one was
+    // the one whose docstring says the settlement path needs to be able to ask.
+    //
+    // Overlap is the right test. A window that touches an interval in which no
+    // node was generating cannot be settled honestly against it, whether it
+    // covers the whole gap or one edge of it.
+    return this.#seams.some((seam) => {
+      if (seam.lastInstant === null) return false;
+      return from < seam.resumesAtInstant && to > seam.lastInstant;
+    });
   }
 
   /**

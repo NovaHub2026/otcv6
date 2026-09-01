@@ -17,9 +17,31 @@ import {
  * engine would require the master secret, and every dispute would become a
  * matter of trust.
  */
+/** A recorded discontinuity in the published record, as the runtime writes it. */
+export interface RecordSeam {
+  /** Instant of the last tick before the gap. */
+  readonly lastInstant: number;
+  /** Instant the record resumes at. */
+  readonly resumesAtInstant: number;
+}
+
 export interface TickRecord {
   readonly instants: Float64Array;
   readonly prices: Int32Array;
+  /**
+   * Discontinuities the record carries, if any.
+   *
+   * **Cycle Audit 5.** `spansSeam` was built in PH-14.3 with the docstring "the
+   * settlement path needs to be able to ask", and then nothing asked: `settle`
+   * used `priceAtOrBefore` with no seam awareness at all. An auditor produced a
+   * real 93-second failover gap and a contract whose expiry landed inside it —
+   * `priceAt` returned null for that instant while the contract settled as a
+   * loss against the last pre-seam tick, for real money.
+   *
+   * Optional so every existing caller keeps working; a record that carries no
+   * seams behaves exactly as before.
+   */
+  readonly seams?: readonly RecordSeam[];
 }
 
 export class NotSettleableError extends Error {
@@ -64,6 +86,21 @@ export function settle(
       `expiry ${expiryInstant} is beyond the record, which ends at ${String(last)}`,
     );
   }
+  // ADR-0010's rule, applied to a read. An interval nobody observed is refused,
+  // not invented, and a contract that touches one cannot be settled against a
+  // price that was in force before it.
+  const touched = (record.seams ?? []).find(
+    (seam) => contract.entryInstant < seam.resumesAtInstant && expiryInstant > seam.lastInstant,
+  );
+  if (touched !== undefined) {
+    throw new NotSettleableError(
+      contract.id,
+      `the window ${contract.entryInstant}..${expiryInstant} touches a recorded discontinuity ` +
+        `(${touched.lastInstant}..${touched.resumesAtInstant}), during which no node was ` +
+        `generating. Settling would use a price from before a gap nobody observed.`,
+    );
+  }
+
   const expiry = priceAtOrBefore(record.instants, record.prices, expiryInstant);
   if (expiry === null) {
     throw new NotSettleableError(contract.id, 'no price in force at expiry');

@@ -340,12 +340,12 @@ So Cycle 5 is derived from what the _product_ needs rather than from what was
 left over, and the ordering is deliberate: **can you afford to run it, can you
 scale it, can you operate it.**
 
-| Phase | Title                                                        | State                           |
-| ----- | ------------------------------------------------------------ | ------------------------------- |
-| PH-13 | Operator risk: variance, correlated flow and capacity        | **APPROVED WITH OPEN FINDINGS** |
-| PH-14 | Multi-node consistency and horizontal scale-out              | **APPROVED WITH OPEN FINDINGS** |
-| PH-15 | Operations: the standing guarantee, running continuously     | **APPROVED WITH OPEN FINDINGS** |
-| —     | **Cycle Audit 5** — automatic, independent agents (ADR-0011) | not started                     |
+| Phase | Title                                                    | State                           |
+| ----- | -------------------------------------------------------- | ------------------------------- |
+| PH-13 | Operator risk: variance, correlated flow and capacity    | **APPROVED WITH OPEN FINDINGS** |
+| PH-14 | Multi-node consistency and horizontal scale-out          | **APPROVED WITH OPEN FINDINGS** |
+| PH-15 | Operations: the standing guarantee, running continuously | **APPROVED WITH OPEN FINDINGS** |
+| —     | **Cycle Audit 5** — seven independent agents (ADR-0011)  | RAN — findings open             |
 
 ### PH-13 — Operator Risk: Variance, Correlated Flow and Capacity
 
@@ -409,6 +409,74 @@ share.
 | PH-15.1  | A durable coordinated store, and the contract it must pass | APPROVED |
 | PH-15.2  | Publication, rotation and retention                        | APPROVED |
 | PH-15.3  | The standing guarantee: assurance on a schedule            | APPROVED |
+
+---
+
+## Cycle 6 — Make the guarantee true, then make the catalogue
+
+Cycle Audit 5 found roughly seventy material findings against a tree whose gate
+was green, and three of them falsify the stated objective of a phase. So Cycle 6
+does not start from new product surface: it starts from the fact that the engine
+currently _claims_ a standing guarantee it does not compute, and _claims_ a
+follower cannot generate when it can.
+
+| Phase | Title                                                | State        |
+| ----- | ---------------------------------------------------- | ------------ |
+| PH-16 | Close what the audit falsified                       | **APPROVED** |
+| PH-17 | Assets become data: families, sampling, history      | **ACTIVE**   |
+| PH-18 | The admin panel: Preview                             | not started  |
+| —     | **Cycle Audit 6** — one worktree per auditor (B-020) | not started  |
+
+### PH-16 — Close What the Audit Falsified
+
+The least visible phase of the three, and the one that decides whether the other
+two mean anything. A hundred assets built on a broken INV-002 are a hundred
+assets with the same broken promise.
+
+| Subphase | Title                                                     | State    |
+| -------- | --------------------------------------------------------- | -------- |
+| PH-16.1  | The standing verdict runs the battery it names            | APPROVED |
+| PH-16.2  | A follower cannot generate, and settlement sees the seam  | APPROVED |
+| PH-16.3  | Operator risk, retention, and the guardrails' blind spots | APPROVED |
+
+### PH-17 — Assets Become Data
+
+The catalogue is a compiled constant, so creating an asset means editing
+TypeScript. The panel cannot exist until it is data, and asset creation is not an
+insert: it is a calibration job of order a minute — safety gate, personality
+solve, lattice calibration, tie-rate measurement, INV-007 differentiation.
+
+| Subphase | Title                                                   | State       |
+| -------- | ------------------------------------------------------- | ----------- |
+| PH-17.1  | Runtime asset definitions and the creation pipeline     | not started |
+| PH-17.2  | Families, sampled personalities, and dispersion budgets | not started |
+| PH-17.3  | Backdated history and continuous persistence at scale   | not started |
+
+Six to eight families, and per-asset personalities **sampled** within a family
+rather than copied from it — otherwise a hundred assets are twenty clones of
+five, and INV-007 is false as written. Dispersion budgets come from
+[`CYCLE-6-DRIFT.md`](../evidence/CYCLE-6-DRIFT.md), which also records why a
+price ceiling was refused.
+
+### PH-18 — The Admin Panel: Preview
+
+One submenu. Select among the configured assets, watch them live, change the
+displayed timeframe in real time.
+
+| Subphase | Title                                                   | State       |
+| -------- | ------------------------------------------------------- | ----------- |
+| PH-18.1  | The engine's administrative surface                     | not started |
+| PH-18.2  | TradingView against PH-8's rendering contract           | not started |
+| PH-18.3  | Live preview: selection, streaming, timeframe switching | not started |
+
+INV-004 already guarantees that changing the displayed timeframe never changes
+the market, and PH-8 built the rendering contract that invents no price and
+hides no extreme. That half is wiring, not design.
+
+**Excluded, deliberately:** the asset-proposal assistant. It is help on top of a
+pipeline that has to exist first; once PH-17 lands it is days of work, not a
+phase. Deployment and any TradingView licence remain the Human Owner's
+(`GOVERNANCE.md` §5.1).
 
 ## Major dependencies
 

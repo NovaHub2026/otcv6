@@ -92,14 +92,13 @@ export {
 } from './ruin.js';
 export {
   assertIndependentFamilies,
-  assessHorizon,
-  DEFAULT_REPLICATE_BLOCKS,
   DEFAULT_STANDING_CADENCE_MS,
   isStandingRunDue,
   PRODUCT_MARGIN_PP,
   runStandingAssurance,
   StandingAssuranceError,
   type HorizonStanding,
+  type StandingFinding,
   type StandingOutcome,
   type StandingRunOptions,
   type StandingVerdict,

@@ -14,21 +14,21 @@ Last synchronized: 2026-09-01
 
 | Field                            | Value                                                                   |
 | -------------------------------- | ----------------------------------------------------------------------- |
-| Active development cycle         | Cycle 5                                                                 |
-| Approved phases in current cycle | **3 of 3**                                                              |
-| Cycle Audit state                | Cycle Audit 5 is the current work — begins automatically                |
+| Active development cycle         | Cycle 6                                                                 |
+| Approved phases in current cycle | **1 of 3**                                                              |
+| Cycle Audit state                | 005 recorded; findings remediated in PH-16                              |
 | Last Cycle Audit                 | [Cycle Audit 004](docs/audits/CYCLE-AUDIT-004.md) — APPROVED 2026-09-01 |
 
 ## Phase and subphase
 
-| Field                  | Value                                      |
-| ---------------------- | ------------------------------------------ |
-| Active phase           | Cycle Audit 5 remediation                  |
-| Phase lifecycle        | n/a                                        |
-| Active subphase        | None                                       |
-| Subphase lifecycle     | n/a                                        |
-| Last approved phase    | PH-15 — Operations: The Standing Guarantee |
-| Last approved subphase | PH-15.3 — The standing guarantee           |
+| Field                  | Value                                                     |
+| ---------------------- | --------------------------------------------------------- |
+| Active phase           | PH-17 — Assets become data                                |
+| Phase lifecycle        | n/a                                                       |
+| Active subphase        | None                                                      |
+| Subphase lifecycle     | n/a                                                       |
+| Last approved phase    | PH-16 — Close What the Audit Falsified                    |
+| Last approved subphase | PH-16.3 — Operator risk, retention, guardrail blind spots |
 
 ## Cycle 1 result
 
@@ -143,7 +143,7 @@ Cycle 1's numbers, and the coverage figure, are in
 | ADR-0012 | Generation is single-writer per asset; leadership is a fenced lease (APPROVED) |
 | Backlog  | `docs/BACKLOG.md` — B-012 … B-020 **open** (Cycle Audit 5); B-001…B-011 closed |
 | Roadmap  | `docs/phases/ROADMAP.md`                                                       |
-| Branch   | `main` — every phase branch merged and deleted                                 |
+| Branch   | `feature/ph-16-audit-remediation`                                              |
 
 ---
 

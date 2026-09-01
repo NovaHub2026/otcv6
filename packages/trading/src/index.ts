@@ -13,12 +13,14 @@ export {
   settle,
   tally,
   type Ledger,
+  type RecordSeam,
   type TickRecord,
 } from './settle.js';
 export {
   assessBookRisk,
   exposureByEvent,
   type BookRisk,
+  type EntryResolver,
   type EventExposure,
   type SettlementEvent,
 } from './exposure.js';

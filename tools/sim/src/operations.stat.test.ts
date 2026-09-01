@@ -22,7 +22,7 @@ import {
   type JournalWindow,
   type SignedCommitment,
 } from '@otc/distribution';
-import { runStandingAssurance, WITHHELD_FAMILY_NAMES, type TickJournal } from '@otc/lab';
+import { runStandingAssurance, WITHHELD_FAMILY_NAMES } from '@otc/lab';
 
 /**
  * PH-15's integrated verification: a venue that is actually operated.
@@ -196,43 +196,38 @@ describe('a venue that is operated, not just built', () => {
 
     // ---- PH-15.3: the standing verdict, with the floor it earned ----------
     for (const [assetId, ticks] of records) {
-      const journal: TickJournal = {
-        instrumentId: assetId,
-        logQuantum: 1e-5,
-        ticks,
-      };
-      const verdict = runStandingAssurance({
+      const verdict = await runStandingAssurance({
         assetId,
-        journal,
+        instrument: {
+          id: assetId,
+          family: 'forex',
+          logQuantum: 1e-5,
+          displayPrecision: 5,
+          referencePrice: 1,
+        },
+        ticks,
         at: clock.now(),
-        familyNames: [...WITHHELD_FAMILY_NAMES],
+        battery: { minimumBucketSamples: 25 },
       });
 
       // An hour of market time is nowhere near enough power to say `clean` at
-      // the margin the payout implies, and the report says so rather than
-      // borrowing confidence from PH-3's 327-day run.
+      // the margin the payout implies, and two of the four withheld families
+      // cannot be built without a seam log and a reference series. The report
+      // says so rather than borrowing confidence from PH-3's 327-day run.
       expect(verdict.outcome).toBe('undecided');
-      expect(verdict.horizons).toHaveLength(8);
+      expect(verdict.withheldUnavailable.length).toBeGreaterThan(0);
       for (const horizon of verdict.horizons) {
         expect(horizon.detectionFloorPp).toBeGreaterThan(0);
       }
-      // The 30-second horizon has the most windows and therefore the finest
-      // floor, which is the shape PH-11 established.
-      const fastest = verdict.horizons[0]!;
-      const slowest = verdict.horizons[verdict.horizons.length - 1]!;
-      expect(fastest.horizon).toBe('30s');
-      expect(fastest.trials).toBeGreaterThan(slowest.trials);
-      expect(fastest.detectionFloorPp).toBeLessThan(slowest.detectionFloorPp);
-
-      // And it refuses to speak without the withheld families.
-      expect(() =>
-        runStandingAssurance({
-          assetId,
-          journal,
-          at: clock.now(),
-          familyNames: ['second-of-minute'],
-        }),
-      ).toThrow();
+      // Every withheld family it could build is named, and the registry runs
+      // alongside them — the withheld ones make the verdict independent
+      // evidence, the registry gives it coverage (PH-16.1).
+      for (const name of WITHHELD_FAMILY_NAMES) {
+        if (!verdict.withheldUnavailable.includes(name)) {
+          expect(verdict.families).toContain(name);
+        }
+      }
+      expect(verdict.families.length).toBeGreaterThan(WITHHELD_FAMILY_NAMES.length);
     }
 
     reopened.close();
