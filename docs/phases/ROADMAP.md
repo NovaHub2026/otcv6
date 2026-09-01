@@ -324,8 +324,8 @@ connects the journal to the service that actually runs.
 
 | Subphase | Title                                                  | State       |
 | -------- | ------------------------------------------------------ | ----------- |
-| PH-12.1  | A commitment over the journal, with inclusion proofs   | not started |
-| PH-12.2  | The publishing key, and its separation from generation | not started |
+| PH-12.1  | A commitment over the journal, with inclusion proofs   | APPROVED    |
+| PH-12.2  | The publishing key, and its separation from generation | ACTIVE      |
 | PH-12.3  | The service emits the journal; the venue gets policy   | not started |
 
 ---
