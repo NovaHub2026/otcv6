@@ -424,8 +424,8 @@ follower cannot generate when it can.
 | ----- | ---------------------------------------------------- | ------------ |
 | PH-16 | Close what the audit falsified                       | **APPROVED** |
 | PH-17 | Assets become data: families, sampling, history      | **APPROVED** |
-| PH-18 | The admin panel: Preview                             | **ACTIVE**   |
-| —     | **Cycle Audit 6** — one worktree per auditor (B-020) | not started  |
+| PH-18 | The admin panel: Preview                             | **APPROVED** |
+| —     | **Cycle Audit 6** — one worktree per auditor (B-020) | **ACTIVE**   |
 
 ### PH-16 — Close What the Audit Falsified
 
@@ -463,11 +463,11 @@ price ceiling was refused.
 One submenu. Select among the configured assets, watch them live, change the
 displayed timeframe in real time.
 
-| Subphase | Title                                                   | State       |
-| -------- | ------------------------------------------------------- | ----------- |
-| PH-18.1  | The engine's administrative surface                     | not started |
-| PH-18.2  | TradingView against PH-8's rendering contract           | not started |
-| PH-18.3  | Live preview: selection, streaming, timeframe switching | not started |
+| Subphase | Title                                                   | State    |
+| -------- | ------------------------------------------------------- | -------- |
+| PH-18.1  | The engine's administrative surface                     | APPROVED |
+| PH-18.2  | TradingView against PH-8's rendering contract           | APPROVED |
+| PH-18.3  | Live preview: selection, streaming, timeframe switching | APPROVED |
 
 INV-004 already guarantees that changing the displayed timeframe never changes
 the market, and PH-8 built the rendering contract that invents no price and

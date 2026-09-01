@@ -1,8 +1,11 @@
-import type { ReactElement } from 'react';
-import { Chart } from './Chart';
+import { redirect } from 'next/navigation';
 
-const API_BASE = process.env.OTC_API_BASE ?? 'http://127.0.0.1:3000';
-
-export default function Page(): ReactElement {
-  return <Chart apiBase={API_BASE} assetId="btcusd" />;
+/**
+ * The panel has one submenu, so the root is that submenu.
+ *
+ * A redirect rather than a duplicate page: when the second submenu arrives, the
+ * root becomes a choice rather than two copies of one screen.
+ */
+export default function Page(): never {
+  redirect('/preview');
 }

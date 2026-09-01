@@ -9,42 +9,45 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Field              | Value                                                    |
 | ------------------ | -------------------------------------------------------- |
 | Last clean session | 2026-09-01                                               |
-| Branch             | `main` — PH-17 merged                                    |
+| Branch             | `main` — PH-18 merged                                    |
 | Remote             | `origin` → NovaHub2026/otcv6 — public, hosted CI running |
-| Active cycle       | Cycle 6, **2 of 3** phases approved                      |
-| Active phase       | PH-18 — The admin panel: Preview                         |
+| Active cycle       | Cycle 6, **3 of 3** phases approved                      |
+| Active phase       | none — the cycle is complete                             |
 | Active subphase    | none                                                     |
-| Cycle Audit        | 005 recorded; PH-16 closed six of its findings           |
+| Cycle Audit        | **006 is the next legal action**                         |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)       |
 
 ## Continuation point
 
 Read `CURRENT_STATE.md` for the authoritative position; this is the short form.
 
-**Start PH-18 — the admin panel, one submenu: Preview.** Everything it needs
-now exists and nothing of it does.
+**Run Cycle Audit 6.** Three phases are approved and the loop pauses here to
+change the mode of work from building to examining. Nothing is requested and
+nothing is waited for (ADR-0008).
 
-What PH-17 leaves ready:
+Two process rules this audit must follow, both bought with real damage:
 
-- `registerAsset` is a job with five named stages — identity, safety, authoring,
-  calibration, dispersion, differentiation — each refusing for its own reason.
-  A panel needs those reasons; "rejected" is not actionable.
-- `ASSET_ARCHETYPES` is the vocabulary an operator picks from: eight families,
-  each a region rather than a template, with a quarterly dispersion band from
-  1.0-2.2% to 48-68%.
-- `backfillMarket` gives a new asset ninety days of chart, once, and refuses to
-  run twice.
-- `readTimeframe` serves any offered timeframe from two stored tiers, and
-  refuses anything finer than a minute beyond the tick retention window.
+- **One `git worktree` per auditor** (B-020). Cycle Audit 5 ran seven auditors
+  against one tree; three reported the contamination independently, one had a
+  restore clobbered mid-campaign, and two rebuilt private copies to finish.
+- **Never bulk-stage while agents are active** (B-006). That is how a planted
+  backdoor reached `main` in Cycle Audit 2.
 
-What PH-18 has to decide and build: the surface. TradingView Lightweight Charts
-first — the Charting Library needs a licence, which is the Human Owner's
-(`GOVERNANCE.md` §5.1). Multi-asset selection, real-time horizon switching, and
-the live join from history to the running market.
+What Cycle 6 built, and therefore what is worth attacking:
 
-**Cycle Audit 6 gives each auditor its own worktree.** Seven sharing one is
-B-006's hazard reconstituted, three auditors reported it independently, and one
-had a restore clobbered mid-campaign (B-020).
+- **PH-16** closed six Cycle Audit 5 findings, including a standing verdict that
+  compared four strings and ran no attack family at all.
+- **PH-17** made assets data: eight archetypes as regions rather than templates,
+  personalities sampled and solved, a quarterly dispersion budget instead of a
+  price ceiling, and a backfill that gives a new asset ninety days of past and
+  refuses to run twice.
+- **PH-18** built the Preview panel on TradingView Lightweight Charts, with the
+  bar bridge in `packages/chart` so it is inside the build and the lint.
+
+The audit's own standard is in `GOVERNANCE.md` §28.1: falsify rather than
+confirm, re-execute rather than read, and plant a defect against every guard.
+Ten independent agents found 31 findings in Cycle Audit 2; the authoring agent
+found one in Cycle Audit 3.
 
 ## What Cycle 5 has established so far
 

@@ -1,3 +1,5 @@
+import { mkdirSync } from 'node:fs';
+import path from 'node:path';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import { epochMillis, logPrice, type Candle, type EpochMillis, type TimeframeId } from '@otc/core';
 import { HistoryError, HISTORY_TIMEFRAMES, type CandleHistory } from './history.js';
@@ -31,6 +33,15 @@ export class SqliteCandleHistory implements CandleHistory {
   readonly #head: StatementSync;
 
   constructor(location: string) {
+    // The directory before the file. SQLite reports a missing parent directory
+    // as `unable to open database file`, which reads as a permissions or
+    // corruption problem and is neither — and it happens at construction, so
+    // the process dies during dependency injection with no context at all.
+    // Found by the PH-18 phase gate: three API suites that set a temporary
+    // state directory and let the history default went from booting to not.
+    if (location !== ':memory:' && !location.startsWith('file:')) {
+      mkdirSync(path.dirname(path.resolve(location)), { recursive: true });
+    }
     this.#db = new DatabaseSync(location);
     this.#db.exec('PRAGMA busy_timeout = 5000');
     this.#db.exec('PRAGMA journal_mode = WAL');
