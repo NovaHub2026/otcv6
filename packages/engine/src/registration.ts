@@ -1,10 +1,18 @@
 import type { MasterKeyring, RandomSource } from '@otc/core';
 import {
   calibrateAssetAsync,
+  CALIBRATION_REPLICATES,
+  CALIBRATION_SPAN_MS,
+  rescaleCalibration,
   type AssetDefinition,
   type CalibratedAsset,
   type CalibrationOptions,
 } from './asset.js';
+import {
+  DISPERSION_FIT_TURNOVERS,
+  dispersionLogSigma,
+  minimumDispersionSpanMs,
+} from './dispersion.js';
 import { registrationKeyLabel, type AuthoringTargets, type RegisteredAsset } from './catalogue.js';
 import {
   assertPersonalitySafe,
@@ -50,7 +58,7 @@ import {
  */
 
 export type RegistrationStage =
-  'identity' | 'safety' | 'authoring' | 'calibration' | 'differentiation';
+  'identity' | 'safety' | 'authoring' | 'calibration' | 'dispersion' | 'differentiation';
 
 export type RegistrationOutcome =
   | { readonly kind: 'registered'; readonly asset: RegisteredAsset }
@@ -76,7 +84,24 @@ export interface RegistrationRequest {
   readonly family: AssetDefinition['family'];
   readonly displayName: string;
   readonly referencePrice: number;
-  readonly displayPrecision: number;
+  /**
+   * Decimals to render at. Omit to take the lattice's own answer.
+   *
+   * Supplying one is allowed and supplying a *coarser* one is not: a display
+   * that cannot show a move the lattice settled shows an unchanged price on a
+   * contract that paid, which is a fairness problem even with INV-009 intact.
+   * A finer display is merely redundant, and some venues want the trailing zero.
+   */
+  readonly displayPrecision?: number;
+  /**
+   * σ of the terminal log return over a quarter, from `dispersion.ts`.
+   *
+   * The budget the asset is fitted to. Omit it and the personality keeps the
+   * amplitude its {@link RegistrationRequest.targets} imply, which is how the
+   * five hand-authored assets were built; supply it and the base volatility is
+   * scaled to hit it exactly.
+   */
+  readonly dispersion?: number;
   /**
    * The personality's character: the ladder of timescales and the shape.
    *
@@ -96,6 +121,15 @@ export interface RegistrationOptions {
   readonly existing: readonly RegisteredAsset[];
   readonly differentiates: DifferentiationCheck;
   readonly calibration?: CalibrationOptions;
+  /**
+   * Turnovers of the slowest volatility component the dispersion fit must see.
+   *
+   * Defaults to {@link DISPERSION_FIT_TURNOVERS}. Lower it only to test the
+   * mechanism on a span too short to fit accurately — a registration that does
+   * so produces a budget fitted to whichever volatility level its window
+   * happened to hold.
+   */
+  readonly dispersionTurnovers?: number;
 }
 
 /**
@@ -123,7 +157,10 @@ export function checkIdentity(
   if (!Number.isFinite(request.referencePrice) || request.referencePrice <= 0) {
     return `Reference price must be finite and positive, got ${request.referencePrice}.`;
   }
-  if (!Number.isInteger(request.displayPrecision) || request.displayPrecision < 0) {
+  if (
+    request.displayPrecision !== undefined &&
+    (!Number.isInteger(request.displayPrecision) || request.displayPrecision < 0)
+  ) {
     return `Display precision must be a non-negative integer, got ${request.displayPrecision}.`;
   }
   if (request.displayName.trim().length === 0) {
@@ -176,11 +213,82 @@ export async function registerAsset(
     traits: authored.traits,
   };
 
+  // Everything the budget needs that can be decided without simulating, decided
+  // before the simulation. The gate-before-solve ordering, one stage later.
+  if (request.dispersion !== undefined) {
+    if (!Number.isFinite(request.dispersion) || request.dispersion <= 0) {
+      return {
+        kind: 'refused',
+        stage: 'dispersion',
+        reason: `A dispersion budget must be finite and positive, received ${request.dispersion}.`,
+      };
+    }
+    const pooledMs =
+      (options.calibration?.simulatedMs ?? CALIBRATION_SPAN_MS) *
+      (options.calibration?.replicates ?? CALIBRATION_REPLICATES);
+    const needed = minimumDispersionSpanMs(
+      definition.traits,
+      options.dispersionTurnovers ?? DISPERSION_FIT_TURNOVERS,
+    );
+    if (pooledMs < needed) {
+      return {
+        kind: 'refused',
+        stage: 'dispersion',
+        reason:
+          `Fitting a dispersion budget needs ${(needed / 3_600_000).toFixed(1)} hours of ` +
+          `simulated market, and this calibration spans ${(pooledMs / 3_600_000).toFixed(1)}. ` +
+          `This asset's volatility remembers for ` +
+          `${(definition.traits.cascadeSpanMs / 3_600_000).toFixed(1)} hours, so a shorter run ` +
+          `measures one volatility level rather than the distribution.`,
+      };
+    }
+  }
+
   let calibrated: CalibratedAsset;
   try {
     calibrated = await calibrateAssetAsync(definition, derive, options.calibration ?? {});
   } catch (error) {
     return { kind: 'refused', stage: 'calibration', reason: (error as Error).message };
+  }
+
+  // The dispersion budget, hit by rescaling rather than by searching.
+  //
+  // The calibration is homogeneous of degree one in `volatility` — every layer
+  // multiplies the base, and the arrival process normalises magnitudes against
+  // their own average before reading them — so one measurement fixes the factor
+  // exactly. A search would cost a simulation per iteration for the same answer.
+  //
+  // The refusal here is real and it is the interesting one: an archetype whose
+  // rhythm cannot reach its budget needs a base volatility outside
+  // `TRAIT_BOUNDS`, and that is a statement about the family rather than about
+  // the asset.
+  if (request.dispersion !== undefined) {
+    try {
+      calibrated = rescaleCalibration(
+        calibrated,
+        request.dispersion / dispersionLogSigma(calibrated.evidence),
+      );
+    } catch (error) {
+      return {
+        kind: 'refused',
+        stage: 'dispersion',
+        reason:
+          `This personality cannot reach a quarterly dispersion of ${request.dispersion}: ` +
+          (error as Error).message,
+      };
+    }
+  }
+
+  const derivedPrecision = calibrated.instrument.displayPrecision;
+  if (request.displayPrecision !== undefined && request.displayPrecision < derivedPrecision) {
+    return {
+      kind: 'refused',
+      stage: 'calibration',
+      reason:
+        `A display precision of ${request.displayPrecision} is coarser than the lattice this ` +
+        `asset settles on, which needs ${derivedPrecision}. A trader would see an unchanged ` +
+        `price on a contract that moved.`,
+    };
   }
 
   const distinct = await options.differentiates(calibrated, options.existing);
@@ -191,12 +299,20 @@ export async function registerAsset(
   return {
     kind: 'registered',
     asset: {
-      definition,
-      instrument: { ...calibrated.instrument, displayPrecision: request.displayPrecision },
+      // `calibrated.definition`, not the one built above: a rescaling to hit a
+      // dispersion budget changes the base volatility, and the registered
+      // definition has to be the one that produced the registered lattice.
+      definition: calibrated.definition,
+      instrument: {
+        ...calibrated.instrument,
+        displayPrecision: request.displayPrecision ?? derivedPrecision,
+      },
       evidence: calibrated.evidence,
       authored: {
         excessKurtosis: authored.achievedExcessKurtosis,
-        tickRms: authored.tickRms,
+        // What the asset actually diffuses at, after any rescaling — so the
+        // recorded amplitude is the one the published lattice was cut for.
+        tickRms: authored.tickRms * calibrated.evidence.volatilityScale,
       },
     },
   };

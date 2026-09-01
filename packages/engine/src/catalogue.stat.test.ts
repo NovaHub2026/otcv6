@@ -6,6 +6,7 @@ import {
   TARGET_TIE_RATE,
   type AssetDefinition,
 } from './asset.js';
+import { dispersionLogSigma } from './dispersion.js';
 import { ASSET_CATALOGUE } from './catalogue.js';
 
 /**
@@ -54,6 +55,20 @@ describe('recorded calibration evidence reproduces', () => {
         fresh.evidence.predictedExcessKurtosis / asset.evidence.predictedExcessKurtosis;
       expect(kurtosisRatio, `${id} gate`).toBeGreaterThan(0.9);
       expect(kurtosisRatio, `${id} gate`).toBeLessThan(1.1);
+
+      // The diffusion rate: how far this asset's price wanders per unit of time,
+      // which PH-17.2 turned into a family design parameter. Recorded from a
+      // named seed; re-measured here from an unrelated one.
+      //
+      // A wide band, and it has to be. Four seeds put the ratio between 0.836
+      // and 1.165, and the widest is `spx`, whose volatility remembers for 44
+      // hours against a 30-day calibration — the same B-002 fact that governs
+      // the tie rates above. What this catches is a calibration that changed
+      // meaning, not one that resampled.
+      const dispersionRatio =
+        dispersionLogSigma(fresh.evidence) / dispersionLogSigma(asset.evidence);
+      expect(dispersionRatio, `${id} dispersion`).toBeGreaterThan(0.7);
+      expect(dispersionRatio, `${id} dispersion`).toBeLessThan(1.4);
 
       // Pace is a personality trait, not a realisation.
       const paceRatio = fresh.evidence.meanIntervalMs / asset.evidence.meanIntervalMs;

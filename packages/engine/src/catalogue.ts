@@ -58,6 +58,7 @@ function registered(
     tieRate: number;
     medianSteps: number;
     meanIntervalMs: number;
+    logVariancePerMs: number;
   },
 ): RegisteredAsset {
   return {
@@ -77,6 +78,7 @@ function registered(
       simulatedMs: CALIBRATION_SPAN_MS,
       replicates: CALIBRATION_REPLICATES,
       horizons: 86_400,
+      volatilityScale: 1,
     },
   };
 }
@@ -149,6 +151,7 @@ export const ASSET_CATALOGUE: readonly RegisteredAsset[] = [
       tieRate: 0.009409722222222222,
       medianSteps: 74.30361502697028,
       meanIntervalMs: 1379.8191861941425,
+      logVariancePerMs: 2.6440779777399803e-13,
     },
   ),
   registered(
@@ -180,6 +183,7 @@ export const ASSET_CATALOGUE: readonly RegisteredAsset[] = [
       tieRate: 0.010011574074074074,
       medianSteps: 85.27008781618775,
       meanIntervalMs: 714.6766515523951,
+      logVariancePerMs: 4.798493695043729e-12,
     },
   ),
   registered(
@@ -211,6 +215,7 @@ export const ASSET_CATALOGUE: readonly RegisteredAsset[] = [
       tieRate: 0.010127314814814815,
       medianSteps: 83.64236012003401,
       meanIntervalMs: 332.9569156063406,
+      logVariancePerMs: 3.6943084808455454e-11,
     },
   ),
   registered(
@@ -242,6 +247,7 @@ export const ASSET_CATALOGUE: readonly RegisteredAsset[] = [
       tieRate: 0.009930555555555555,
       medianSteps: 71.83103728613499,
       meanIntervalMs: 3352.3021210553543,
+      logVariancePerMs: 2.7401934413323593e-14,
     },
   ),
   registered(
@@ -273,6 +279,7 @@ export const ASSET_CATALOGUE: readonly RegisteredAsset[] = [
       tieRate: 0.009907407407407408,
       medianSteps: 79.75170190938478,
       meanIntervalMs: 1969.0617253751434,
+      logVariancePerMs: 8.304372807421852e-13,
     },
   ),
 ];
