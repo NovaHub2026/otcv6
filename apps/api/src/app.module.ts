@@ -29,8 +29,14 @@ import { VenueService } from './venue.service.js';
     },
     {
       provide: 'CANDLE_HISTORY',
+      // Defaults *inside* the state directory rather than beside it. A
+      // deployment that moves its state somewhere else means to move all of it,
+      // and a history that stayed behind would be a chart of a different market
+      // than the one the checkpoints describe.
       useFactory: (): CandleHistory =>
-        new SqliteCandleHistory(process.env.OTC_HISTORY_DB ?? './.otc-state/history.db'),
+        new SqliteCandleHistory(
+          process.env.OTC_HISTORY_DB ?? `${process.env.OTC_STATE_DIR ?? './.otc-state'}/history.db`,
+        ),
     },
     {
       provide: HistoryService,
