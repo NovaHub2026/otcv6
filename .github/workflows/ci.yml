@@ -31,10 +31,19 @@ jobs:
       # actually executed found it in under a minute.
       - name: Build and typecheck
         run: npm run build
+      # The browser app and this repository's own configuration are outside
+      # `tsc -b`: the first is `noEmit` and outside the reference graph, the
+      # second is in no TypeScript program at all. Both were found the hard way —
+      # PH-18.2 for the app, Cycle Audit 6 (C-1) for the config, where two
+      # options that do not exist had been silently ignored for a whole cycle.
+      - name: Typecheck the browser app
+        run: npm run typecheck:web
+      - name: Typecheck the repository configuration
+        run: npm run typecheck:config
       - name: Lint
         run: npm run lint
       - name: Unit tests
-        run: npx vitest run --project unit
+        run: npm run test:unit
 
   statistical-gate:
     name: Statistical Gate

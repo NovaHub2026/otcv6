@@ -1,5 +1,7 @@
 import {
+  bucketStart,
   CandleAggregator,
+  epochMillis,
   foldCandles,
   isCoarserOrEqual,
   nests,
@@ -170,65 +172,107 @@ export class InMemoryCandleHistory implements CandleHistory {
 }
 
 /**
- * Folds ticks into the base tier and derives the rollup from what closes.
+ * Folds ticks into the base tier. Nothing else.
  *
- * The rollup is folded from the **base candles**, not from the ticks a second
- * time. Two independent folds of one stream is two chances to disagree, and
- * `foldCandles` agreeing with `foldTicks` is the operational content of INV-004,
- * so the tier that is derived is derived visibly.
+ * The rollup tier used to be folded here too, from the base candles this
+ * recorder had seen. **Cycle Audit 6, F2** falsified that: the carry is
+ * process-local and `HistoryService` builds a fresh recorder on every start, so
+ * a recorder that begins mid-hour declares that hour complete as soon as it sees
+ * a minute of the next one and writes it from only the minutes it happened to
+ * see. Measured at a provisioning handoff: an hour stored with 738 ticks of
+ * 1,023, its high understated by 1,013 lattice steps.
+ *
+ * That is exactly the failure the old docstring said it prevented, and the
+ * symptom `backfill.ts` names as the sign of a wrong implementation — a chart
+ * that disagrees with the record at the seam.
+ *
+ * So the rollup is no longer derived from anything a process remembers. It is
+ * derived from the **stored** minute series by {@link refreshRollup}, which
+ * makes the two tiers agree by construction rather than by lifetime.
  */
 export class HistoryRecorder {
   readonly #base = new CandleAggregator(timeframeById(HISTORY_BASE_TIMEFRAME));
-  #closedBase: Candle[] = [];
-  #carriedBase: Candle[] = [];
-  #rollupOpenInstant: EpochMillis | null = null;
+  #closed: Candle[] = [];
 
   /** Feed ticks in order. Closed candles accumulate until {@link drain}. */
   accept(ticks: Iterable<Tick>): void {
     for (const tick of ticks) {
       const closed = this.#base.accept(tick);
-      if (closed !== null) this.#closedBase.push(closed);
+      if (closed !== null) this.#closed.push(closed);
     }
   }
 
-  /**
-   * Everything that has closed since the last drain.
-   *
-   * A rollup bar is emitted only once every base candle inside it has closed, so
-   * its high and low are the true extremes of the hour rather than of the part
-   * of it that happened to have been drained. Base candles belonging to a
-   * still-open hour are carried to the next drain instead of being folded early.
-   */
-  drain(): { base: readonly Candle[]; rollup: readonly Candle[] } {
-    const base = this.#closedBase;
-    this.#closedBase = [];
-
-    const pool = [...this.#carriedBase, ...base];
-    const hour = timeframeById(HISTORY_ROLLUP_TIMEFRAME);
-    const folded = foldCandles(hour, pool);
-    // The last folded bar is the only one that can still be open: the pool is
-    // ordered, so everything before it belongs to an hour that has ended.
-    const complete = folded.length === 0 ? [] : folded.slice(0, -1);
-    const openHour = folded.length === 0 ? null : folded[folded.length - 1]!.openInstant;
-    this.#rollupOpenInstant = openHour;
-    this.#carriedBase =
-      openHour === null ? [] : pool.filter((candle) => candle.openInstant >= openHour);
-    return { base, rollup: complete };
+  /** Every minute bar that has closed since the last drain. */
+  drain(): readonly Candle[] {
+    const closed = this.#closed;
+    this.#closed = [];
+    return closed;
   }
 
-  /** The bars still accumulating. Never stored; useful for a live chart. */
-  open(): { base: Candle | null; rollupOpenInstant: EpochMillis | null } {
-    return { base: this.#base.current(), rollupOpenInstant: this.#rollupOpenInstant };
+  /** The bar still accumulating. Never stored; useful for a live chart. */
+  open(): Candle | null {
+    return this.#base.current();
   }
+}
+
+/**
+ * Bring the rollup tier up to date from the stored minute series.
+ *
+ * An hour is complete when the minute tier has moved past its end — not when a
+ * recorder thinks it has seen enough of it. Any minute belonging to hour `H`
+ * opens before `H + 1h`, and the store is append-only and ordered, so once the
+ * stored head is at or past `H + 1h` nothing can arrive inside `H` again.
+ *
+ * Hours with no minutes at all produce no bar. That is a gap in the record and
+ * the honest thing to show; a bar invented to fill it would assert trades that
+ * did not happen.
+ *
+ * Returns how many hourly bars it appended.
+ */
+export async function refreshRollup(history: CandleHistory, assetId: string): Promise<number> {
+  const hour = timeframeById(HISTORY_ROLLUP_TIMEFRAME);
+  const baseHead = await history.head(assetId, HISTORY_BASE_TIMEFRAME);
+  if (baseHead === null) return 0;
+  const rollupHead = await history.head(assetId, HISTORY_ROLLUP_TIMEFRAME);
+  const from = rollupHead === null ? 0 : rollupHead + hour.durationMs;
+  // The hour containing the minute head is still open, so it is the boundary.
+  const openHourStart = Math.floor(baseHead / hour.durationMs) * hour.durationMs;
+  if (from >= openHourStart) return 0;
+  const minutes = await history.read(
+    assetId,
+    HISTORY_BASE_TIMEFRAME,
+    epochMillis(from),
+    epochMillis(openHourStart),
+  );
+  if (minutes.length === 0) return 0;
+  const hours = foldCandles(hour, minutes);
+  if (hours.length === 0) return 0;
+  await history.append(assetId, HISTORY_ROLLUP_TIMEFRAME, hours);
+  return hours.length;
 }
 
 /**
  * Read any offered timeframe, folding from the finest tier that nests into it.
  *
- * The choice is not an optimisation: reading a daily chart from the base tier
- * would fold 129,600 rows into 90 and get the same answer, while reading a
+ * The choice of tier is not an optimisation: reading a daily chart from the base
+ * tier would fold 129,600 rows into 90 and get the same answer, while reading a
  * five-minute chart from the rollup tier is impossible. Nesting decides it, and
  * the coarser tier wins wherever both work.
+ *
+ * ## Only whole bars
+ *
+ * **Cycle Audit 6, F4.** The window used to be passed through as given, so a
+ * `30m` chart asked from ten minutes into a bucket returned that bucket's label
+ * over forty of its sixty minutes, and the newest `4h` bar was routinely short
+ * by up to an hour — presented as closed. Both are the object the "no open
+ * candles" rule exists to prevent, one step further out.
+ *
+ * So the window is snapped outward to the target's own grid, and a bar is
+ * returned only when the stored series covers its whole bucket. At the leading
+ * edge that is decided by looking one source bucket further back: if nothing is
+ * stored there, the first bucket may begin inside the history and is dropped.
+ * Conservative in the right direction — a bar that exists may be withheld, but
+ * no partial bar is ever labelled whole.
  */
 export async function readTimeframe(
   history: CandleHistory,
@@ -248,7 +292,35 @@ export async function readTimeframe(
   }
   const rollup = timeframeById(HISTORY_ROLLUP_TIMEFRAME);
   const source = nests(rollup, wanted) ? rollup : base;
-  const stored = await history.read(assetId, source.id, from, to);
-  if (source.id === target) return stored;
-  return foldCandles(wanted, stored);
+
+  const alignedFrom = bucketStart(from, wanted);
+  const alignedTo = bucketStart(to, wanted) + wanted.durationMs;
+  const stored = await history.read(
+    assetId,
+    source.id,
+    epochMillis(alignedFrom),
+    epochMillis(alignedTo),
+  );
+  if (stored.length === 0) return [];
+  const folded = source.id === target ? [...stored] : foldCandles(wanted, stored);
+  if (folded.length === 0) return [];
+
+  // The trailing bucket is whole only if the source has moved past its end.
+  const head = await history.head(assetId, source.id);
+  const covered = head === null ? -Infinity : head + source.durationMs;
+  let complete = folded.filter((bar) => bar.openInstant + wanted.durationMs <= covered);
+  if (complete.length === 0) return [];
+
+  // The leading bucket is whole only if the source also covers what precedes it.
+  const first = complete[0]!.openInstant;
+  if (first < bucketStart(from, wanted) + wanted.durationMs) {
+    const before = await history.read(
+      assetId,
+      source.id,
+      epochMillis(first - source.durationMs),
+      epochMillis(first),
+    );
+    if (before.length === 0 && stored[0]!.openInstant > first) complete = complete.slice(1);
+  }
+  return complete;
 }

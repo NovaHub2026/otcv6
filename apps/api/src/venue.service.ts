@@ -100,7 +100,7 @@ export class VenueService implements OnModuleDestroy {
         keyring: this.keyring,
         environment: 'production',
         days: this.backfillDays,
-        now: epochMillis(this.clock.now()),
+        clock: this.clock,
       });
       this.logger.log(
         provisioned.length === 0

@@ -1,7 +1,7 @@
 // Invariant evidence: INV-004 (timeframe observer independence), INV-001 (economic independence).
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
-import { epochMillis, logPrice, MasterKeyring, type Tick } from '@otc/core';
+import { epochMillis, FixedClock, logPrice, MasterKeyring, type Tick } from '@otc/core';
 import { ASSET_ARCHETYPES, ASSET_CATALOGUE, assetById } from '@otc/engine';
 import { InMemoryCandleHistory, MemoryStateStore } from '@otc/runtime';
 import { HistoryService } from './history.service.js';
@@ -229,7 +229,7 @@ describe('provisioning a market that has no past', () => {
         keyring,
         environment: 'test',
         days: 0,
-        now: epochMillis(ORIGIN),
+        clock: new FixedClock(epochMillis(ORIGIN)),
       }),
     ).toEqual([]);
     expect(await store.load('spx')).toBeNull();
@@ -243,7 +243,7 @@ describe('provisioning a market that has no past', () => {
       keyring,
       environment: 'test' as const,
       days: 0.25,
-      now: epochMillis(ORIGIN),
+      clock: new FixedClock(epochMillis(ORIGIN)),
     };
     expect(await service.provision(options)).toEqual(['spx']);
     expect(await store.load('spx')).not.toBeNull();

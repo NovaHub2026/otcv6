@@ -60,6 +60,34 @@ const unitTimeoutMs = measuringCoverage ? 60_000 : 20_000;
 export default defineConfig({
   resolve: { alias },
   test: {
+    /**
+     * Concurrency is set here, at the root, because Vitest ignores it anywhere
+     * else — and that is not a style note.
+     *
+     * **Cycle Audit 6, C-1.** `fileParallelism: false` and `maxWorkers: 8` were
+     * written inside the project blocks below, where Vitest 3 types them as
+     * `NonProjectOptions` and silently drops them. So the statistical suite had
+     * *never* run serially, despite a comment saying it did and a phase document
+     * claiming the setting as a determinism fix. The measured tell was in the
+     * summary all along: `detectionPower` alone reporting 707 s of test time
+     * inside a 749 s run that also ran everything else.
+     *
+     * Two consequences, both of which had been read as something else. The
+     * statistical files oversubscribed the box against each other, which is the
+     * real source of `Timeout calling "onTaskUpdate"`; and every wall-clock
+     * assertion in that suite was measuring whatever else happened to be
+     * running.
+     *
+     * The gate now runs the two projects as **separate invocations**
+     * (`package.json`), because that is the only place per-project concurrency
+     * can actually be expressed — and it is what CI has always done.
+     *
+     * This file is also now typechecked (`npm run typecheck:config`). It was in
+     * no TypeScript program at all, which is why an option that does not exist
+     * sat here unnoticed: the file that configures every test in the repository
+     * was the one file nothing read.
+     */
+    maxWorkers: 8,
     projects: [
       {
         resolve: { alias },
@@ -74,25 +102,6 @@ export default defineConfig({
           ],
           exclude: [...commonExclude, '**/*.stat.test.ts'],
           testTimeout: unitTimeoutMs,
-          // The unit project runs first and alone. See the statistical
-          // project's note below.
-          sequence: { groupOrder: 0 },
-          /**
-           * Half the cores, because the box has sixteen of them and 7 GB.
-           *
-           * Vitest defaults to one worker per core, which on this machine is
-           * about 440 MB each — and several unit tests build multi-million
-           * element typed arrays. The measured consequence was not a
-           * heap-out-of-memory but something quieter: `npm run test` exited 1
-           * with every test passing, on `Timeout calling "onTaskUpdate"`, twice
-           * in the PH-18 phase gate. The statistical project alone was clean;
-           * the two together were not.
-           *
-           * Fewer workers is slower on paper and was not, measurably: the unit
-           * suite runs in about the same wall time because it was never
-           * CPU-bound at that width, and the run stops being a coin toss.
-           */
-          maxWorkers: 8,
         },
       },
       {
@@ -109,26 +118,6 @@ export default defineConfig({
           exclude: commonExclude,
           testTimeout: 900_000,
           hookTimeout: 900_000,
-          // Statistical suites are CPU-bound simulations; running them in
-          // parallel oversubscribes the box and makes timings meaningless.
-          fileParallelism: false,
-          /**
-           * And not in parallel with the *unit* project either.
-           *
-           * `fileParallelism: false` only serialises files inside this project.
-           * The unit project ran alongside it on every core the box has, which
-           * is the same oversubscription one level up — and it produced the
-           * failure mode this repository knows best: every test passing and the
-           * run exiting 1 on `Timeout calling "onTaskUpdate"`, because a worker
-           * starved of CPU cannot answer its own progress channel.
-           *
-           * The PH-18 phase gate hit it twice with 2,014 tests green. Nothing
-           * was wrong with the tests; the runner could not report them.
-           * `groupOrder` makes the two projects run one after the other, which
-           * also makes every wall-clock assertion in here a measurement of the
-           * code rather than of what else was running.
-           */
-          sequence: { groupOrder: 1 },
         },
       },
     ],

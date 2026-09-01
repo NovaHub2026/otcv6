@@ -1,12 +1,23 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { epochMillis, type Candle, type EpochMillis, type Tick, type TimeframeId } from '@otc/core';
+import {
+  epochMillis,
+  type Candle,
+  type Clock,
+  type EpochMillis,
+  type Tick,
+  type TimeframeId,
+} from '@otc/core';
 import type { MasterKeyring } from '@otc/core';
 import type { RegisteredAsset } from '@otc/engine';
 import {
   backfillMarket,
+  checkpointMarket,
+  DEFAULT_MAX_CATCH_UP_MS,
   HistoryRecorder,
   readTimeframe,
+  refreshRollup,
   type CandleHistory,
+  type HostedMarket,
   type StateStore,
 } from '@otc/runtime';
 
@@ -60,25 +71,28 @@ export class HistoryService {
     readonly keyring: MasterKeyring;
     readonly environment: Parameters<MasterKeyring['derive']>[0]['env'];
     readonly days: number;
-    readonly now: EpochMillis;
+    readonly clock: Clock;
   }): Promise<readonly string[]> {
     if (!Number.isFinite(options.days) || options.days <= 0) return [];
     const done: string[] = [];
+    const built: { id: string; market: HostedMarket; cursor: number }[] = [];
     for (const asset of this.assets) {
       const id = asset.definition.id;
       if ((await options.store.load(id)) !== null) continue;
-      const genesisInstant = epochMillis(options.now - options.days * 86_400_000);
+      const targetInstant = epochMillis(options.clock.now());
+      const genesisInstant = epochMillis(targetInstant - options.days * 86_400_000);
       const started = Date.now();
       const result = await backfillMarket({
         asset,
         keyring: options.keyring,
         environment: options.environment,
         genesisInstant,
-        targetInstant: options.now,
+        targetInstant,
         store: options.store,
         history: this.history,
       });
-      this.provisioned.set(id, { from: genesisInstant, to: options.now });
+      this.provisioned.set(id, { from: genesisInstant, to: targetInstant });
+      built.push({ id, market: result.market, cursor: targetInstant });
       done.push(id);
       this.logger.log(
         `${id}: provisioned ${options.days} days — ${result.ticksGenerated.toLocaleString()} ` +
@@ -86,7 +100,61 @@ export class HistoryService {
           `${((Date.now() - started) / 1000).toFixed(1)}s`,
       );
     }
+    if (built.length > 0) await this.#catchUp(built, options.store, options.clock);
     return done;
+  }
+
+  /**
+   * Carry every provisioned market forward to now, before anything resumes it.
+   *
+   * **Cycle Audit 6, F1.** Generating a past costs wall-clock time — 115 seconds
+   * for five assets at ninety days, by the project's own measurement — and
+   * `resumeMarket` seams whenever a checkpoint is older than the fifteen-second
+   * catch-up bound. So the checkpoint a backfill wrote was *always* stale by the
+   * time the venue read it, and the latent state ninety simulated days had built
+   * was discarded at exactly the join it exists to make. Measured on the running
+   * service after a three-day provisioning: four of five markets seamed.
+   *
+   * The fix is not a longer bound. It is to keep the market this process just
+   * built and advance it, in steps within the bound, through the same runtime
+   * that will publish its next tick. Nothing is invented and nothing is
+   * recovered — the market simply continues.
+   *
+   * It converges because generation runs some three hundred times faster than
+   * the clock: each pass closes the gap the previous pass took to run. The bound
+   * on passes is a safety net, not the mechanism; if it is ever reached the
+   * checkpoint is left as it is and `resumeMarket` takes the seam and says so,
+   * which is the honest outcome for an interval nobody could generate in time.
+   */
+  async #catchUp(
+    built: readonly { id: string; market: HostedMarket; cursor: number }[],
+    store: StateStore,
+    clock: Clock,
+  ): Promise<void> {
+    const step = DEFAULT_MAX_CATCH_UP_MS;
+    const cursors = new Map(built.map((entry) => [entry.id, entry.cursor]));
+    for (let pass = 0; pass < 12; pass += 1) {
+      let worstLagMs = 0;
+      for (const { id, market } of built) {
+        let cursor = cursors.get(id)!;
+        for (;;) {
+          const now = clock.now();
+          if (cursor >= now) break;
+          cursor = Math.min(cursor + step, now);
+          this.observe(id, market.advanceTo(epochMillis(cursor)));
+        }
+        cursors.set(id, cursor);
+        worstLagMs = Math.max(worstLagMs, clock.now() - cursor);
+      }
+      if (worstLagMs < step / 2) break;
+    }
+    await this.flush();
+    const savedAt = epochMillis(clock.now());
+    for (const { id, market } of built) await store.save(checkpointMarket(market, id, savedAt));
+    this.logger.log(
+      `caught ${built.length} provisioned market(s) up to now; the checkpoint the venue ` +
+        `resumes from is current, so the join carries the latent state rather than seaming`,
+    );
   }
 
   /** Fold published ticks into candles. Never called before publication. */
@@ -111,9 +179,14 @@ export class HistoryService {
    */
   async flush(): Promise<void> {
     for (const [assetId, recorder] of this.recorders) {
-      const { base, rollup } = recorder.drain();
-      if (base.length > 0) await this.history.append(assetId, base[0]!.timeframe, base);
-      if (rollup.length > 0) await this.history.append(assetId, rollup[0]!.timeframe, rollup);
+      const closed = recorder.drain();
+      if (closed.length > 0) await this.history.append(assetId, closed[0]!.timeframe, closed);
+      // The hourly tier is derived from what is *stored*, never from what this
+      // process remembers. Cycle Audit 6 (F2) measured the alternative: a fresh
+      // recorder on every start wrote the hour it began inside from only the
+      // minutes it had seen, understating that hour's high by a thousand
+      // lattice steps.
+      await refreshRollup(this.history, assetId);
     }
   }
 

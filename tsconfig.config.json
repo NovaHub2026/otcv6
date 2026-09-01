@@ -1,0 +1,16 @@
+{
+  "//": "The repository's own configuration, typechecked. Cycle Audit 6 (C-1) found `vitest.config.ts` in no TypeScript program: two options that do not exist sat in it unnoticed, and the file configures every test in the repository.",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["vitest.config.ts"]
+}

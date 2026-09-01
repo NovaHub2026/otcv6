@@ -2,7 +2,7 @@ import { epochMillis, logPrice, SteppableClock, type EpochMillis, type Tick } fr
 import { configFor, createMarketEngine, type RegisteredAsset } from '@otc/engine';
 import type { Environment, MasterKeyring } from '@otc/core';
 import { DEFAULT_MAX_CATCH_UP_MS, HostedMarket } from './hosted.js';
-import { HistoryRecorder, type CandleHistory } from './history.js';
+import { HistoryRecorder, refreshRollup, type CandleHistory } from './history.js';
 import { checkpointMarket, DEFAULT_LEASE_BLOCKS } from './resume.js';
 import type { StateStore } from './state.js';
 
@@ -91,6 +91,21 @@ export interface BackfillResult {
   readonly rollupCandles: number;
   /** The tail of the tick record, within `tickRetentionMs` of the target. */
   readonly retainedTicks: readonly Tick[];
+  /**
+   * The market itself, at the target instant.
+   *
+   * Returned because the checkpoint is not the only way to hand it on, and the
+   * round trip through one is what **Cycle Audit 6 (F1)** falsified: generating
+   * a past costs wall-clock time, so by the time `resumeMarket` reads that
+   * checkpoint it is older than the catch-up bound and the market seams — the
+   * latent state the backfill spent ninety simulated days building, discarded at
+   * exactly the join it exists to make. Measured on the running service: four of
+   * five markets seamed after a three-day provisioning.
+   *
+   * A caller that is going to keep running this market should keep *this* and
+   * advance it, rather than write a checkpoint and read it back.
+   */
+  readonly market: HostedMarket;
 }
 
 /** Ticks retained by default: one hour, comfortably past the longest contract. */
@@ -154,15 +169,14 @@ export async function backfillMarket(options: BackfillOptions): Promise<Backfill
   let rollupCandles = 0;
 
   const flush = async (): Promise<void> => {
-    const { base, rollup } = recorder.drain();
-    if (base.length > 0) {
-      await options.history.append(assetId, base[0]!.timeframe, base);
-      baseCandles += base.length;
+    const closed = recorder.drain();
+    if (closed.length > 0) {
+      await options.history.append(assetId, closed[0]!.timeframe, closed);
+      baseCandles += closed.length;
     }
-    if (rollup.length > 0) {
-      await options.history.append(assetId, rollup[0]!.timeframe, rollup);
-      rollupCandles += rollup.length;
-    }
+    // Derived from the stored minute series rather than from this recorder's
+    // memory, so the two tiers agree by construction (Cycle Audit 6, F2).
+    rollupCandles += await refreshRollup(options.history, assetId);
   };
 
   let now = options.genesisInstant;
@@ -202,5 +216,6 @@ export async function backfillMarket(options: BackfillOptions): Promise<Backfill
     baseCandles,
     rollupCandles,
     retainedTicks: retained,
+    market,
   };
 }

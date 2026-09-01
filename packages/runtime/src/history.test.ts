@@ -12,6 +12,7 @@ import {
 import {
   HistoryError,
   HistoryRecorder,
+  refreshRollup,
   HISTORY_BASE_TIMEFRAME,
   HISTORY_ROLLUP_TIMEFRAME,
   InMemoryCandleHistory,
@@ -50,14 +51,21 @@ function recordAll(stream: readonly Tick[], batch = 7): ReturnType<HistoryRecord
   return drains;
 }
 
-function flatten(drains: readonly ReturnType<HistoryRecorder['drain']>[]): {
-  base: Candle[];
-  rollup: Candle[];
-} {
-  return {
-    base: drains.flatMap((drain) => [...drain.base]),
-    rollup: drains.flatMap((drain) => [...drain.rollup]),
-  };
+function flatten(drains: readonly ReturnType<HistoryRecorder['drain']>[]): Candle[] {
+  return drains.flatMap((drain) => [...drain]);
+}
+
+/** The hourly tier as it is actually built: from the stored minute series. */
+async function rollupOf(base: readonly Candle[]): Promise<readonly Candle[]> {
+  const history = new InMemoryCandleHistory();
+  await history.append('asset', HISTORY_BASE_TIMEFRAME, base);
+  await refreshRollup(history, 'asset');
+  return history.read(
+    'asset',
+    HISTORY_ROLLUP_TIMEFRAME,
+    epochMillis(0),
+    epochMillis(ORIGIN + 30 * 86_400_000),
+  );
 }
 
 describe('the recorder folds one stream into two tiers', () => {
@@ -65,7 +73,7 @@ describe('the recorder folds one stream into two tiers', () => {
   const stream = ticks(1_800);
 
   it('produces the same minute bars as folding the ticks in one go', () => {
-    const { base } = flatten(recordAll(stream));
+    const base = flatten(recordAll(stream));
     const direct = foldTicks(timeframeById(HISTORY_BASE_TIMEFRAME), stream);
     // `foldTicks` keeps the bar still open at the end; the recorder never emits
     // one, because a bar that is still accumulating has a high and a low that
@@ -76,29 +84,28 @@ describe('the recorder folds one stream into two tiers', () => {
   it('never emits the bar it is still accumulating', () => {
     const recorder = new HistoryRecorder();
     recorder.accept(stream.slice(0, 5));
-    const { base, rollup } = recorder.drain();
-    expect(base).toEqual([]);
-    expect(rollup).toEqual([]);
-    expect(recorder.open().base).not.toBeNull();
+    expect(recorder.drain()).toEqual([]);
+    expect(recorder.open()).not.toBeNull();
   });
 
-  it('derives the hourly tier from the minute bars, not from the ticks again', () => {
+  it('derives the hourly tier from the minute bars, not from the ticks again', async () => {
     // Two independent folds of one stream is two chances to disagree. This is
     // the operational content of INV-004: a timeframe is a view, so the view of
     // a view has to be the same view.
-    const { base, rollup } = flatten(recordAll(stream));
+    const base = flatten(recordAll(stream));
+    const rollup = await rollupOf(base);
     const direct = foldTicks(timeframeById(HISTORY_ROLLUP_TIMEFRAME), stream);
     expect(rollup).toEqual(direct.slice(0, rollup.length));
     expect(rollup.every((candle) => candle.timeframe === HISTORY_ROLLUP_TIMEFRAME)).toBe(true);
     expect(base.length).toBeGreaterThan(rollup.length * 50);
   });
 
-  it('emits an hourly bar only once every minute inside it has closed', () => {
-    // The hazard this exists for: an hour drained in pieces would otherwise
-    // carry the extremes of whichever piece happened to be in hand, and be
-    // wrong in the direction that hides a spike.
-    const drains = recordAll(stream, 7);
-    const { rollup } = flatten(drains);
+  it('emits an hourly bar only once every minute inside it has closed', async () => {
+    // The hazard this exists for: an hour built from whichever pieces happened
+    // to be in hand carries the extremes of those pieces, and is wrong in the
+    // direction that hides a spike. Cycle Audit 6 (F2) measured it at a
+    // provisioning handoff: an hour stored with 738 ticks of 1,023.
+    const rollup = await rollupOf(flatten(recordAll(stream, 7)));
     const direct = foldTicks(timeframeById(HISTORY_ROLLUP_TIMEFRAME), stream);
     for (const [index, candle] of rollup.entries()) {
       expect(candle.high, `hour ${index} high`).toBe(direct[index]!.high);
@@ -114,24 +121,38 @@ describe('the recorder folds one stream into two tiers', () => {
     // history, and a test that always drained immediately could not see it.
     const recorder = new HistoryRecorder();
     for (let i = 0; i < stream.length; i += 11) recorder.accept(stream.slice(i, i + 11));
-    const { base, rollup } = recorder.drain();
-    const oneShot = flatten(recordAll(stream, stream.length));
-    expect(base).toEqual(oneShot.base);
-    expect(rollup).toEqual(oneShot.rollup);
+    const base = recorder.drain();
+    expect(base).toEqual(flatten(recordAll(stream, stream.length)));
   });
 
-  it('does not depend on how the ticks were batched', () => {
+  it('does not depend on how the ticks were batched', async () => {
     // The drain cadence is a property of the caller's loop, never of the market.
     const oneBatch = flatten(recordAll(stream, stream.length));
     const manyBatches = flatten(recordAll(stream, 3));
-    expect(manyBatches.base).toEqual(oneBatch.base);
-    expect(manyBatches.rollup).toEqual(oneBatch.rollup);
+    expect(manyBatches).toEqual(oneBatch);
+    expect(await rollupOf(manyBatches)).toEqual(await rollupOf(oneBatch));
+  });
+
+  it('builds the same hourly tier however the minutes were written', async () => {
+    // The tier that used to depend on process lifetime. Whatever order or
+    // grouping the minutes arrive in, the stored hours are the same hours.
+    const base = flatten(recordAll(stream, 7));
+    const split = base.length - 17;
+    const piecewise = new InMemoryCandleHistory();
+    await piecewise.append('asset', HISTORY_BASE_TIMEFRAME, base.slice(0, split));
+    await refreshRollup(piecewise, 'asset');
+    await piecewise.append('asset', HISTORY_BASE_TIMEFRAME, base.slice(split));
+    await refreshRollup(piecewise, 'asset');
+    const window = [epochMillis(0), epochMillis(ORIGIN + 30 * 86_400_000)] as const;
+    expect(await piecewise.read('asset', HISTORY_ROLLUP_TIMEFRAME, ...window)).toEqual(
+      await rollupOf(base),
+    );
   });
 });
 
 describe('the store is append-only and ordered', () => {
   const stream = ticks(600);
-  const { base } = flatten(recordAll(stream));
+  const base = flatten(recordAll(stream));
 
   it('reads back what was written', async () => {
     const history = new InMemoryCandleHistory();
@@ -178,14 +199,18 @@ describe('the store is append-only and ordered', () => {
 });
 
 describe('reading a timeframe folds from the right tier', () => {
-  const stream = ticks(14_400, 6_000); // twenty-four hours
-  const { base, rollup } = flatten(recordAll(stream));
-  const window = { from: epochMillis(0), to: epochMillis(ORIGIN + 2 * 86_400_000) };
+  // Three and a half days, so that even the daily timeframe has more than one
+  // bucket the stored series covers completely. Twenty-four hours was enough
+  // until `readTimeframe` started returning whole bars only: a day-long stream
+  // that does not start at midnight contains no complete day.
+  const stream = ticks(50_400, 6_000);
+  const base = flatten(recordAll(stream));
+  const window = { from: epochMillis(0), to: epochMillis(ORIGIN + 5 * 86_400_000) };
 
   async function stored(): Promise<InMemoryCandleHistory> {
     const history = new InMemoryCandleHistory();
     await history.append('eurusd', HISTORY_BASE_TIMEFRAME, base);
-    await history.append('eurusd', HISTORY_ROLLUP_TIMEFRAME, rollup);
+    await refreshRollup(history, 'eurusd');
     return history;
   }
 
@@ -193,10 +218,10 @@ describe('reading a timeframe folds from the right tier', () => {
     const history = await stored();
     const read = await readTimeframe(history, 'eurusd', target, window.from, window.to);
     const direct = foldTicks(timeframeById(target), stream);
-    // All but the last, which is the only bar that can be short: the recorder
-    // never stores the minute it is still accumulating, so the coarse bar
-    // containing that minute is missing it.
-    expect(read.slice(0, -1)).toEqual(direct.slice(0, read.length - 1));
+    // Every bar, not all-but-the-last. `readTimeframe` now returns only buckets
+    // the stored series covers completely, so nothing it returns can be short
+    // (Cycle Audit 6, F4).
+    expect(read).toEqual(direct.slice(0, read.length));
     expect(read.length).toBeGreaterThan(1);
   });
 
@@ -206,7 +231,7 @@ describe('reading a timeframe folds from the right tier', () => {
     expect(read.every((candle) => candle.timeframe === target)).toBe(true);
     // Same answer as folding the minute tier would have given, at a sixtieth of
     // the rows read.
-    expect(read.slice(0, -1)).toEqual(foldCandlesForTest(target, base).slice(0, read.length - 1));
+    expect(read).toEqual(foldCandlesForTest(target, base).slice(0, read.length));
     expect(read.length).toBeGreaterThan(1);
   });
 

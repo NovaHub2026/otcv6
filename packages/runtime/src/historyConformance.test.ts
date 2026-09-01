@@ -11,6 +11,7 @@ import {
   HISTORY_ROLLUP_TIMEFRAME,
   InMemoryCandleHistory,
   readTimeframe,
+  refreshRollup,
   type CandleHistory,
 } from './history.js';
 import { SqliteCandleHistory } from './sqliteHistory.js';
@@ -54,7 +55,7 @@ function ticks(count: number, everyMs = 6_000): Tick[] {
 const stream = ticks(3_600); // six hours
 const recorder = new HistoryRecorder();
 recorder.accept(stream);
-const { base, rollup } = recorder.drain();
+const base = recorder.drain();
 
 const IMPLEMENTATIONS: readonly [string, () => Promise<CandleHistory>][] = [
   ['in memory', () => Promise.resolve(new InMemoryCandleHistory())],
@@ -96,11 +97,10 @@ describe.each(IMPLEMENTATIONS)('a %s candle history', (_name, open) => {
   it('keeps assets and tiers apart', async () => {
     const history = await open();
     await history.append('eurusd', HISTORY_BASE_TIMEFRAME, base);
-    await history.append('eurusd', HISTORY_ROLLUP_TIMEFRAME, rollup);
+    const hours = await refreshRollup(history, 'eurusd');
+    expect(hours).toBeGreaterThan(0);
     expect(await history.head('gbpjpy', HISTORY_BASE_TIMEFRAME)).toBeNull();
-    expect(await history.head('eurusd', HISTORY_ROLLUP_TIMEFRAME)).toBe(
-      rollup[rollup.length - 1]!.openInstant,
-    );
+    expect(await history.head('eurusd', HISTORY_ROLLUP_TIMEFRAME)).not.toBeNull();
   });
 
   it('appends across calls', async () => {
@@ -157,7 +157,7 @@ describe.each(IMPLEMENTATIONS)('a %s candle history', (_name, open) => {
     // again — and the answer is the one the ticks would have given directly.
     const history = await open();
     await history.append('eurusd', HISTORY_BASE_TIMEFRAME, base);
-    await history.append('eurusd', HISTORY_ROLLUP_TIMEFRAME, rollup);
+    await refreshRollup(history, 'eurusd');
     const read = await readTimeframe(
       history,
       'eurusd',

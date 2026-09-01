@@ -81,6 +81,7 @@ export {
   HISTORY_TIMEFRAMES,
   InMemoryCandleHistory,
   readTimeframe,
+  refreshRollup,
   type CandleHistory,
 } from './history.js';
 export {
