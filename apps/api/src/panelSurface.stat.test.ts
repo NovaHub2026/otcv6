@@ -133,6 +133,20 @@ describe('the panel and the engine agree across the process boundary', () => {
     );
   }, 120_000);
 
+  it('lets a browser on another origin actually read it', async () => {
+    // The panel runs on its own port, so every request it makes is
+    // cross-origin. Without CORS the browser blocks all of them and the
+    // operator surface does not work at all — which is how this was found:
+    // by opening it. Every test above talks to the service with `fetch` from
+    // Node, where the same-origin policy does not apply, so none of them could
+    // see it.
+    const response = await fetch(`http://127.0.0.1:${port}/catalogue`, {
+      headers: { Origin: 'http://localhost:3001' },
+    });
+    expect(response.ok).toBe(true);
+    expect(response.headers.get('access-control-allow-origin')).toBe('http://localhost:3001');
+  }, 60_000);
+
   it('serves the history the provisioning produced', async () => {
     const body = await getJson<{ candles: HistoryCandle[] }>(
       historyPath('1h', window.from, window.to),

@@ -18,6 +18,24 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: false });
   app.enableShutdownHooks();
 
+  // The panel is served from a different origin than the engine — `next dev` on
+  // one port, this on another — so without this the browser blocks every
+  // request and the operator surface simply does not work. Found by opening it.
+  //
+  // `*` by default, and that is a decision rather than laziness: this service is
+  // entirely read-only, it publishes the public market, and INV-002 says every
+  // observer sees the same market at the same moment — so there is nothing
+  // origin-specific to protect. It carries nothing economic, which
+  // `adminSurface.test.ts` asserts rather than assumes. An operator who wants it
+  // narrower sets `OTC_CORS_ORIGIN` to a comma-separated list.
+  const origins = process.env.OTC_CORS_ORIGIN;
+  app.enableCors({
+    origin:
+      origins === undefined || origins.trim() === '' || origins.trim() === '*'
+        ? true
+        : origins.split(',').map((origin) => origin.trim()),
+  });
+
   const venue = app.get(VenueService);
   await venue.start();
 
