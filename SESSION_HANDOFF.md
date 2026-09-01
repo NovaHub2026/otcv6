@@ -9,12 +9,12 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Field              | Value                                                    |
 | ------------------ | -------------------------------------------------------- |
 | Last clean session | 2026-09-01                                               |
-| Branch             | `main` — every phase branch merged and deleted           |
+| Branch             | `feature/ph-16-audit-remediation`                        |
 | Remote             | `origin` → NovaHub2026/otcv6 — public, hosted CI running |
-| Active cycle       | Cycle 5, **3 of 3** phases approved                      |
-| Active phase       | Cycle Audit 5 remediation                                |
+| Active cycle       | Cycle 6, **1 of 3** phases approved                      |
+| Active phase       | PH-17 — Assets become data                               |
 | Active subphase    | none                                                     |
-| Cycle Audit        | 005 **ACTIVE** — ~50 findings, remediation in progress   |
+| Cycle Audit        | 005 recorded; PH-16 closed six of its findings           |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)       |
 
 ## Continuation point

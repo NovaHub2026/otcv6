@@ -39,13 +39,34 @@ import type { Commitment } from './commitment.js';
  */
 export const DEFAULT_DISPUTE_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 
+/**
+ * The longest contract the product sells, in milliseconds.
+ *
+ * **Cycle Audit 5, CA5-10.** Retention had no horizon term, and a settlement is
+ * disputable while its *expiry* is inside the window — but re-deriving it needs
+ * the *entry* tick, up to one contract horizon earlier. That left a rolling band
+ * one horizon wide of settlements whose expiry was still disputable and whose
+ * entry price had been deleted, which is INV-009 broken by the only code in this
+ * repository that removes anything.
+ */
+export const LONGEST_HORIZON_MS = 15 * 60 * 1000;
+
 export interface RetentionPolicy {
   /** How long a settlement may be disputed. Journals are kept at least this long. */
   readonly disputeWindowMs: number;
+  /**
+   * The longest contract horizon, added to the window before pruning.
+   *
+   * Contracts reach backwards: a settlement disputable today may have opened
+   * fifteen minutes before its expiry, and answering the dispute needs both
+   * ticks.
+   */
+  readonly longestHorizonMs?: number;
 }
 
 export const DEFAULT_RETENTION: RetentionPolicy = {
   disputeWindowMs: DEFAULT_DISPUTE_WINDOW_MS,
+  longestHorizonMs: LONGEST_HORIZON_MS,
 };
 
 /** A journal file, described by the window it archives. */
@@ -70,6 +91,17 @@ function assertPolicy(policy: RetentionPolicy): void {
       `The dispute window must be a positive number of milliseconds, got ${policy.disputeWindowMs}.`,
     );
   }
+  const horizon = policy.longestHorizonMs ?? LONGEST_HORIZON_MS;
+  if (!Number.isFinite(horizon) || horizon < 0) {
+    throw new RetentionError(
+      `The longest horizon must be a finite, non-negative number of milliseconds, got ${horizon}.`,
+    );
+  }
+}
+
+/** How far back the record must reach to answer any disputable settlement. */
+function retentionReachMs(policy: RetentionPolicy): number {
+  return policy.disputeWindowMs + (policy.longestHorizonMs ?? LONGEST_HORIZON_MS);
 }
 
 /**
@@ -92,7 +124,17 @@ export function journalIsPruneable(
         `not pruned: an unknown age is not an old one.`,
     );
   }
-  return now - window.newestInstant > policy.disputeWindowMs;
+  // **Cycle Audit 5, CA5-10.** `now` was unvalidated in the only code in this
+  // repository that permits deletion, while the adjacent input was hardened
+  // with a comment about why. A forward clock skew — the hazard PH-14.1's lease
+  // exists to handle — pruned journals inside the dispute window, irreversibly.
+  if (!Number.isFinite(now)) {
+    throw new RetentionError(
+      `Refusing to prune ${window.assetId} against an unusable clock reading (${now}). ` +
+        `Deletion is the one thing here that cannot be undone.`,
+    );
+  }
+  return now - window.newestInstant > retentionReachMs(policy);
 }
 
 /**
@@ -119,6 +161,9 @@ export function partitionForRetention(
   policy: RetentionPolicy = DEFAULT_RETENTION,
 ): { readonly pruneable: readonly JournalWindow[]; readonly retained: readonly JournalWindow[] } {
   assertPolicy(policy);
+  if (!Number.isFinite(now)) {
+    throw new RetentionError(`Refusing to partition against an unusable clock reading (${now}).`);
+  }
   const pruneable: JournalWindow[] = [];
   const retained: JournalWindow[] = [];
   for (const window of windows) {

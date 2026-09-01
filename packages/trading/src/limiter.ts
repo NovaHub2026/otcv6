@@ -1,5 +1,5 @@
 import type { Contract } from './contract.js';
-import { exposureByEvent, type EventExposure } from './exposure.js';
+import { exposureByEvent, type EntryResolver, type EventExposure } from './exposure.js';
 
 /**
  * Declines a trade that would put too much on one settlement event.
@@ -142,12 +142,39 @@ export function breaches(open: readonly Contract[], policy: LimiterPolicy): Even
  * bytes.
  */
 export class ExposureBook {
+  readonly #resolve: EntryResolver | undefined;
+
+  /**
+   * A book that knows which tick an entry resolves to, or one that does not.
+   *
+   * Without a resolver, sub-tick jitter splits one comparison into many events
+   * and the book under-reports concentration (Cycle Audit 5, CA5-09). A venue
+   * has the record and must pass one.
+   */
+  constructor(resolve?: EntryResolver) {
+    this.#resolve = resolve;
+  }
+
   readonly #call = new Map<string, number>();
   readonly #put = new Map<string, number>();
   #contracts = 0;
 
-  static keyOf(contract: Contract): string {
-    return `${contract.assetId}|${contract.entryInstant}|${contract.entryInstant + contract.horizonMs}`;
+  /**
+   * The settlement event a contract belongs to.
+   *
+   * **Cycle Audit 5, CA5-09.** Keyed on the raw instant, one millisecond of
+   * entry jitter split a single comparison into two hundred "events" and let a
+   * book through at 39.6× its limit. With a resolver the key is the tick the
+   * record settles against, which is what makes two contracts the same bet.
+   */
+  static keyOf(contract: Contract, resolve?: EntryResolver): string {
+    const entry = resolve
+      ? resolve(contract.assetId, contract.entryInstant)
+      : contract.entryInstant;
+    const expiry = resolve
+      ? resolve(contract.assetId, contract.entryInstant + contract.horizonMs)
+      : contract.entryInstant + contract.horizonMs;
+    return `${contract.assetId}|${entry}|${expiry}`;
   }
 
   get size(): number {
@@ -156,7 +183,7 @@ export class ExposureBook {
 
   /** Net exposure on the event a contract belongs to. */
   netExposureFor(contract: Contract): number {
-    const key = ExposureBook.keyOf(contract);
+    const key = ExposureBook.keyOf(contract, this.#resolve);
     return Math.abs((this.#call.get(key) ?? 0) - (this.#put.get(key) ?? 0));
   }
 
@@ -177,7 +204,7 @@ export class ExposureBook {
     if (!(contract.stake > 0) || !Number.isFinite(contract.stake)) {
       throw new RangeError(`Stake must be finite and positive, received ${contract.stake}.`);
     }
-    const key = ExposureBook.keyOf(contract);
+    const key = ExposureBook.keyOf(contract, this.#resolve);
     const call = this.#call.get(key) ?? 0;
     const put = this.#put.get(key) ?? 0;
     const obligation = contract.stake * contract.payoutRatio;
@@ -205,7 +232,7 @@ export class ExposureBook {
 
   /** Record an accepted contract. */
   add(contract: Contract): void {
-    const key = ExposureBook.keyOf(contract);
+    const key = ExposureBook.keyOf(contract, this.#resolve);
     const obligation = contract.stake * contract.payoutRatio;
     if (contract.direction === 'up') this.#call.set(key, (this.#call.get(key) ?? 0) + obligation);
     else this.#put.set(key, (this.#put.get(key) ?? 0) + obligation);

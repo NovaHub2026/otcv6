@@ -60,6 +60,10 @@ export interface EventExposure {
   readonly netExposure: number;
   /** The direction that costs the operator, or null when perfectly hedged. */
   readonly adverseDirection: 'up' | 'down' | null;
+  /** The operator's profit on this event if the market rises. */
+  readonly onRise: number;
+  /** The operator's profit if it falls. The distance between them is the swing. */
+  readonly onFall: number;
 }
 
 export interface BookRisk {
@@ -93,18 +97,48 @@ export interface BookRisk {
   readonly overlappingEvents: number;
 }
 
-function eventKey(contract: Contract): string {
-  return `${contract.assetId}|${contract.entryInstant}|${contract.entryInstant + contract.horizonMs}`;
+/**
+ * Resolves a submitted instant to the tick the record actually settles against.
+ *
+ * **Cycle Audit 5, CA5-09.** Events were keyed on the raw `entryInstant`, but
+ * `settle` resolves entries with `priceAtOrBefore` — so every contract inside
+ * one tick interval is the *same comparison*. Measured median tick spacing on
+ * `eurusd` is 1.1 seconds. Two hundred contracts entered one millisecond apart
+ * inside an 11.4-second gap produced one entry tick, one expiry tick and one
+ * outcome, and were reported as **200 effective bets**, accepted in full by the
+ * limiter at a peak of 99 against a limit of 500 — while the true
+ * single-comparison obligation was 39.6× the limit. The identical book without
+ * jitter was capped at five contracts.
+ *
+ * Reporting 200 where the truth is 1 is precisely the number PH-13 exists to
+ * produce, so a venue must supply this. It is optional only because a book
+ * assessed without a record cannot resolve anything, and refusing outright would
+ * make the model unusable in exactly the offline analyses it was built for.
+ */
+export type EntryResolver = (assetId: string, instant: number) => number;
+
+function eventKey(contract: Contract, resolve?: EntryResolver): string {
+  const entry = resolve ? resolve(contract.assetId, contract.entryInstant) : contract.entryInstant;
+  const expiry = resolve
+    ? resolve(contract.assetId, contract.entryInstant + contract.horizonMs)
+    : contract.entryInstant + contract.horizonMs;
+  return `${contract.assetId}|${entry}|${expiry}`;
 }
 
 /** Group a book into settlement events and net the exposure within each. */
-export function exposureByEvent(contracts: readonly Contract[]): EventExposure[] {
-  const groups = new Map<string, { event: SettlementEvent; call: number; put: number }>();
+export function exposureByEvent(
+  contracts: readonly Contract[],
+  resolve?: EntryResolver,
+): EventExposure[] {
+  const groups = new Map<
+    string,
+    { event: SettlementEvent; call: number; put: number; onRise: number; onFall: number }
+  >();
   for (const contract of contracts) {
     if (!(contract.stake > 0) || !Number.isFinite(contract.stake)) {
       throw new RangeError(`Stake must be finite and positive, received ${contract.stake}.`);
     }
-    const key = eventKey(contract);
+    const key = eventKey(contract, resolve);
     const existing = groups.get(key) ?? {
       event: {
         assetId: contract.assetId,
@@ -113,21 +147,46 @@ export function exposureByEvent(contracts: readonly Contract[]): EventExposure[]
       },
       call: 0,
       put: 0,
+      onRise: 0,
+      onFall: 0,
     };
     // Exposure is the operator's payout obligation, not the stake: a winning
     // contract costs `stake * payoutRatio` and a losing one earns `stake`.
     const obligation = contract.stake * contract.payoutRatio;
     if (contract.direction === 'up') existing.call += obligation;
     else existing.put += obligation;
+
+    // The operator's actual profit under each resolution, accumulated directly.
+    //
+    // **Cycle Audit 5, CA5-08.** Variance was computed as `(netExposure/2)²`
+    // on the premise, stated in a comment, that "the operator's outcome on an
+    // event swings by `net` between the two resolutions". It does not. An up
+    // contract costs `stake·r` when the market rises and earns `stake` when it
+    // falls, so the swing is `|C−P|·(1+r)` while `netExposure` is `r·|C−P|` —
+    // short by a factor of `(1+r)/r`, which is **2.01× at the 99% payout**, in
+    // the dangerous direction, on the operator's headline spread number.
+    //
+    // Accumulating both outcomes is also the only form that survives mixed
+    // payout ratios within one event: `C` and `P` cannot be recovered from the
+    // obligations once the ratios differ.
+    if (contract.direction === 'up') {
+      existing.onRise -= obligation;
+      existing.onFall += contract.stake;
+    } else {
+      existing.onRise += contract.stake;
+      existing.onFall -= obligation;
+    }
     groups.set(key, existing);
   }
 
-  return [...groups.values()].map(({ event, call, put }) => ({
+  return [...groups.values()].map(({ event, call, put, onRise, onFall }) => ({
     event,
     callStake: call,
     putStake: put,
     netExposure: Math.abs(call - put),
     adverseDirection: call === put ? null : call > put ? 'up' : 'down',
+    onRise,
+    onFall,
   }));
 }
 
@@ -157,23 +216,35 @@ function countOverlaps(events: readonly EventExposure[]): number {
  * Everything else here is about the spread around it, which is the part that
  * decides whether a venue survives.
  */
-export function assessBookRisk(contracts: readonly Contract[]): BookRisk {
-  const events = exposureByEvent(contracts);
+export function assessBookRisk(contracts: readonly Contract[], resolve?: EntryResolver): BookRisk {
+  const events = exposureByEvent(contracts, resolve);
   const totalStaked = contracts.reduce((sum, c) => sum + c.stake, 0);
 
   // Per contract the operator expects `stake · (1 − payoutRatio) / 2` at a fair
   // coin: it keeps the stake half the time and pays `stake · payoutRatio` the
   // other half.
-  const expectedProfit = contracts.reduce((sum, c) => sum + (c.stake * (1 - c.payoutRatio)) / 2, 0);
+  // The mean of the two resolutions, per event. Equivalent to the per-contract
+  // form for a uniform payout ratio, and correct when they differ.
+  const expectedProfit = events.reduce((sum, e) => sum + (e.onRise + e.onFall) / 2, 0);
 
-  // Each event is one fair coin over its netted exposure, so its variance is
-  // `(net/2)²·... ` — more directly, the operator's outcome on an event swings by
-  // `net` between the two resolutions, giving variance `(net/2)²`.
+  // Each event is one fair coin between its two resolutions, so its variance is
+  // `(swing/2)²` where the swing is the distance between them.
+  //
+  // **Cycle Audit 5, CA5-08.** This used `netExposure`, which is the payout
+  // obligation `r·|C−P|` and not the swing `|C−P|·(1+r)` — understating the
+  // spread by `(1+r)/r`, 2.01× at the product's payout. The module was
+  // internally inconsistent about it: `expectedProfit` already knew the two
+  // resolutions were different sizes, and `ruin.ts` states them separately.
+  //
+  // The test that should have caught it simulated the model's own
+  // `netExposure/2` rather than settling contracts — it validated the model
+  // against itself.
+  //
   // Explicit multiplication, not `**`: the exponent operator is
   // implementation-approximated and the guardrail bans it in code that must
   // reproduce across machines.
   const variance = events.reduce((sum, e) => {
-    const half = e.netExposure / 2;
+    const half = (e.onRise - e.onFall) / 2;
     return sum + half * half;
   }, 0);
   const absoluteSum = events.reduce((sum, e) => sum + e.netExposure, 0);

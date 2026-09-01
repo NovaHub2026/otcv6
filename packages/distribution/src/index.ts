@@ -56,6 +56,7 @@ export {
   commitmentIsPruneable,
   DEFAULT_DISPUTE_WINDOW_MS,
   DEFAULT_RETENTION,
+  LONGEST_HORIZON_MS,
   journalIsPruneable,
   partitionForRetention,
   RetentionError,

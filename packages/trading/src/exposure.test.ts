@@ -113,13 +113,24 @@ describe('the risk numbers are what they claim', () => {
     expect(assessBookRisk(book).worstCase).toBeCloseTo(300 * PAYOUT, 9);
   });
 
-  it('matches a simulation of the same book', () => {
-    // The model is arithmetic; this checks the arithmetic describes reality.
+  it('matches a simulation that settles the contracts, not the model', () => {
+    // **Cycle Audit 5, CA5-08.** This simulated `e.netExposure / 2` — the
+    // model's own quantity — so it validated the model against itself, and went
+    // on passing while the reported spread was short by a factor of `(1+r)/r`.
+    // It now resolves each event with a coin and pays the contracts out by the
+    // same arithmetic `settle.ts` uses: a winner returns `stake·(1+r)`, so the
+    // operator pays `stake·r`; a loser returns nothing, so the operator keeps
+    // `stake`.
     const book = Array.from({ length: 40 }, (_, i) =>
       contract({ stake: 100 + i, entryInstant: epochMillis(1_776_000_000_000 + i * 60_000) }),
     );
     const risk = assessBookRisk(book);
-    const events = exposureByEvent(book);
+
+    const byEvent = new Map<string, Contract[]>();
+    for (const c of book) {
+      const key = `${c.assetId}|${c.entryInstant}|${c.entryInstant + c.horizonMs}`;
+      byEvent.set(key, [...(byEvent.get(key) ?? []), c]);
+    }
 
     const keyring = MasterKeyring.forTesting('exposure-simulation');
     const stream = keyring.derive({ env: 'test', asset: 'risk', purpose: 'coin', keyEpoch: 0 });
@@ -129,11 +140,12 @@ describe('the risk numbers are what they claim', () => {
     let totalSquared = 0;
     for (let t = 0; t < trials; t += 1) {
       let profit = 0;
-      for (const e of events) {
-        // Each event: a fair coin decides whether the operator pays the net
-        // exposure or keeps the losing side's stake.
-        const operatorWins = stream.nextBoolean();
-        profit += operatorWins ? e.netExposure / 2 : -e.netExposure / 2;
+      for (const group of byEvent.values()) {
+        const rose = stream.nextBoolean();
+        for (const c of group) {
+          const won = (c.direction === 'up') === rose;
+          profit += won ? -c.stake * c.payoutRatio : c.stake;
+        }
       }
       total += profit;
       totalSquared += profit * profit;
@@ -141,10 +153,17 @@ describe('the risk numbers are what they claim', () => {
     const mean = total / trials;
     const sd = Math.sqrt(totalSquared / trials - mean * mean);
 
-    // The coin is fair, so the simulated mean is zero — the expectation in the
-    // model comes from the payout margin, which a fair coin does not produce.
-    expect(Math.abs(mean)).toBeLessThan(4 * (risk.standardDeviation / Math.sqrt(trials)));
+    // Both moments, against the model. The mean is the payout margin the
+    // operator actually collects, which the old simulation could not see at all
+    // because a fair coin over `net/2` has mean zero by construction.
     expect(sd / risk.standardDeviation).toBeCloseTo(1, 1);
+    // The mean is compared against its own standard error, not with a fixed
+    // tolerance. At a spread of ~755 over 20,000 trials the sample mean carries
+    // a standard error of ~5.3 against a model expectation of ~24 — a 22%
+    // relative error, so `toBeCloseTo(1)` on the ratio would fail on ordinary
+    // noise and pass or fail for reasons unrelated to the model.
+    const standardError = sd / Math.sqrt(trials);
+    expect(Math.abs(mean - risk.expectedProfit)).toBeLessThan(4 * standardError);
   });
 });
 

@@ -7,6 +7,7 @@ import {
   DEFAULT_DISPUTE_WINDOW_MS,
   DEFAULT_RETENTION,
   journalIsPruneable,
+  LONGEST_HORIZON_MS,
   partitionForRetention,
   RetentionError,
   type JournalWindow,
@@ -116,5 +117,80 @@ describe('partitioning a set of journals', () => {
 
   it('prunes nothing from an empty set', () => {
     expect(partitionForRetention([], NOW)).toEqual({ pruneable: [], retained: [] });
+  });
+});
+
+describe('Cycle Audit 5: contracts reach backwards, and so must retention', () => {
+  const MINUTE = 60 * 1000;
+
+  it('keeps a journal just past the dispute window, because a contract there still needs its entry', () => {
+    // A settlement whose expiry is 89 days and 23 hours old is still disputable,
+    // and answering it needs the entry tick up to fifteen minutes earlier. The
+    // rule had no horizon term, so there was a rolling band one horizon wide of
+    // settlements whose expiry was inside the window and whose entry price had
+    // been deleted.
+    const justPast: JournalWindow = {
+      assetId: 'eurusd',
+      fromSequence: 1,
+      toSequence: 100,
+      newestInstant: NOW - (90 * DAY + 5 * MINUTE),
+    };
+    expect(journalIsPruneable(justPast, NOW)).toBe(false);
+  });
+
+  it('prunes once the window and the longest horizon have both elapsed', () => {
+    const wellPast: JournalWindow = {
+      assetId: 'eurusd',
+      fromSequence: 1,
+      toSequence: 100,
+      newestInstant: NOW - (90 * DAY + 16 * MINUTE),
+    };
+    expect(journalIsPruneable(wellPast, NOW)).toBe(true);
+  });
+
+  it('states the horizon it reaches back by', () => {
+    expect(LONGEST_HORIZON_MS).toBe(15 * MINUTE);
+    expect(DEFAULT_RETENTION.longestHorizonMs).toBe(LONGEST_HORIZON_MS);
+  });
+
+  it('honours a horizon supplied by the caller', () => {
+    const aged: JournalWindow = {
+      assetId: 'eurusd',
+      fromSequence: 1,
+      toSequence: 100,
+      newestInstant: NOW - (90 * DAY + 30 * MINUTE),
+    };
+    expect(journalIsPruneable(aged, NOW, { disputeWindowMs: 90 * DAY })).toBe(true);
+    expect(
+      journalIsPruneable(aged, NOW, { disputeWindowMs: 90 * DAY, longestHorizonMs: 60 * MINUTE }),
+    ).toBe(false);
+  });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    'refuses to prune against a clock reading of %s',
+    (now) => {
+      // Forward clock skew is the hazard PH-14.1's lease exists to handle, and
+      // here it deletes records that are still under dispute. Irreversibly.
+      const aged: JournalWindow = {
+        assetId: 'eurusd',
+        fromSequence: 1,
+        toSequence: 100,
+        newestInstant: NOW - 400 * DAY,
+      };
+      expect(() => journalIsPruneable(aged, now)).toThrow(RetentionError);
+      expect(() => partitionForRetention([aged], now)).toThrow(RetentionError);
+    },
+  );
+
+  it.each([-1, Number.NaN])('refuses a longest horizon of %s', (longestHorizonMs) => {
+    const aged: JournalWindow = {
+      assetId: 'eurusd',
+      fromSequence: 1,
+      toSequence: 100,
+      newestInstant: NOW - 400 * DAY,
+    };
+    expect(() =>
+      journalIsPruneable(aged, NOW, { disputeWindowMs: 90 * DAY, longestHorizonMs }),
+    ).toThrow(RetentionError);
   });
 });

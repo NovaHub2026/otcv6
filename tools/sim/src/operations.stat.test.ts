@@ -219,10 +219,15 @@ describe('a venue that is operated, not just built', () => {
       for (const horizon of verdict.horizons) {
         expect(horizon.detectionFloorPp).toBeGreaterThan(0);
       }
-      // Every family it names is one it actually constructed and ran.
-      for (const name of verdict.families) {
-        expect(WITHHELD_FAMILY_NAMES).toContain(name);
+      // Every withheld family it could build is named, and the registry runs
+      // alongside them — the withheld ones make the verdict independent
+      // evidence, the registry gives it coverage (PH-16.1).
+      for (const name of WITHHELD_FAMILY_NAMES) {
+        if (!verdict.withheldUnavailable.includes(name)) {
+          expect(verdict.families).toContain(name);
+        }
       }
+      expect(verdict.families.length).toBeGreaterThan(WITHHELD_FAMILY_NAMES.length);
     }
 
     reopened.close();

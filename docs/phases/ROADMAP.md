@@ -420,12 +420,12 @@ does not start from new product surface: it starts from the fact that the engine
 currently _claims_ a standing guarantee it does not compute, and _claims_ a
 follower cannot generate when it can.
 
-| Phase | Title                                                | State       |
-| ----- | ---------------------------------------------------- | ----------- |
-| PH-16 | Close what the audit falsified                       | **ACTIVE**  |
-| PH-17 | Assets become data: families, sampling, history      | not started |
-| PH-18 | The admin panel: Preview                             | not started |
-| —     | **Cycle Audit 6** — one worktree per auditor (B-020) | not started |
+| Phase | Title                                                | State        |
+| ----- | ---------------------------------------------------- | ------------ |
+| PH-16 | Close what the audit falsified                       | **APPROVED** |
+| PH-17 | Assets become data: families, sampling, history      | **ACTIVE**   |
+| PH-18 | The admin panel: Preview                             | not started  |
+| —     | **Cycle Audit 6** — one worktree per auditor (B-020) | not started  |
 
 ### PH-16 — Close What the Audit Falsified
 
@@ -437,7 +437,7 @@ assets with the same broken promise.
 | -------- | --------------------------------------------------------- | -------- |
 | PH-16.1  | The standing verdict runs the battery it names            | APPROVED |
 | PH-16.2  | A follower cannot generate, and settlement sees the seam  | APPROVED |
-| PH-16.3  | Operator risk, retention, and the guardrails' blind spots | ACTIVE   |
+| PH-16.3  | Operator risk, retention, and the guardrails' blind spots | APPROVED |
 
 ### PH-17 — Assets Become Data
 

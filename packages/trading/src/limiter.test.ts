@@ -1,7 +1,8 @@
 // Invariant evidence: INV-001 (economic independence).
 import { describe, expect, it } from 'vitest';
 import { durationMillis, epochMillis } from '@otc/core';
-import { admit, breaches } from './limiter.js';
+import { admit, breaches, ExposureBook } from './limiter.js';
+import { assessBookRisk, exposureByEvent } from './exposure.js';
 import type { Contract } from './contract.js';
 
 const PAYOUT = 0.99;
@@ -99,5 +100,62 @@ describe('the limiter refuses what it cannot assess', () => {
 
   it('refuses a single contract larger than the whole limit', () => {
     expect(admit([], contract({ stake: 10_000 }), policy).accepted).toBe(false);
+  });
+});
+
+describe('Cycle Audit 5: one millisecond of jitter is not two hundred bets', () => {
+  // Measured by an auditor: 200 contracts entered one millisecond apart inside
+  // an 11.4-second tick gap settle against one entry tick and one expiry tick —
+  // one Bernoulli draw. Keyed on the raw instant they were reported as 200
+  // events, accepted in full at a peak of 99 against a limit of 500, while the
+  // true single-comparison obligation was 39.6x the limit.
+  const TICK = 1_100;
+  const resolve = (_assetId: string, instant: number): number => Math.floor(instant / TICK) * TICK;
+
+  const jittered = (n: number): Contract[] =>
+    Array.from({ length: n }, (_, i) =>
+      contract({
+        id: `j${i}`,
+        stake: 100,
+        entryInstant: epochMillis(1_776_000_000_000 + i),
+      }),
+    );
+
+  it('groups contracts inside one tick interval into a single event', () => {
+    const book = jittered(200);
+    expect(exposureByEvent(book)).toHaveLength(200);
+    expect(exposureByEvent(book, resolve)).toHaveLength(1);
+  });
+
+  it('reports one effective bet, not two hundred', () => {
+    const spread = assessBookRisk(jittered(200));
+    const resolved = assessBookRisk(jittered(200), resolve);
+    expect(spread.effectiveBets).toBeGreaterThan(100);
+    expect(resolved.effectiveBets).toBeCloseTo(1, 5);
+  });
+
+  it('the limiter caps a jittered book the same as an unjittered one', () => {
+    const policy = { maxEventExposure: 500 };
+    const withResolver = new ExposureBook(resolve);
+    let admitted = 0;
+    for (const c of jittered(200)) {
+      if (withResolver.admit(c, policy).accepted) {
+        withResolver.add(c);
+        admitted += 1;
+      }
+    }
+    expect(admitted).toBeLessThan(10);
+    expect(withResolver.peakExposure()).toBeLessThanOrEqual(policy.maxEventExposure);
+
+    // Without one, every contract is its own event and the cap never binds.
+    const blind = new ExposureBook();
+    let blindAdmitted = 0;
+    for (const c of jittered(200)) {
+      if (blind.admit(c, policy).accepted) {
+        blind.add(c);
+        blindAdmitted += 1;
+      }
+    }
+    expect(blindAdmitted).toBe(200);
   });
 });
