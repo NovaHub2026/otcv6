@@ -15,20 +15,20 @@ Last synchronized: 2026-09-01
 | Field                            | Value                                                                   |
 | -------------------------------- | ----------------------------------------------------------------------- |
 | Active development cycle         | Cycle 6                                                                 |
-| Approved phases in current cycle | **1 of 3**                                                              |
+| Approved phases in current cycle | **2 of 3**                                                              |
 | Cycle Audit state                | 005 recorded; findings remediated in PH-16                              |
 | Last Cycle Audit                 | [Cycle Audit 004](docs/audits/CYCLE-AUDIT-004.md) — APPROVED 2026-09-01 |
 
 ## Phase and subphase
 
-| Field                  | Value                                                     |
-| ---------------------- | --------------------------------------------------------- |
-| Active phase           | PH-17 — Assets become data                                |
-| Phase lifecycle        | n/a                                                       |
-| Active subphase        | None                                                      |
-| Subphase lifecycle     | n/a                                                       |
-| Last approved phase    | PH-16 — Close What the Audit Falsified                    |
-| Last approved subphase | PH-16.3 — Operator risk, retention, guardrail blind spots |
+| Field                  | Value                                                |
+| ---------------------- | ---------------------------------------------------- |
+| Active phase           | PH-18 — The admin panel: Preview                     |
+| Phase lifecycle        | n/a                                                  |
+| Active subphase        | None                                                 |
+| Subphase lifecycle     | n/a                                                  |
+| Last approved phase    | PH-17 — Assets become data                           |
+| Last approved subphase | PH-17.3 — Backdated history and persistence at scale |
 
 ## Cycle 1 result
 
@@ -89,7 +89,7 @@ PH-10 was conditional on a previous build's `dist/` being present.
 
 ## Verification state
 
-Executed 2026-09-01 on the Cycle Audit 5 remediation tree.
+Executed 2026-09-01 on the PH-17 phase gate: 113 files, 1,963 tests, 361 seconds.
 
 | Check                            | Status                         |
 | -------------------------------- | ------------------------------ |
@@ -97,8 +97,8 @@ Executed 2026-09-01 on the Cycle Audit 5 remediation tree.
 | `npm run format:check`           | PASSED (exit 0)                |
 | `npm run build` (full typecheck) | PASSED (exit 0)                |
 | `npm run lint`                   | PASSED (exit 0), warning-free  |
-| Unit suite                       | PASSED — 74 files, 1,566 tests |
-| Statistical suite                | PASSED — 29 files, 204 tests   |
+| Unit suite                       | PASSED — 83 files, 1,748 tests |
+| Statistical suite                | PASSED — 30 files, 215 tests   |
 | Unhandled errors                 | none                           |
 
 Cycle 1's numbers, and the coverage figure, are in
@@ -112,8 +112,10 @@ Cycle 1's numbers, and the coverage figure, are in
   15-minute horizon needs roughly a hundred times the history. Every verdict
   states the floor it achieved.
 - Assets are still easier to tell apart by size than by character. Scale-free
-  _shape_ differentiation is 40.5% against a 20% null (PH-10, up from 30.0%),
-  against a near-perfect figure on the full signature.
+  _shape_ differentiation is 40.5% against a 20% null for the five hand-authored
+  assets (PH-10, up from 30.0%), and 46.0-47.8% against an identical-personality
+  control at 31.0-34.9% for three siblings drawn from one archetype (PH-17.2).
+  Both are real and modest; neither is near-perfect.
 - Per-asset battery floors (0.562pp) sit above the 0.2513pp product margin.
   PH-3's full-rigor run covers the canonical configuration at 0.217pp.
 - **The multi-node design is proved against an in-memory store.** PH-14 makes
@@ -121,6 +123,14 @@ Cycle 1's numbers, and the coverage figure, are in
   battery a deployment backend must pass — but no such backend exists yet. A
   real cluster needs a store with native compare-and-set, and choosing one is
   PH-15's.
+- **The catalogue is data, and nothing administers it.** PH-17 made asset
+  creation a runtime job with named stages, gave every family a dispersion
+  budget, and made a new asset arrive with ninety days of chart. There is no
+  surface for any of it, which is PH-18's subject.
+- **History is candles beyond the retention window.** Anything finer than a
+  minute is available only as far back as the tick record keeps it, and
+  `readTimeframe` refuses rather than returning a coarser series under a finer
+  name.
 - Nothing runs continuously. The assurance battery, the commitment publication
   and the standing guarantee are all things an operator _can_ do rather than
   things the venue _does_. That is PH-15's whole subject.

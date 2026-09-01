@@ -72,3 +72,22 @@ export {
   type ServeResult,
 } from './follower.js';
 export { SqliteCoordinatedStore } from './sqliteStore.js';
+export { SqliteCandleHistory } from './sqliteHistory.js';
+export {
+  HistoryError,
+  HistoryRecorder,
+  HISTORY_BASE_TIMEFRAME,
+  HISTORY_ROLLUP_TIMEFRAME,
+  HISTORY_TIMEFRAMES,
+  InMemoryCandleHistory,
+  readTimeframe,
+  type CandleHistory,
+} from './history.js';
+export {
+  backfillMarket,
+  BackfillError,
+  DEFAULT_BACKFILL_CHUNK_STEPS,
+  DEFAULT_BACKFILL_TICK_RETENTION_MS,
+  type BackfillOptions,
+  type BackfillResult,
+} from './backfill.js';

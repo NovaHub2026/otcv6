@@ -10,7 +10,12 @@ import { CascadeMagnitudeModel } from './cascade.js';
 import type { MarketEngineConfig } from './factory.js';
 import { DurationCouplingModulator, HawkesArrivalModel } from './hawkes.js';
 import { ModulatedMagnitudeModel } from './modulator.js';
-import { assertPersonalitySafe, personalityConfig, type PersonalityTraits } from './personality.js';
+import {
+  assertPersonalitySafe,
+  assertPersonalityTraits,
+  personalityConfig,
+  type PersonalityTraits,
+} from './personality.js';
 import { VolatilityRegimeModulator } from './regime.js';
 import { StructurePhaseModulator } from './structure.js';
 
@@ -40,11 +45,43 @@ export interface CalibrationEvidence {
   /** Median move over the calibration horizon, in lattice steps. */
   readonly medianSteps: number;
   readonly meanIntervalMs: number;
+  /**
+   * Variance of the log price accumulated per millisecond of market time.
+   *
+   * The one number in this record that describes where the price *goes* rather
+   * than how it is quantised, and it comes free: the calibration already
+   * accumulates a full-precision walk and windows it, so the mean square of
+   * those windowed returns divided by the horizon is the diffusion rate.
+   *
+   * Increments are uncorrelated by construction — ADR-0003 makes every sign an
+   * independent fair coin — so variance is additive in time and this rate
+   * extrapolates to any window by multiplication. That is what turns a ten-day
+   * calibration into a statement about a quarter without simulating a quarter.
+   *
+   * It is a rate, not a promise: it is conditioned on the volatility levels the
+   * calibration span happened to visit, and a span shorter than the slowest
+   * cascade component under-samples them.
+   */
+  readonly logVariancePerMs: number;
   readonly horizonMs: number;
   /** Span of each replicate. */
   readonly simulatedMs: number;
   readonly replicates: number;
   readonly horizons: number;
+  /**
+   * Factor applied to every scale-carrying number after the simulation ran.
+   *
+   * 1 when the calibration was run at the volatility the definition records.
+   * Anything else means the run happened at `volatility / volatilityScale` and
+   * the results were scaled — see {@link rescaleCalibration}, which is exact
+   * rather than approximate, and is why a registration that has to hit a
+   * dispersion budget still costs one simulation instead of a search.
+   *
+   * Recorded because an audit re-running this calibration has to know which
+   * volatility produced the numbers. Without it the record would reproduce and
+   * nobody could say why.
+   */
+  readonly volatilityScale: number;
 }
 
 export interface CalibratedAsset {
@@ -173,6 +210,17 @@ export const CALIBRATION_STREAM_PURPOSES = [
   'arrival',
   'sign',
 ] as const;
+
+/**
+ * Decimals to render at, from the lattice that settles.
+ *
+ * The display must never be coarser than the lattice: a trader seeing an
+ * unchanged price on a move that settled would be a fairness problem even with
+ * INV-009 intact.
+ */
+function displayPrecisionFor(logQuantum: number, referencePrice: number): number {
+  return Math.ceil(ln(1 / (logQuantum * referencePrice)) / ln(10));
+}
 
 function quantile(sorted: readonly number[], fraction: number): number {
   const index = Math.min(sorted.length - 1, Math.max(0, Math.floor(fraction * sorted.length)));
@@ -326,10 +374,7 @@ function* calibrateAssetCore(
     );
   }
 
-  // The display must never be coarser than the lattice that settles the
-  // contract: a trader seeing an unchanged price on a move that settled would be
-  // a fairness problem even with INV-009 intact.
-  const displayPrecision = Math.ceil(ln(1 / (logQuantum * definition.referencePrice)) / ln(10));
+  const displayPrecision = displayPrecisionFor(logQuantum, definition.referencePrice);
 
   const instrument: InstrumentSpec = {
     id: definition.id,
@@ -349,12 +394,71 @@ function* calibrateAssetCore(
       predictedExcessKurtosis: predicted,
       logQuantum,
       tieRate: ties / returns.length,
+      logVariancePerMs:
+        returns.reduce((sum, value) => sum + value * value, 0) / returns.length / horizonMs,
       medianSteps: quantile(sorted, 0.5) / logQuantum,
       meanIntervalMs: (simulatedMs * replicates) / ticks,
       horizonMs,
       simulatedMs,
       replicates,
       horizons: totalHorizons,
+      volatilityScale: 1,
+    },
+  };
+}
+
+/**
+ * Move a calibrated asset to a different volatility without simulating again.
+ *
+ * Every log return the calibration produces is exactly proportional to
+ * `baseVolatility`: the cascade multiplies it, the regime and structure layers
+ * multiply it, the duration modulator reads only intervals, and the arrival
+ * process normalises magnitudes against their own running average before using
+ * them. So scaling the base scales the whole realised path, leaving the *shape*
+ * — tie rate, median move in lattice steps, mean interval, kurtosis — untouched
+ * and scaling the lattice with it.
+ *
+ * Measured on a two-day probe at a factor of 3.7: the quantum ratio agreed with
+ * the factor to 1.2e-12, the diffusion rate with its square to 2.9e-15, and tie
+ * rate, mean interval and kurtosis were bit-identical. `asset.test.ts` re-checks
+ * that against a real recalibration, because the property is load-bearing:
+ * hitting a dispersion budget by search would cost a simulation per iteration,
+ * and this makes it cost none.
+ *
+ * The display precision is recomputed rather than carried. A coarser lattice
+ * needs fewer decimals, and a display finer than the lattice invites a trader to
+ * read a move that did not happen.
+ */
+export function rescaleCalibration(asset: CalibratedAsset, factor: number): CalibratedAsset {
+  if (!Number.isFinite(factor) || factor <= 0) {
+    throw new RangeError(`A volatility scale must be finite and positive, received ${factor}.`);
+  }
+  const traits: PersonalityTraits = {
+    ...asset.definition.traits,
+    volatility: asset.definition.traits.volatility * factor,
+  };
+  // The bounds are checked here rather than left to the engine, because this is
+  // where a dispersion budget a personality cannot reach becomes visible: the
+  // factor needed is the one that pushes the base volatility out of range.
+  assertPersonalityTraits(traits);
+  const definition: AssetDefinition = { ...asset.definition, traits };
+  const config = personalityConfig(traits);
+  const logQuantum = asset.instrument.logQuantum * factor;
+  const instrument: InstrumentSpec = {
+    ...asset.instrument,
+    logQuantum,
+    displayPrecision: displayPrecisionFor(logQuantum, definition.referencePrice),
+  };
+  assertValidInstrument(instrument);
+  return {
+    definition,
+    instrument,
+    config: { ...config, instrument },
+    evidence: {
+      ...asset.evidence,
+      logQuantum,
+      logVariancePerMs: asset.evidence.logVariancePerMs * factor * factor,
+      volatilityScale: asset.evidence.volatilityScale * factor,
     },
   };
 }

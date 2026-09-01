@@ -90,6 +90,7 @@ export {
   CALIBRATION_HORIZON_MS,
   CALIBRATION_SPAN_MS,
   CALIBRATION_STREAM_PURPOSES,
+  rescaleCalibration,
   TARGET_TIE_RATE,
   type AssetDefinition,
   type CalibratedAsset,
@@ -98,6 +99,36 @@ export {
 } from './asset.js';
 export { personalityConfig } from './personality.js';
 export {
+  archetypeById,
+  assertArchetypeFeasible,
+  ASSET_ARCHETYPES,
+  provisionalTickRms,
+  sampleArchetype,
+  sampleTraits,
+  spacingCeiling,
+  SPACING_FEASIBILITY_MARGIN,
+  STARTING_CASCADE_INFLATION,
+  startingClustering,
+  type ArchetypeSample,
+  type AssetArchetype,
+  type Range,
+  type SampledTraitRanges,
+} from './families.js';
+export {
+  MINIMUM_DISPERSION_RATIO,
+  MINIMUM_TRAIT_DISTANCE,
+  traitDistance,
+  traitDistanceCheck,
+  type TraitDistanceOptions,
+} from './differentiation.js';
+export {
+  dispersionLogSigma,
+  dispersionPercent,
+  DISPERSION_FIT_TURNOVERS,
+  DISPERSION_WINDOW_MS,
+  minimumDispersionSpanMs,
+} from './dispersion.js';
+export {
   ASSET_CATALOGUE,
   assetById,
   configFor,
@@ -105,3 +136,13 @@ export {
   type AuthoringTargets,
   type RegisteredAsset,
 } from './catalogue.js';
+export {
+  ASSET_ID_PATTERN,
+  checkIdentity,
+  registerAsset,
+  type DifferentiationCheck,
+  type RegistrationOptions,
+  type RegistrationOutcome,
+  type RegistrationRequest,
+  type RegistrationStage,
+} from './registration.js';
