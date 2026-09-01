@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 import { Chart } from '../../../Chart';
 
-const API_BASE = process.env.NEXT_PUBLIC_OTC_API_BASE ?? 'http://127.0.0.1:3000';
+const API_BASE = process.env.NEXT_PUBLIC_OTC_API_BASE ?? '/engine';
 
 /**
  * The microstructure view: ticks, not candles.
