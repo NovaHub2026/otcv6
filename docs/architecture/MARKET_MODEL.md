@@ -153,13 +153,13 @@ abundant — a viewer sees trends because trends happen.
 
 Phase acceptance, on 24 million ticks spanning 327 simulated days:
 
-|                        | Result                                                      |
-| ---------------------- | ----------------------------------------------------------- |
-| Attack battery         | **clean** — all four feature kinds, ~570 hypotheses         |
-| Detection floor at 30s | **0.217pp**, finer than the 0.2513pp the 99% payout implies |
-| Realism                | **15/15 metrics**                                           |
-| Mirror test            | zero divergences                                            |
-| Generation             | 0.41M ticks/s                                               |
+|                        | Result                                                                                                                             |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Attack battery         | **clean** — all four feature kinds, ~570 hypotheses                                                                                |
+| Detection floor at 30s | **0.217pp**, finer than the 0.2513pp the 99% payout implies                                                                        |
+| Realism                | **15/15 metrics**                                                                                                                  |
+| Mirror test            | zero divergences (reflected through the origin; the interior-snapshot harness of 2026-09-02 also passes — out-of-band audit a3-01) |
+| Generation             | 0.41M ticks/s                                                                                                                      |
 
 Realism detail on that run: return autocorrelation ~0.002, absolute-return
 autocorrelation strong at lag 1 and still positive at lag 500, excess kurtosis

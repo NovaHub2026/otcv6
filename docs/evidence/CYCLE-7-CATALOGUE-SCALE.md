@@ -5,6 +5,10 @@ Produced: 2026-09-02
 Runner: `tools/sim/src/catalogueScale.ts` — in the repository, and reproducible
 Command: `node tools/sim/dist/catalogueScale.js`
 Seed: `catalogue-scale` (`OTC_SCALE_SEED`; every stream derives from it)
+Note: recorded before the out-of-band audit of 2026-09-02 raised `alt-crypto`'s
+cascade depth floor from 5 to 7 (a3-05); the twelve `alt-crypto` rows above were
+drawn from the earlier box and the run must be repeated to describe the current
+catalogue.
 
 ---
 

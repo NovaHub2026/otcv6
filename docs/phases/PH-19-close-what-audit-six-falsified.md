@@ -61,7 +61,10 @@ cannot see the client's world.** That is worth more than either fix.
 Four findings were fixed before this phase document existed, because they made
 the rest unverifiable or were live in a demonstration the Human Owner was
 looking at: CA6-01 (the runner config), CA6-08 (CI's missing typecheck), CA6-05
-(the backfill seam), CA6-06 (the hourly tier), CA6-29 (partial bars),
+(the backfill seam), CA6-06 (the hourly tier), CA6-29 (partial bars) — both of
+which the out-of-band audit of 2026-09-02 found surviving one tier down: the
+minute tier stored a partial bar at every recorder handoff (a5-01) and the
+leading-edge rule depended on the query window (a5-04), closed there —
 CA6-45/46 (the panel could not reach the engine). Each is recorded in its own
 commit with the measurement that found it.
 

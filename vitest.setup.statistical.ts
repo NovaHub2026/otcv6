@@ -158,7 +158,9 @@ let expected = 0;
 let worstLag = 0;
 
 beforeAll(() => {
-  pending.clear();
+  // `pending` is deliberately NOT cleared here: the request the runner sends
+  // as the file starts is already in flight when this hook runs, and clearing
+  // it hid a 15 s round trip from the first version of this guard.
   worstRoundTrip = null;
   expected = Date.now() + INTERVAL_MS;
   worstLag = 0;

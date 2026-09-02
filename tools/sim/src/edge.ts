@@ -14,6 +14,7 @@
  * included the entry tick in its forward window reported z-scores above 1000 on
  * a provably unexploitable process.
  */
+import { yieldToLoop } from '@otc/lab';
 
 export interface EdgeAtHorizon {
   readonly horizon: number;
@@ -134,7 +135,7 @@ export async function estimateDirectionalEdgeAsync(
   for (;;) {
     const step = run.next();
     if (step.done === true) return step.value;
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await yieldToLoop();
   }
 }
 

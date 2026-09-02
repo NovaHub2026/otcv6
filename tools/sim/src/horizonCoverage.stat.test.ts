@@ -4,7 +4,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ASSET_CATALOGUE } from '@otc/engine';
-import { benjaminiHochberg, minimumDetectableEffectUnderDependence } from '@otc/lab';
+import {
+  benjaminiHochberg,
+  minimumDetectableEffectUnderDependence,
+  twoSidedPValue,
+} from '@otc/lab';
 import { measureHorizonCoverage } from './horizonCoverage.js';
 
 /**
@@ -91,6 +95,87 @@ interface RecordedRow {
   readonly floorPoints: number;
   readonly policed: boolean;
   readonly thresholdPoints: number;
+}
+
+interface RecordedRun {
+  readonly run: number;
+  readonly asset: string;
+  readonly ticks: number;
+  readonly simulatedDays: number;
+}
+
+/** The per-asset run headers: which run, how many ticks, how long. */
+function readRecordedRuns(): RecordedRun[] {
+  const text = readFileSync(path.join(repoRoot, EVIDENCE), 'utf8');
+  const runs: RecordedRun[] = [];
+  let run = 0;
+  const header = /^(\w+): ([\d,]+) ticks, ([\d.]+) simulated days \(/;
+  for (const line of text.split('\n')) {
+    const r = /^## Run (\d+)/.exec(line);
+    if (r !== null) {
+      run = Number.parseInt(r[1]!, 10);
+      continue;
+    }
+    const h = header.exec(line);
+    if (h === null) continue;
+    runs.push({
+      run,
+      asset: h[1]!,
+      ticks: Number.parseInt(h[2]!.replace(/,/g, ''), 10),
+      simulatedDays: Number.parseFloat(h[3]!),
+    });
+  }
+  return runs;
+}
+
+interface RecordedSummary {
+  readonly totalBillionTicks: number;
+  readonly totalAssetYears: number;
+  readonly policedBillionTicks: number;
+  readonly policedAssetYears: number;
+  readonly worstZ: number;
+  readonly worstAsset: string;
+  readonly worstHorizon: string;
+  readonly effectiveTests: number;
+  readonly familyWiseErrorRate: number;
+}
+
+/**
+ * The summary and interpretation lines, which no test read until the
+ * out-of-band audit (a4-10) — Cycle Audit 5 had found the summary wrong (2.5
+ * billion / 62 asset-years, neither total) while this file advertised itself as
+ * re-deriving the record.
+ */
+function readRecordedSummary(): RecordedSummary {
+  const text = readFileSync(path.join(repoRoot, EVIDENCE), 'utf8');
+  // Whitespace-tolerant between words, for the reason the row parser is:
+  // Prettier wraps prose, and the family-wise line already breaks mid-sentence.
+  const phrase = (words: string): RegExp => new RegExp(words.split(' ').join('\\s+'));
+  const totals = phrase(
+    'Total across all three runs: \\*\\*([\\d.]+) billion ticks\\*\\*, ([\\d.]+) asset-years\\. ' +
+      'The forty policed cells are runs 1 and 2 alone: \\*\\*([\\d.]+) billion ticks\\*\\*, ([\\d.]+) asset-years',
+  ).exec(text);
+  const worst = phrase('Worst \\|z\\| across the forty is ([\\d.]+) \\((\\w+), (\\w+)\\)').exec(
+    text,
+  );
+  const effective = phrase('Effective independent tests: \\*\\*≈ (\\d+) of 40\\*\\*').exec(text);
+  const fwer = phrase('Family-wise error rate for the observed worst cell: ([\\d.]+)\\.').exec(
+    text,
+  );
+  if (totals === null || worst === null || effective === null || fwer === null) {
+    throw new Error('The summary or interpretation lines of the horizon record did not parse.');
+  }
+  return {
+    totalBillionTicks: Number.parseFloat(totals[1]!),
+    totalAssetYears: Number.parseFloat(totals[2]!),
+    policedBillionTicks: Number.parseFloat(totals[3]!),
+    policedAssetYears: Number.parseFloat(totals[4]!),
+    worstZ: Number.parseFloat(worst[1]!),
+    worstAsset: worst[2]!,
+    worstHorizon: worst[3]!,
+    effectiveTests: Number.parseInt(effective[1]!, 10),
+    familyWiseErrorRate: Number.parseFloat(fwer[1]!),
+  };
 }
 
 function readRecordedRows(): RecordedRow[] {
@@ -328,6 +413,37 @@ describe('the recorded evidence re-derives from itself', () => {
       }
     }
     expect(wrong).toEqual([]);
+  });
+
+  it('re-derives the summary line from the run headers (a4-10)', () => {
+    // Ticks and asset-years are sums over the headers this file already parses;
+    // the summary is quoted to two and one decimals respectively.
+    const runs = readRecordedRuns();
+    const summary = readRecordedSummary();
+    expect(runs.length).toBeGreaterThanOrEqual(ASSET_CATALOGUE.length + 1);
+    const billion = (xs: RecordedRun[]) => xs.reduce((a, r) => a + r.ticks, 0) / 1e9;
+    const assetYears = (xs: RecordedRun[]) => xs.reduce((a, r) => a + r.simulatedDays, 0) / 365;
+    const policed = runs.filter((r) => r.run <= 2);
+    expect(billion(runs)).toBeCloseTo(summary.totalBillionTicks, 2);
+    expect(Math.abs(assetYears(runs) - summary.totalAssetYears)).toBeLessThan(0.1);
+    expect(billion(policed)).toBeCloseTo(summary.policedBillionTicks, 1);
+    expect(Math.abs(assetYears(policed) - summary.policedAssetYears)).toBeLessThan(0.1);
+  });
+
+  it('re-derives the worst cell and the family-wise error rate from the rows (a4-10)', () => {
+    // The interpretation says the forty cells are about 26 independent tests
+    // and quotes the family-wise error rate of the worst cell at that count. The
+    // count itself comes from a 400-realisation measurement this file cannot
+    // repeat; what it can check is that the two statements agree with each
+    // other and with the table.
+    const summary = readRecordedSummary();
+    const worst = rows.reduce((a, b) => (Math.abs(b.z) > Math.abs(a.z) ? b : a));
+    expect(Math.abs(worst.z)).toBeCloseTo(summary.worstZ, 2);
+    expect(worst.asset).toBe(summary.worstAsset);
+    expect(worst.horizon).toBe(summary.worstHorizon);
+    const p = twoSidedPValue(summary.worstZ);
+    const derived = 1 - (1 - p) ** summary.effectiveTests;
+    expect(derived).toBeCloseTo(summary.familyWiseErrorRate, 2);
   });
 
   it('finds no significant edge across all 40 recorded tests', () => {

@@ -287,6 +287,13 @@ export function measureDifferentiation(
         if (distance < bestDistance) {
           bestDistance = distance;
           best = candidate;
+        } else if (distance === bestDistance && best === trueAsset) {
+          // **Out-of-band audit, a4-11.** An exact tie used to resolve to the
+          // lower candidate index, so two assets with identical signatures
+          // scored 0.5 with asset `a` reported as never confused. A window the
+          // classifier cannot place is a confused window: a tie that includes
+          // the true asset is handed to the candidate it tied with.
+          best = candidate;
         }
       }
       confusion[trueAsset]![best]! += 1;

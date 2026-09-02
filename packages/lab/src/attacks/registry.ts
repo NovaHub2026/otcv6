@@ -50,6 +50,38 @@ class QuantileFamily implements AttackFamily {
 }
 
 // ---------------------------------------------------------------------------
+// The unconditional test.
+// ---------------------------------------------------------------------------
+
+/**
+ * One bucket: every decided outcome at the horizon.
+ *
+ * **Out-of-band audit, a4-01.** Every other family splits the sample into
+ * buckets, so the largest bucket the gate ever tested held about half the
+ * decided sample, and a *uniform* edge — the same bias at every entry, the
+ * smallest leak there is — was tested only through those halves. The quoted
+ * minimum detectable effect is computed from the whole sample for a single test
+ * at α = 0.05, which described a test the battery did not run: a coin re-signed
+ * at a realised 0.23pp at 30 s produced no significant 30-second hypothesis
+ * while the verdict quoted 0.222pp as detectable.
+ *
+ * This family runs that test — the full sample, one hypothesis per horizon —
+ * under the same Benjamini–Hochberg correction and confirmation split as
+ * everything else. It conditions on nothing; it is classed translation-invariant
+ * because a constant is invariant to every translation, and because a
+ * conventional battery contains exactly this test. The battery's *gate*
+ * sensitivity, reported beside the single-test figure, is measured against it.
+ */
+export const UNCONDITIONAL_FAMILY: AttackFamily = family(
+  'unconditional',
+  'translation-invariant',
+  'nothing: every decided outcome at the horizon, in one bucket',
+  'A uniform edge, tested at the full sample rather than through the halves other families split it into.',
+  1,
+  () => 0,
+);
+
+// ---------------------------------------------------------------------------
 // Translation-invariant families.
 // These are what a conventional battery consists of. Necessary, and provably
 // insufficient on their own.
@@ -267,6 +299,7 @@ const LEVEL_ANCHORED: AttackFamily[] = [
 ];
 
 export const ATTACK_FAMILIES: readonly AttackFamily[] = Object.freeze([
+  UNCONDITIONAL_FAMILY,
   ...TRANSLATION_INVARIANT,
   ...TEMPORAL,
   ...LEVEL_ANCHORED,

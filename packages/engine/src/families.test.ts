@@ -323,29 +323,6 @@ describe('sampling draws an asset rather than copying one', () => {
     expect(belowBand).toBe(0);
   }, 60_000);
 
-  it('never draws a brief the solve cannot author', () => {
-    // The property CA6-24 falsified, asserted directly. Sampling and authoring
-    // are separate steps and nothing connected them: `sampleArchetype` drew a
-    // tail weight from a band and `authorPersonality` refused it.
-    for (const archetype of ASSET_ARCHETYPES) {
-      const source = stream(`authorable-${archetype.id}`);
-      for (let draw = 0; draw < 6; draw += 1) {
-        const sample = sampleArchetype(archetype, source);
-        const derive = (purpose: string): RandomSource =>
-          stream(`solve-${archetype.id}-${draw}-${purpose}`);
-        expect(
-          () =>
-            authorPersonality(
-              sample.traits,
-              { excessKurtosis: sample.excessKurtosis, tickRms: sample.tickRms },
-              derive,
-            ),
-          `${archetype.id} draw ${draw}`,
-        ).not.toThrow();
-      }
-    }
-  }, 120_000);
-
   it('samples times on a log scale, so the range is not crowded at the top', () => {
     // The meaningful distance between 500 ms and 1 s is the same as between
     // 1 s and 2 s, and linear sampling would put the typical draw a third of

@@ -1,11 +1,11 @@
 import type { Tick } from '@otc/core';
-import { runBatteryAsync, type BatteryOptions, type Verdict } from './attacks/battery.js';
 import {
-  ATTACK_FAMILIES,
-  withheldFamilies,
-  WITHHELD_FAMILY_NAMES,
-  type WithheldOptions,
-} from './attacks/index.js';
+  defaultFamilies,
+  runBatteryAsync,
+  type BatteryOptions,
+  type Verdict,
+} from './attacks/battery.js';
+import { withheldFamilies, WITHHELD_FAMILY_NAMES, type WithheldOptions } from './attacks/index.js';
 import type { AttackFamily } from './attacks/types.js';
 import { PAYOUT_PROMOTIONAL, profitabilityThresholdPoints } from './economics.js';
 import { datasetFromTicks, type PublicInstrument } from './observer.js';
@@ -36,8 +36,9 @@ import type { HorizonSpec } from './horizons.js';
  *
  * ## What it is now
  *
- * It runs the battery. `runBatteryAsync` with the withheld families, against a
- * real observer dataset built from the published record — and the detection
+ * It runs the battery. `runBatteryAsync` with the full battery — the registry,
+ * the learned family and the withheld families — against a real observer
+ * dataset built from the published record; and the detection
  * floor is the battery's own `minimumDetectableEffectPoints`, which is the
  * instrument PH-11 built and validated for exactly this.
  *
@@ -191,18 +192,28 @@ export function assertIndependentFamilies(
  * the whole laboratory suite stayed green.
  *
  * It is gone rather than moved, and that is the honest answer. Composition here
- * is `[...ATTACK_FAMILIES, ...withheld]`: it cannot lose a family, so a check
- * that it did not is decoration, and decoration in a guardrail is worse than
- * nothing because it is cited as evidence. What actually protects the verdict is
- * the rule that a withheld family which could not be **built** forces
- * `undecided` (`classifyStanding`), and that rule is tested.
+ * is a concatenation: it cannot lose a family, so a check that it did not is
+ * decoration, and decoration in a guardrail is worse than nothing because it is
+ * cited as evidence. What actually protects the verdict is the rule that a
+ * withheld family which could not be **built** forces `undecided`
+ * (`classifyStanding`), and that rule is tested.
+ *
+ * **Out-of-band audit, a4-04.** It concatenated `ATTACK_FAMILIES`, which is the
+ * registry and not the battery: `defaultFamilies()` adds the learned family,
+ * the catch-all for combinations no hand-written family enumerates and the one
+ * PH-2 records as also seeing the level-anchored leak. Measured on a
+ * leverage-effect record: 26 families ran, `learned-logistic` was not among
+ * them, and `coverage.featureKinds` could never contain `'learned'` — one
+ * feature kind fewer than every offline verdict, under a document that called
+ * it the full battery. It composes from `defaultFamilies()` now, and the test
+ * names the learned family rather than counting.
  *
  * `assertIndependentFamilies` stays exported for a caller that assembles its own
  * family set, where the two lists are genuinely independent and the refusal can
  * genuinely fire.
  */
 export function composeFamilies(withheld: readonly AttackFamily[]): readonly AttackFamily[] {
-  return [...ATTACK_FAMILIES, ...withheld];
+  return [...defaultFamilies(), ...withheld];
 }
 
 /** Whether a standing run is due, given when the last one happened. */

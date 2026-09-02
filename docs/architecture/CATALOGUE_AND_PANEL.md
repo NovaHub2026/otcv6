@@ -21,14 +21,14 @@ may refuse and each of which names itself when it does:
 identity → safety → authoring → dispersion → calibration → differentiation
 ```
 
-| Stage             | Refuses                                                                                               |
-| ----------------- | ----------------------------------------------------------------------------------------------------- |
-| `identity`        | an id that cannot be a filename or a key label; a duplicate; an unusable reference price              |
-| `safety`          | a personality whose layers compound past the realism ceiling — in microseconds, before the solve      |
-| `authoring`       | a tail weight the ladder cannot reach                                                                 |
-| `dispersion`      | a budget the personality cannot reach, or a calibration too short to fit it honestly                  |
-| `calibration`     | a lattice that cannot be derived; a display coarser than that lattice; an instrument the core rejects |
-| `differentiation` | an asset indistinguishable from one already registered                                                |
+| Stage             | Refuses                                                                                                                                                                               |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `identity`        | an id that cannot be a filename or a key label (51 characters at most, no trailing dot); a duplicate; a reference price outside [1e-15, 1e15]; a display precision above 18           |
+| `safety`          | a personality whose layers compound past the realism ceiling, or a target tail weight outside the realism band — in microseconds, before the solve                                    |
+| `authoring`       | a tail weight the ladder cannot reach                                                                                                                                                 |
+| `dispersion`      | a budget the personality cannot reach — including one that scales the base volatility out of bounds, checked ahead of the safety gate — or a calibration too short to fit it honestly |
+| `calibration`     | a lattice that cannot be derived; a display coarser than that lattice; an instrument the core rejects                                                                                 |
+| `differentiation` | an asset indistinguishable from one already registered                                                                                                                                |
 
 Two of these are simulation. Anything driving registration must treat it as a
 job, not an insert.
@@ -55,7 +55,13 @@ handled at sample time rather than by refusing the corner:
 - the **safety gate runs before the solve**, so the starting `clustering` holds
   the cascade's contribution flat across every depth;
 - the **tail-weight target must be reachable** by the rhythm just drawn, so it is
-  clamped to what that rhythm can supply.
+  clamped to what that rhythm can supply — and the sample records `clampedFrom`
+  when that happened, the request and the registered asset carry
+  `drawnExcessKurtosis` and `retreats` beside the achieved value, and a family
+  whose box cannot reach its own band is a defect in the box. The out-of-band
+  audit of 2026-09-02 (a3-05) measured `alt-crypto` landing below its band in
+  one draw in twenty at cascade depths 5 and 6; its depth floor is 7 now, and 0
+  of 2,000 draws land below the band.
 
 Each of those was a defect first. The third cost 36% of hundred-asset builds
 until Cycle Audit 6 measured it.
@@ -95,6 +101,15 @@ nests into one of them, and each extra tier is another thing that can disagree
 with the ticks. The hourly tier is derived from the **stored** minute series
 rather than from anything a process remembers, so the two agree by construction
 rather than by lifetime.
+
+A recorder never stores a bucket it did not see from its start: its first bucket
+is stored only when its first tick immediately follows the newest stored bar, or
+is sequence 1. A restart therefore leaves a visible one-minute hole rather than
+a short bar labelled whole; the backfill hands its own recorder to the live path
+so the join minute is whole (out-of-band audit, a5-01 — Cycle Audit 6 had fixed
+the same defect one tier up, CA6-06). The first bar of any coarser read, and the
+first hour ever rolled up, is withheld unless the series covers it from its start
+or it holds genesis (a5-04).
 
 Nothing finer than a minute is served from history, and the refusal is the point:
 returning a coarser series under a finer name would put a shape on the screen

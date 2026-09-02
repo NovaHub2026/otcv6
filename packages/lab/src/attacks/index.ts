@@ -26,6 +26,12 @@ export {
 export { auditLookAhead, type LookAheadAuditOptions, type LookAheadOffender } from './audit.js';
 export { buildFeatureFrame, lastCompletedMinute, type FeatureFrame } from './frame.js';
 export { LogisticAttackFamily } from './learned.js';
-export { ATTACK_FAMILIES, familiesOfKind, familyByName, SWEPT_CELL_WIDTHS } from './registry.js';
+export {
+  ATTACK_FAMILIES,
+  familiesOfKind,
+  familyByName,
+  SWEPT_CELL_WIDTHS,
+  UNCONDITIONAL_FAMILY,
+} from './registry.js';
 export { FEATURE_KINDS, SKIP_BUCKET, type AttackFamily, type FeatureKind } from './types.js';
 export { withheldFamilies, WITHHELD_FAMILY_NAMES, type WithheldOptions } from './withheld.js';

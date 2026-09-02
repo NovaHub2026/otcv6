@@ -150,6 +150,13 @@ export async function buildObserverDataset(options: DatasetBuildOptions): Promis
   const instants = new Float64Array(maxTicks);
   let count = 0;
 
+  // At least one full loop turn per call, whatever the size (a1-01). The only
+  // yield used to be the one every `chunkTicks`, so a caller building datasets
+  // smaller than that never turned the loop at all: `sampledCatalogue`'s last
+  // test built twenty-four 80,010-tick datasets in one macrotask-free stretch —
+  // 92 s on the hosted runner — while a task update was in flight, and failed
+  // every push to `main` with every test passing.
+  await yieldToLoop();
   while (count < maxTicks) {
     const tick = source.next();
     if (tick === null) break;
@@ -161,7 +168,7 @@ export async function buildObserverDataset(options: DatasetBuildOptions): Promis
     prices[count] = tick.price;
     instants[count] = tick.instant;
     count += 1;
-    if (count % chunkTicks === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+    if (count % chunkTicks === 0) await yieldToLoop();
   }
 
   if (count < 2) {
@@ -172,6 +179,29 @@ export async function buildObserverDataset(options: DatasetBuildOptions): Promis
     prices.subarray(0, count),
     instants.subarray(0, count),
   );
+}
+
+/**
+ * Yield to the event loop — a full turn, not half of one.
+ *
+ * `await new Promise((r) => setImmediate(r))` was this project's convention for
+ * letting a long computation breathe, and it is not a guarantee. A continuation
+ * scheduled from the poll phase runs in the check phase of the *same* loop
+ * iteration, with no poll in between — so a reply waiting on the worker's IPC
+ * channel is still unread when the next synchronous stretch begins. The
+ * out-of-band audit of 2026-09-02 (a1-01) reproduced the consequence: one
+ * immediate between two 35-second blocks still failed the run with
+ * `Timeout calling "onTaskUpdate"` (reproduction R3); two chained immediates
+ * passed (R7). The second immediate cannot run until the loop has been through
+ * a poll phase, which is where the channel is read.
+ *
+ * Use this wherever a computation yields, and before a test's first long
+ * synchronous stretch — not merely "every few hundred thousand ticks".
+ */
+export function yieldToLoop(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    setImmediate(() => setImmediate(resolve));
+  });
 }
 
 /** Build a dataset from an already-materialised tick array. */

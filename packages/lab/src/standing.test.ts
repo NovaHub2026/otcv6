@@ -179,6 +179,13 @@ describe('the verdict is derived from families that actually ran', () => {
     // the withheld names let a plant hardcode them and pass.
     expect(verdict.families).toContain('second-of-minute');
     expect(verdict.families.length).toBeGreaterThan(WITHHELD_FAMILY_NAMES.length);
+    // **Out-of-band audit, a4-04.** The registry is not the full battery: the
+    // learned family — the catch-all for combinations no hand-written family
+    // enumerates, and the one PH-2 records as also seeing the level-anchored
+    // leak — lives in `defaultFamilies()`, not in `ATTACK_FAMILIES`. A standing
+    // verdict composed from the registry ran one feature kind fewer than every
+    // offline verdict while the documents called it the full battery.
+    expect(verdict.families).toContain('learned-logistic');
   });
 
   it('cannot report clean while a withheld family is unavailable', async () => {
@@ -407,6 +414,8 @@ describe('each rule of the classifier, on its own', () => {
     const names = composeFamilies(built).map((family) => family.name);
     for (const family of built) expect(names).toContain(family.name);
     for (const family of ATTACK_FAMILIES) expect(names).toContain(family.name);
+    // And the learned family, which is not in the registry (a4-04).
+    expect(names).toContain('learned-logistic');
   });
 
   it('reports clean only when everything holds', () => {

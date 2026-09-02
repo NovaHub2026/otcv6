@@ -22,7 +22,7 @@ import {
   type JournalWindow,
   type SignedCommitment,
 } from '@otc/distribution';
-import { runStandingAssurance, WITHHELD_FAMILY_NAMES } from '@otc/lab';
+import { runStandingAssurance, WITHHELD_FAMILY_NAMES, yieldToLoop } from '@otc/lab';
 
 /**
  * PH-15's integrated verification: a venue that is actually operated.
@@ -107,7 +107,7 @@ describe('a venue that is operated, not just built', () => {
     for (let step = 0; step < STEPS; step += 1) {
       clock.advance(durationMillis(STEP_MS));
       for (const session of sessions) await session.advance(clock.now());
-      if (step % 50 === 0) await new Promise((resolve) => setImmediate(resolve));
+      if (step % 50 === 0) await yieldToLoop();
     }
 
     // The record survives the process that wrote it, which is the whole point

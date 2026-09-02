@@ -117,43 +117,47 @@ Cycle 1's numbers, and the coverage figure, are in
 
 ## Known limitations carried forward
 
-- Only the 30-second horizon is policed to the promotional-payout threshold at
-  full rigor. PH-11 extended detection power to every horizon the product sells;
-  independent samples at a horizon are still fixed by simulated duration, so the
-  15-minute horizon needs roughly a hundred times the history. Every verdict
-  states the floor it achieved.
-- Assets are still easier to tell apart by size than by character. Scale-free
+- **Detection power is stated per instrument, and the two instruments differ.**
+  The single-test minimum detectable effect at 30 s is 0.217pp on the
+  full-rigor run, finer than the 0.2513pp margin of the 99% payout, and every
+  asset/horizon cell is policed below that margin at that resolution (PH-11).
+  The **gate** — Benjamini–Hochberg over ~750 hypotheses, confirmation on a
+  held-out sample, and a materiality floor — reaches 50% power for a uniform
+  30-second edge near 0.45–0.5pp (out-of-band audit, a4-01); the unconditional
+  family and the gate MDE the audit added are what state it honestly. Per-asset
+  battery floors (0.562pp) sit above the product margin; PH-3's full-rigor run
+  covers the canonical configuration.
+- **Assets are still easier to tell apart by size than by character.** Scale-free
   _shape_ differentiation is 40.5% against a 20% null for the five hand-authored
-  assets (PH-10, up from 30.0%), and 46.0-47.8% against an identical-personality
-  control at 31.0-34.9% for three siblings drawn from one archetype (PH-17.2).
-  Both are real and modest; neither is near-perfect.
-- Per-asset battery floors (0.562pp) sit above the 0.2513pp product margin.
-  PH-3's full-rigor run covers the canonical configuration at 0.217pp.
-- **The multi-node design is proved against an in-memory store.** PH-14 makes
-  the `CoordinatedStore` contract executable — `describeCoordinatedStore` is a
-  battery a deployment backend must pass — but no such backend exists yet. A
-  real cluster needs a store with native compare-and-set, and choosing one is
-  PH-15's.
-- **The panel administers five assets, and has never been run against fifty.**
-  PH-20 gave it Preview, Create and Assets: browse and chart any asset, register
-  a new one as a job that reports each stage, rename one, retire one. What is
-  untested is scale — a hundred-asset catalogue's cost in storage, scheduling
-  and differentiation headroom is PH-21's subject, and the sidebar is a flat
-  list that will not survive it.
-- **A retired asset cannot come back.** That is a decision, not a gap
-  (`DECISION-LOG.md`, 2026-09-02): resuming a market after a gap either invents
-  the interval or seams a published record. Everything it published stays
-  readable.
+  assets (PH-10), and 46.0–47.8% against an identical-personality control at
+  31.0–34.9% for three siblings drawn from one archetype (PH-17.2). Both are real
+  and modest.
+- **The multi-node design is proved against SQLite and an in-memory reference,
+  never a cluster.** PH-15.1 delivered the durable `CoordinatedStore`; both
+  implementations pass the conformance battery; the SQLite one is single-machine
+  by its own docstring, and no follower is composed into `apps/api` yet
+  (`docs/architecture/MULTI_NODE_AND_OPERATIONS.md`).
+- **The catalogue has been registered at a hundred and hosted at five.** PH-21.1
+  measured a hundred-asset registration (0.6s to 20.5s per asset, closest pair
+  2.8× the floor); hosting a hundred markets and the panel that holds them are
+  PH-21.2 and PH-21.3.
+- **A retired asset cannot come back** — a decision (`DECISION-LOG.md`,
+  2026-09-02): resuming a market after a gap either invents the interval or
+  seams a published record. Everything it published stays readable.
 - **Provisioning is manual and irreversible.** `OTC_BACKFILL_DAYS` defaults to
-  zero, because a backfill is genesis and refuses to run twice. An operator asks
-  for it; nothing asks on their behalf.
-- **History is candles beyond the retention window.** Anything finer than a
-  minute is available only as far back as the tick record keeps it, and
-  `readTimeframe` refuses rather than returning a coarser series under a finer
-  name.
-- Nothing runs continuously. The assurance battery, the commitment publication
-  and the standing guarantee are all things an operator _can_ do rather than
-  things the venue _does_. That is PH-15's whole subject.
+  zero and is capped at 365, because a backfill is genesis and refuses to run
+  twice.
+- **History is candles beyond the retention window**, and a restart leaves a
+  visible one-minute hole rather than a short bar labelled whole (out-of-band
+  audit, a5-01). Anything finer than a minute is served from the tick record
+  only, and `readTimeframe` refuses rather than returning a coarser series under
+  a finer name.
+- **The browser layer runs only where Chromium can launch.** Hosted CI installs
+  the system libraries and requires the browser; on a host without them the six
+  panel tests are reported as skipped, not passed (out-of-band audit, a6-03).
+- **The write surface requires an operator token.** Every non-GET route needs
+  `OTC_ADMIN_TOKEN`; the service binds `127.0.0.1` unless `OTC_BIND` says
+  otherwise (out-of-band audit, a6-01).
 
 ## Relevant records
 
