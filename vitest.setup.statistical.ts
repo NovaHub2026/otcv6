@@ -29,6 +29,87 @@
  */
 import { afterAll, beforeAll } from 'vitest';
 
+/**
+ * ## The RPC probe
+ *
+ * The watchdog below answers "did this worker stay away from its loop for too
+ * long". Hosted CI run 33607930939 — the first with the watchdog — answered
+ * no: the worst block in the whole suite was 20.4 s, and the run still exited 1
+ * with `Timeout calling "onTaskUpdate"`, an error that carried no file
+ * attribution because it fired after the file had finished, while the worker
+ * was waiting in `rpcDone()` for the main thread's reply.
+ *
+ * So the question moved to the other end of the channel, and this measures the
+ * channel itself: every call the worker makes to the main thread is wrapped,
+ * the moment it was sent and the file it was sent during are kept, and a reply
+ * that arrives late or never is written to stderr with both. The wrapper
+ * returns the original promise untouched, so a timeout still surfaces to Vitest
+ * exactly as before — this names it, it does not hide it.
+ */
+const RPC_REPORT_ABOVE_MS = 2_000;
+
+interface WorkerStateLike {
+  rpc: Record<string, unknown>;
+  filepath?: string;
+  otcRpcProbe?: boolean;
+}
+
+function probeLog(line: string): void {
+  process.stderr.write(`[rpc-probe] ${new Date().toISOString()} ${line}\n`);
+}
+
+function installRpcProbe(): void {
+  const state = (globalThis as { __vitest_worker__?: WorkerStateLike }).__vitest_worker__;
+  if (state === undefined || state.otcRpcProbe === true) return;
+  state.otcRpcProbe = true;
+  const inner = state.rpc;
+  state.rpc = new Proxy(inner, {
+    get(target, property, receiver) {
+      const value: unknown = Reflect.get(target, property, receiver);
+      if (typeof value !== 'function' || typeof property !== 'string') return value;
+      const method = property;
+      const call = value as (...args: unknown[]) => unknown;
+      const wrapped = (...args: unknown[]): unknown => {
+        const sentAt = Date.now();
+        const during = state.filepath ?? '(no file)';
+        const result = call.apply(target, args);
+        if (result instanceof Promise) {
+          // `.then(onFulfilled, onRejected)` on the ORIGINAL promise would mark it
+          // handled and Vitest would never see the timeout. The derived promise
+          // this creates rejects with the same error and nothing handles it, so
+          // the failure reaches Vitest as it always did — with a name attached.
+          result.then(
+            () => {
+              const ms = Date.now() - sentAt;
+              // `OTC_RPC_PROBE_ALL=1` logs every answered call, which is how the
+              // probe itself is checked to be wrapping the channel at all.
+              if (ms >= RPC_REPORT_ABOVE_MS || process.env['OTC_RPC_PROBE_ALL'] === '1') {
+                probeLog(
+                  `${method} answered after ${(ms / 1000).toFixed(1)}s ` +
+                    `(sent ${new Date(sentAt).toISOString()} during ${during})`,
+                );
+              }
+            },
+            (error: unknown) => {
+              probeLog(
+                `${method} REJECTED after ${((Date.now() - sentAt) / 1000).toFixed(1)}s ` +
+                  `(sent ${new Date(sentAt).toISOString()} during ${during}; ` +
+                  `current file ${state.filepath ?? '(no file)'}): ${String(error)}`,
+              );
+              throw error;
+            },
+          );
+        }
+        return result;
+      };
+      Object.assign(wrapped, { asEvent: (call as { asEvent?: unknown }).asEvent });
+      return wrapped;
+    },
+  });
+}
+
+installRpcProbe();
+
 const INTERVAL_MS = 250;
 
 /** Blocks below this are ordinary scheduling and not worth a line. */

@@ -119,7 +119,7 @@ export default defineConfig({
      * Failures and summaries still print, and the statistical suite's evidence
      * goes straight to stdout.
      */
-    reporters: ['basic'],
+    reporters: ['basic', './vitest.reporter.probe.ts'],
     projects: [
       {
         resolve: { alias },
