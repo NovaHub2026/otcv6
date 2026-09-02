@@ -197,6 +197,48 @@ describe('the engine proxy', () => {
     expect(init.method).toBe('PATCH');
   });
 
+  it('adds the operator token to a write on this server, and never to a read (a6-01)', async () => {
+    // The engine refuses every write without the bearer. The panel holds it
+    // in its own environment and adds it here, per request like the address;
+    // the browser never sees it — not in a bundle, not in a cookie, not in a
+    // response header.
+    const spy = vi.fn().mockResolvedValue(new Response('{}', { status: 201 }));
+    globalThis.fetch = spy;
+    vi.stubEnv('OTC_ADMIN_TOKEN', 'operator-token-of-thirty-two-chars');
+
+    await POST(
+      request('http://panel.test/engine/assets/gbpjpy/retire', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+      }),
+      params(['assets', 'gbpjpy', 'retire']),
+    );
+    const [, write] = spy.mock.calls[0] as [URL, { headers: Headers }];
+    expect(write.headers.get('authorization')).toBe('Bearer operator-token-of-thirty-two-chars');
+
+    await GET(request('http://panel.test/engine/catalogue'), params(['catalogue']));
+    const [, read] = spy.mock.calls[1] as [URL, { headers: Headers }];
+    expect(read.headers.get('authorization'), 'a read carries no credential').toBeNull();
+  });
+
+  it('never forwards a credential the browser sent, and sends none when it has none', async () => {
+    const spy = vi.fn().mockResolvedValue(new Response('{}', { status: 403 }));
+    globalThis.fetch = spy;
+    vi.stubEnv('OTC_ADMIN_TOKEN', '');
+
+    const response = await PATCH(
+      request('http://panel.test/engine/assets/gbpjpy', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer from-the-browser' },
+      }),
+      params(['assets', 'gbpjpy']),
+    );
+    const [, init] = spy.mock.calls[0] as [URL, { headers: Headers }];
+    expect(init.headers.get('authorization')).toBeNull();
+    // The engine's refusal — which names OTC_ADMIN_TOKEN — travels back as is.
+    expect(response.status).toBe(403);
+  });
+
   it('proxies a POST, so an asset can be created from this origin too', async () => {
     const spy = vi.fn().mockResolvedValue(new Response('{"job":"job-1"}', { status: 201 }));
     globalThis.fetch = spy;

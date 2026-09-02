@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, type OnApplicationShutdown } from '@nestjs/common';
 import {
   epochMillis,
   type Candle,
@@ -49,7 +49,7 @@ import {
  * for a hundred-asset catalogue.
  */
 @Injectable()
-export class HistoryService {
+export class HistoryService implements OnApplicationShutdown {
   private readonly logger = new Logger(HistoryService.name);
   private readonly recorders = new Map<string, HistoryRecorder>();
   private readonly provisioned = new Map<string, { from: EpochMillis; to: EpochMillis }>();
@@ -251,4 +251,30 @@ export class HistoryService {
   provisionedSpan(assetId: string): { from: EpochMillis; to: EpochMillis } | null {
     return this.provisioned.get(assetId) ?? null;
   }
+
+  /**
+   * Close the store, last (a6-09).
+   *
+   * `onApplicationShutdown` rather than `onModuleDestroy`, and the difference
+   * is the whole point: Nest runs every `onModuleDestroy` in a module
+   * concurrently (`Promise.all`), so a close there would race the venue's own
+   * `onModuleDestroy` — its final checkpoint and the flush that writes the last
+   * closed bars *through this store*. This hook runs after every destroy hook
+   * has resolved and after the listener is closed, so nothing can be reading or
+   * writing. Before this existed the SQLite history was never closed at all: a
+   * 3.6 MB WAL was left beside a 4 KB database at every shutdown.
+   *
+   * The interface is store-agnostic and the in-memory store has nothing to
+   * close, so the method is looked for rather than required.
+   */
+  onApplicationShutdown(): void {
+    if (isClosable(this.history)) {
+      this.history.close();
+      this.logger.log('candle history closed');
+    }
+  }
+}
+
+function isClosable(value: object): value is { close(): void } {
+  return 'close' in value && typeof value.close === 'function';
 }

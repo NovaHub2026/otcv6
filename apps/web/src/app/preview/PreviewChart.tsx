@@ -43,6 +43,25 @@ import {
  * last integer the record holds, converted once — and no candle is ever drawn
  * from a fragment.
  *
+ * ## When the stream breaks (a6-11)
+ *
+ * The first version handed reconnection to the browser's `EventSource`, which
+ * retries with `Last-Event-ID`. After the replay window has moved on the engine
+ * answers that with a 400, and the `EventSource` algorithm closes for good on
+ * any non-200: the status read "reconnecting" for ever over stale candles. So
+ * the component reconnects itself, and it does so the only honest way — it
+ * **refetches the history and opens a new stream from now**, with backoff. The
+ * bars are the record's again, the builder starts at the new join, and the
+ * status says the view was reconnected after a gap.
+ *
+ * ## When the stream is silent (a6-18)
+ *
+ * A stalled market keeps its stream open and sends nothing, so `live` was true
+ * of the socket and false of the market. Now the status flips when no tick has
+ * arrived for {@link STALL_MULTIPLE} times this asset's mean interval, and
+ * flips back on the next tick. The shell's health line carries the venue's own
+ * reason.
+ *
  * ## The `data-testid` attributes
  *
  * There are three, and they exist because the first browser test selected the
@@ -50,6 +69,13 @@ import {
  * is a panel whose tests break when someone changes a theme — and the whole
  * reason this layer is being covered at all is that nothing else could see it.
  */
+
+/** Quiet for this many mean intervals and the status stops saying `live`. */
+export const STALL_MULTIPLE = 3;
+/** Delay before the first reconnect; doubles per consecutive failure. */
+const RECONNECT_BACKOFF_MS = 1_000;
+const MAX_RECONNECT_BACKOFF_MS = 30_000;
+
 export function PreviewChart({
   apiBase,
   asset,
@@ -104,9 +130,43 @@ export function PreviewChart({
     let stream: EventSource | null = null;
     let priceLine: IPriceLine | null = null;
     let cancelled = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let stallTimer: ReturnType<typeof setTimeout> | null = null;
+    /** Consecutive failures since the last open; the backoff exponent. */
+    let failures = 0;
+    /** Whether this view has been through a reconnect. */
+    let afterGap = false;
+
+    const liveStatus = (): string => (afterGap ? 'live — reconnected after a gap' : 'live');
+
+    const armStall = (): void => {
+      if (stallTimer !== null) clearTimeout(stallTimer);
+      const quietMs = STALL_MULTIPLE * asset.meanIntervalMs;
+      stallTimer = setTimeout(() => {
+        if (cancelled) return;
+        setStatus(
+          `no tick for ${(quietMs / 1000).toFixed(0)}s — ${STALL_MULTIPLE}× this market's ` +
+            `mean interval; check the engine's health`,
+        );
+      }, quietMs);
+    };
+
+    const retryLater = (why: string): void => {
+      if (cancelled) return;
+      failures += 1;
+      afterGap = true;
+      const inMs = Math.min(RECONNECT_BACKOFF_MS * 2 ** (failures - 1), MAX_RECONNECT_BACKOFF_MS);
+      setStatus(`${why} — reconnecting in ${(inMs / 1000).toFixed(0)}s (attempt ${failures})`);
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        void run().catch((error: unknown) => {
+          retryLater((error as Error).message);
+        });
+      }, inMs);
+    };
 
     const run = async (): Promise<void> => {
-      setStatus('loading history');
+      setStatus(afterGap ? 'reloading history after a gap' : 'loading history');
       const to = Date.now();
       const from = to - frame.defaultSpanMs;
       const history = await fetchHistory(
@@ -136,13 +196,22 @@ export function PreviewChart({
         setStatus('history only — this market is not hosted');
         return;
       }
-      setStatus('live');
 
-      stream = new EventSource(`${apiBase}/markets/${asset.id}/stream`);
-      stream.onmessage = (event: MessageEvent<string>): void => {
+      // A new stream from now, never a resume: the history was just refetched,
+      // so the record is current and the builder's join is this connection's.
+      const opened = new EventSource(`${apiBase}/markets/${asset.id}/stream`);
+      stream = opened;
+      opened.onopen = (): void => {
+        failures = 0;
+        setStatus(liveStatus());
+        armStall();
+      };
+      opened.onmessage = (event: MessageEvent<string>): void => {
         const tick = JSON.parse(event.data) as Tick;
         const price = displayPrice(tick.price, asset);
         setLast({ price, at: tick.instant });
+        setStatus(liveStatus());
+        armStall();
 
         // The live price, on every tick, at every timeframe. This is the last
         // integer the record holds, converted once, and nothing else.
@@ -163,8 +232,14 @@ export function PreviewChart({
         const bar = builder.accept(tick);
         if (bar !== null) target.update({ ...bar, time: bar.time as UTCTimestamp });
       };
-      stream.onerror = (): void => {
-        setStatus('stream interrupted — reconnecting');
+      opened.onerror = (): void => {
+        // Ours to handle, not the browser's: its own retry would carry a
+        // `Last-Event-ID` the engine may refuse, and then stop for good.
+        opened.close();
+        if (stream !== opened) return;
+        stream = null;
+        if (stallTimer !== null) clearTimeout(stallTimer);
+        retryLater('stream interrupted');
       };
     };
 
@@ -177,6 +252,8 @@ export function PreviewChart({
       cancelled = true;
       controller.abort();
       stream?.close();
+      if (reconnectTimer !== null) clearTimeout(reconnectTimer);
+      if (stallTimer !== null) clearTimeout(stallTimer);
       if (priceLine !== null) target.removePriceLine(priceLine);
     };
   }, [apiBase, asset, timeframeId]);
@@ -207,7 +284,7 @@ export function PreviewChart({
       >
         <span
           data-testid="stream-status"
-          style={{ color: status === 'live' ? '#3fb950' : '#8b93a7' }}
+          style={{ color: status.startsWith('live') ? '#3fb950' : '#8b93a7' }}
         >
           {status}
         </span>

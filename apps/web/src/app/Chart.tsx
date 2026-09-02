@@ -2,7 +2,16 @@
 
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { TickWindow, type Column } from '@otc/chart';
-import { columnsFor, streamMarket, TIMEFRAMES, type TimeframeLabel } from '../lib/marketStream';
+import {
+  columnsFor,
+  streamMarket,
+  TIMEFRAMES,
+  type StreamNotice,
+  type TimeframeLabel,
+} from '../lib/marketStream';
+
+/** Ticks the live view keeps: about an hour of the fastest asset. */
+const WINDOW_CAPACITY = 50_000;
 
 /**
  * The chart draws columns and nothing else.
@@ -15,25 +24,34 @@ import { columnsFor, streamMarket, TIMEFRAMES, type TimeframeLabel } from '../li
  *
  * An empty period produces no column, so the chart shows a gap where the market
  * was quiet — which is the truth, rather than a flat line asserting trades that
- * did not happen.
+ * did not happen. And a stream that had to start over after a refused resume
+ * starts the window over too (a6-11): the columns before the gap are gone rather
+ * than joined to the ones after it, and the status says so.
  */
 export function Chart({ apiBase, assetId }: { apiBase: string; assetId: string }): ReactElement {
   const [columns, setColumns] = useState<Column[]>([]);
   const [latest, setLatest] = useState<number | null>(null);
   const [status, setStatus] = useState('connecting');
   const [timeframe, setTimeframe] = useState<TimeframeLabel>('5m');
-  const windowRef = useRef(new TickWindow({ capacity: 50_000 }));
+  const windowRef = useRef<TickWindow | null>(null);
   const timeframeRef = useRef(timeframe);
   timeframeRef.current = timeframe;
 
   useEffect(() => {
-    const window = windowRef.current;
-    const handle = streamMarket(apiBase, assetId, window, (updated) => {
-      setStatus('live');
-      setLatest(updated.latest?.price ?? null);
-      const span = TIMEFRAMES.find((t) => t.label === timeframeRef.current)!.spanMs;
-      setColumns(columnsFor(updated, 240, span));
-    });
+    const handle = streamMarket(
+      apiBase,
+      assetId,
+      () => new TickWindow({ capacity: WINDOW_CAPACITY }),
+      (updated) => {
+        windowRef.current = updated;
+        setLatest(updated.latest?.price ?? null);
+        const span = TIMEFRAMES.find((t) => t.label === timeframeRef.current)!.spanMs;
+        setColumns(columnsFor(updated, 240, span));
+      },
+      (notice) => {
+        setStatus(describeNotice(notice));
+      },
+    );
     return () => {
       handle.close();
     };
@@ -44,7 +62,8 @@ export function Chart({ apiBase, assetId }: { apiBase: string; assetId: string }
   // (INV-004), and a viewer who switches back sees exactly what they saw before.
   useEffect(() => {
     const span = TIMEFRAMES.find((t) => t.label === timeframe)!.spanMs;
-    setColumns(columnsFor(windowRef.current, 240, span));
+    const held = windowRef.current;
+    setColumns(held === null ? [] : columnsFor(held, 240, span));
   }, [timeframe]);
 
   if (columns.length === 0) {
@@ -62,7 +81,10 @@ export function Chart({ apiBase, assetId }: { apiBase: string; assetId: string }
   return (
     <section style={{ padding: 24 }}>
       <h1 style={{ fontSize: 16, fontWeight: 500 }}>
-        {assetId} <span style={{ opacity: 0.6 }}>· {status}</span>{' '}
+        {assetId}{' '}
+        <span data-testid="tick-stream-status" style={{ opacity: 0.6 }}>
+          · {status}
+        </span>{' '}
         {latest !== null && <span style={{ opacity: 0.6 }}>· {latest}</span>}
       </h1>
       <div style={{ display: 'flex', gap: 8, margin: '8px 0 16px' }}>
@@ -113,4 +135,18 @@ export function Chart({ apiBase, assetId }: { apiBase: string; assetId: string }
       </p>
     </section>
   );
+}
+
+function describeNotice(notice: StreamNotice): string {
+  switch (notice.kind) {
+    case 'live':
+      return notice.afterGap ? 'live — reconnected after a gap; the window restarted' : 'live';
+    case 'reconnecting':
+      return (
+        `stream interrupted — reconnecting in ${(notice.inMs / 1000).toFixed(0)}s ` +
+        `(attempt ${notice.attempt}${notice.resuming ? ', resuming exactly' : ''})`
+      );
+    case 'gap':
+      return `gap — ${notice.reason}; starting over from now`;
+  }
 }

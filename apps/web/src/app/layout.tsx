@@ -7,12 +7,21 @@ export const metadata = {
 };
 
 /**
+ * Same origin, through the route handler in `engine/[...path]/route.ts`.
+ *
+ * An absolute URL is still allowed via `NEXT_PUBLIC_OTC_API_BASE`, for a
+ * deployment that serves the engine from its own host — that path needs the
+ * engine's CORS headers, which is why they exist.
+ */
+const API_BASE = process.env.NEXT_PUBLIC_OTC_API_BASE ?? '/engine';
+
+/**
  * The panel shell.
  *
- * Two submenus now — watching a market and creating one — and the navigation is
- * built as though there will be more, because there will be: editing an asset
- * and retiring one. What it is not is a trading screen: nothing here is
- * economic, and `guardrails` keeps that true rather than convention.
+ * Three submenus — watching a market, creating one, administering the list —
+ * and, since the out-of-band audit, the engine's health on every screen
+ * (a6-18). What it is not is a trading screen: nothing here is economic, and
+ * `guardrails` keeps that true rather than convention.
  */
 export default function RootLayout({ children }: { children: ReactNode }): ReactElement {
   return (
@@ -28,7 +37,7 @@ export default function RootLayout({ children }: { children: ReactNode }): React
           fontSize: 13,
         }}
       >
-        <Nav />
+        <Nav apiBase={API_BASE} />
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
           {children}
         </div>

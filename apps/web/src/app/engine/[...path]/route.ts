@@ -21,11 +21,24 @@ import type { NextRequest } from 'next/server';
  *
  * Method, path, query, body and the headers that decide content negotiation and
  * stream resumption. Not `host`, which belongs to this origin; not
- * `content-length`, which belongs to the body as re-sent; not `connection`.
+ * `content-length`, which belongs to the body as re-sent; not `connection`; and
+ * not `authorization` — see below.
  *
  * `Last-Event-ID` is on the list deliberately: it is how a browser resumes a
  * stream after a disconnect, and an SSE proxy that drops it turns every
  * reconnection into a gap in the client's sequence.
+ *
+ * ## The operator's token stays on this server (a6-01)
+ *
+ * The engine refuses every write without `Authorization: Bearer
+ * <OTC_ADMIN_TOKEN>`. This handler adds that header to every non-read request,
+ * from its own `OTC_ADMIN_TOKEN`, read per request like the engine address. The
+ * browser never holds the token: it is not in the bundle, not in a cookie, and
+ * an `authorization` header the browser sends is not forwarded. Whoever can
+ * load the panel can administer the engine — which is the panel's own access
+ * question to answer, at its own origin — and nobody else can, because the
+ * engine listens on loopback by default and the token never leaves this
+ * process.
  *
  * Nothing here is economic and nothing here generates. It moves bytes.
  */
@@ -51,7 +64,15 @@ function engineOrigin(): string {
   return process.env.OTC_API_BASE ?? 'http://127.0.0.1:3000';
 }
 
+/** The write credential, read per request for the same reason the address is. */
+function adminToken(): string | null {
+  const raw = process.env.OTC_ADMIN_TOKEN;
+  return raw === undefined || raw.length === 0 ? null : raw;
+}
+
 const FORWARDED = ['accept', 'accept-language', 'content-type', 'last-event-id'];
+
+const READ_METHODS: ReadonlySet<string> = new Set(['GET', 'HEAD']);
 
 async function proxy(request: NextRequest, path: string[]): Promise<Response> {
   const url = new URL(`${engineOrigin()}/${path.join('/')}`);
@@ -62,13 +83,19 @@ async function proxy(request: NextRequest, path: string[]): Promise<Response> {
     const value = request.headers.get(name);
     if (value !== null) headers.set(name, value);
   }
+  const reads = READ_METHODS.has(request.method.toUpperCase());
+  if (!reads) {
+    // Added here and only here. When the panel was started without the
+    // token, nothing is added and the engine answers with the message that
+    // names the variable — which the panel shows verbatim.
+    const token = adminToken();
+    if (token !== null) headers.set('authorization', `Bearer ${token}`);
+  }
 
   const upstream = await fetch(url, {
     method: request.method,
     headers,
-    ...(request.method === 'GET' || request.method === 'HEAD'
-      ? {}
-      : { body: await request.text() }),
+    ...(reads ? {} : { body: await request.text() }),
     cache: 'no-store',
     redirect: 'manual',
   });

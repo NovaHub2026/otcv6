@@ -1,12 +1,44 @@
 // Invariant evidence: INV-004 (timeframe observer independence), INV-001 (economic independence).
-import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { describe, expect, it } from 'vitest';
-import { epochMillis, FixedClock, logPrice, MasterKeyring, type Tick } from '@otc/core';
-import { ASSET_ARCHETYPES, ASSET_CATALOGUE, assetById } from '@otc/engine';
-import { InMemoryCandleHistory, MemoryStateStore } from '@otc/runtime';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Logger,
+  NotFoundException,
+  UnsupportedMediaTypeException,
+} from '@nestjs/common';
+import type { Request, Response } from 'express';
+import { afterAll, describe, expect, it, vi } from 'vitest';
+import {
+  epochMillis,
+  FixedClock,
+  logPrice,
+  MasterKeyring,
+  type Clock,
+  type EpochMillis,
+  type Tick,
+} from '@otc/core';
+import { TickFeed } from '@otc/distribution';
+import { ASSET_ARCHETYPES, ASSET_CATALOGUE, assetById, MAX_ASSET_ID_LENGTH } from '@otc/engine';
+import { FileAssetRegistry, InMemoryCandleHistory, MemoryStateStore } from '@otc/runtime';
+import {
+  AdminWriteGuard,
+  bearerMatches,
+  isJsonContentType,
+  MIN_ADMIN_TOKEN_LENGTH,
+} from './adminAuth.guard.js';
+import {
+  adminTokenFromEnvironment,
+  backfillDaysFromEnvironment,
+  MAX_BACKFILL_DAYS,
+} from './app.module.js';
 import { HistoryService } from './history.service.js';
-import { MarketController } from './market.controller.js';
-import type { VenueService } from './venue.service.js';
+import { MarketController, MAX_DISPLAY_NAME_LENGTH } from './market.controller.js';
+import { PublicationService } from './publication.service.js';
+import { VenueService } from './venue.service.js';
 
 const ORIGIN = 1_776_000_000_000;
 
@@ -53,6 +85,7 @@ describe('health says whether the venue is publishing, not merely running', () =
       status: 'ok',
       assets: 1,
       stalled: [],
+      bootNonce: null,
     });
   });
 
@@ -66,7 +99,17 @@ describe('health says whether the venue is publishing, not merely running', () =
       status: 'degraded',
       assets: 2,
       stalled,
+      bootNonce: null,
     });
+  });
+
+  it('echoes the boot nonce it was started with, so a spawning test knows whose engine answered', () => {
+    // **a6-14.** Every service-booting test polled `/health` on its port and
+    // took the first `ok` as its own child. A foreign engine already on that
+    // port answers at once, while the child is still provisioning for minutes;
+    // the suite then ran its assertions against somebody else's market.
+    const controller = new MarketController(venueStub(['eurusd']), null, null, null, 'nonce-1');
+    expect((controller.health() as { bootNonce: string | null }).bootNonce).toBe('nonce-1');
   });
 });
 
@@ -377,5 +420,419 @@ describe('what an operator may edit, and what the surface refuses', () => {
     await expect(controller.editAsset('nope', { displayName: 'x' })).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+});
+
+describe('the write surface needs the operator token (a6-01)', () => {
+  const token = 'operator-token-'.padEnd(32, 'k');
+  const guard = new AdminWriteGuard(token);
+
+  it('lets every read through without a credential', () => {
+    // The market is public (INV-002): there is nothing origin- or
+    // identity-specific in a read to protect.
+    for (const method of ['GET', 'HEAD', 'OPTIONS', 'get']) {
+      expect(guard.check(method, undefined, undefined), method).toBe(true);
+    }
+  });
+
+  it('refuses every write when the engine has no token, naming the variable', () => {
+    const closed = new AdminWriteGuard(null);
+    for (const method of ['POST', 'PATCH', 'DELETE', 'PUT']) {
+      expect(() => closed.check(method, `Bearer ${token}`, 'application/json'), method).toThrow(
+        ForbiddenException,
+      );
+      expect(() => closed.check(method, `Bearer ${token}`, 'application/json'), method).toThrow(
+        /OTC_ADMIN_TOKEN/,
+      );
+    }
+  });
+
+  it('refuses a write without the bearer, with the wrong one, and with another scheme', () => {
+    for (const header of [
+      undefined,
+      '',
+      'Bearer',
+      'Bearer wrong-token-of-the-right-length',
+      `Bearer ${token}x`,
+      `Bearer ${token.slice(0, -1)}`,
+      `Basic ${token}`,
+      token,
+    ]) {
+      expect(() => guard.check('POST', header, 'application/json'), String(header)).toThrow(
+        ForbiddenException,
+      );
+    }
+  });
+
+  it('refuses a write that is not JSON, after the credential', () => {
+    // 415 for the shape only once the caller has proved who they are: a
+    // caller without the credential learns nothing about a well-formed write.
+    for (const contentType of [undefined, 'text/plain', 'application/x-www-form-urlencoded']) {
+      expect(
+        () => guard.check('POST', `Bearer ${token}`, contentType),
+        String(contentType),
+      ).toThrow(UnsupportedMediaTypeException);
+    }
+    expect(() => guard.check('POST', undefined, 'text/plain')).toThrow(ForbiddenException);
+  });
+
+  it('admits a write with the bearer and a JSON body', () => {
+    expect(guard.check('POST', `Bearer ${token}`, 'application/json')).toBe(true);
+    expect(guard.check('PATCH', `bearer ${token}`, 'application/json; charset=utf-8')).toBe(true);
+    expect(guard.check('post', `Bearer  ${token}`, 'Application/JSON')).toBe(true);
+  });
+
+  it('reads the request Nest hands it', () => {
+    const request = {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    } as unknown as Request;
+    const context = { switchToHttp: () => ({ getRequest: () => request }) };
+    expect(guard.canActivate(context as never)).toBe(true);
+  });
+
+  it('compares on a digest, so a token of another length is simply wrong', () => {
+    expect(bearerMatches(`Bearer ${token}`, token)).toBe(true);
+    expect(bearerMatches('Bearer x', token)).toBe(false);
+    expect(bearerMatches(`Bearer ${'a'.repeat(1_000)}`, token)).toBe(false);
+    expect(isJsonContentType('application/json')).toBe(true);
+    expect(isJsonContentType('application/jsonx')).toBe(false);
+    expect(isJsonContentType(['application/json'])).toBe(false);
+  });
+
+  it('boots without a token, and refuses to boot with one too short to be one', () => {
+    expect(adminTokenFromEnvironment({})).toBeNull();
+    expect(adminTokenFromEnvironment({ OTC_ADMIN_TOKEN: '' })).toBeNull();
+    expect(() => adminTokenFromEnvironment({ OTC_ADMIN_TOKEN: 'short' })).toThrow(
+      new RegExp(`OTC_ADMIN_TOKEN is 5 characters; it must be at least ${MIN_ADMIN_TOKEN_LENGTH}`),
+    );
+    const exact = 't'.repeat(MIN_ADMIN_TOKEN_LENGTH);
+    expect(adminTokenFromEnvironment({ OTC_ADMIN_TOKEN: exact })).toBe(exact);
+  });
+});
+
+describe('twenty concurrent renames are all stored, in order, with no 500 (a6-02)', () => {
+  const directories: string[] = [];
+  afterAll(async () => {
+    for (const directory of directories) await rm(directory, { recursive: true, force: true });
+  });
+
+  it('leaves the catalogue this process serves equal to the one the next boot will read', async () => {
+    // The audit measured 4 of 20 concurrent `PATCH`es succeeding, the rest
+    // `ENOENT` on a shared temporary file, and three assets whose in-memory
+    // name differed from the stored one. The registry serialises its overlay
+    // edits now; this is the controller's half — apply the in-memory rename
+    // only after the write it belongs to has resolved, so both sides land in
+    // the same order.
+    const directory = await mkdtemp(path.join(tmpdir(), 'otc-rename-race-'));
+    directories.push(directory);
+    const registry = new FileAssetRegistry(directory, new FixedClock(epochMillis(ORIGIN)));
+    const inMemory = new Map<string, string>();
+    const venue = {
+      ...venueStub(['eurusd', 'btcusd', 'xauusd', 'spx']),
+      rename: (id: string, displayName: string) => {
+        inMemory.set(id, displayName);
+      },
+    } as unknown as VenueService;
+    const controller = new MarketController(venue, null, null, registry);
+
+    const ids = ['eurusd', 'btcusd', 'xauusd', 'spx'];
+    const results = await Promise.allSettled(
+      Array.from({ length: 20 }, (_, i) =>
+        controller.editAsset(ids[i % ids.length]!, { displayName: `name-${i}` }),
+      ),
+    );
+    expect(results.filter((r) => r.status === 'rejected')).toEqual([]);
+
+    const stored = await registry.overlays();
+    for (const id of ids) {
+      expect(stored.get(id)?.displayName, id).toMatch(/^name-\d+$/);
+      // The name this process serves is the name the next boot will read.
+      expect(inMemory.get(id), `${id}: in-memory vs stored`).toBe(stored.get(id)?.displayName);
+    }
+  });
+});
+
+describe('the stream refuses what the feed refuses, with a status (a6-04)', () => {
+  /** A venue whose feed is real, so the controller meets the feed's own errors. */
+  function streaming(): { controller: MarketController; feed: TickFeed } {
+    const feed = new TickFeed({ retainTicks: 5 });
+    feed.publish('eurusd', ticks(10));
+    const venue = { ...venueStub(['eurusd']), feed } as unknown as VenueService;
+    return { controller: new MarketController(venue), feed };
+  }
+  const untouched = (): Response =>
+    ({
+      writeHead: () => {
+        throw new Error('headers must not be written for a refused subscription');
+      },
+      write: () => true,
+      end: () => undefined,
+      on: () => undefined,
+    }) as unknown as Response;
+  const request = (headers: Record<string, string> = {}): Request => ({ headers }) as Request;
+
+  it("answers a sequence in the future with a 400 carrying the feed's message", () => {
+    // A browser's `EventSource` closes for good on any non-200 and cannot see
+    // which; a 500 here was an internal error for a request the feed already
+    // refuses in words, and a way to fill the log with stack traces.
+    const { controller } = streaming();
+    expect(() => controller.stream('eurusd', untouched(), request(), '99999')).toThrow(
+      BadRequestException,
+    );
+    expect(() => controller.stream('eurusd', untouched(), request(), '99999')).toThrow(
+      /never been published/,
+    );
+    // And the same request written the way a browser resumes it.
+    expect(() =>
+      controller.stream('eurusd', untouched(), request({ 'last-event-id': '99999' })),
+    ).toThrow(BadRequestException);
+  });
+
+  it('still answers an evicted sequence with a 400 (CA6-31)', () => {
+    const { controller } = streaming();
+    expect(() => controller.stream('eurusd', untouched(), request(), '1')).toThrow(
+      BadRequestException,
+    );
+  });
+});
+
+describe('what the brief parser refuses by name (a6-07, a6-08)', () => {
+  /** A controller whose registration service records what it was handed. */
+  function creating(): { controller: MarketController; submitted: unknown[] } {
+    const submitted: unknown[] = [];
+    const registration = {
+      submit: (brief: unknown) => {
+        submitted.push(brief);
+        return { id: 'job-1', state: 'queued' };
+      },
+    };
+    return {
+      controller: new MarketController(venueStub([]), null, registration as never, null),
+      submitted,
+    };
+  }
+  const brief = {
+    id: 'newmetal',
+    archetypeId: 'metal',
+    displayName: 'New Metal',
+    referencePrice: 1,
+  };
+
+  it('refuses an unknown field by name rather than ignoring it', () => {
+    // A brief that quietly accepted `drift` would be INV-006 broken by an
+    // administrative form; the closed set is enforced by refusing, not by
+    // reading only what is known.
+    const { controller, submitted } = creating();
+    for (const field of ['drift', 'target', 'direction']) {
+      expect(() => controller.createAsset({ ...brief, [field]: 1 }), field).toThrow(
+        new RegExp(`Unknown field "${field}"`),
+      );
+    }
+    expect(submitted).toEqual([]);
+  });
+
+  it('refuses null for an optional number rather than reading it as "not supplied"', () => {
+    const { controller } = creating();
+    expect(() => controller.createAsset({ ...brief, dispersion: null })).toThrow(/dispersion/);
+    expect(() => controller.createAsset({ ...brief, dispersion: null })).toThrow(/null/);
+    expect(() => controller.createAsset({ ...brief, displayPrecision: null })).toThrow(
+      /displayPrecision/,
+    );
+  });
+
+  it('answers a malformed id with 400 and a duplicate with 409', () => {
+    const { controller } = creating();
+    expect(() => controller.createAsset({ ...brief, id: 'X-BAD' })).toThrow(BadRequestException);
+    expect(() =>
+      controller.createAsset({ ...brief, id: 'a'.repeat(MAX_ASSET_ID_LENGTH + 1) }),
+    ).toThrow(BadRequestException);
+    expect(() =>
+      controller.createAsset({ ...brief, id: 'a'.repeat(MAX_ASSET_ID_LENGTH + 1) }),
+    ).toThrow(new RegExp(`maximum is ${MAX_ASSET_ID_LENGTH}`));
+    expect(() => controller.createAsset({ ...brief, id: 'eurusd' })).toThrow(ConflictException);
+    expect(() => controller.createAsset({ ...brief, id: 'eurusd' })).toThrow(/already registered/);
+  });
+
+  it('trims and bounds the display name here too', () => {
+    const { controller, submitted } = creating();
+    expect(() =>
+      controller.createAsset({ ...brief, displayName: 'n'.repeat(MAX_DISPLAY_NAME_LENGTH + 1) }),
+    ).toThrow(new RegExp(`most a name may hold is ${MAX_DISPLAY_NAME_LENGTH}`));
+    controller.createAsset({ ...brief, displayName: '  New Metal  ' });
+    expect(submitted).toEqual([{ ...brief, displayName: 'New Metal' }]);
+  });
+});
+
+describe('history instants are digits and nothing else (a6-12)', () => {
+  it.each(['1788349926509abc', '1.9', '0x10', '1e12', ' 1', '+1'])('refuses %s', async (from) => {
+    // `Number.parseInt` discarded the tail before the check ran, so the first
+    // was accepted as an instant, `1.9` as 1 and `0x10` as 0 — the defect
+    // Cycle Audit 6 corrected on the stream's `from` and left here.
+    const controller = new MarketController(venueStub(['eurusd']), await populated());
+    await expect(controller.history_('eurusd', '1h', from, String(ORIGIN))).rejects.toThrow(
+      BadRequestException,
+    );
+    await expect(controller.history_('eurusd', '1h', '0', from)).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+});
+
+describe('a display name is a string of bounded length (a6-13)', () => {
+  function editable(): { controller: MarketController; written: unknown[] } {
+    const written: unknown[] = [];
+    const registry = {
+      list: () => Promise.resolve([]),
+      overlays: () => Promise.resolve(new Map<string, never>()),
+      putOverlay: (_id: string, patch: unknown) => {
+        written.push(patch);
+        return Promise.resolve();
+      },
+      add: () => Promise.resolve(),
+    };
+    return {
+      controller: new MarketController(venueStub(['eurusd']), null, null, registry),
+      written,
+    };
+  }
+
+  it('refuses a non-string with a message that names the field, not the stack', async () => {
+    // The registry's own check assumed a string: `123` was answered with
+    // "named.displayName.trim is not a function" and `null` with "Cannot read
+    // properties of null".
+    const { controller, written } = editable();
+    await expect(controller.editAsset('eurusd', { displayName: 123 })).rejects.toThrow(
+      /displayName must be a string, got number/,
+    );
+    await expect(controller.editAsset('eurusd', { displayName: null })).rejects.toThrow(
+      /displayName must be a string, got null/,
+    );
+    await expect(controller.editAsset('eurusd', { displayName: '   ' })).rejects.toThrow(
+      /must not be empty/,
+    );
+    expect(written).toEqual([]);
+  });
+
+  it('refuses a name longer than the bound, and stores a trimmed one', async () => {
+    // A 100,000-character name was stored and rendered in every viewer's
+    // sidebar.
+    const { controller, written } = editable();
+    await expect(
+      controller.editAsset('eurusd', { displayName: 'n'.repeat(MAX_DISPLAY_NAME_LENGTH + 1) }),
+    ).rejects.toThrow(BadRequestException);
+    await controller.editAsset('eurusd', { displayName: '  Euro / Dollar  ' });
+    expect(written).toEqual([{ displayName: 'Euro / Dollar' }]);
+    await controller.editAsset('eurusd', { displayName: 'n'.repeat(MAX_DISPLAY_NAME_LENGTH) });
+    expect(written).toHaveLength(2);
+  });
+});
+
+describe('OTC_BACKFILL_DAYS is whole days with a ceiling (a6-15)', () => {
+  it.each(['1e3', 'abc', '-1', '1.5', '2 x', '0x2', String(MAX_BACKFILL_DAYS + 1)])(
+    'refuses %s by name',
+    (raw) => {
+      // `Number('1e3')` is a thousand-day, irreversible genesis from a typo.
+      expect(() => backfillDaysFromEnvironment({ OTC_BACKFILL_DAYS: raw })).toThrow(
+        /OTC_BACKFILL_DAYS/,
+      );
+    },
+  );
+
+  it('reads whole days, and nothing when unset', () => {
+    expect(backfillDaysFromEnvironment({})).toBe(0);
+    expect(backfillDaysFromEnvironment({ OTC_BACKFILL_DAYS: '' })).toBe(0);
+    expect(backfillDaysFromEnvironment({ OTC_BACKFILL_DAYS: '2' })).toBe(2);
+    expect(backfillDaysFromEnvironment({ OTC_BACKFILL_DAYS: ' 3 ' })).toBe(3);
+    expect(backfillDaysFromEnvironment({ OTC_BACKFILL_DAYS: String(MAX_BACKFILL_DAYS) })).toBe(
+      MAX_BACKFILL_DAYS,
+    );
+  });
+});
+
+describe('a stalled market is logged once per kind of failure (a6-05)', () => {
+  it('writes one STALLED line while the lag keeps changing, and keeps the lag in health', async () => {
+    // The dedup keyed on the message, and the message carries the seconds
+    // behind, which grows every tick: five assets wrote five ERROR lines a
+    // second for the life of the process, and the line that mattered — the
+    // first — was buried.
+    const asset = assetById('spx');
+    const clock: Clock & { current: EpochMillis } = {
+      current: epochMillis(ORIGIN),
+      now() {
+        return this.current;
+      },
+    };
+    // A production keyring, because the venue derives `production` streams and
+    // a test keyring refuses to; the secret is public because this is a test.
+    const venue = new VenueService(
+      new MemoryStateStore(),
+      MasterKeyring.fromSecret('a6-05', new Uint8Array(32).fill(5)),
+      clock,
+      [asset],
+      3_600_000,
+      new PublicationService([asset], 500, {}),
+      null,
+      epochMillis(ORIGIN),
+      0,
+    );
+    await venue.start();
+    const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    try {
+      for (const lagMs of [20_000, 21_000, 22_000]) {
+        clock.current = epochMillis(ORIGIN + lagMs);
+        await venue.tick();
+      }
+      const stalledLines = errors.mock.calls.filter(([message]) =>
+        String(message).includes('STALLED'),
+      );
+      expect(stalledLines).toHaveLength(1);
+      expect(String(stalledLines[0]![0])).toContain('CatchUpTooLargeError');
+      // The changing number lives in `/health`, where a monitor reads it.
+      expect(venue.stalledMarkets).toEqual([
+        { assetId: 'spx', reason: expect.stringMatching(/22s behind the clock/) as string },
+      ]);
+    } finally {
+      errors.mockRestore();
+      await venue.stop();
+    }
+  });
+});
+
+describe('a fresh HistoryService after a restart (a5-01)', () => {
+  it('withholds the minute it began inside and stores the next whole one', async () => {
+    // Ten ticks a minute. The first process stores minutes 0..99 and dies with
+    // minute 100 open after three of its ticks; the second process sees the
+    // other seven. A recorder that stored those seven as minute 100 would
+    // label a partial bar whole — the a5-01 shape, measured at 13 of 15 ticks.
+    const store = new InMemoryCandleHistory();
+    const stream = ticks(1_800);
+    const first = new HistoryService(store, ASSET_CATALOGUE);
+    first.observe('eurusd', stream.slice(0, 1_003));
+    await first.flush();
+
+    const second = new HistoryService(store, ASSET_CATALOGUE);
+    second.observe('eurusd', stream.slice(1_003));
+    await second.flush();
+
+    const window = [epochMillis(0), epochMillis(ORIGIN + 1e9)] as const;
+    const bars = await second.read('eurusd', '1m', ...window);
+    const minute = (index: number): EpochMillis => epochMillis(ORIGIN + index * 60_000);
+    const opens = new Set(bars.map((bar) => bar.openInstant));
+    expect(opens.has(minute(99)), 'the last whole minute before the restart').toBe(true);
+    expect(opens.has(minute(100)), 'the restart minute is a hole, not a short bar').toBe(false);
+    expect(opens.has(minute(101)), 'the first whole minute after the restart').toBe(true);
+
+    // And the bars either side of the hole are exactly the bars an unbroken
+    // process would have stored.
+    const wholesale = new HistoryService(new InMemoryCandleHistory(), ASSET_CATALOGUE);
+    wholesale.observe('eurusd', stream);
+    await wholesale.flush();
+    const reference = new Map(
+      (await wholesale.read('eurusd', '1m', ...window)).map((bar) => [bar.openInstant, bar]),
+    );
+    for (const bar of bars)
+      expect(bar, String(bar.openInstant)).toEqual(reference.get(bar.openInstant));
+    expect(bars.length).toBe(reference.size - 1);
   });
 });

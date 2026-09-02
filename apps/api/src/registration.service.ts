@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SystemClock, type Clock, type MasterKeyring } from '@otc/core';
 import {
+  checkIdentity,
   minimumDispersionSpanMs,
   registerAsset,
   requestFromBrief,
@@ -41,6 +42,20 @@ import { VenueService } from './venue.service.js';
  * would halve the venue's share for twice as long, and there is no operator
  * workflow that needs them.
  *
+ * ## What a job reports, and what it cannot (a6-06)
+ *
+ * A job is `queued`, `running`, and then one of `registered`, `refused` or
+ * `failed`. While it runs, `stage` is null: `registerAsset` reports no progress
+ * — `RegistrationOptions` has no callback — so this service cannot know which
+ * of the six stages is running, and it used to say `identity` for the whole
+ * nineteen seconds of a `major-crypto` job, which was a claim rather than a
+ * fact. The stage is filled in only when one refuses. Threading an
+ * `onStage(stage)` callback through `RegistrationOptions` would make progress
+ * observable; until the engine offers it, nothing here pretends to.
+ *
+ * Jobs live in memory only. A restart forgets them, and the panel says so when
+ * its poll comes back 404 (a6-10).
+ *
  * ## What it may not do
  *
  * Choose a price. The brief carries a *dispersion budget* — how far the market
@@ -55,7 +70,12 @@ export interface RegistrationJob {
   readonly id: string;
   readonly brief: AssetBrief;
   readonly state: JobState;
-  /** The stage now running, or the stage that refused. */
+  /**
+   * The stage that refused, or null.
+   *
+   * Null while the job runs, too: the pipeline reports no progress, and a stage
+   * shown while running would be a guess (a6-06).
+   */
   readonly stage: RegistrationStage | null;
   /** Why it refused or failed, verbatim from the pipeline. */
   readonly reason: string | null;
@@ -135,9 +155,27 @@ export class RegistrationService {
   async #run(id: string): Promise<void> {
     const job = this.jobs.get(id);
     if (job === undefined) return;
-    this.#update(id, { state: 'running', stage: 'identity' });
+    this.#update(id, { state: 'running', stage: null });
     const started = this.clock.now();
     try {
+      // Identity again, against the catalogue as it is *now*: the controller
+      // checked it at submission, but a job queued behind another registration
+      // of the same id would otherwise reach the solve. And before
+      // `requestFromBrief`, which derives streams under a label built from the
+      // id and throws on one that is too long — a throw here is recorded as
+      // `failed`, when the honest answer is `refused` at `identity` with the
+      // pipeline's own words (a3-04).
+      const identity = checkIdentity(job.brief, this.venue.catalogue);
+      if (identity !== null) {
+        this.logger.warn(`${job.brief.id}: refused at identity — ${identity}`);
+        this.#update(id, {
+          state: 'refused',
+          stage: 'identity',
+          reason: identity,
+          finishedAt: this.clock.now(),
+        });
+        return;
+      }
       const { request } = requestFromBrief(job.brief, {
         keyring: this.keyring,
         environment: 'production',
