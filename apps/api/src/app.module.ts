@@ -2,11 +2,15 @@ import { Module } from '@nestjs/common';
 import { MasterKeyring, SystemClock } from '@otc/core';
 import { ASSET_CATALOGUE } from '@otc/engine';
 import {
+  FileAssetRegistry,
   FileStateStore,
   SqliteCandleHistory,
+  type AssetRegistry,
   type CandleHistory,
   type StateStore,
 } from '@otc/runtime';
+import type { RegisteredAsset } from '@otc/engine';
+import { RegistrationService } from './registration.service.js';
 import { HistoryService } from './history.service.js';
 import { MarketController } from './market.controller.js';
 import { PublicationService } from './publication.service.js';
@@ -39,26 +43,73 @@ import { VenueService } from './venue.service.js';
         ),
     },
     {
+      provide: 'ASSET_REGISTRY',
+      // Inside the state directory, beside the checkpoints, for the reason the
+      // history database is: a deployment that moves its state means to move all
+      // of it, and a registry left behind would describe assets whose records
+      // went elsewhere.
+      useFactory: (): AssetRegistry =>
+        new FileAssetRegistry(
+          process.env.OTC_ASSET_REGISTRY_DIR ??
+            `${process.env.OTC_STATE_DIR ?? './.otc-state'}/assets`,
+          new SystemClock(),
+        ),
+    },
+    {
+      // The catalogue this process hosts: the five compiled assets plus every
+      // asset an operator has registered here. Resolved once, at boot, and
+      // handed to everything that needs it — `VenueService` owns the list from
+      // then on, because an asset created at runtime has to reach the venue, the
+      // history and the publisher together or not at all.
+      provide: 'ASSETS',
+      inject: ['ASSET_REGISTRY'],
+      useFactory: async (registry: AssetRegistry): Promise<RegisteredAsset[]> => {
+        const stored = await registry.list();
+        const compiled = new Set(ASSET_CATALOGUE.map((asset) => asset.definition.id));
+        for (const asset of stored) {
+          if (compiled.has(asset.definition.id)) {
+            // Two assets with one id derive the same keystream: one market under
+            // two names, INV-003 broken before a tick is published.
+            throw new Error(
+              `Registered asset ${asset.definition.id} collides with a compiled ` +
+                `catalogue entry. Remove one before starting.`,
+            );
+          }
+        }
+        return [...ASSET_CATALOGUE, ...stored];
+      },
+    },
+    {
       provide: HistoryService,
-      inject: ['CANDLE_HISTORY'],
-      useFactory: (history: CandleHistory): HistoryService =>
-        new HistoryService(history, ASSET_CATALOGUE),
+      inject: ['CANDLE_HISTORY', 'ASSETS'],
+      useFactory: (history: CandleHistory, assets: RegisteredAsset[]): HistoryService =>
+        new HistoryService(history, assets),
     },
     {
       provide: VenueService,
-      inject: ['STATE_STORE', HistoryService],
-      useFactory: (store: StateStore, history: HistoryService): VenueService =>
+      inject: ['STATE_STORE', HistoryService, 'ASSETS'],
+      useFactory: (
+        store: StateStore,
+        history: HistoryService,
+        assets: RegisteredAsset[],
+      ): VenueService =>
         new VenueService(
           store,
           keyringFromEnvironment(),
           new SystemClock(),
-          ASSET_CATALOGUE,
+          assets,
           5_000,
-          new PublicationService(ASSET_CATALOGUE),
+          new PublicationService(assets),
           history,
           null,
           backfillDaysFromEnvironment(),
         ),
+    },
+    {
+      provide: RegistrationService,
+      inject: ['ASSET_REGISTRY', VenueService],
+      useFactory: (registry: AssetRegistry, venue: VenueService): RegistrationService =>
+        new RegistrationService(registry, venue, keyringFromEnvironment()),
     },
   ],
 })

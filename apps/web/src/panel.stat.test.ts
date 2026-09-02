@@ -366,4 +366,43 @@ describe('the panel, in a browser', () => {
       await page.close();
     }
   }, 300_000);
+
+  it('creates an asset from the panel and then shows it', async () => {
+    guard();
+    if (browser === null) return;
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    const observed = watch(page);
+    try {
+      await page.goto(`http://127.0.0.1:${webPort}/assets/new`, { waitUntil: 'networkidle' });
+
+      await page.getByTestId('field-id').fill('panelmetal');
+      await page.getByTestId('field-displayName').fill('Panel Metal');
+      // `metal` is the cheapest family to register — the fit span its cascade
+      // memory asks for is the shortest in the catalogue — and this test pays
+      // for a real one, six stages and all.
+      await page.getByTestId('field-archetype').selectOption('metal');
+      await page.getByTestId('field-referencePrice').fill('1900');
+      await page.getByTestId('create-submit').click();
+
+      await expect
+        .poll(async () => page.getByTestId('job-state').textContent(), { timeout: 240_000 })
+        .toMatch(/registered/);
+
+      // The asset exists where an operator would look for it, and the screen it
+      // arrives on is the one PH-20.1 already proved draws a market.
+      await page.goto(`http://127.0.0.1:${webPort}/preview`, { waitUntil: 'networkidle' });
+      await page.getByTestId('asset-panelmetal').click();
+      await expect
+        .poll(async () => page.getByTestId('stream-status').textContent(), { timeout: 60_000 })
+        .toBe('live');
+      const price = Number(await page.getByTestId('last-price').textContent());
+      expect(price).toBeGreaterThan(950);
+      expect(price).toBeLessThan(2_850);
+
+      expect(observed.consoleErrors, 'console errors').toEqual([]);
+      expect(observed.failedRequests, 'failed requests').toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 600_000);
 });

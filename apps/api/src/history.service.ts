@@ -53,10 +53,26 @@ export class HistoryService {
   private readonly recorders = new Map<string, HistoryRecorder>();
   private readonly provisioned = new Map<string, { from: EpochMillis; to: EpochMillis }>();
 
+  readonly #assets: RegisteredAsset[];
+
   constructor(
     private readonly history: CandleHistory,
-    private readonly assets: readonly RegisteredAsset[],
-  ) {}
+    assets: readonly RegisteredAsset[],
+  ) {
+    this.#assets = [...assets];
+  }
+
+  /**
+   * Take an asset registered while the service was running.
+   *
+   * Provisioning skips any asset that already has a state record, so calling
+   * {@link HistoryService.provision} after this gives a past to the new asset
+   * and to nothing else — the catch-up that follows a backfill is the same code
+   * whether it runs at boot or an hour in.
+   */
+  register(asset: RegisteredAsset): void {
+    this.#assets.push(asset);
+  }
 
   /**
    * Give every asset that has no record a past, and report what was done.
@@ -76,7 +92,7 @@ export class HistoryService {
     if (!Number.isFinite(options.days) || options.days <= 0) return [];
     const done: string[] = [];
     const built: { id: string; market: HostedMarket; cursor: number }[] = [];
-    for (const asset of this.assets) {
+    for (const asset of this.#assets) {
       const id = asset.definition.id;
       if ((await options.store.load(id)) !== null) continue;
       const targetInstant = epochMillis(options.clock.now());

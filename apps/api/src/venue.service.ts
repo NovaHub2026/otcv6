@@ -63,7 +63,7 @@ export class VenueService implements OnModuleDestroy {
     private readonly store: StateStore,
     private readonly keyring: MasterKeyring,
     private readonly clock: Clock = new SystemClock(),
-    private readonly assets: readonly RegisteredAsset[] = ASSET_CATALOGUE,
+    private readonly assets: RegisteredAsset[] = [...ASSET_CATALOGUE],
     private readonly checkpointEveryMs = 5_000,
     private readonly publication: PublicationService = new PublicationService(ASSET_CATALOGUE),
     /**
@@ -170,6 +170,67 @@ export class VenueService implements OnModuleDestroy {
 
   get assetIds(): readonly string[] {
     return this.venue?.assetIds ?? [];
+  }
+
+  /** Every asset this deployment knows about, hosted or not. */
+  get catalogue(): readonly RegisteredAsset[] {
+    return this.assets;
+  }
+
+  assetFor(id: string): RegisteredAsset | null {
+    return this.assets.find((asset) => asset.definition.id === id) ?? null;
+  }
+
+  /**
+   * Host a market registered while the service was running.
+   *
+   * Four things have to happen in one order, and the order is the substance:
+   *
+   * 1. the asset joins the catalogue and the history service, so a provisioning
+   *    pass can see it;
+   * 2. it is given a past, if this deployment gives one — `provision` skips
+   *    every asset that already has a state record, so this backfills the new
+   *    asset and nothing else, and the catch-up that follows leaves a current
+   *    checkpoint;
+   * 3. `resumeMarket` continues from that checkpoint, exactly as a restart
+   *    would, so there is one way a market comes into existence (INV-003);
+   * 4. only then does the venue host it, and the publisher begin committing to
+   *    its ticks.
+   *
+   * It runs between advances. `tick()` iterates the venue's markets, and adding
+   * one underneath that loop would publish an asset's first tick into a batch
+   * whose checkpoint had already been decided.
+   */
+  async host(asset: RegisteredAsset): Promise<void> {
+    const id = asset.definition.id;
+    if (this.assets.some((entry) => entry.definition.id === id)) {
+      throw new RangeError(`Asset ${id} is already in this venue's catalogue.`);
+    }
+    await this.inFlight;
+    this.assets.push(asset);
+    this.history?.register(asset);
+    if (this.history !== null && this.backfillDays > 0) {
+      await this.history.provision({
+        store: this.store,
+        keyring: this.keyring,
+        environment: 'production',
+        days: this.backfillDays,
+        clock: this.clock,
+      });
+    }
+    const { market, outcome } = await resumeMarket({
+      asset,
+      keyring: this.keyring,
+      environment: 'production',
+      clock: this.clock,
+      store: this.store,
+      genesisInstant: this.genesisInstant ?? epochMillis(this.clock.now()),
+    });
+    this.recovery.set(id, outcome);
+    market.prime();
+    this.venue?.host(asset, market);
+    this.publication.register(asset);
+    this.logger.log(`${id}: hosted at runtime — ${outcome.kind}`);
   }
 
   /**

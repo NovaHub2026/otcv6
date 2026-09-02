@@ -26,11 +26,11 @@ canvas.
 
 So the panel cannot be extended before it can be tested. The order is forced:
 
-| Subphase | Title                                                 |
-| -------- | ----------------------------------------------------- |
-| PH-20.1  | The panel under a real browser, against a real engine |
-| PH-20.2  | Creating an asset from the panel                      |
-| PH-20.3  | Editing and retiring, and what may never be edited    |
+| Subphase | Title                                                 | State    |
+| -------- | ----------------------------------------------------- | -------- |
+| PH-20.1  | The panel under a real browser, against a real engine | APPROVED |
+| PH-20.2  | Creating an asset from the panel                      | APPROVED |
+| PH-20.3  | Editing and retiring, and what may never be edited    | planned  |
 
 PH-20.1 comes first for the same reason PH-2 came before PH-3: an instrument
 that cannot fail the thing it measures is not evidence.

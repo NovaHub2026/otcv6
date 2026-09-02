@@ -75,3 +75,83 @@ export function fetchHistory(
     signal,
   );
 }
+
+export interface ArchetypeEntry {
+  readonly id: string;
+  readonly label: string;
+  readonly family: string;
+  readonly character: string;
+  readonly dispersion: {
+    readonly min: number;
+    readonly max: number;
+    readonly minPercent: number;
+    readonly maxPercent: number;
+  };
+}
+
+/** What an operator supplies to create an asset. Five fields, none directional. */
+export interface AssetBriefInput {
+  readonly id: string;
+  readonly archetypeId: string;
+  readonly displayName: string;
+  readonly referencePrice: number;
+  readonly dispersion?: number;
+  readonly displayPrecision?: number;
+}
+
+export interface RegistrationJobView {
+  readonly id: string;
+  readonly brief: AssetBriefInput;
+  readonly state: 'queued' | 'running' | 'registered' | 'refused' | 'failed';
+  readonly stage: string | null;
+  readonly reason: string | null;
+  readonly assetId: string | null;
+  readonly submittedAt: number;
+  readonly finishedAt: number | null;
+}
+
+export function fetchArchetypes(apiBase: string, signal?: AbortSignal): Promise<ArchetypeEntry[]> {
+  return getJson<ArchetypeEntry[]>(`${apiBase}/archetypes`, signal);
+}
+
+/**
+ * Start a registration. Returns a job id, never an asset.
+ *
+ * Four of the pipeline's six stages are simulation and it runs for seconds to
+ * tens of seconds, so there is nothing to return yet. This is the one function
+ * in this module that writes, and it writes a *request* rather than a record.
+ */
+export async function createAsset(
+  apiBase: string,
+  brief: AssetBriefInput,
+  signal?: AbortSignal,
+): Promise<{ job: string }> {
+  const response = await fetch(`${apiBase}/assets`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(brief),
+    ...(signal === undefined ? {} : { signal }),
+  });
+  if (!response.ok) {
+    // A refusal here is a *named* one — a duplicate id, an unknown family, a
+    // display coarser than the lattice. Reducing it to "could not create" would
+    // discard the only part an operator can act on.
+    const body = (await response.text()).slice(0, 500);
+    let message = body;
+    try {
+      message = (JSON.parse(body) as { message?: string }).message ?? body;
+    } catch {
+      /* not JSON; the text is the message */
+    }
+    throw new ApiError(response.status, message);
+  }
+  return (await response.json()) as { job: string };
+}
+
+export function fetchRegistration(
+  apiBase: string,
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<RegistrationJobView> {
+  return getJson<RegistrationJobView>(`${apiBase}/registrations/${jobId}`, signal);
+}

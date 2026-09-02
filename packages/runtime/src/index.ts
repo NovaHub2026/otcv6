@@ -1,4 +1,11 @@
 export {
+  AlreadyRegisteredError,
+  CorruptRegistrationError,
+  FileAssetRegistry,
+  MemoryAssetRegistry,
+  type AssetRegistry,
+} from './registry.js';
+export {
   CatchUpTooLargeError,
   DEFAULT_MAX_CATCH_UP_MS,
   HostedMarket,

@@ -52,4 +52,13 @@ export class PublicationService {
   observe(assetId: string, ticks: readonly Tick[]): void {
     this.writer?.observe(assetId, ticks);
   }
+
+  /** Begin publishing an asset registered while the service was running. */
+  register(asset: RegisteredAsset): void {
+    this.writer?.register({
+      assetId: asset.definition.id,
+      instrumentId: asset.instrument.id,
+      logQuantum: asset.instrument.logQuantum,
+    });
+  }
 }

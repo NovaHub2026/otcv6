@@ -525,7 +525,7 @@ too.
 | Subphase | Title                                                 | State    |
 | -------- | ----------------------------------------------------- | -------- |
 | PH-20.1  | The panel under a real browser, against a real engine | APPROVED |
-| PH-20.2  | Creating an asset from the panel                      | planned  |
+| PH-20.2  | Creating an asset from the panel                      | APPROVED |
 | PH-20.3  | Editing and retiring, and what may never be edited    | planned  |
 
 ### PH-21 — The Catalogue At Scale

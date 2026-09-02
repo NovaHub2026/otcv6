@@ -15,8 +15,13 @@ function venueStub(
   liveIds: readonly string[],
   stalled: readonly { assetId: string; reason: string }[] = [],
 ): VenueService {
+  // The catalogue is the venue's now, not a module constant: an asset created
+  // from the panel joins it at runtime (PH-20.2), so the controller reads what
+  // this deployment actually hosts rather than what was compiled in.
   return {
     assetIds: liveIds,
+    catalogue: ASSET_CATALOGUE,
+    assetFor: (id: string) => ASSET_CATALOGUE.find((asset) => asset.definition.id === id) ?? null,
     lastTick: () => null,
     recoveryFor: () => null,
     stalledMarkets: stalled,
