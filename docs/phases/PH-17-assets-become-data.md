@@ -87,9 +87,14 @@ asset that exists nowhere in source, in a fixture, or in the test file:
    and every instant increasing across the join.
 
 Its dispersion, measured from the published prices as realised quadratic
-variation, is **5.51% a quarter against a budget of 6.32%** — the family band
-drawn at authoring time, the volatility fitted to it from twelve turnovers of
-simulation, and the market that resulted, agreeing to 13%.
+variation, was 5.51% a quarter against a budget of 6.32% on the run that produced
+this document.
+
+**That figure is `console.info`, not an assertion** (CA6-37). What the test
+enforces is a band, and the band was −28% / +38% — two to three times wider than
+the agreement quoted. The honest reading is that the chain holds to within the
+band; the 13% is one observation, and Cycle Audit 6 found the same shape of claim
+in three other places in this cycle.
 
 ## 8. Approval
 

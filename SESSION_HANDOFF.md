@@ -9,43 +9,44 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Field              | Value                                                    |
 | ------------------ | -------------------------------------------------------- |
 | Last clean session | 2026-09-01                                               |
-| Branch             | `feature/ph-19-close-audit-six`                          |
+| Branch             | `main` — PH-19 merged                                    |
 | Remote             | `origin` → NovaHub2026/otcv6 — public, hosted CI running |
-| Active cycle       | Cycle 7, **0 of 3** phases approved                      |
-| Active phase       | PH-19 — Close what Cycle Audit 6 falsified               |
-| Active subphase    | PH-19.1 — The instrument                                 |
-| Cycle Audit        | **006 recorded — 46 findings, 6 critical**               |
+| Active cycle       | Cycle 7, **1 of 3** phases approved                      |
+| Active phase       | none — PH-20 is the next legal action                    |
+| Active subphase    | none                                                     |
+| Cycle Audit        | **006 closed** — 40 of 46 findings closed in PH-19       |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)       |
 
 ## Continuation point
 
 Read `CURRENT_STATE.md` for the authoritative position; this is the short form.
 
-**Continue PH-19.** Six independent auditors returned 46 findings against a tree
-whose gate was green. The full record is `docs/audits/CYCLE-AUDIT-006.md`.
+**Choose PH-20 and start it.** Cycle 7's roadmap deliberately leaves PH-20 and
+PH-21 undecided: Cycle 6 named all three phases in advance and built the third
+on measurements the audit then falsified.
 
-Six are already closed, in their own commits: the runner config (CA6-01), CI's
-missing typecheck (CA6-08), the backfill seam (CA6-05), the hourly tier
-(CA6-06), partial bars at a window's edges (CA6-29), and the two the Human Owner
-found by opening the panel (CA6-45/46).
+What the product still lacks, in the order the Human Owner has asked for things:
 
-The three that decide whether anything else is worth doing:
+1. **The admin panel can look and cannot touch.** Creating, editing and retiring
+   an asset are the next submenus. The pipeline they would drive exists and
+   refuses for named reasons; only the surface is missing.
+2. **The catalogue is five assets.** Everything needed to reach fifty to a
+   hundred is in place — eight archetypes, sampled personalities, dispersion
+   budgets, backdated history — and nobody has run it at that scale.
+3. **Nothing runs continuously.** The assurance battery, the commitment
+   publication and the standing verdict are things an operator _can_ run rather
+   than things the venue _does_.
 
-- **CA6-02.** Hosted CI was red on the commit PH-18 was approved from, and
-  `GOVERNANCE.md` §40.1 says a green local gate is not enough when it is. That
-  approval is not complete until CI is green on the same tree.
-- **CA6-03.** A follower can still be given a real engine with every guardrail
-  green: `stripCommentsKeepingStrings` knows a string from a comment and does not
-  know a **regular-expression literal**, thirty lines above a function in the same
-  file that does.
-- **CA6-04.** `runStandingAssurance` reports `clean` on a record paying an
-  observer +1.4% per trade — 3.8× the threshold the module itself exports. The
-  battery conditions on clock _phase_ and never on any other public function of
-  the index.
+What PH-19 leaves open, all recorded rather than waived: **B-029** (`xauusd`'s
+realised spread exceeds its calibrated one by 20–33%, cause unknown, and it
+bounds how well any dispersion budget can be honoured), **CA6-07** (nothing
+asserts that both test suites ran), **CA6-10** (no test references
+`apps/web/src` at all), and **B-018** (two guardrail blind spots deferred in
+PH-16.3).
 
 The audit's own standard, for whoever continues: falsify rather than confirm,
 re-execute rather than read, and plant a defect against every guard. Six of the
-things this audit found were things a previous phase had recorded as fixed.
+things Cycle Audit 6 found were things a previous phase had recorded as fixed.
 
 ## What Cycle 5 has established so far
 

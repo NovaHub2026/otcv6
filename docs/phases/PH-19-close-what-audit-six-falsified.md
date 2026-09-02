@@ -2,7 +2,7 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-19
-Status: ACTIVE
+Status: APPROVED
 Cycle: 7 (phase 1 of 3)
 Created: 2026-09-01
 Branch: `feature/ph-19-close-audit-six`
@@ -39,13 +39,13 @@ cannot see the client's world.** That is worth more than either fix.
 
 ## 3. Subphases
 
-| Subphase | Title                                                         | State       |
-| -------- | ------------------------------------------------------------- | ----------- |
-| PH-19.1  | The instrument: the gate, the guards, and what they read      | ACTIVE      |
-| PH-19.2  | The guarantees: the follower, the verdict, the limiter        | not started |
-| PH-19.3  | The measurements: turnovers, recorded rates, evidence runners | not started |
-| PH-19.4  | The catalogue: feasibility, differentiation, acceptance       | not started |
-| PH-19.5  | The surface: the join, the stream, and what an endpoint costs | not started |
+| Subphase | Title                                                         | State    |
+| -------- | ------------------------------------------------------------- | -------- |
+| PH-19.1  | The instrument: the gate, the guards, and what they read      | APPROVED |
+| PH-19.2  | The guarantees: the follower, the verdict, the limiter        | APPROVED |
+| PH-19.3  | The measurements: turnovers, recorded rates, evidence runners | APPROVED |
+| PH-19.4  | The catalogue: feasibility, differentiation, acceptance       | APPROVED |
+| PH-19.5  | The surface: the join, the stream, and what an endpoint costs | APPROVED |
 
 ## 4. Phase invariants
 
@@ -64,3 +64,44 @@ looking at: CA6-01 (the runner config), CA6-08 (CI's missing typecheck), CA6-05
 (the backfill seam), CA6-06 (the hourly tier), CA6-29 (partial bars),
 CA6-45/46 (the panel could not reach the engine). Each is recorded in its own
 commit with the measurement that found it.
+
+## 6. What the phase closed, and what it did not
+
+**Closed: 40 of the 46 findings.** Each is named in the subphase document that
+closed it, with the measurement that found it and the plant that watched the fix
+fail.
+
+**Partly closed, and recorded as such:**
+
+- **CA6-17** — the acceptance now _executes_ the line that computes the diffusion
+  rate, where before it compared brute force against a hard-coded constant. Its
+  resolution is ±25% rather than the ±14% a tighter band would claim, because
+  `xauusd` shows a 20–33% gap between its calibrated and realised spread in two
+  independent runs whose cause is not known (B-029).
+
+**Carried, with the reason:**
+
+- **CA6-07** — `npm run gate` ends with an explicit completion line, so a run
+  that skipped the statistical suite is distinguishable from one that passed it.
+  Nothing yet _asserts_ that both suites ran; that needs a gate wrapper rather
+  than a script.
+- **CA6-10** — `apps/*` is measured now, and `apps/web/src` is still referenced
+  by no test at all. The panel is verified through the boundary test rather than
+  in isolation, which is a real gap rather than a measurement problem.
+- **B-018** — the two guardrail blind spots PH-16.3 deferred are unchanged.
+
+## 7. Approval
+
+**APPROVED** 2026-09-01, from executed evidence.
+
+`npm run gate` — **exit 0**, and **hosted CI green on the same tree**, which
+`GOVERNANCE.md` §40.1 requires and CA6-02 found missing from PH-18's approval.
+
+| Check                       | Command                    | Exit |
+| --------------------------- | -------------------------- | ---- |
+| Formatting                  | `npm run format:check`     | 0    |
+| Build and typecheck         | `npm run build`            | 0    |
+| Web typecheck               | `npm run typecheck:web`    | 0    |
+| Configuration typecheck     | `npm run typecheck:config` | 0    |
+| Lint (type-aware)           | `npm run lint`             | 0    |
+| Unit and statistical suites | `npm test`                 | 0    |

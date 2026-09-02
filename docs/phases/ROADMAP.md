@@ -489,12 +489,12 @@ comment saying it did.
 So Cycle 7 starts where Cycle 6 did — with the instrument — because every other
 finding is verified through it.
 
-| Phase | Title                                 | State       |
-| ----- | ------------------------------------- | ----------- |
-| PH-19 | Close what Cycle Audit 6 falsified    | **ACTIVE**  |
-| PH-20 | (undecided — chosen when PH-19 lands) | not started |
-| PH-21 | (undecided)                           | not started |
-| —     | **Cycle Audit 7**                     | not started |
+| Phase | Title                                 | State        |
+| ----- | ------------------------------------- | ------------ |
+| PH-19 | Close what Cycle Audit 6 falsified    | **APPROVED** |
+| PH-20 | (undecided — chosen when PH-19 lands) | not started  |
+| PH-21 | (undecided)                           | not started  |
+| —     | **Cycle Audit 7**                     | not started  |
 
 ### PH-19 — Close What Cycle Audit 6 Falsified
 
@@ -502,13 +502,13 @@ Ordered by what the other findings are verified _through_: the instrument first,
 then the guarantees it is supposed to police, then the measurements, then the
 catalogue, then the surface.
 
-| Subphase | Title                                                         | State       |
-| -------- | ------------------------------------------------------------- | ----------- |
-| PH-19.1  | The instrument: the gate, the guards, and what they read      | ACTIVE      |
-| PH-19.2  | The guarantees: the follower, the verdict, the limiter        | not started |
-| PH-19.3  | The measurements: turnovers, recorded rates, evidence runners | not started |
-| PH-19.4  | The catalogue: feasibility, differentiation, acceptance       | not started |
-| PH-19.5  | The surface: the join, the stream, and what an endpoint costs | not started |
+| Subphase | Title                                                         | State    |
+| -------- | ------------------------------------------------------------- | -------- |
+| PH-19.1  | The instrument: the gate, the guards, and what they read      | APPROVED |
+| PH-19.2  | The guarantees: the follower, the verdict, the limiter        | APPROVED |
+| PH-19.3  | The measurements: turnovers, recorded rates, evidence runners | APPROVED |
+| PH-19.4  | The catalogue: feasibility, differentiation, acceptance       | APPROVED |
+| PH-19.5  | The surface: the join, the stream, and what an endpoint costs | APPROVED |
 
 **PH-20 and PH-21 are deliberately undecided.** Cycle 6's roadmap named all
 three phases in advance and the third of them (the panel) was built on an engine

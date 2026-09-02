@@ -1,7 +1,7 @@
 # Cycle Audit 006
 
 Type: CYCLE AUDIT RECORD
-Status: ACTIVE — remediation in progress
+Status: CLOSED — 40 of 46 findings closed in PH-19; the rest carried with reasons recorded there
 Cycle audited: Cycle 6 (PH-16, PH-17, PH-18)
 Commit audited: `dda0d84`
 Conducted: 2026-09-01

@@ -57,6 +57,7 @@ documents disagree, the canonical one wins and the other is a defect.
 | [`docs/architecture/RUNTIME_AND_TRADING.md`](docs/architecture/RUNTIME_AND_TRADING.md)   | Hosting, scheduling, sealed persistence, the recovery policy, and where economic blindness is enforced                         |
 | [`docs/architecture/CONSISTENCY_CONTRACT.md`](docs/architecture/CONSISTENCY_CONTRACT.md) | What the venue promises observers about agreement: exact by instant and sequence, approximate only for "now"                   |
 | [`docs/architecture/PUBLICATION.md`](docs/architecture/PUBLICATION.md)                   | How the published record is made provable: Merkle commitments, the publishing key, and what a commitment does not prove        |
+| [`docs/architecture/CATALOGUE_AND_PANEL.md`](docs/architecture/CATALOGUE_AND_PANEL.md)   | How an asset comes to exist, what a family is, where history lives, and what the operator surface may reach                    |
 
 Documents listed above are created by the phase that first makes them true. A
 missing architecture document means that layer does not exist yet — not that it
