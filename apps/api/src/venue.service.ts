@@ -56,6 +56,8 @@ export class VenueService implements OnModuleDestroy {
    */
   private readonly stalled = new Map<string, string>();
   private lastCheckpointAt = 0;
+  /** The advance currently running, so shutdown can wait for it. */
+  private inFlight: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly store: StateStore,
@@ -153,6 +155,12 @@ export class VenueService implements OnModuleDestroy {
   /** Stop publishing and write a final checkpoint. */
   async stop(): Promise<void> {
     this.stopping = true;
+    // Wait for a tick that is already running before checkpointing on top of it.
+    // Cycle Audit 6 found `stop()` clearing the timer and then racing an
+    // in-flight `checkpoint()`; the loser threw `ENOENT` on its own temporary
+    // file and aborted the loop, so the remaining markets got no final
+    // checkpoint at all.
+    await this.inFlight;
     if (this.timer !== null) {
       clearTimeout(this.timer);
       this.timer = null;
@@ -255,13 +263,16 @@ export class VenueService implements OnModuleDestroy {
     const wait = this.venue.msUntilNextTick() ?? 50;
     this.timer = setTimeout(
       () => {
-        void this.tick()
+        // Kept so `stop()` can wait for it rather than checkpointing on top of
+        // an advance that is still writing.
+        this.inFlight = this.tick()
           .catch((error: unknown) => {
             this.logger.error(`tick failed: ${String(error)}`);
           })
           .finally(() => {
             this.schedule();
           });
+        void this.inFlight;
       },
       Math.max(1, Math.min(wait, 1_000)),
     );

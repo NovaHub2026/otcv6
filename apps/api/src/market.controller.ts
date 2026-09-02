@@ -6,10 +6,11 @@ import {
   NotFoundException,
   Optional,
   Param,
+  Req,
   Query,
   Res,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { EvictedError } from '@otc/distribution';
 import {
   ASSET_ARCHETYPES,
@@ -18,7 +19,7 @@ import {
   dispersionPercent,
 } from '@otc/engine';
 import { epochMillis, isTimeframeId, timeframe as timeframeById } from '@otc/core';
-import { HistoryError } from '@otc/runtime';
+import { HistoryError, HISTORY_BASE_TIMEFRAME } from '@otc/runtime';
 import { HistoryService } from './history.service.js';
 import { VenueService } from './venue.service.js';
 
@@ -188,6 +189,16 @@ export class MarketController {
     // A bound on bars rather than on time, because that is what the cost scales
     // with. The panel's largest view is ninety days of daily bars — ninety of
     // them — so this is two orders of magnitude above any legitimate request.
+    // The availability refusal comes first, and deliberately. A one-second
+    // window is also an enormous number of bars, and answering "too many bars"
+    // to a request for a timeframe that is not served at all would send the
+    // caller shortening a window that will never work.
+    if (timeframeMs(timeframe) < timeframeMs(HISTORY_BASE_TIMEFRAME)) {
+      throw new BadRequestException(
+        `History is stored from ${HISTORY_BASE_TIMEFRAME} up, so ${timeframe} is available only ` +
+          `from the tick record and only as far back as retention keeps it.`,
+      );
+    }
     const bars = Math.ceil((toInstant - fromInstant) / timeframeMs(timeframe));
     if (bars > MAX_CANDLES_PER_REQUEST) {
       throw new BadRequestException(
@@ -206,23 +217,52 @@ export class MarketController {
   }
 
   @Get('markets/:id/stream')
-  stream(@Param('id') id: string, @Res() res: Response, @Query('from') from?: string): void {
+  stream(
+    @Param('id') id: string,
+    @Res() res: Response,
+    @Req() request: Request,
+    @Query('from') from?: string,
+  ): void {
     if (!this.venue.assetIds.includes(id)) {
       throw new NotFoundException(`Unknown asset ${id}.`);
     }
     let fromSequence: number | undefined;
     if (from !== undefined) {
       fromSequence = Number.parseInt(from, 10);
-      if (!Number.isInteger(fromSequence) || fromSequence < 0) {
+      if (!Number.isInteger(fromSequence) || fromSequence < 0 || !/^\d+$/.test(from)) {
+        // **Cycle Audit 6, minor.** `Number.parseInt` discards the tail before
+        // the check runs, so `1.9`, `12abc` and `1e3` were all accepted as 1 —
+        // and `1e3` in particular asked for a sequence long since evicted, which
+        // then produced a silent empty stream.
         throw new BadRequestException(`from must be a non-negative integer, received ${from}.`);
       }
+    } else {
+      // **Cycle Audit 6, CA6-32.** This endpoint emits `id: <sequence>` on every
+      // event — the SSE mechanism a browser uses to resume automatically — and
+      // read only `?from=`. Measured after a 15-second disconnect: a reconnect
+      // carrying `Last-Event-ID` skipped 19 ticks in silence, while the same
+      // reconnect written as `?from=` skipped none. A client cannot detect what
+      // it never received, which is the whole reason the resume exists.
+      const resume = request.headers['last-event-id'];
+      const parsed = typeof resume === 'string' && /^\d+$/.test(resume) ? Number(resume) : null;
+      if (parsed !== null) fromSequence = parsed + 1;
     }
 
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-    });
+    // **Cycle Audit 6, CA6-31.** `writeHead(200)` used to run *before*
+    // `subscribe`, so `EvictedError` could not become a status code: an evicted
+    // `?from=` produced `200` with a zero-length body and an error in the server
+    // log, and `marketStream.ts` reconnected with the same evicted sequence for
+    // ever. The endpoint's own docstring says such a request is a 400 "because a
+    // client cannot detect what it never received".
+    //
+    // So nothing is written until the subscription exists. Replay delivered
+    // during `subscribe` is buffered and flushed after the headers.
+    let headersSent = false;
+    const buffered: string[] = [];
+    const write = (chunk: string): void => {
+      if (headersSent) res.write(chunk);
+      else buffered.push(chunk);
+    };
 
     let subscription: { cancel: (reason?: string) => void } | null = null;
     try {
@@ -233,26 +273,31 @@ export class MarketController {
             for (const tick of ticks) {
               // One event per tick, carrying the sequence as the SSE id so a
               // reconnecting client knows exactly where it stopped.
-              res.write(`id: ${tick.sequence}\ndata: ${JSON.stringify(tick)}\n\n`);
+              write(`id: ${tick.sequence}\ndata: ${JSON.stringify(tick)}\n\n`);
             }
             // False once the socket buffer is full: the feed then disconnects
             // rather than degrading this client's view.
-            return !res.writableNeedDrain;
+            return !headersSent || !res.writableNeedDrain;
           },
           close: (reason): void => {
-            res.write(`event: close\ndata: ${JSON.stringify({ reason })}\n\n`);
-            res.end();
+            write(`event: close\ndata: ${JSON.stringify({ reason })}\n\n`);
+            if (headersSent) res.end();
           },
         },
         fromSequence,
       );
     } catch (error) {
-      if (error instanceof EvictedError) {
-        res.end();
-        throw new BadRequestException(error.message);
-      }
+      if (error instanceof EvictedError) throw new BadRequestException(error.message);
       throw error;
     }
+
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+    });
+    headersSent = true;
+    for (const chunk of buffered) res.write(chunk);
 
     res.on('close', () => {
       subscription?.cancel('client disconnected');

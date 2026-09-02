@@ -243,6 +243,26 @@ describe('the panel and the engine agree across the process boundary', () => {
     expect(after).toBeGreaterThan(before);
   }, 300_000);
 
+  it('refuses an evicted resume with a status code, not an empty stream', async () => {
+    // **Cycle Audit 6, CA6-31.** `writeHead(200)` ran before `subscribe`, so
+    // `EvictedError` could not become a status code: the request got 200 with a
+    // zero-length body and the reason went to the server log. The client
+    // reconnected with the same evicted sequence for ever, which is exactly the
+    // silent gap the endpoint's docstring says a 400 exists to prevent.
+    const evicted = await fetch(`http://127.0.0.1:${port}/markets/${ASSET}/stream?from=1`);
+    expect(evicted.status).toBe(400);
+    expect(await evicted.text()).toMatch(/evict|replay|window/i);
+
+    // And the same request written the way a browser writes it.
+    const controller = new AbortController();
+    const resumed = await fetch(`http://127.0.0.1:${port}/markets/${ASSET}/stream`, {
+      headers: { 'Last-Event-ID': '1' },
+      signal: controller.signal,
+    });
+    controller.abort();
+    expect(resumed.status).toBe(400);
+  }, 120_000);
+
   it('continues the history with the live stream instead of restating it', async () => {
     // The join, over a real socket. The last stored bar belongs to the record;
     // the builder must leave it alone and open the next one.

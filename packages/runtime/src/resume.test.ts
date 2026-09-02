@@ -33,6 +33,45 @@ function base(store: MemoryStateStore | FileStateStore, clock: SteppableClock) {
   };
 }
 
+/**
+ * Two saves of one asset at once must not destroy each other.
+ *
+ * **Cycle Audit 6, minor.** The temporary path was unique per *process*, not per
+ * call, so the first `rename` moved the file the second was still writing and
+ * the second failed with `ENOENT` — 200 times out of 200, and observed on two
+ * ordinary SIGTERM shutdowns of the shipped configuration.
+ */
+describe('a file store survives concurrent saves of one asset', () => {
+  it('writes both without either failing', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'otc-race-'));
+    try {
+      const store = new FileStateStore(directory);
+      // A real record, taken from a real market: the shape has to survive
+      // `assertUsableRecord` on the way back in.
+      const source = new FileStateStore(path.join(directory, 'source'));
+      const { market } = await resumeMarket({
+        asset,
+        keyring,
+        environment: 'test',
+        clock: new SteppableClock(GENESIS),
+        store: source,
+        genesisInstant: GENESIS,
+      });
+      market.advanceTo(epochMillis(GENESIS + 10_000));
+      const base = checkpointMarket(market, 'eurusd', GENESIS);
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        await Promise.all([
+          store.save({ ...base, savedAt: epochMillis(GENESIS + attempt) }),
+          store.save({ ...base, savedAt: epochMillis(GENESIS + 1_000 + attempt) }),
+        ]);
+      }
+      expect(await store.load('eurusd')).not.toBeNull();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('a market with no history starts fresh', () => {
   it('reports fresh and produces ticks', async () => {
     const clock = new SteppableClock(GENESIS);
