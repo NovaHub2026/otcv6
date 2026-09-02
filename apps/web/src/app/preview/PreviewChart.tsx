@@ -42,6 +42,13 @@ import {
  * published tick**, updated on every one. Nothing there is invented — it is the
  * last integer the record holds, converted once — and no candle is ever drawn
  * from a fragment.
+ *
+ * ## The `data-testid` attributes
+ *
+ * There are three, and they exist because the first browser test selected the
+ * price by its colour. A panel that can only be tested by matching a hex code
+ * is a panel whose tests break when someone changes a theme — and the whole
+ * reason this layer is being covered at all is that nothing else could see it.
  */
 export function PreviewChart({
   apiBase,
@@ -185,7 +192,7 @@ export function PreviewChart({
         the question away from the layout entirely.
       */}
       <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
-        <div ref={container} style={{ position: 'absolute', inset: 0 }} />
+        <div data-testid="chart" ref={container} style={{ position: 'absolute', inset: 0 }} />
       </div>
       <div
         style={{
@@ -198,16 +205,28 @@ export function PreviewChart({
           flexWrap: 'wrap',
         }}
       >
-        <span style={{ color: status === 'live' ? '#3fb950' : '#8b93a7' }}>{status}</span>
+        <span
+          data-testid="stream-status"
+          style={{ color: status === 'live' ? '#3fb950' : '#8b93a7' }}
+        >
+          {status}
+        </span>
         {last !== null && (
           <span style={{ color: '#e3b341' }}>
-            {last.price.toFixed(asset.displayPrecision)}{' '}
-            <span style={{ color: '#5b6377' }}>
+            {/*
+              The price and the clock are separate elements, and that is a test
+              interface decision as much as a layout one. When they shared one,
+              a browser assertion that "the price changes" passed against a
+              **frozen price**, because the second was ticking inside the same
+              text node. The plant that proved it is in PH-20.1.
+            */}
+            <span data-testid="last-price">{last.price.toFixed(asset.displayPrecision)}</span>{' '}
+            <span data-testid="last-price-at" style={{ color: '#5b6377' }}>
               {new Date(last.at).toLocaleTimeString(undefined, { hour12: false })}
             </span>
           </span>
         )}
-        <span>{bars.toLocaleString()} bars</span>
+        <span data-testid="bar-count">{bars.toLocaleString()} bars</span>
         <span>quantum {asset.logQuantum.toExponential(3)}</span>
         <span>tie rate {(100 * asset.tieRate).toFixed(2)}%</span>
         <span>quarterly spread {(100 * asset.dispersion.quarterlyPercent).toFixed(1)}%</span>

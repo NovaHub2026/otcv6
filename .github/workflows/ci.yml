@@ -72,11 +72,22 @@ jobs:
       # job needs the build too. Without it they fail as `service exited (1)`.
       - name: Build
         run: npm run build
+      # The browser, and the system libraries it links against. `playwright
+      # install chromium` alone downloads the binary and none of the libraries,
+      # which is why the panel suite skips on a developer machine without root
+      # and must not skip here: `OTC_REQUIRE_BROWSER=1` turns a missing browser
+      # into a failure. Cycle Audit 6 (CA6-10) found 2,050 tests and not one
+      # that referenced `apps/web/src`; three real defects reached the Human
+      # Owner through that hole in one day. A browser coverage layer that can
+      # silently disappear is the same hole with a longer fuse.
+      - name: Install the browser
+        run: npx playwright install --with-deps chromium
       - name: Statistical tests
         # The phase-acceptance run holds ~24M ticks in typed arrays plus the
         # precomputed feature frame, which needs more heap than the default.
         env:
           NODE_OPTIONS: --max-old-space-size=6144
+          OTC_REQUIRE_BROWSER: '1'
         # `npm run test:stat`, not a bare vitest invocation. The script carries
         # `--no-file-parallelism`, and Cycle Audit 6 (CA6-01) found that the
         # setting could not live in the config: Vitest 3 drops it inside a

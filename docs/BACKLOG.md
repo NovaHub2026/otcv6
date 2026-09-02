@@ -89,3 +89,38 @@ Candidates not yet separated:
 
 Until it is separated, `dispersion.stat.test.ts` bounds the systematic error at
 ±25% pooled and says so, and CA6-17 is recorded as partly closed.
+
+## B-030 — One unit run in seven failed seven files, and it has not recurred
+
+Opened: 2026-09-02 (PH-20.1)
+Severity: unknown — an intermittent gate is a gate that cannot be trusted either
+way, but nothing here identifies a mechanism
+
+Observed once, on a tree that had just passed:
+
+```
+Test Files  7 failed | 77 passed (84)
+      Tests  7 failed | 1819 passed (1826)
+```
+
+**Exactly one test per file, across seven files** — a shape that suggests a
+per-file resource (a temporary directory, a port, a worker's own RPC channel)
+rather than seven independent assertions going wrong. The identities of the
+seven were not captured, which is the part of this that was avoidable.
+
+Not reproduced since, in six further runs of the same tree:
+
+| attempt                         | result           |
+| ------------------------------- | ---------------- |
+| immediately after, same tree    | 1826 passed      |
+| four consecutive runs           | 1826 passed each |
+| under 12 busy loops on 16 cores | 1826 passed      |
+
+Load contention was the first hypothesis — this suite carries throughput floors,
+and `OTC_COVERAGE=1` already stands one down — and the load run argues against
+it at that level of pressure.
+
+What to do on the next occurrence: capture the full output before anything else.
+`npm run test:unit > log 2>&1` and read the file. Three of the runs above went
+through `| grep` or `| tail`, which discards the exit code (`GOVERNANCE.md` §68,
+and the reason `| tail -1` is called out in `CLAUDE.md` §5).

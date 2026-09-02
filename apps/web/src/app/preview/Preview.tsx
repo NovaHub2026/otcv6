@@ -60,6 +60,7 @@ export function Preview({ apiBase }: { apiBase: string }): ReactElement {
           <button
             key={entry.id}
             type="button"
+            data-testid={`asset-${entry.id}`}
             onClick={() => {
               setSelected(entry.id);
             }}

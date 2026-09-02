@@ -489,12 +489,12 @@ comment saying it did.
 So Cycle 7 starts where Cycle 6 did — with the instrument — because every other
 finding is verified through it.
 
-| Phase | Title                                 | State        |
-| ----- | ------------------------------------- | ------------ |
-| PH-19 | Close what Cycle Audit 6 falsified    | **APPROVED** |
-| PH-20 | (undecided — chosen when PH-19 lands) | not started  |
-| PH-21 | (undecided)                           | not started  |
-| —     | **Cycle Audit 7**                     | not started  |
+| Phase | Title                                               | State        |
+| ----- | --------------------------------------------------- | ------------ |
+| PH-19 | Close what Cycle Audit 6 falsified                  | **APPROVED** |
+| PH-20 | The operator panel: trusted, and able to administer | **ACTIVE**   |
+| PH-21 | The catalogue at scale                              | not started  |
+| —     | **Cycle Audit 7**                                   | not started  |
 
 ### PH-19 — Close What Cycle Audit 6 Falsified
 
@@ -510,10 +510,29 @@ catalogue, then the surface.
 | PH-19.4  | The catalogue: feasibility, differentiation, acceptance       | APPROVED |
 | PH-19.5  | The surface: the join, the stream, and what an endpoint costs | APPROVED |
 
-**PH-20 and PH-21 are deliberately undecided.** Cycle 6's roadmap named all
-three phases in advance and the third of them (the panel) was built on an engine
-whose measurements the audit then falsified. What comes after PH-19 is chosen
-when PH-19 is done and the instrument can be trusted to judge it.
+**PH-20 and PH-21 were deliberately left undecided** until PH-19 landed: Cycle 6
+named all three phases in advance and the third of them (the panel) was built on
+an engine whose measurements the audit then falsified. They are chosen now, on
+what PH-19 measured.
+
+### PH-20 — The Operator Panel: Trusted, And Able To Administer
+
+Five user-visible defects reached the Human Owner against a green gate, and Cycle
+Audit 6 named the mechanism: not one test referenced `apps/web/src`. The panel
+cannot be extended before it can be tested, so the instrument comes first here
+too.
+
+| Subphase | Title                                                 | State    |
+| -------- | ----------------------------------------------------- | -------- |
+| PH-20.1  | The panel under a real browser, against a real engine | APPROVED |
+| PH-20.2  | Creating an asset from the panel                      | planned  |
+| PH-20.3  | Editing and retiring, and what may never be edited    | planned  |
+
+### PH-21 — The Catalogue At Scale
+
+Five assets is not a catalogue. PH-19.4 measured a registration failing on 36% of
+hundred-asset builds before the tail-weight clamp; what a hundred assets cost in
+storage, in scheduling and in differentiation headroom is still unmeasured.
 
 ## Major dependencies
 
