@@ -41,7 +41,7 @@ short and specific:
 | -------- | ------------------------------------------------- | ------- |
 | PH-21.1  | A hundred assets, and what registering them costs | ACTIVE  |
 | PH-21.2  | The venue and the store under a full catalogue    | planned |
-| PH-21.3  | A panel that can hold a hundred assets            | planned |
+| PH-21.3  | A panel that can hold a hundred assets            | ACTIVE  |
 
 ## 3. What this phase may not do
 
