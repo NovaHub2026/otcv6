@@ -6,21 +6,19 @@ import { PANEL_TIMEFRAMES, type PanelTimeframeId } from '@otc/chart';
 import { PreviewChart } from './PreviewChart.js';
 
 /**
- * The Preview submenu: pick assets, pick a timeframe, watch.
+ * The Preview submenu: pick an asset, pick a timeframe, watch.
  *
- * Multi-select rather than one at a time, because the question an operator
- * actually has is comparative — whether a new alt-coin reads differently from
- * the major it was drawn beside, whether two siblings from one family look like
- * two markets. One chart at a time answers that badly.
- *
- * Switching timeframe re-reads a view. It never refetches ticks, never resamples
- * the underlying record, and never changes a price: INV-004 as a viewer
- * experiences it.
+ * **One asset per screen.** The first version put several side by side in a
+ * grid, reasoning that the operator's question is comparative. The Human Owner's
+ * answer was that it is not: selecting an asset should *change* the screen. That
+ * is also the honest shape for a chart — two markets at half width each are two
+ * charts nobody can read, and a market this project spends millions of ticks
+ * making plausible deserves the whole width.
  */
 export function Preview({ apiBase }: { apiBase: string }): ReactElement {
   const [catalogue, setCatalogue] = useState<CatalogueEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<readonly string[]>([]);
+  const [selected, setSelected] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState<PanelTimeframeId>('1h');
 
   useEffect(() => {
@@ -28,7 +26,7 @@ export function Preview({ apiBase }: { apiBase: string }): ReactElement {
     fetchCatalogue(apiBase, controller.signal)
       .then((entries) => {
         setCatalogue(entries);
-        setSelected(entries.slice(0, 1).map((entry) => entry.id));
+        setSelected(entries[0]?.id ?? null);
       })
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return;
@@ -43,7 +41,7 @@ export function Preview({ apiBase }: { apiBase: string }): ReactElement {
   if (catalogue === null) return <Message text="Loading the catalogue…" />;
   if (catalogue.length === 0) return <Message text="The catalogue is empty." />;
 
-  const shown = catalogue.filter((entry) => selected.includes(entry.id));
+  const shown = catalogue.find((entry) => entry.id === selected) ?? null;
 
   return (
     <div style={{ display: 'flex', height: '100%', minHeight: 0 }}>
@@ -63,20 +61,16 @@ export function Preview({ apiBase }: { apiBase: string }): ReactElement {
             key={entry.id}
             type="button"
             onClick={() => {
-              setSelected((current) =>
-                current.includes(entry.id)
-                  ? current.filter((id) => id !== entry.id)
-                  : [...current, entry.id],
-              );
+              setSelected(entry.id);
             }}
             style={{
               display: 'block',
               width: '100%',
               textAlign: 'left',
               padding: '10px 14px',
-              background: selected.includes(entry.id) ? '#161b26' : 'transparent',
+              background: selected === entry.id ? '#161b26' : 'transparent',
               border: 'none',
-              borderLeft: `3px solid ${selected.includes(entry.id) ? '#3fb950' : 'transparent'}`,
+              borderLeft: `3px solid ${selected === entry.id ? '#3fb950' : 'transparent'}`,
               color: '#d7dce5',
               font: 'inherit',
               cursor: 'pointer',
@@ -96,7 +90,9 @@ export function Preview({ apiBase }: { apiBase: string }): ReactElement {
         ))}
       </aside>
 
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <main
+        style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}
+      >
         <div
           style={{
             display: 'flex',
@@ -104,6 +100,7 @@ export function Preview({ apiBase }: { apiBase: string }): ReactElement {
             padding: '8px 12px',
             borderBottom: '1px solid #242c3d',
             alignItems: 'center',
+            flexShrink: 0,
           }}
         >
           {PANEL_TIMEFRAMES.map((entry) => (
@@ -127,57 +124,39 @@ export function Preview({ apiBase }: { apiBase: string }): ReactElement {
               {entry.id}
             </button>
           ))}
-          <span style={{ marginLeft: 'auto', fontSize: 12, color: '#8b93a7' }}>
-            {shown.length === 0 ? 'select an asset' : `${shown.length} selected`}
-          </span>
-        </div>
-
-        <div
-          style={{
-            flex: 1,
-            minHeight: 0,
-            display: 'grid',
-            gridTemplateColumns: shown.length > 1 ? '1fr 1fr' : '1fr',
-          }}
-        >
-          {shown.map((entry) => (
-            <section
-              key={entry.id}
-              style={{
-                minHeight: 0,
-                display: 'flex',
-                flexDirection: 'column',
-                borderRight: '1px solid #242c3d',
-                borderBottom: '1px solid #242c3d',
-              }}
-            >
-              <header
+          {shown !== null && (
+            <>
+              <span style={{ marginLeft: 12, color: '#d7dce5', fontSize: 12 }}>
+                {shown.displayName}
+              </span>
+              <span style={{ color: '#5b6377', fontSize: 12 }}>{shown.id}</span>
+              {/*
+                Sub-minute is served live rather than from storage: a stored
+                one-second bar of last March would be a shape no tick made.
+              */}
+              <a
+                href={`/preview/ticks/${shown.id}`}
                 style={{
-                  padding: '6px 10px',
+                  marginLeft: 'auto',
+                  color: '#8b93a7',
+                  textDecoration: 'none',
                   fontSize: 12,
-                  color: '#d7dce5',
-                  display: 'flex',
-                  gap: 10,
                 }}
               >
-                <span>{entry.displayName}</span>
-                <span style={{ color: '#5b6377' }}>
-                  {entry.id} · {timeframe}
-                </span>
-                {/* Sub-minute is served live rather than from storage: a stored
-                    one-second bar of last March would be a shape no tick made. */}
-                <a
-                  href={`/preview/ticks/${entry.id}`}
-                  style={{ marginLeft: 'auto', color: '#8b93a7', textDecoration: 'none' }}
-                >
-                  ticks →
-                </a>
-              </header>
-              <div style={{ flex: 1, minHeight: 0 }}>
-                <PreviewChart apiBase={apiBase} asset={entry} timeframeId={timeframe} />
-              </div>
-            </section>
-          ))}
+                ticks →
+              </a>
+            </>
+          )}
+        </div>
+
+        <div style={{ flex: 1, minHeight: 0 }}>
+          {shown === null ? (
+            <Message text="Select an asset." />
+          ) : (
+            // Keyed on the asset, so a switch remounts the chart instead of
+            // reusing one that still holds the previous market's series.
+            <PreviewChart key={shown.id} apiBase={apiBase} asset={shown} timeframeId={timeframe} />
+          )}
         </div>
       </main>
     </div>

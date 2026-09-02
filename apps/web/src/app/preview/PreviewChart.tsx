@@ -4,6 +4,7 @@ import {
   CandlestickSeries,
   createChart,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
   type UTCTimestamp,
 } from 'lightweight-charts';
@@ -12,6 +13,7 @@ import type { Tick } from '@otc/core/browser';
 import { fetchHistory, type CatalogueEntry } from '../../lib/api.js';
 import {
   bucketStart,
+  displayPrice,
   LiveBarBuilder,
   panelTimeframe,
   toBars,
@@ -23,16 +25,23 @@ import {
  *
  * The component does as little as a component can. Every decision that could be
  * silently wrong — which bucket a tick belongs to, whether a bar may narrow,
- * whose bar the join belongs to — is in `series.ts`, framework-free and tested.
- * What is left here is mounting a chart, fetching a window, and forwarding ticks.
+ * whose bar the join belongs to — is in the bar bridge, framework-free and
+ * tested. What is left here is mounting a chart, fetching a window, and
+ * forwarding ticks.
  *
- * ## The join
+ * ## The join, and what it costs a viewer
  *
- * History ends at whatever bar was last flushed; the stream starts at whatever
- * tick arrives after the socket opens. The overlap is real and the rule is that
- * **the record's bar wins**: a bucket history already has is never rebuilt from
- * the fragment of it that arrived live, because that would give this viewer a
- * different bar for the same minute than everyone else has (INV-002).
+ * A bucket that had already begun when this client connected belongs to the
+ * record, not to us: rebuilding it from the fragment that arrived afterwards
+ * would draw a different bar, for the same minute, to this viewer only
+ * (INV-002, Cycle Audit 6 CA6-30).
+ *
+ * Held strictly, that leaves a **one-hour chart motionless for up to an hour**,
+ * which is what the Human Owner saw and reported. So the candles stay truthful
+ * and the movement is shown where it is honest: a **price line at the last
+ * published tick**, updated on every one. Nothing there is invented — it is the
+ * last integer the record holds, converted once — and no candle is ever drawn
+ * from a fragment.
  */
 export function PreviewChart({
   apiBase,
@@ -48,16 +57,14 @@ export function PreviewChart({
   const series = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const [status, setStatus] = useState<string>('loading');
   const [bars, setBars] = useState<number>(0);
+  const [last, setLast] = useState<{ price: number; at: number } | null>(null);
 
   useEffect(() => {
     const element = container.current;
     if (element === null) return;
     const created = createChart(element, {
       layout: { background: { color: '#0b0e14' }, textColor: '#8b93a7' },
-      grid: {
-        vertLines: { color: '#161b26' },
-        horzLines: { color: '#161b26' },
-      },
+      grid: { vertLines: { color: '#161b26' }, horzLines: { color: '#161b26' } },
       rightPriceScale: { borderColor: '#242c3d' },
       timeScale: { borderColor: '#242c3d', timeVisible: true, secondsVisible: false },
       autoSize: true,
@@ -76,7 +83,11 @@ export function PreviewChart({
       chart.current = null;
       series.current = null;
     };
-  }, [asset.displayPrecision]);
+    // Keyed on the asset, not on its display precision. Four of the five assets
+    // in the catalogue share a precision, so keying on that kept the chart
+    // across a switch — carrying the previous asset's price format and data
+    // until the next fetch returned.
+  }, [asset.id, asset.displayPrecision]);
 
   useEffect(() => {
     const target = series.current;
@@ -84,6 +95,7 @@ export function PreviewChart({
     const frame = panelTimeframe(timeframeId);
     const controller = new AbortController();
     let stream: EventSource | null = null;
+    let priceLine: IPriceLine | null = null;
     let cancelled = false;
 
     const run = async (): Promise<void> => {
@@ -105,26 +117,44 @@ export function PreviewChart({
       setBars(drawn.length);
       chart.current?.timeScale().fitContent();
 
-      const last = history.candles[history.candles.length - 1];
+      const newest = history.candles[history.candles.length - 1];
       const builder = new LiveBarBuilder(
         frame.durationMs,
         asset,
-        last === undefined ? null : bucketStart(last.openInstant, frame.durationMs),
-        // The instant this client's view begins. A bucket already in progress
-        // belongs to the record even when it has not been flushed yet
-        // (CA6-30).
+        newest === undefined ? null : bucketStart(newest.openInstant, frame.durationMs),
         Date.now(),
       );
 
-      setStatus(asset.live ? 'live' : 'history only — this market is not hosted');
-      if (!asset.live) return;
+      if (!asset.live) {
+        setStatus('history only — this market is not hosted');
+        return;
+      }
+      setStatus('live');
 
       stream = new EventSource(`${apiBase}/markets/${asset.id}/stream`);
       stream.onmessage = (event: MessageEvent<string>): void => {
         const tick = JSON.parse(event.data) as Tick;
+        const price = displayPrice(tick.price, asset);
+        setLast({ price, at: tick.instant });
+
+        // The live price, on every tick, at every timeframe. This is the last
+        // integer the record holds, converted once, and nothing else.
+        if (priceLine === null) {
+          priceLine = target.createPriceLine({
+            price,
+            color: '#e3b341',
+            lineWidth: 1,
+            lineStyle: 2,
+            axisLabelVisible: true,
+            title: 'last',
+          });
+        } else {
+          priceLine.applyOptions({ price });
+        }
+
+        // And a candle only for a bucket this client watched from its start.
         const bar = builder.accept(tick);
-        if (bar === null) return;
-        target.update({ ...bar, time: bar.time as UTCTimestamp });
+        if (bar !== null) target.update({ ...bar, time: bar.time as UTCTimestamp });
       };
       stream.onerror = (): void => {
         setStatus('stream interrupted — reconnecting');
@@ -140,12 +170,23 @@ export function PreviewChart({
       cancelled = true;
       controller.abort();
       stream?.close();
+      if (priceLine !== null) target.removePriceLine(priceLine);
     };
   }, [apiBase, asset, timeframeId]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <div ref={container} style={{ flex: 1, minHeight: 0 }} />
+      {/*
+        The chart is mounted into an absolutely positioned box inside a
+        relatively positioned one. A chart container has no intrinsic height, so
+        anything that sizes to its content collapses it to zero — which is
+        exactly what happened: the panel drew an asset list beside an empty
+        rectangle while the candles arrived over the network. `inset: 0` takes
+        the question away from the layout entirely.
+      */}
+      <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
+        <div ref={container} style={{ position: 'absolute', inset: 0 }} />
+      </div>
       <div
         style={{
           padding: '6px 10px',
@@ -154,9 +195,18 @@ export function PreviewChart({
           borderTop: '1px solid #242c3d',
           display: 'flex',
           gap: 16,
+          flexWrap: 'wrap',
         }}
       >
-        <span>{status}</span>
+        <span style={{ color: status === 'live' ? '#3fb950' : '#8b93a7' }}>{status}</span>
+        {last !== null && (
+          <span style={{ color: '#e3b341' }}>
+            {last.price.toFixed(asset.displayPrecision)}{' '}
+            <span style={{ color: '#5b6377' }}>
+              {new Date(last.at).toLocaleTimeString(undefined, { hour12: false })}
+            </span>
+          </span>
+        )}
         <span>{bars.toLocaleString()} bars</span>
         <span>quantum {asset.logQuantum.toExponential(3)}</span>
         <span>tie rate {(100 * asset.tieRate).toFixed(2)}%</span>
