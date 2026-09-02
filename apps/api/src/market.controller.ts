@@ -17,7 +17,7 @@ import {
   dispersionLogSigma,
   dispersionPercent,
 } from '@otc/engine';
-import { epochMillis, isTimeframeId } from '@otc/core';
+import { epochMillis, isTimeframeId, timeframe as timeframeById } from '@otc/core';
 import { HistoryError } from '@otc/runtime';
 import { HistoryService } from './history.service.js';
 import { VenueService } from './venue.service.js';
@@ -48,9 +48,23 @@ export class MarketController {
     @Optional() @Inject(HistoryService) private readonly history: HistoryService | null = null,
   ) {}
 
+  /**
+   * Whether the venue is actually publishing, not merely running.
+   *
+   * **Cycle Audit 6, CA6-33.** This returned `{"status":"ok"}` for a venue whose
+   * markets had all stopped: a market past its catch-up bound refuses every
+   * later advance, and the failure list that says so was being discarded. A
+   * health endpoint that cannot report the one failure its process has is worse
+   * than none, because it is what a monitor watches.
+   */
   @Get('health')
-  health(): { status: string; assets: number } {
-    return { status: 'ok', assets: this.venue.assetIds.length };
+  health(): unknown {
+    const stalled = this.venue.stalledMarkets;
+    return {
+      status: stalled.length === 0 ? 'ok' : 'degraded',
+      assets: this.venue.assetIds.length,
+      stalled,
+    };
   }
 
   @Get('markets')
@@ -163,6 +177,25 @@ export class MarketController {
     if (toInstant <= fromInstant) {
       throw new BadRequestException(`to must be after from, got ${from} and ${to}.`);
     }
+    // **Cycle Audit 6, CA6-34.** No window cap, no pagination, no rate limit,
+    // no auth. `node:sqlite`'s `.all()` is synchronous, so a single 90-day
+    // minute request measured **20.5 MB of JSON and 1,496 ms of blocked event
+    // loop**, and sixty concurrent ones took the process from 100 MB to 1.86 GB.
+    // The venue survived only because Node yields between handlers, which is
+    // the one thing separating that finding from the market-stalls-for-ever one
+    // beside it.
+    //
+    // A bound on bars rather than on time, because that is what the cost scales
+    // with. The panel's largest view is ninety days of daily bars — ninety of
+    // them — so this is two orders of magnitude above any legitimate request.
+    const bars = Math.ceil((toInstant - fromInstant) / timeframeMs(timeframe));
+    if (bars > MAX_CANDLES_PER_REQUEST) {
+      throw new BadRequestException(
+        `That window is ${bars.toLocaleString()} ${timeframe} bars, past the ` +
+          `${MAX_CANDLES_PER_REQUEST.toLocaleString()} a single request may return. Ask for a ` +
+          `shorter window or a coarser timeframe: ninety days of daily bars is ninety rows.`,
+      );
+    }
     try {
       const candles = await this.history.read(id, timeframe, fromInstant, toInstant);
       return { assetId: id, timeframe, from: fromInstant, to: toInstant, candles };
@@ -259,6 +292,19 @@ function displayPrice(
   precision: number,
 ): string {
   return (referencePrice * Math.exp(price * logQuantum)).toFixed(precision);
+}
+
+/**
+ * The most bars one request may return.
+ *
+ * Chosen against what the panel actually asks for — its largest view is ninety
+ * daily bars, its densest is a few hundred minute bars — with two orders of
+ * magnitude of slack, rather than against what the storage can survive.
+ */
+const MAX_CANDLES_PER_REQUEST = 20_000;
+
+function timeframeMs(id: Parameters<typeof timeframeById>[0]): number {
+  return timeframeById(id).durationMs;
 }
 
 function instantParam(name: string, raw: string | undefined): ReturnType<typeof epochMillis> {

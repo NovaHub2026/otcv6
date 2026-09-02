@@ -48,6 +48,13 @@ export class VenueService implements OnModuleDestroy {
    */
   readonly feed = new TickFeed();
   private readonly latest = new Map<string, Tick>();
+  /**
+   * Markets that failed their last advance, and why.
+   *
+   * Read by `/health`, so an operator learns from the service rather than from
+   * a chart that stopped moving (CA6-33).
+   */
+  private readonly stalled = new Map<string, string>();
   private lastCheckpointAt = 0;
 
   constructor(
@@ -175,10 +182,40 @@ export class VenueService implements OnModuleDestroy {
     return this.recovery.get(assetId) ?? null;
   }
 
+  /** Markets that failed their last advance, newest reason first. */
+  get stalledMarkets(): readonly { assetId: string; reason: string }[] {
+    return [...this.stalled].map(([assetId, reason]) => ({ assetId, reason }));
+  }
+
   /** Publish everything due, then persist if the cadence has elapsed. */
   async tick(): Promise<void> {
     if (this.venue === null) return;
-    for (const { assetId, ticks } of this.venue.advance()) {
+    // `advanceDetailed`, not `advance`. **Cycle Audit 6, CA6-33:** `advance()`
+    // returns `advanceDetailed(now).published` and drops the failures, and this
+    // service called only that. A market past its catch-up bound therefore
+    // stopped publishing **permanently and silently** — `#lastAdvancedAt` only
+    // moves after the bound check, so every later advance is refused too —
+    // while `/health` returned `{"status":"ok"}`, `/markets/:id` returned the
+    // frozen last price, and the panel showed a chart that had stopped moving
+    // with the status `live`.
+    //
+    // The failure list is the one thing that says so, and it was being thrown
+    // away by the only caller that mattered.
+    const { published, failures } = this.venue.advanceDetailed(epochMillis(this.clock.now()));
+    for (const failure of failures) {
+      const previous = this.stalled.get(failure.assetId);
+      this.stalled.set(failure.assetId, failure.error.message);
+      // Logged once per distinct reason: a market that has stopped emits this
+      // on every scheduler tick, and a log nobody can read is a log nobody
+      // reads.
+      if (previous !== failure.error.message) {
+        this.logger.error(`${failure.assetId}: STALLED — ${failure.error.message}`);
+      }
+    }
+    for (const { assetId, ticks } of published) {
+      if (this.stalled.delete(assetId)) {
+        this.logger.log(`${assetId}: publishing again`);
+      }
       const last = ticks[ticks.length - 1];
       if (last !== undefined) this.latest.set(assetId, last);
       this.feed.publish(assetId, ticks);

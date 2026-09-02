@@ -110,6 +110,10 @@ export function PreviewChart({
         frame.durationMs,
         asset,
         last === undefined ? null : bucketStart(last.openInstant, frame.durationMs),
+        // The instant this client's view begins. A bucket already in progress
+        // belongs to the record even when it has not been flushed yet
+        // (CA6-30).
+        Date.now(),
       );
 
       setStatus(asset.live ? 'live' : 'history only — this market is not hosted');

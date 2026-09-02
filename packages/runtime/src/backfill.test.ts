@@ -188,6 +188,27 @@ describe('a backfill is genesis, and refuses to be anything else', () => {
     await expect(backfillMarket(options({ store }))).rejects.toThrow(BackfillError);
   }, 90_000);
 
+  it('refuses when the history holds candles and the record does not', async () => {
+    // **Cycle Audit 6, CA6-28.** Candles flush throughout a backfill; the
+    // checkpoint is written once at the end. A crash between them leaves
+    // history and no record, and the guard consulted only the record — so a
+    // re-run was admitted and either died on the first append or, with a later
+    // genesis, spliced a second market into the same id.
+    const store = new MemoryStateStore();
+    const history = new InMemoryCandleHistory();
+    await backfillMarket(options({ store, history }));
+
+    const orphaned = new MemoryStateStore();
+    await expect(backfillMarket(options({ store: orphaned, history }))).rejects.toThrow(
+      /history already holds candles/,
+    );
+    // And the refusal says what an operator has to decide, rather than leaving
+    // the asset silently unprovisionable.
+    await expect(backfillMarket(options({ store: orphaned, history }))).rejects.toThrow(
+      /delete its history as well as its record/,
+    );
+  }, 120_000);
+
   it('refuses a step past the catch-up bound', async () => {
     // ADR-0010: no unobserved burst may span a contract. A backfill has no more
     // authority to invent one than a running venue does, and a step larger than
