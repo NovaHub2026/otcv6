@@ -18,6 +18,7 @@ import {
   LiveBarBuilder,
   panelTimeframe,
   toBars,
+  type HistoryCandle,
   type PanelTimeframeId,
 } from '@otc/chart';
 
@@ -74,6 +75,9 @@ import {
 /** Quiet for this many mean intervals and the status stops saying `live`. */
 export const STALL_MULTIPLE = 3;
 /** Delay before the first reconnect; doubles per consecutive failure. */
+/** One minute, the record's permanent base tier. */
+const MINUTE_MS = 60_000;
+
 const RECONNECT_BACKOFF_MS = 1_000;
 const MAX_RECONNECT_BACKOFF_MS = 30_000;
 
@@ -143,6 +147,7 @@ export function PreviewChart({
     const controller = new AbortController();
     let stream: EventSource | null = null;
     let priceLine: IPriceLine | null = null;
+    let resumeRefused = false;
     let cancelled = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let stallTimer: ReturnType<typeof setTimeout> | null = null;
@@ -198,13 +203,77 @@ export function PreviewChart({
       setBars(drawn.length);
       chart.current?.timeScale().fitContent();
 
+      // Resume the stream exactly where the history stops, so the bucket now
+      // forming is one this client holds from its first tick.
+      //
+      // Without it the newest bar cannot move until the next boundary — up to
+      // a full hour on the default one-hour chart — while the live price line
+      // drifts away from a candle that never follows it. Reported on
+      // 2026-09-02 as "the price moves and the candle stands still", which was
+      // two correct rules producing a wrong screen: CA6-30 forbids rebuilding a
+      // bucket from a partial view, and a resumed stream is not partial.
+      //
+      // `resumeRefused` is set when a previous attempt asked for a sequence the
+      // feed had already evicted. An `EventSource` cannot read a status code,
+      // so the refusal is observed as an error before `onopen`; the next
+      // attempt goes without a resume point and the builder falls back to the
+      // conservative rule.
       const newest = history.candles[history.candles.length - 1];
+
+      // What this client can prove it holds of the bucket now forming.
+      //
+      // Two correct rules used to produce a wrong screen: CA6-30 forbids
+      // rebuilding a bucket from a partial view, so the newest bar could not
+      // move until the next boundary — up to a full hour on the default
+      // one-hour chart, while the live price line drifted away from a candle
+      // that never followed it (reported 2026-09-02).
+      //
+      // Neither rule has to give. The record *has* the bucket: as complete
+      // minute bars, its permanent base tier. Folding those in is the record
+      // read finer than the chart draws, and resuming the stream at the tick
+      // after the last of them supplies the rest exactly — so the feed need
+      // only remember one minute rather than one hour, which is what makes
+      // this survive an engine restart.
+      let seed: readonly HistoryCandle[] = [];
+      let resumeFrom: number | null = null;
+      if (!resumeRefused) {
+        if (frame.durationMs > MINUTE_MS) {
+          const bucketNow = bucketStart(Date.now(), frame.durationMs);
+          const minutes = await fetchHistory(
+            apiBase,
+            asset.id,
+            '1m',
+            bucketNow,
+            Date.now(),
+            controller.signal,
+          );
+          if (cancelled) return;
+          seed = minutes.candles.filter(
+            (bar) => bucketStart(bar.openInstant, frame.durationMs) === bucketNow,
+          );
+          const lastMinute = seed[seed.length - 1];
+          if (lastMinute !== undefined) resumeFrom = lastMinute.lastSequence + 1;
+        }
+        // A one-minute chart needs no seed: the bucket after the newest history
+        // bar begins at the tick the resume starts from.
+        if (resumeFrom === null && newest !== undefined) resumeFrom = newest.lastSequence + 1;
+      }
+
       const builder = new LiveBarBuilder(
         frame.durationMs,
         asset,
         newest === undefined ? null : bucketStart(newest.openInstant, frame.durationMs),
         Date.now(),
+        resumeFrom !== null,
       );
+      const lastSeeded = seed[seed.length - 1];
+      if (lastSeeded !== undefined) {
+        builder.seedFrom(seed, lastSeeded.lastSequence);
+        const forming = builder.current();
+        if (forming !== null) {
+          target.update({ ...forming, time: forming.time as UTCTimestamp });
+        }
+      }
 
       if (!asset.live) {
         setStatus('history only — this market is not hosted');
@@ -213,9 +282,16 @@ export function PreviewChart({
 
       // A new stream from now, never a resume: the history was just refetched,
       // so the record is current and the builder's join is this connection's.
-      const opened = new EventSource(`${apiBase}/markets/${asset.id}/stream`);
+      const opened = new EventSource(
+        resumeFrom === null
+          ? `${apiBase}/markets/${asset.id}/stream`
+          : `${apiBase}/markets/${asset.id}/stream?from=${resumeFrom}`,
+      );
       stream = opened;
+      let everOpened = false;
       opened.onopen = (): void => {
+        everOpened = true;
+        resumeRefused = false;
         failures = 0;
         setStatus(liveStatus());
         armStall();
@@ -255,6 +331,9 @@ export function PreviewChart({
         opened.close();
         if (stream !== opened) return;
         stream = null;
+        // Never opened, and we had asked to resume: the engine refused the
+        // sequence. Ask for the live edge next time.
+        if (!everOpened && resumeFrom !== null) resumeRefused = true;
         if (stallTimer !== null) clearTimeout(stallTimer);
         retryLater('stream interrupted');
       };

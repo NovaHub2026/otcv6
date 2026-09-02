@@ -130,6 +130,8 @@ export function bucketStart(instant: number, durationMs: number): number {
 export class LiveBarBuilder {
   #open: { time: number; open: number; high: number; low: number; close: number } | null = null;
   #lastSequence: number | null = null;
+  /** Bucket start seeded from the record, which this builder may therefore draw. */
+  #seeded: number | null = null;
 
   constructor(
     readonly durationMs: number,
@@ -148,10 +150,26 @@ export class LiveBarBuilder {
      * the record holds and the extreme-preserving contract exists to protect.
      *
      * So a live bar is built only for a bucket that *started after* this client
-     * connected. Until the next boundary the newest bar on the chart is the
-     * newest bar in the record, which is the only honest thing to draw.
+     * connected — **unless** the caller can show it holds the bucket from its
+     * true beginning, which is what {@link gaplessFromHistory} says.
      */
     private readonly openedAtMs: number | null = null,
+    /**
+     * The stream continues the history exactly, with no tick unaccounted for.
+     *
+     * Set only when the subscription resumed at `lastSequence + 1` of the newest
+     * bar handed in as history: the record then covers everything before that
+     * sequence and this client holds everything from it, so a bucket after
+     * `historyThroughMs` is one it holds *entire*. Nothing is rebuilt from a
+     * partial view, which is the whole of what CA6-30 forbids.
+     *
+     * Why it matters: without it, the newest bar cannot move until the next
+     * bucket boundary — up to a full hour on the panel's default one-hour
+     * chart, with the live price line drifting away from a candle that never
+     * follows it. Reported on 2026-09-02 as "the price moves and the candle
+     * stands still", which was two correct rules producing a wrong screen.
+     */
+    private readonly gaplessFromHistory = false,
   ) {
     if (!Number.isFinite(durationMs) || durationMs <= 0) {
       throw new SeriesError(`A bar duration must be positive, got ${durationMs}.`);
@@ -174,7 +192,12 @@ export class LiveBarBuilder {
     // Any bucket that had already begun is the record's, not ours — whether it
     // was flushed to history or was still open when this client connected.
     if (this.historyThroughMs !== null && start <= this.historyThroughMs) return null;
-    if (this.openedAtMs !== null && start <= bucketStart(this.openedAtMs, this.durationMs)) {
+    if (
+      !this.gaplessFromHistory &&
+      start !== this.#seeded &&
+      this.openedAtMs !== null &&
+      start <= bucketStart(this.openedAtMs, this.durationMs)
+    ) {
       return null;
     }
 
@@ -193,6 +216,51 @@ export class LiveBarBuilder {
     if (price < this.#open.low) this.#open.low = price;
     this.#open.close = price;
     return { ...this.#open };
+  }
+
+  /**
+   * Start the forming bucket from bars the record already holds.
+   *
+   * The panel's coarse timeframes made the conservative rule expensive: on a
+   * one-hour chart the newest bar could not move for up to an hour, because a
+   * client that connects mid-bucket holds none of the bucket's beginning. The
+   * record does hold it — as *complete minute bars*, the permanent base tier —
+   * and folding those in is not a rebuild from a partial view. It is the
+   * record, read at a finer resolution than the chart draws.
+   *
+   * `throughSequence` is the last tick accounted for by `bars`. Ticks at or
+   * below it are ignored, so a stream resumed at `throughSequence + 1` extends
+   * the seed exactly once, and a replay that overlaps cannot double-count.
+   *
+   * Every bar must belong to the same target bucket; a caller that folds across
+   * a boundary would be inventing one.
+   */
+  seedFrom(bars: readonly HistoryCandle[], throughSequence: number): void {
+    if (bars.length === 0) return;
+    const start = bucketStart(bars[0]!.openInstant, this.durationMs);
+    for (const bar of bars) {
+      if (bucketStart(bar.openInstant, this.durationMs) !== start) {
+        throw new SeriesError(
+          `A seed must lie inside one ${String(this.durationMs)}ms bucket; ` +
+            `${String(bar.openInstant)} does not belong to the bucket at ${String(start)}.`,
+        );
+      }
+    }
+    let high = bars[0]!.high;
+    let low = bars[0]!.low;
+    for (const bar of bars) {
+      if (bar.high > high) high = bar.high;
+      if (bar.low < low) low = bar.low;
+    }
+    this.#open = {
+      time: Math.floor(start / 1000),
+      open: displayPrice(bars[0]!.open, this.instrument),
+      high: displayPrice(high, this.instrument),
+      low: displayPrice(low, this.instrument),
+      close: displayPrice(bars[bars.length - 1]!.close, this.instrument),
+    };
+    this.#lastSequence = throughSequence;
+    this.#seeded = start;
   }
 
   /** The bar currently accumulating, if any. */

@@ -144,6 +144,102 @@ describe('the live edge of the chart', () => {
     expect(fresh!.time).toBe(Math.floor((ORIGIN + 120_000) / 1000));
   });
 
+  it('draws the running bucket when the stream provably continues the history', () => {
+    // The other half of CA6-30, and the reason the panel looked broken on
+    // 2026-09-02: the rule above means the newest bar cannot move until the
+    // next boundary — up to an hour on the default one-hour chart, with the
+    // live price line drifting away from a candle that never follows it.
+    //
+    // The record keeps the ticks. A client that resumes the stream at
+    // `lastSequence + 1` of the newest history bar holds the running bucket
+    // from its true first tick, so drawing it invents nothing: the open is the
+    // open, and no extreme is missing. That, and only that, is what
+    // `gaplessFromHistory` asserts.
+    const connectedAt = ORIGIN + 90_000; // 30 seconds into the second minute
+    const builder = new LiveBarBuilder(durationMs, instrument, ORIGIN, connectedAt, true);
+
+    // Replayed ticks of the running minute, from its first: ours to draw.
+    const first = builder.accept(tick(1, ORIGIN + 61_000, 9_000));
+    expect(first).not.toBeNull();
+    expect(first!.time).toBe(Math.floor((ORIGIN + 60_000) / 1000));
+    expect(first!.open).toBe(displayPrice(9_000, instrument));
+
+    // And the extreme the old path lost is kept, because the tick was replayed
+    // rather than missed.
+    const high = builder.accept(tick(2, ORIGIN + 70_000, 12_000));
+    expect(high!.high).toBe(displayPrice(12_000, instrument));
+    const later = builder.accept(tick(3, connectedAt + 20_000, 1_000));
+    expect(later!.high).toBe(displayPrice(12_000, instrument));
+    expect(later!.low).toBe(displayPrice(1_000, instrument));
+    expect(later!.time).toBe(first!.time);
+
+    // The bar already in history is still refused: gapless says nothing about
+    // a bucket the record has already closed.
+    expect(builder.accept(tick(4, ORIGIN + 30_000, 5_000))).toBeNull();
+  });
+
+  it('seeds the forming bucket from the minute bars the record holds', () => {
+    // The robust half of the same fix. A resumed stream covers the running
+    // bucket only while the feed still remembers it — after a restart it does
+    // not, and on an hourly chart that is an hour of a frozen candle again.
+    //
+    // The record keeps complete *minute* bars for ever: the permanent base
+    // tier. Folding those into the forming hour is not a rebuild from a partial
+    // view; it is the record, read finer than the chart draws. Only the current
+    // minute is then missing, and a stream resumed at the last minute bar's
+    // `lastSequence + 1` supplies exactly that.
+    const hour = 3_600_000;
+    const hourStart = bucketStart(ORIGIN, hour) + hour;
+    const minutes: HistoryCandle[] = [
+      candle(0, {
+        openInstant: hourStart,
+        open: 1_000,
+        high: 4_000,
+        low: 500,
+        close: 3_000,
+        lastSequence: 20,
+      }),
+      candle(0, {
+        openInstant: hourStart + 60_000,
+        open: 3_000,
+        high: 9_000,
+        low: 2_500,
+        close: 8_000,
+        firstSequence: 21,
+        lastSequence: 30,
+      }),
+    ];
+    const builder = new LiveBarBuilder(hour, instrument, bucketStart(ORIGIN, hour), Date.now());
+    builder.seedFrom(minutes, 30);
+
+    const seeded = builder.current();
+    expect(seeded!.time).toBe(Math.floor(hourStart / 1000));
+    expect(seeded!.open).toBe(displayPrice(1_000, instrument));
+    expect(seeded!.high).toBe(displayPrice(9_000, instrument));
+    expect(seeded!.low).toBe(displayPrice(500, instrument));
+
+    // A replayed tick already inside the seed is ignored, not folded twice.
+    expect(builder.accept(tick(30, hourStart + 119_000, 99_000))).toBeNull();
+    // The next one extends the same bar, and the seed's extremes survive.
+    const extended = builder.accept(tick(31, hourStart + 121_000, 10_000));
+    expect(extended!.time).toBe(seeded!.time);
+    expect(extended!.high).toBe(displayPrice(10_000, instrument));
+    expect(extended!.low).toBe(displayPrice(500, instrument));
+    expect(extended!.open).toBe(displayPrice(1_000, instrument));
+  });
+
+  it('refuses a seed that crosses a bucket boundary', () => {
+    const hour = 3_600_000;
+    const hourStart = bucketStart(ORIGIN, hour) + hour;
+    const builder = new LiveBarBuilder(hour, instrument);
+    expect(() =>
+      builder.seedFrom(
+        [candle(0, { openInstant: hourStart }), candle(0, { openInstant: hourStart + hour })],
+        2,
+      ),
+    ).toThrow(SeriesError);
+  });
+
   it('refuses a duration that is not one', () => {
     expect(() => new LiveBarBuilder(0, instrument)).toThrow(SeriesError);
     expect(() => new LiveBarBuilder(-1, instrument)).toThrow(SeriesError);
