@@ -361,8 +361,14 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
     dispersion: { min: 0.01, max: 0.022 },
     excessKurtosis: { min: 30, max: 55 },
     traits: {
-      tempoMs: { min: 4_200, max: 7_000 },
-      burstiness: { min: 0.38, max: 0.52 },
+      // **Cycle Audit 6, CA6-27.** At 7,000 ms and 38% branching the mean
+      // interval is 4.3 s, and Hawkes gaps then leave more than 1% of
+      // 30-second horizons with no tick at all — so the 1% quantile of
+      // `|30s return|` is exactly zero and the calibration refuses with "the
+      // asset does not move", blaming amplitude for a tempo problem. Narrowed
+      // to a 3.5-second mean interval at the worst corner.
+      tempoMs: { min: 4_200, max: 6_000 },
+      burstiness: { min: 0.42, max: 0.56 },
       regimeSpread: { min: 0.75, max: 0.95 },
       structureSpread: { min: 1.2, max: 1.45 },
       durationCoupling: { min: 0.18, max: 0.32 },
@@ -461,16 +467,22 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
     dispersion: { min: 0.48, max: 0.68 },
     excessKurtosis: { min: 130, max: 165 },
     traits: {
-      tempoMs: { min: 500, max: 1_000 },
-      burstiness: { min: 0.78, max: 0.88 },
-      regimeSpread: { min: 1.3, max: 1.5 },
-      structureSpread: { min: 0.85, max: 1.1 },
-      durationCoupling: { min: 0.35, max: 0.6 },
-      cascadeDepth: { min: 5, max: 8 },
-      cascadeSpanMs: { min: 1.5 * HOUR, max: 4 * HOUR },
-      cascadeSpacing: { min: 2.8, max: 4.2 },
-      regimeTempo: { min: 0.3, max: 0.5 },
-      arrivalMemoryMs: { min: 15 * SECOND, max: 25 * SECOND },
+      // **Cycle Audit 6, CA6-23.** This was the narrowest box in the
+      // catalogue, and its siblings were not distinguishable from three clones
+      // of one personality: a 4.7pp lift at p ≈ 0.17, against 8–20pp everywhere
+      // else. A family is a *region*, and a region this small is a template
+      // with jitter. Widened on the five traits that were tightest, keeping the
+      // character — fast, shallow, extreme — and the feasible spacing corner.
+      tempoMs: { min: 450, max: 1_100 },
+      burstiness: { min: 0.72, max: 0.88 },
+      regimeSpread: { min: 1.2, max: 1.5 },
+      structureSpread: { min: 0.8, max: 1.2 },
+      durationCoupling: { min: 0.3, max: 0.65 },
+      cascadeDepth: { min: 5, max: 9 },
+      cascadeSpanMs: { min: 1.5 * HOUR, max: 5 * HOUR },
+      cascadeSpacing: { min: 2.6, max: 4.2 },
+      regimeTempo: { min: 0.3, max: 0.6 },
+      arrivalMemoryMs: { min: 15 * SECOND, max: 45 * SECOND },
     },
   },
 ];

@@ -8,7 +8,7 @@ import { dispersionLogSigma } from './dispersion.js';
 const base = ASSET_CATALOGUE[0]!.definition;
 const QUICK = { replicates: 1, simulatedMs: 2 * 86_400_000 } as const;
 
-function calibrate(volatility: number) {
+function calibrate(volatility: number, over: { replicates?: number; simulatedMs?: number } = {}) {
   const keyring = MasterKeyring.forTesting('rescale-spec');
   return calibrateAsset(
     { ...base, traits: { ...base.traits, volatility } },
@@ -19,9 +19,22 @@ function calibrate(volatility: number) {
         purpose,
         keyEpoch: 0,
       }),
-    QUICK,
+    { ...QUICK, ...over },
   );
 }
+
+describe('a long calibration does not overflow the stack', () => {
+  it('pools tens of thousands of windows from one replicate', () => {
+    // `pooled.push(...returns)` spreads the whole replicate onto the argument
+    // stack. At 32 turnovers of a 46-hour cascade — 61 simulated days, 176,000
+    // windowed returns — that is a `RangeError` from a line that reads like a
+    // copy. It was latent for as long as calibration spans stayed short, and
+    // raising `DISPERSION_FIT_TURNOVERS` found it.
+    const long = calibrate(base.traits.volatility, { replicates: 1, simulatedMs: 90 * 86_400_000 });
+    expect(long.evidence.horizons).toBeGreaterThan(250_000);
+    expect(long.evidence.logVariancePerMs).toBeGreaterThan(0);
+  }, 120_000);
+});
 
 describe('a calibration can be moved to another volatility without simulating', () => {
   const factor = 3.7;

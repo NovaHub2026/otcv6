@@ -357,7 +357,13 @@ function* calibrateAssetCore(
     perReplicate.push(quantile(sortedReplicate, targetTieRate));
     totalTicks += ticks;
     totalHorizons += returns.length;
-    pooled.push(...returns);
+    // `pooled.push(...returns)` spreads the whole replicate onto the argument
+    // stack, and a long calibration overflows it: 32 turnovers of a 46-hour
+    // cascade is 61 simulated days, 176,000 windowed returns, and a
+    // `RangeError: Maximum call stack size exceeded` from a line that looks
+    // like a copy. Found by raising `DISPERSION_FIT_TURNOVERS` — the defect was
+    // latent for as long as spans stayed short.
+    for (const value of returns) pooled.push(value);
   }
 
   // Median across replicates, not mean: the quantity being combined is a
