@@ -4,7 +4,7 @@ Type: SUPPORTING DOCUMENTATION (living)
 Status: Dynamic — phases may be split, merged, reordered or replaced as
 implementation reveals information (`GOVERNANCE.md` §13). Approved phases are
 never rewritten as though they had not happened.
-Last revised: 2026-09-02 (out-of-band audit, a7-10)
+Last revised: 2026-09-02 (PH-22 chosen; out-of-band audit, a7-10)
 
 ---
 
@@ -544,6 +544,62 @@ storage, in scheduling and in differentiation headroom is still unmeasured.
 | PH-21.1  | A hundred assets, and what registering them costs | APPROVED |
 | PH-21.2  | The venue and the store under a full catalogue    | APPROVED |
 | PH-21.3  | A panel that can hold a hundred assets            | ACTIVE   |
+
+## Cycle 8 — Distribution under thousands of observers
+
+**Chosen by the Human Owner on 2026-09-02, ahead of everything else**, on a
+concrete plan: several charts per client and thousands of clients at once. The
+question they asked was whether that argues for WebSocket. Measuring the running
+engine said the transport is not the lever — a WebSocket frame saves 16 bytes on
+a 76-byte event, which at the venue's own rate is 24 bytes per second per
+viewer — and looking at the delivery path found something an order of magnitude
+larger.
+
+| Phase | Title                                     | State       |
+| ----- | ----------------------------------------- | ----------- |
+| PH-22 | Distribution under thousands of observers | not started |
+
+### PH-22 — Distribution Under Thousands Of Observers
+
+Nobody has ever opened two simultaneous clients against this engine. Everything
+below is therefore a hypothesis with a number attached, and the phase exists to
+replace the numbers with measurements before changing anything.
+
+What is already known, and where it came from:
+
+- **Every subscriber re-serialises the same tick** (Issue #15). `feed.ts` walks
+  the subscriptions and the controller builds the SSE frame inside the
+  callback, so one tick delivered to N clients is `JSON.stringify`d N times. At
+  ten thousand clients watching eight assets each — 800 subscribers per asset
+  against PH-21.2's measured 150 ticks/s — that is ~120,000 serialisations per
+  second of an identical string. Transport-independent, and the largest known
+  cost.
+- **One connection per chart hits the browser's six-per-origin limit** on
+  HTTP/1.1 (Issue #16). Multiplexing assets onto one stream fixes it and divides
+  open connections by the number of charts; HTTP/2 at the edge removes the limit
+  outright and is a deployment decision.
+- **Per-connection cost is the same in every transport.** Ten thousand held
+  connections are 300–600 MB of socket buffers in Node whether they carry SSE
+  frames or WebSocket frames.
+
+So the order is: measure, serialise once, multiplex, put HTTP/2 in front — and
+only then ask whether the tick should be binary, which is the one thing that
+genuinely needs a transport that carries bytes. A 16-byte binary tick against a
+58-byte JSON one is 2.2 MB/s against 9.1 MB/s at that scale, and that is when
+WebSocket earns an ADR rather than a preference.
+
+**What the phase may not do:** trade away `Last-Event-ID`. SSE gives exact
+resumption and an explicit refusal when the sequence has been evicted, and a gap
+served in silence is indistinguishable from the market (INV-002). Any transport
+that replaces it has to bring that property with it, tested, before it ships.
+
+**Cycle Audit 7 comes first.** PH-19, PH-20 and PH-21 are three approved phases,
+and `GOVERNANCE.md` §28 stops normal development at that boundary. The audit is
+not optional and does not become optional because a phase is wanted; PH-22 is
+the first phase after it. §67 lets the audit's _depth_ be chosen by risk, and
+the out-of-band audit of 2026-09-02 covered most of this cycle's surface — so
+Cycle Audit 7 aims at what that audit could not see: the fixes it produced, and
+PH-21, which did not exist in its current form when the auditors read the tree.
 
 ## Major dependencies
 

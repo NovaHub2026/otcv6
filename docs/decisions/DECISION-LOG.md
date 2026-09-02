@@ -309,3 +309,40 @@ patch applied by a test, a rename. Rejected as laundering.
 
 **Revisit when:** the Human Owner applies the proposal or grants the permission.
 Issue #14 stays open until then.
+
+---
+
+## 2026-09-02 — Distribution at scale is the next phase, and the transport is not the lever
+
+**Decided:** PH-22 is distribution under thousands of observers, prioritised by
+the Human Owner ahead of everything else after PH-21 and Cycle Audit 7. The
+transport stays SSE until a measurement says otherwise.
+
+**Why:** the question was whether thousands of clients with several charts each
+argue for WebSocket. Measured on the running engine: a WebSocket frame costs 2
+bytes against SSE's 18, on a 58-byte payload — 21% of the traffic, which at the
+venue's own measured rate is 24 bytes per second per viewer. Latency is
+identical; both are one TCP connection already open, and SSE starts marginally
+sooner because there is no upgrade handshake.
+
+Reading the delivery path found the thing that does matter: the SSE frame is
+built inside the per-subscriber callback, so one tick is serialised once per
+subscriber — ~120,000 times a second at the scale being planned (Issue #15).
+That is one to two cores, it is a hundred times the framing difference, and
+switching transport does not touch it.
+
+**What WebSocket would genuinely buy** is binary framing: a tick is three
+numbers and fits in 16 bytes against 58 as JSON, and SSE is text-only so binary
+costs a base64 tax. That is a real argument, worth 9.1 MB/s against 2.2 MB/s at
+ten thousand clients — and it is an argument to make _after_ serialising once,
+multiplexing assets onto one connection (Issue #16) and putting HTTP/2 in front,
+because those three are free of protocol risk and one of them is larger than the
+protocol.
+
+**What it would cost.** `Last-Event-ID` is part of SSE: exact resumption, and an
+explicit refusal when the sequence has been evicted. On WebSocket that is code
+to write, test and audit, and a silently served gap is INV-002 broken.
+
+**Revisit when:** PH-22 has measured a thousand, five thousand and ten thousand
+concurrent subscribers with the fan-out fixed. If bandwidth or CPU still bind,
+the binary tick and its transport get their own ADR.
