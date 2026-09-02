@@ -58,34 +58,38 @@ describe('the registration guard refuses a personality already present', () => {
     expect(refusal).toMatch(/eurusd/);
   });
 
-  it('admits the same personality at a different scale', () => {
-    // Two assets that differ only in amplitude are the trivial kind of
-    // different, and the trivial kind is still a different market — a copy at
-    // twice the amplitude sits at 0.0217, just past the threshold, and its
-    // dispersion is double.
-    const traits = {
-      ...eurusd.definition.traits,
-      volatility: eurusd.definition.traits.volatility * 2,
-    };
-    expect(traitDistance(eurusd.definition.traits, traits)).toBeGreaterThan(MINIMUM_TRAIT_DISTANCE);
-    expect(
-      check(candidate(eurusd, traits, eurusd.evidence.logVariancePerMs * 4), ASSET_CATALOGUE),
-    ).toBeNull();
+  it('refuses the same personality at a different scale', () => {
+    // **Cycle Audit 6, CA6-25.** This test used to assert the opposite. A copy
+    // registered at twice the amplitude sat 0.0217 away — just past the old
+    // threshold — and the guard's second condition let it through outright at
+    // any dispersion ratio above 1.05. Measured on the project's own
+    // classifier, such a pair is indistinguishable: 46.3 / 47.5 / 51.2% on the
+    // full signature against a 50% chance rate. One market, louder, twice.
+    for (const factor of [1.06, 2, 40]) {
+      const traits = {
+        ...eurusd.definition.traits,
+        volatility: eurusd.definition.traits.volatility * factor,
+      };
+      // Amplitude is not part of the distance at all now.
+      expect(traitDistance(eurusd.definition.traits, traits)).toBe(0);
+      expect(
+        check(candidate(eurusd, traits, eurusd.evidence.logVariancePerMs * factor * factor), [
+          eurusd,
+        ]),
+        `factor ${factor}`,
+      ).not.toBeNull();
+    }
   });
 
-  it('needs both conditions before it refuses', () => {
-    // Traits close but the budget far apart: a quiet and a loud version of one
-    // character, which the catalogue is entitled to hold.
+  it('refuses a near-copy however far apart the budgets are', () => {
     const nudged = {
       ...eurusd.definition.traits,
-      regimeTempo: eurusd.definition.traits.regimeTempo * 1.001,
+      regimeTempo: eurusd.definition.traits.regimeTempo * 1.0005,
     };
     expect(traitDistance(eurusd.definition.traits, nudged)).toBeLessThan(MINIMUM_TRAIT_DISTANCE);
     expect(
-      check(candidate(eurusd, nudged, eurusd.evidence.logVariancePerMs * 4), ASSET_CATALOGUE),
-    ).toBeNull();
-    // The same pair at the same budget is a duplicate.
-    expect(check(candidate(eurusd, nudged), ASSET_CATALOGUE)).not.toBeNull();
+      check(candidate(eurusd, nudged, eurusd.evidence.logVariancePerMs * 16), [eurusd]),
+    ).not.toBeNull();
   });
 
   it('admits every asset already in the catalogue against the others', () => {
@@ -100,7 +104,7 @@ describe('the registration guard refuses a personality already present', () => {
   });
 
   it('takes a stricter threshold when one is asked for', () => {
-    const strict = traitDistanceCheck({ minimumDistance: 0.5, minimumDispersionRatio: 100 });
+    const strict = traitDistanceCheck({ minimumDistance: 0.5 });
     expect(strict(candidate(btcusd), [eurusd])).not.toBeNull();
   });
 });
