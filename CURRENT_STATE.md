@@ -21,14 +21,14 @@ Last synchronized: 2026-09-02
 
 ## Phase and subphase
 
-| Field                  | Value                                                       |
-| ---------------------- | ----------------------------------------------------------- |
-| Active phase           | PH-21 — The catalogue at scale                              |
-| Phase lifecycle        | ACTIVE                                                      |
-| Active subphase        | PH-21.1 — A hundred assets, and what registering them costs |
-| Subphase lifecycle     | ACTIVE                                                      |
-| Last approved phase    | PH-20 — The operator panel                                  |
-| Last approved subphase | PH-20.3 — Editing and retiring                              |
+| Field                  | Value                                                    |
+| ---------------------- | -------------------------------------------------------- |
+| Active phase           | PH-21 — The catalogue at scale                           |
+| Phase lifecycle        | ACTIVE                                                   |
+| Active subphase        | PH-21.3 — A panel that can hold a hundred assets         |
+| Subphase lifecycle     | ACTIVE                                                   |
+| Last approved phase    | PH-20 — The operator panel                               |
+| Last approved subphase | PH-21.2 — The venue and the store under a full catalogue |
 
 ## Cycle 1 result
 
@@ -194,8 +194,8 @@ coverage has not been re-measured since 2026-08-31 (Issue #2).
 
 ## EXACT NEXT LEGAL ACTION
 
-**Continue PH-21 from PH-21.2, on a branch rebased onto `main` — which now
-carries the out-of-band audit and its fixes, merged 2026-09-02.**
+**Finish PH-21: verify and approve PH-21.3, then measure and approve PH-21.2,
+then the phase gate — and then Cycle Audit 7.**
 
 The out-of-band audit the Human Owner requested on 2026-09-02 is complete and
 recorded: seven independent auditors, 83 findings, every material one fixed on

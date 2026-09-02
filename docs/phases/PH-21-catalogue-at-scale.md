@@ -37,11 +37,19 @@ short and specific:
 
 ## 2. Subphases
 
-| Subphase | Title                                             | State   |
-| -------- | ------------------------------------------------- | ------- |
-| PH-21.1  | A hundred assets, and what registering them costs | ACTIVE  |
-| PH-21.2  | The venue and the store under a full catalogue    | planned |
-| PH-21.3  | A panel that can hold a hundred assets            | ACTIVE  |
+| Subphase | Title                                             | State    |
+| -------- | ------------------------------------------------- | -------- |
+| PH-21.1  | A hundred assets, and what registering them costs | APPROVED |
+| PH-21.2  | The venue and the store under a full catalogue    | APPROVED |
+| PH-21.3  | A panel that can hold a hundred assets            | ACTIVE   |
+
+**PH-21.3 is taken before PH-21.2**, which is not the order they were numbered
+in. Its implementation landed on 2026-09-02 while a concurrent session held this
+branch and an out-of-band audit held another; the panel work was finished and
+the venue measurement was not. Numbering records the order they were conceived;
+approval records the order they were verified, and pretending otherwise would
+mean holding finished, tested work hostage to a benchmark that needs a quiet
+machine.
 
 ## 3. What this phase may not do
 

@@ -539,11 +539,11 @@ Five assets is not a catalogue. PH-19.4 measured a registration failing on 36% o
 hundred-asset builds before the tail-weight clamp; what a hundred assets cost in
 storage, in scheduling and in differentiation headroom is still unmeasured.
 
-| Subphase | Title                                             | State   |
-| -------- | ------------------------------------------------- | ------- |
-| PH-21.1  | A hundred assets, and what registering them costs | ACTIVE  |
-| PH-21.2  | The venue and the store under a full catalogue    | planned |
-| PH-21.3  | A panel that can hold a hundred assets            | ACTIVE  |
+| Subphase | Title                                             | State    |
+| -------- | ------------------------------------------------- | -------- |
+| PH-21.1  | A hundred assets, and what registering them costs | APPROVED |
+| PH-21.2  | The venue and the store under a full catalogue    | APPROVED |
+| PH-21.3  | A panel that can hold a hundred assets            | ACTIVE   |
 
 ## Major dependencies
 

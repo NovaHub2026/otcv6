@@ -513,10 +513,8 @@ describe('the panel, in a browser', () => {
     }
   }, 300_000);
 
-  it('finds one asset among many, by id, by name and by family', async () => {
-    guard();
-    if (browser === null) return;
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  it('finds one asset among many, by id, by name and by family', async (ctx) => {
+    const page = await requireBrowser(ctx).newPage({ viewport: { width: 1440, height: 900 } });
     const observed = watch(page);
     try {
       await page.goto(`http://127.0.0.1:${webPort}/preview`, { waitUntil: 'networkidle' });
