@@ -1,11 +1,15 @@
 import {
   BadRequestException,
+  Body,
+  ConflictException,
   Controller,
   Get,
   Inject,
   NotFoundException,
   Optional,
   Param,
+  Patch,
+  Post,
   Req,
   Query,
   Res,
@@ -14,13 +18,23 @@ import type { Request, Response } from 'express';
 import { EvictedError } from '@otc/distribution';
 import {
   ASSET_ARCHETYPES,
-  ASSET_CATALOGUE,
+  archetypeById,
+  checkIdentity,
   dispersionLogSigma,
   dispersionPercent,
+  type AssetBrief,
 } from '@otc/engine';
 import { epochMillis, isTimeframeId, timeframe as timeframeById } from '@otc/core';
-import { HistoryError, HISTORY_BASE_TIMEFRAME } from '@otc/runtime';
+import {
+  assertOverlay,
+  HistoryError,
+  HISTORY_BASE_TIMEFRAME,
+  ImmutableFieldError,
+  OVERLAY_FIELDS,
+  type AssetRegistry,
+} from '@otc/runtime';
 import { HistoryService } from './history.service.js';
+import { RegistrationService } from './registration.service.js';
 import { VenueService } from './venue.service.js';
 
 /**
@@ -47,6 +61,10 @@ export class MarketController {
      * far enough to leave the parameter out.
      */
     @Optional() @Inject(HistoryService) private readonly history: HistoryService | null = null,
+    @Optional()
+    @Inject(RegistrationService)
+    private readonly registration: RegistrationService | null = null,
+    @Optional() @Inject('ASSET_REGISTRY') private readonly registry: AssetRegistry | null = null,
   ) {}
 
   /**
@@ -127,14 +145,128 @@ export class MarketController {
    * "what kind of market is this" for whoever runs it. Both are read-only and
    * neither is economic.
    */
+  /**
+   * Create an asset. Returns a **job**, not an asset.
+   *
+   * Four of the pipeline's six stages are simulation, and it costs between half
+   * a second and twenty seconds depending on the family
+   * (`RegistrationService`). Returning the asset would mean holding an HTTP
+   * request open across a personality solve, a lattice calibration and a
+   * dispersion fit — a proxy would time out the slow families, and a retry would
+   * start a second registration of the same id.
+   *
+   * The body is five fields. There is no way to express a price path, a
+   * direction, or a payout here, and that is structural rather than validated:
+   * the only quantity an operator supplies about *movement* is a quarterly
+   * dispersion budget, which is symmetric by construction (INV-001, INV-006).
+   */
+  @Post('assets')
+  createAsset(@Body() body: unknown): unknown {
+    if (this.registration === null) {
+      throw new NotFoundException('This deployment does not register assets at runtime.');
+    }
+    const brief = asBrief(body);
+    // The refusals that need no simulation are given now. An operator who
+    // mistypes an id that already exists should not wait for a solve to hear it.
+    const identity = checkIdentity(brief, this.venue.catalogue);
+    if (identity !== null) throw new ConflictException(identity);
+    const job = this.registration.submit(brief);
+    return { job: job.id, state: job.state, poll: `/registrations/${job.id}` };
+  }
+
+  /**
+   * Edit an asset. The editable surface is one field.
+   *
+   * An id derives the keystream (ADR-0002), a quantum decides every settlement
+   * (ADR-0004), a reference price maps those integers to the numbers a viewer
+   * read, and a personality *is* the market. Each is refused **by name**, so an
+   * operator who tries learns which invariant they were about to break rather
+   * than that "the request was invalid".
+   */
+  @Patch('assets/:id')
+  async editAsset(@Param('id') id: string, @Body() body: unknown): Promise<unknown> {
+    const registry = this.requireRegistry();
+    if (this.venue.assetFor(id) === null) throw new NotFoundException(`Unknown asset ${id}.`);
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      throw new BadRequestException('Body must be a JSON object.');
+    }
+    // `retiredAt` is refused here even though it is a stored overlay field:
+    // retiring is a decision with consequences for a running market, and it has
+    // its own endpoint that performs them.
+    if ('retiredAt' in body) {
+      throw new BadRequestException('Use POST /assets/:id/retire to retire an asset.');
+    }
+    try {
+      assertOverlay(body);
+    } catch (error) {
+      if (error instanceof ImmutableFieldError) throw new BadRequestException(error.message);
+      throw new BadRequestException((error as Error).message);
+    }
+    const { displayName } = body as { displayName?: string };
+    if (displayName === undefined) {
+      throw new BadRequestException(`Nothing to change. Editable: ${OVERLAY_FIELDS.join(', ')}.`);
+    }
+    await registry.putOverlay(id, { displayName });
+    this.venue.rename(id, displayName);
+    return { id, displayName };
+  }
+
+  /**
+   * Retire an asset: stop hosting it, keep everything it published.
+   *
+   * Final, and deliberately. A market resumed after a gap either invents the
+   * interval nobody generated — which this runtime refuses outright — or takes a
+   * seam in a published record, which an operator would be choosing to put into
+   * a market that had already printed prices. The history, the settlements and
+   * the publication journal remain exactly as they were and stay readable.
+   */
+  @Post('assets/:id/retire')
+  async retireAsset(@Param('id') id: string): Promise<unknown> {
+    const registry = this.requireRegistry();
+    if (this.venue.assetFor(id) === null) throw new NotFoundException(`Unknown asset ${id}.`);
+    if (this.venue.isRetired(id)) {
+      throw new ConflictException(`Asset ${id} is already retired. Retirement is final.`);
+    }
+    const retiredAt = this.venue.now();
+    // The venue first: if writing the overlay failed after the market had been
+    // dropped, a restart would silently host it again and print a tick after a
+    // gap. This order fails the other way — stored but still hosted until the
+    // next restart, which is visible and harmless.
+    await this.venue.retire(id);
+    await registry.putOverlay(id, { retiredAt });
+    return { id, retiredAt };
+  }
+
+  private requireRegistry(): AssetRegistry {
+    if (this.registry === null) {
+      throw new NotFoundException('This deployment does not administer assets at runtime.');
+    }
+    return this.registry;
+  }
+
+  /** Every registration this process has run, newest first. */
+  @Get('registrations')
+  registrations(): unknown {
+    if (this.registration === null) return [];
+    return this.registration.list();
+  }
+
+  @Get('registrations/:id')
+  registration_(@Param('id') id: string): unknown {
+    const job = this.registration?.get(id) ?? null;
+    if (job === null) throw new NotFoundException(`Unknown registration job ${id}.`);
+    return job;
+  }
+
   @Get('catalogue')
   catalogue(): unknown {
     const live = new Set(this.venue.assetIds);
-    return ASSET_CATALOGUE.map((asset) => ({
+    return this.venue.catalogue.map((asset) => ({
       id: asset.definition.id,
       displayName: asset.definition.displayName,
       family: asset.definition.family,
       live: live.has(asset.definition.id),
+      retired: this.venue.isRetired(asset.definition.id),
       referencePrice: asset.instrument.referencePrice,
       displayPrecision: asset.instrument.displayPrecision,
       logQuantum: asset.instrument.logQuantum,
@@ -167,7 +299,7 @@ export class MarketController {
     if (this.history === null) {
       throw new NotFoundException('This deployment keeps no candle history.');
     }
-    if (!ASSET_CATALOGUE.some((asset) => asset.definition.id === id)) {
+    if (this.venue.assetFor(id) === null) {
       throw new NotFoundException(`Unknown asset ${id}.`);
     }
     if (timeframe === undefined || !isTimeframeId(timeframe)) {
@@ -305,7 +437,7 @@ export class MarketController {
   }
 
   private describe(id: string): unknown {
-    const asset = ASSET_CATALOGUE.find((a) => a.definition.id === id);
+    const asset = this.venue.assetFor(id) ?? undefined;
     const tick = this.venue.lastTick(id);
     return {
       id,
@@ -359,4 +491,69 @@ function instantParam(name: string, raw: string | undefined): ReturnType<typeof 
     throw new BadRequestException(`${name} must be a non-negative integer instant, got ${raw}.`);
   }
   return epochMillis(value);
+}
+
+/**
+ * Read a brief off an untrusted body, refusing anything that is not one.
+ *
+ * Hand-written rather than decorator-validated, because this is the only body
+ * this service accepts and a validation library would be a dependency carrying
+ * one rule. Every refusal says what was wrong with the field it names — a 400
+ * reading "validation failed" is a support ticket.
+ */
+function asBrief(body: unknown): AssetBrief {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    throw new BadRequestException('Body must be a JSON object.');
+  }
+  const raw = body as Record<string, unknown>;
+  const id = raw['id'];
+  const archetypeId = raw['archetypeId'];
+  const displayName = raw['displayName'];
+  const referencePrice = raw['referencePrice'];
+  if (typeof id !== 'string') throw new BadRequestException('id must be a string.');
+  if (typeof archetypeId !== 'string') {
+    throw new BadRequestException('archetypeId must be a string.');
+  }
+  try {
+    archetypeById(archetypeId);
+  } catch {
+    throw new BadRequestException(
+      `Unknown archetype ${archetypeId}. GET /archetypes lists the families.`,
+    );
+  }
+  if (typeof displayName !== 'string' || displayName.trim().length === 0) {
+    throw new BadRequestException('displayName must be a non-empty string.');
+  }
+  if (
+    typeof referencePrice !== 'number' ||
+    !Number.isFinite(referencePrice) ||
+    referencePrice <= 0
+  ) {
+    throw new BadRequestException('referencePrice must be a finite positive number.');
+  }
+  const brief: {
+    id: string;
+    archetypeId: string;
+    displayName: string;
+    referencePrice: number;
+    dispersion?: number;
+    displayPrecision?: number;
+  } = { id, archetypeId, displayName, referencePrice };
+  const dispersion = raw['dispersion'];
+  if (dispersion !== undefined && dispersion !== null) {
+    if (typeof dispersion !== 'number' || !Number.isFinite(dispersion) || dispersion <= 0) {
+      throw new BadRequestException(
+        'dispersion is σ of the quarterly log return and must be a positive number.',
+      );
+    }
+    brief.dispersion = dispersion;
+  }
+  const displayPrecision = raw['displayPrecision'];
+  if (displayPrecision !== undefined && displayPrecision !== null) {
+    if (!Number.isInteger(displayPrecision) || (displayPrecision as number) < 0) {
+      throw new BadRequestException('displayPrecision must be a non-negative integer.');
+    }
+    brief.displayPrecision = displayPrecision as number;
+  }
+  return brief;
 }

@@ -15,8 +15,17 @@ function venueStub(
   liveIds: readonly string[],
   stalled: readonly { assetId: string; reason: string }[] = [],
 ): VenueService {
+  // The catalogue is the venue's now, not a module constant: an asset created
+  // from the panel joins it at runtime (PH-20.2), so the controller reads what
+  // this deployment actually hosts rather than what was compiled in.
   return {
     assetIds: liveIds,
+    catalogue: ASSET_CATALOGUE,
+    assetFor: (id: string) => ASSET_CATALOGUE.find((asset) => asset.definition.id === id) ?? null,
+    isRetired: () => false,
+    rename: () => undefined,
+    retire: () => Promise.resolve(),
+    now: () => epochMillis(ORIGIN),
     lastTick: () => null,
     recoveryFor: () => null,
     stalledMarkets: stalled,
@@ -295,4 +304,78 @@ describe('provisioning a market that has no past', () => {
     // fail; provisioning again would be a second history under one id.
     expect(await service.provision(options)).toEqual([]);
   }, 60_000);
+});
+
+describe('what an operator may edit, and what the surface refuses', () => {
+  /** A controller wired to a registry that records what it was asked to store. */
+  function editable(): {
+    controller: MarketController;
+    written: { id: string; patch: unknown }[];
+  } {
+    const written: { id: string; patch: unknown }[] = [];
+    const registry = {
+      list: () => Promise.resolve([]),
+      overlays: () => Promise.resolve(new Map<string, never>()),
+      putOverlay: (id: string, patch: unknown) => {
+        written.push({ id, patch });
+        return Promise.resolve();
+      },
+      add: () => Promise.resolve(),
+    };
+    return {
+      controller: new MarketController(venueStub(['eurusd']), null, null, registry),
+      written,
+    };
+  }
+
+  it('renames, and stores only the name', async () => {
+    const { controller, written } = editable();
+    expect(await controller.editAsset('eurusd', { displayName: 'Euro / Dollar' })).toEqual({
+      id: 'eurusd',
+      displayName: 'Euro / Dollar',
+    });
+    expect(written).toEqual([{ id: 'eurusd', patch: { displayName: 'Euro / Dollar' } }]);
+  });
+
+  it('refuses every field that decided what already happened, by name', async () => {
+    for (const [field, value] of [
+      ['id', 'other'],
+      ['logQuantum', 1e-6],
+      ['referencePrice', 2],
+      ['displayPrecision', 2],
+      ['traits', {}],
+      ['family', 'forex'],
+    ] as const) {
+      const { controller, written } = editable();
+      await expect(
+        controller.editAsset('eurusd', { [field]: value }),
+        field,
+      ).rejects.toBeInstanceOf(BadRequestException);
+      // Nothing was written. A refusal that half-applied would be worse than a
+      // silent success, because the record and the catalogue would disagree.
+      expect(written, field).toEqual([]);
+    }
+  });
+
+  it('sends an operator to the retire endpoint rather than accepting retiredAt', async () => {
+    const { controller } = editable();
+    // Retiring has consequences for a running market — a final checkpoint, a
+    // market removed from the venue — and a PATCH that only wrote the overlay
+    // would leave the market publishing until the next restart.
+    await expect(controller.editAsset('eurusd', { retiredAt: 1 })).rejects.toThrow(
+      /POST \/assets\/:id\/retire/,
+    );
+  });
+
+  it('refuses an edit with nothing in it, saying what is editable', async () => {
+    const { controller } = editable();
+    await expect(controller.editAsset('eurusd', {})).rejects.toThrow(/displayName/);
+  });
+
+  it('refuses an unknown asset before it refuses the body', async () => {
+    const { controller } = editable();
+    await expect(controller.editAsset('nope', { displayName: 'x' })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
 });

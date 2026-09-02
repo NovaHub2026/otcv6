@@ -14,8 +14,8 @@ one means the layer does not exist
 `ASSET_CATALOGUE` used to be a compiled array. Creating an asset meant editing
 TypeScript, which is why no panel could exist: there was nothing to administer.
 
-What replaced it is not a table. It is a **job of order a minute**, with six
-stages, each of which may refuse and each of which names itself when it does:
+What replaced it is not a table. It is a **job**, with six stages, each of which
+may refuse and each of which names itself when it does:
 
 ```
 identity → safety → authoring → dispersion → calibration → differentiation
@@ -128,15 +128,64 @@ wrong one:
 `apps/web` is deliberately outside the replayable set: a panel reads the wall
 clock to choose a window and is not part of any record.
 
-## 6. Where this is written down
+## 5.1 One origin, and it has to stream
 
-| Concern                       | Module                                   |
-| ----------------------------- | ---------------------------------------- |
-| Registration pipeline         | `packages/engine/src/registration.ts`    |
-| Archetypes and sampling       | `packages/engine/src/families.ts`        |
-| Dispersion budgets            | `packages/engine/src/dispersion.ts`      |
-| Differentiation guard         | `packages/engine/src/differentiation.ts` |
-| Candle history and its tiers  | `packages/runtime/src/history.ts`        |
-| Backdated provisioning        | `packages/runtime/src/backfill.ts`       |
-| Administrative HTTP surface   | `apps/api/src/market.controller.ts`      |
-| The bridge to a chart library | `packages/chart/src/bars.ts`             |
+The browser talks to exactly one host and one port. The engine is served under
+the panel's own origin at `/engine`, by a route handler
+(`apps/web/src/app/engine/[...path]/route.ts`) that hands the upstream body to
+the response **unread**.
+
+Both halves of that sentence were learned the hard way.
+
+It was a **rewrite** in `next.config.mjs` first. Ordinary endpoints proxied
+correctly and the tick stream did not: measured against a running pair,
+`/engine/catalogue` and `/engine/markets/eurusd/history` returned in
+milliseconds while `/engine/markets/eurusd/stream` returned nothing in fifteen
+seconds. A rewrite to an external destination is not a streaming proxy, and a
+live market is nothing but a stream.
+
+And the address was **inlined at build time**. `next.config.mjs` carried
+`env: { OTC_API_BASE }`, which Next substitutes when the bundle is built, so a
+panel started with an explicit engine address proxied to the default anyway. On
+a machine that happened to have a stale, stalled engine on port 3000, the panel
+talked to that one: the catalogue and the history answered, so it looked
+healthy, and only the ticks were missing. The browser suite booted its own
+engine and then tested a different one for everything the stream touched. The
+address is read per request now, and `env` is gone — it also published the
+engine's internal host to every viewer.
+
+## 6. Creating an asset is a job
+
+`POST /assets` returns a **job id**, and the panel polls `/registrations/:id`.
+Four of the six stages are simulation: measured across the eight archetypes at
+two replicates of `minimumDispersionSpanMs`, a registration costs **0.5s to
+19.3s**, the outlier being `major-crypto` — a 625-hour fit span at its tick rate
+is simply a lot of ticks. That is CPU on the same event loop the venue publishes
+from, for a duration that depends on which family was picked, which is not
+something to hold an HTTP request open across.
+
+One job runs at a time. What is registered is persisted **before** it is hosted:
+an asset the venue is publishing but the registry never stored would vanish at
+the next restart, taking a market that had already printed prices with it.
+
+An asset created this way joins the venue, the history recorder and the
+publisher together, without a restart, and is still there after one — with a
+bit-identical quantum, because the registry returns what was solved and never
+re-derives it (INV-009).
+
+## 7. Where this is written down
+
+| Concern                       | Module                                       |
+| ----------------------------- | -------------------------------------------- |
+| Registration pipeline         | `packages/engine/src/registration.ts`        |
+| Archetypes and sampling       | `packages/engine/src/families.ts`            |
+| Dispersion budgets            | `packages/engine/src/dispersion.ts`          |
+| Differentiation guard         | `packages/engine/src/differentiation.ts`     |
+| Candle history and its tiers  | `packages/runtime/src/history.ts`            |
+| Backdated provisioning        | `packages/runtime/src/backfill.ts`           |
+| Administrative HTTP surface   | `apps/api/src/market.controller.ts`          |
+| The bridge to a chart library | `packages/chart/src/bars.ts`                 |
+| Runtime registration jobs     | `apps/api/src/registration.service.ts`       |
+| The durable asset registry    | `packages/runtime/src/registry.ts`           |
+| An operator brief             | `packages/engine/src/brief.ts`               |
+| The panel's one origin        | `apps/web/src/app/engine/[...path]/route.ts` |

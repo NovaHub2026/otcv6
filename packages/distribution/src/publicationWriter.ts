@@ -49,27 +49,15 @@ export class PublicationWriter {
   readonly #identity: string;
   readonly #publishers = new Map<string, CommitmentPublisher>();
   readonly #specs = new Map<string, AssetPublicationSpec>();
+  readonly #windowTicks: number;
+  readonly #privateKey: PublicationWriterOptions['privateKey'];
 
   constructor(options: PublicationWriterOptions) {
     this.#directory = options.directory;
     this.#identity = publicKeyHex(options.privateKey);
-    for (const spec of options.assets) {
-      // Cycle Audit 4, M-5: an unsanitised asset id is a path component. An id of
-      // `../../escaped` wrote journals outside the publication directory
-      // entirely. `packages/runtime/src/fileStore.ts` already required this shape
-      // of a persisted asset; the guard existed and had not been applied here.
-      assertAssetId(spec.assetId);
-      mkdirSync(path.join(options.directory, spec.assetId), { recursive: true });
-      this.#specs.set(spec.assetId, spec);
-      this.#publishers.set(
-        spec.assetId,
-        new CommitmentPublisher({
-          assetId: spec.assetId,
-          windowTicks: options.windowTicks,
-          privateKey: options.privateKey,
-        }),
-      );
-    }
+    this.#windowTicks = options.windowTicks;
+    this.#privateKey = options.privateKey;
+    for (const spec of options.assets) this.register(spec);
     // The identity a counterparty verifies against, published beside the record
     // rather than assumed to be known out of band.
     writeFileSync(
@@ -85,6 +73,38 @@ export class PublicationWriter {
 
   get publicKey(): string {
     return this.#identity;
+  }
+
+  /**
+   * Begin publishing an asset registered after this writer was built.
+   *
+   * An operator creating an asset from the panel must not have to restart the
+   * service to get a verifiable record of it — a market that trades for an hour
+   * before anyone commits to its ticks is an hour of prices nobody can check
+   * afterwards, and PH-12 exists so that never happens.
+   *
+   * A window is per asset, so a new publisher starts at sequence zero of its own
+   * journal and disturbs nothing already open.
+   */
+  register(spec: AssetPublicationSpec): void {
+    // Cycle Audit 4, M-5: an unsanitised asset id is a path component. An id of
+    // `../../escaped` wrote journals outside the publication directory
+    // entirely. `packages/runtime/src/fileStore.ts` already required this shape
+    // of a persisted asset; the guard existed and had not been applied here.
+    assertAssetId(spec.assetId);
+    if (this.#publishers.has(spec.assetId)) {
+      throw new RangeError(`Asset ${spec.assetId} is already published by this writer.`);
+    }
+    mkdirSync(path.join(this.#directory, spec.assetId), { recursive: true });
+    this.#specs.set(spec.assetId, spec);
+    this.#publishers.set(
+      spec.assetId,
+      new CommitmentPublisher({
+        assetId: spec.assetId,
+        windowTicks: this.#windowTicks,
+        privateKey: this.#privateKey,
+      }),
+    );
   }
 
   /** Consume a published batch; write any windows it closes. */

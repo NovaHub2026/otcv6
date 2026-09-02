@@ -1,4 +1,15 @@
 export {
+  AlreadyRegisteredError,
+  assertOverlay,
+  CorruptRegistrationError,
+  FileAssetRegistry,
+  ImmutableFieldError,
+  MemoryAssetRegistry,
+  OVERLAY_FIELDS,
+  type AssetOverlay,
+  type AssetRegistry,
+} from './registry.js';
+export {
   CatchUpTooLargeError,
   DEFAULT_MAX_CATCH_UP_MS,
   HostedMarket,

@@ -1,3 +1,4 @@
+export { requestFromBrief, type AssetBrief } from './brief.js';
 export { PoissonArrivalModel } from './arrival.js';
 export {
   createMarketEngine,

@@ -1,4 +1,5 @@
 import type { ReactElement, ReactNode } from 'react';
+import { Nav } from './Nav';
 
 export const metadata = {
   title: 'OTC engine — admin',
@@ -8,10 +9,10 @@ export const metadata = {
 /**
  * The panel shell.
  *
- * One submenu, and the navigation is built as though there will be more, because
- * there will be: creating an asset, editing one, retiring one. What it is not
- * is a trading screen — nothing here is economic, and `guardrails` keeps that
- * true rather than convention.
+ * Two submenus now — watching a market and creating one — and the navigation is
+ * built as though there will be more, because there will be: editing an asset
+ * and retiring one. What it is not is a trading screen: nothing here is
+ * economic, and `guardrails` keeps that true rather than convention.
  */
 export default function RootLayout({ children }: { children: ReactNode }): ReactElement {
   return (
@@ -27,29 +28,7 @@ export default function RootLayout({ children }: { children: ReactNode }): React
           fontSize: 13,
         }}
       >
-        <nav
-          style={{
-            width: 180,
-            flexShrink: 0,
-            borderRight: '1px solid #242c3d',
-            padding: '14px 0',
-          }}
-        >
-          <div style={{ padding: '0 14px 14px', color: '#5b6377', fontSize: 11 }}>OTC ENGINE</div>
-          <a
-            href="/preview"
-            style={{
-              display: 'block',
-              padding: '8px 14px',
-              color: '#d7dce5',
-              textDecoration: 'none',
-              borderLeft: '3px solid #3fb950',
-              background: '#161b26',
-            }}
-          >
-            Preview
-          </a>
-        </nav>
+        <Nav />
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
           {children}
         </div>

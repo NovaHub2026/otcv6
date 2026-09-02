@@ -61,6 +61,44 @@ export class Venue {
     return [...this.#markets.keys()];
   }
 
+  /**
+   * Host a market that was registered after this venue started.
+   *
+   * An asset created from the operator panel has to become tradeable without a
+   * restart, and this is the whole of what that takes: the markets share a clock
+   * and nothing else, so adding one couples it to nothing already running.
+   *
+   * The market must be **primed and already advanced to now** before it arrives
+   * here. A market whose last advance is older than the catch-up bound refuses
+   * every later advance permanently (PH-19.5), so handing the venue a market
+   * that was built at genesis and never caught up would add an asset that is
+   * dead on arrival and reports `degraded` for ever.
+   */
+  host(asset: RegisteredAsset, market: HostedMarket): void {
+    const id = asset.definition.id;
+    if (this.#markets.has(id)) {
+      throw new RangeError(`Duplicate asset in venue: ${id}.`);
+    }
+    this.#markets.set(id, market);
+    this.#assets.set(id, asset);
+  }
+
+  /**
+   * Stop hosting a market, leaving its record untouched.
+   *
+   * The venue forgets it; nothing about what it published is removed, rewritten
+   * or replayed. Every checkpoint, candle and journal entry stays exactly where
+   * it was, because a retirement is a decision to stop generating and never a
+   * statement about the past (INV-009).
+   */
+  unhost(assetId: string): void {
+    if (!this.#markets.has(assetId)) {
+      throw new RangeError(`Unknown asset ${assetId}; the venue does not host it.`);
+    }
+    this.#markets.delete(assetId);
+    this.#assets.delete(assetId);
+  }
+
   marketFor(assetId: string): HostedMarket {
     const market = this.#markets.get(assetId);
     if (market === undefined) {
