@@ -23,7 +23,7 @@ Last synchronized: 2026-09-01
 
 | Field                  | Value                                      |
 | ---------------------- | ------------------------------------------ |
-| Active phase           | none — PH-20 is the next legal action      |
+| Active phase           | PH-20 — A panel that can be trusted        |
 | Phase lifecycle        | n/a                                        |
 | Active subphase        | none                                       |
 | Subphase lifecycle     | n/a                                        |
