@@ -1,5 +1,6 @@
 // Invariant evidence: INV-002 (shared market), INV-004 (timeframe observer independence), INV-003 (single underlying stream).
 import { spawn, type ChildProcess } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -57,6 +58,12 @@ async function boot(basePort: number): Promise<number> {
 async function bootOn(candidate: number): Promise<void> {
   const stateDir = await mkdtemp(path.join(tmpdir(), 'otc-panel-'));
   directories.push(stateDir);
+  // **a6-14.** This helper walks ports on `EADDRINUSE` and polls `/health`
+  // before the child listens. A foreign engine already on the candidate port
+  // answered `ok` at once, while the child spent minutes provisioning, so the
+  // suite ran its INV-004 assertions against someone else's market. The nonce
+  // is echoed by `/health`; an answer without it is not this child's.
+  const nonce = randomUUID();
   const child = spawn(process.execPath, [entry], {
     env: {
       ...process.env,
@@ -64,6 +71,7 @@ async function bootOn(candidate: number): Promise<void> {
       OTC_HISTORY_DB: path.join(stateDir, 'history.db'),
       OTC_MASTER_SECRET: SECRET,
       OTC_BACKFILL_DAYS: String(BACKFILL_DAYS),
+      OTC_BOOT_NONCE: nonce,
       PORT: String(candidate),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -81,7 +89,11 @@ async function bootOn(candidate: number): Promise<void> {
       throw new Error(`service exited (${child.exitCode}):\n${output.slice(-2_000)}`);
     }
     try {
-      if ((await fetch(`http://127.0.0.1:${candidate}/health`)).ok) return;
+      const response = await fetch(`http://127.0.0.1:${candidate}/health`);
+      if (response.ok) {
+        const health = (await response.json()) as { bootNonce: string | null };
+        if (health.bootNonce === nonce) return;
+      }
     } catch {
       /* not up yet */
     }
@@ -252,6 +264,14 @@ describe('the panel and the engine agree across the process boundary', () => {
     const evicted = await fetch(`http://127.0.0.1:${port}/markets/${ASSET}/stream?from=1`);
     expect(evicted.status).toBe(400);
     expect(await evicted.text()).toMatch(/evict|replay|window/i);
+
+    // And a sequence that has not been published, which was a 500 with a
+    // stack trace in the log (a6-04) — the feed refuses it in words, and a
+    // browser's `EventSource` closes for good on any non-200, so the status
+    // has to be the refusal.
+    const future = await fetch(`http://127.0.0.1:${port}/markets/${ASSET}/stream?from=99999999999`);
+    expect(future.status).toBe(400);
+    expect(await future.text()).toMatch(/never been published/);
 
     // And the same request written the way a browser writes it.
     const controller = new AbortController();

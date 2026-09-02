@@ -12,12 +12,12 @@ Last synchronized: 2026-09-02
 
 ## Development cycle
 
-| Field                            | Value                                                                   |
-| -------------------------------- | ----------------------------------------------------------------------- |
-| Active development cycle         | Cycle 7                                                                 |
-| Approved phases in current cycle | **2 of 3**                                                              |
-| Cycle Audit state                | **006 closed** — 40 of 46 findings closed in PH-19                      |
-| Last Cycle Audit                 | [Cycle Audit 006](docs/audits/CYCLE-AUDIT-006.md) — recorded 2026-09-01 |
+| Field                            | Value                                                                                                                                               |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Active development cycle         | Cycle 7                                                                                                                                             |
+| Approved phases in current cycle | **2 of 3**                                                                                                                                          |
+| Cycle Audit state                | **006 closed**; out-of-band audit 001 run 2026-09-02 (does not reset the counter)                                                                   |
+| Last Cycle Audit                 | [Cycle Audit 006](docs/audits/CYCLE-AUDIT-006.md) — recorded 2026-09-01; [Out-of-band Audit 001](docs/audits/OUT-OF-BAND-AUDIT-001.md) — 2026-09-02 |
 
 ## Phase and subphase
 
@@ -38,12 +38,12 @@ both?
 
 **It can.** On 24 million ticks spanning 327 simulated days, one asset is:
 
-|                              | Result                                                                                   |
-| ---------------------------- | ---------------------------------------------------------------------------------------- |
-| Unexploitable                | clean verdict across ~570 hypotheses and all four attack feature kinds                   |
-| At a resolution that matters | 30-second detection floor 0.217pp, finer than the 0.2513pp margin the 99% payout implies |
-| Plausible                    | 15/15 realism metrics, targets fixed before the model existed                            |
-| Structurally guaranteed      | mirror test passes with zero divergences                                                 |
+|                              | Result                                                                                                                                                                                                          |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unexploitable                | clean verdict across ~570 hypotheses and all four attack feature kinds                                                                                                                                          |
+| At a resolution that matters | 30-second single-test detection floor 0.221pp, finer than the 0.2513pp margin the 99% payout implies; the gate's own 50%-power figure at 30 s is 0.315pp, and `VALIDATION.md` says which claim is which (a4-01) |
+| Plausible                    | 15/15 realism metrics, bands unchanged since the commit that introduced the engine (906e398)                                                                                                                    |
+| Structurally guaranteed      | mirror test passes with zero divergences                                                                                                                                                                        |
 
 ## Blockers
 
@@ -89,130 +89,136 @@ PH-10 was conditional on a previous build's `dist/` being present.
 
 ## Verification state
 
-**Hosted CI is red on `main`.** The three pushes since PH-19 merged — the PH-19
-merge itself, the docs push after it, and the PH-20 merge — all failed the
-Statistical Gate the same way: every test passing, one
-`Error: [vitest-worker]: Timeout calling "onTaskUpdate"`, exit 1. PH-20 was
-approved on a green local gate with that corroboration outstanding, which is
-CA6-02 repeated and is recorded as such. Nothing below is a phase approval under
-`GOVERNANCE.md` §40.1 until CI is green on the same tree.
+**The hosted gate was red on every push to `main` from the PH-18 merge to the
+PH-21.1 push** — six pushes, five red, one cancelled, every time with every test
+passing and one `Timeout calling "onTaskUpdate"`. PH-19 and PH-20 were approved
+without a green hosted run on their trees (out-of-band audit, a7-01: PH-19's
+record said otherwise and is corrected in place). The cause is found and fixed
+on `feature/out-of-band-audit` (a1-01, B-021, Issue #1): one test ran 92 s of
+synchronous work with a task update in flight.
 
-Executed 2026-09-02 on the PH-20 phase gate. The browser layer is part of it now:
-`OTC_REQUIRE_BROWSER=1` makes a missing Chromium a failure rather than a skip.
+Executed on `feature/out-of-band-audit` at `023f694`, 2026-09-02, on a host
+without a launchable Chromium (the six browser tests report `skipped`; hosted
+CI installs the libraries and requires the browser):
 
-| Check                            | Status               |
-| -------------------------------- | -------------------- |
-| `npm run gate`                   | **PASSED (exit 0)**  |
-| `npm run format:check`           | PASSED (exit 0)      |
-| `npm run build` (full typecheck) | PASSED (exit 0)      |
-| `npm run typecheck:web`          | PASSED (exit 0)      |
-| `npm run typecheck:config`       | PASSED (exit 0)      |
-| `npm run lint`                   | PASSED (exit 0)      |
-| Unit suite                       | PASSED — 1,866 tests |
-| Statistical suite                | PASSED               |
-| Unhandled errors                 | none                 |
+| Check                            | Status                                                                                                                                                                                                                   |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `npm run gate`                   | **PASSED (exit 0)** — 19:06 to 19:38 UTC, 32 minutes                                                                                                                                                                     |
+| `npm run format:check`           | PASSED (exit 0)                                                                                                                                                                                                          |
+| `npm run build` (full typecheck) | PASSED (exit 0)                                                                                                                                                                                                          |
+| `npm run typecheck:web`          | PASSED (exit 0)                                                                                                                                                                                                          |
+| `npm run typecheck:config`       | PASSED (exit 0)                                                                                                                                                                                                          |
+| `npm run lint`                   | PASSED (exit 0)                                                                                                                                                                                                          |
+| Unit suite                       | PASSED — 88 files, 2,165 tests (1,866 before the audit)                                                                                                                                                                  |
+| Statistical suite                | PASSED — 40 files, 265 tests, 6 browser tests skipped on this host; worst RPC round trip 6.6 s against the 30 s guard                                                                                                    |
+| Unhandled errors                 | none                                                                                                                                                                                                                     |
+| Hosted CI on the same tree       | run 33671271767 — **success**, Quality Gate and Statistical Gate, 19:06–19:53 UTC; statistical 40 files, 271 tests (the six browser tests ran on the runner), worst RPC round trip 9.4 s, no orphaned process at cleanup |
 
 Cycle 1's numbers, and the coverage figure, are in
-[`docs/evidence/CYCLE-1-VERIFICATION.md`](docs/evidence/CYCLE-1-VERIFICATION.md).
+[`docs/evidence/CYCLE-1-VERIFICATION.md`](docs/evidence/CYCLE-1-VERIFICATION.md);
+coverage has not been re-measured since 2026-08-31 (Issue #2).
 
 ## Known limitations carried forward
 
-- Only the 30-second horizon is policed to the promotional-payout threshold at
-  full rigor. PH-11 extended detection power to every horizon the product sells;
-  independent samples at a horizon are still fixed by simulated duration, so the
-  15-minute horizon needs roughly a hundred times the history. Every verdict
-  states the floor it achieved.
-- Assets are still easier to tell apart by size than by character. Scale-free
+- **Detection power is stated per instrument, and the two instruments differ.**
+  The single-test minimum detectable effect at 30 s is 0.217pp on the
+  full-rigor run, finer than the 0.2513pp margin of the 99% payout, and every
+  asset/horizon cell is policed below that margin at that resolution (PH-11).
+  The **gate** — Benjamini–Hochberg over ~750 hypotheses, confirmation on a
+  held-out sample, and a materiality floor — reaches 50% power for a uniform
+  30-second edge near 0.45–0.5pp (out-of-band audit, a4-01); the unconditional
+  family and the gate MDE the audit added are what state it honestly. Per-asset
+  battery floors (0.562pp) sit above the product margin; PH-3's full-rigor run
+  covers the canonical configuration.
+- **Assets are still easier to tell apart by size than by character.** Scale-free
   _shape_ differentiation is 40.5% against a 20% null for the five hand-authored
-  assets (PH-10, up from 30.0%), and 46.0-47.8% against an identical-personality
-  control at 31.0-34.9% for three siblings drawn from one archetype (PH-17.2).
-  Both are real and modest; neither is near-perfect.
-- Per-asset battery floors (0.562pp) sit above the 0.2513pp product margin.
-  PH-3's full-rigor run covers the canonical configuration at 0.217pp.
-- **The multi-node design is proved against an in-memory store.** PH-14 makes
-  the `CoordinatedStore` contract executable — `describeCoordinatedStore` is a
-  battery a deployment backend must pass — but no such backend exists yet. A
-  real cluster needs a store with native compare-and-set, and choosing one is
-  PH-15's.
-- **The panel administers five assets, and has never been run against fifty.**
-  PH-20 gave it Preview, Create and Assets: browse and chart any asset, register
-  a new one as a job that reports each stage, rename one, retire one. What is
-  untested is scale — a hundred-asset catalogue's cost in storage, scheduling
-  and differentiation headroom is PH-21's subject, and the sidebar is a flat
-  list that will not survive it.
-- **A retired asset cannot come back.** That is a decision, not a gap
-  (`DECISION-LOG.md`, 2026-09-02): resuming a market after a gap either invents
-  the interval or seams a published record. Everything it published stays
-  readable.
+  assets (PH-10), and 46.0–47.8% against an identical-personality control at
+  31.0–34.9% for three siblings drawn from one archetype (PH-17.2). Both are real
+  and modest.
+- **The multi-node design and the standing guarantee are built and tested, and
+  the service composes neither.** PH-15.1 delivered the durable
+  `CoordinatedStore` and both implementations pass the conformance battery, but
+  `apps/api` composes `FileStateStore`, `SqliteCandleHistory` and
+  `FileAssetRegistry` only: no `LeaderSession`, no follower, no
+  `SqliteCoordinatedStore`, and no non-test caller of `runStandingAssurance`,
+  `signRotation` or `partitionForRetention` exists anywhere (out-of-band audit,
+  a7-25; `docs/architecture/MULTI_NODE_AND_OPERATIONS.md` §8). PH-15's
+  acceptance intent — a venue that, left running, produces a current assurance
+  verdict — is not what the shipped service does. The limiter is likewise not at
+  the venue's trading boundary (PH-13.3 §6).
+- **The catalogue has been registered at a hundred and hosted at five.** PH-21.1
+  measured a hundred-asset registration (0.6s to 20.5s per asset, closest pair
+  2.8× the floor); hosting a hundred markets and the panel that holds them are
+  PH-21.2 and PH-21.3.
+- **A retired asset cannot come back** — a decision (`DECISION-LOG.md`,
+  2026-09-02): resuming a market after a gap either invents the interval or
+  seams a published record. Everything it published stays readable.
 - **Provisioning is manual and irreversible.** `OTC_BACKFILL_DAYS` defaults to
-  zero, because a backfill is genesis and refuses to run twice. An operator asks
-  for it; nothing asks on their behalf.
-- **History is candles beyond the retention window.** Anything finer than a
-  minute is available only as far back as the tick record keeps it, and
-  `readTimeframe` refuses rather than returning a coarser series under a finer
-  name.
-- Nothing runs continuously. The assurance battery, the commitment publication
-  and the standing guarantee are all things an operator _can_ do rather than
-  things the venue _does_. That is PH-15's whole subject.
+  zero, must be whole days written as digits, and is capped at 365 (anything
+  else is refused by name at boot, a6-15), because a backfill is genesis and
+  refuses to run twice.
+- **History is candles beyond the retention window**, and a restart leaves a
+  visible one-minute hole rather than a short bar labelled whole (out-of-band
+  audit, a5-01). Anything finer than a minute is served from the tick record
+  only, and `readTimeframe` refuses rather than returning a coarser series under
+  a finer name.
+- **The browser layer runs only where Chromium can launch.** Hosted CI installs
+  the system libraries and requires the browser; on a host without them the six
+  panel tests are reported as skipped, not passed (out-of-band audit, a6-03).
+- **The write surface requires an operator token.** Every non-GET route needs
+  `OTC_ADMIN_TOKEN`; the service binds `127.0.0.1` unless `OTC_BIND` says
+  otherwise (out-of-band audit, a6-01).
 
 ## Relevant records
 
-| Kind     | Reference                                                                      |
-| -------- | ------------------------------------------------------------------------------ |
-| ADR-0001 | Repository, toolchain and package architecture (APPROVED)                      |
-| ADR-0002 | Deterministic entropy architecture (APPROVED)                                  |
-| ADR-0003 | Conditional sign symmetry as the anti-predictability architecture (APPROVED)   |
-| ADR-0004 | Canonical price representation: an integer log lattice (APPROVED)              |
-| ADR-0005 | A multifractal cascade as the volatility process (APPROVED)                    |
-| ADR-0006 | A layered sign-blind market model (APPROVED)                                   |
-| ADR-0007 | At-the-money settlement: a tie is refunded (APPROVED, Human Owner)             |
-| ADR-0008 | Full delegation: automatic audits, autonomous decisions (APPROVED)             |
-| ADR-0009 | Hosted CI reinstated after the repository was made public (APPROVED)           |
-| ADR-0010 | The catch-up bound: no unobserved burst may span a contract (APPROVED)         |
-| ADR-0011 | Subagents are an engineering decision; audits use independent ones (APPROVED)  |
-| ADR-0012 | Generation is single-writer per asset; leadership is a fenced lease (APPROVED) |
-| Backlog  | `docs/BACKLOG.md` — B-012 … B-020 **open** (Cycle Audit 5); B-001…B-011 closed |
-| Roadmap  | `docs/phases/ROADMAP.md`                                                       |
-| Branch   | `feature/ph-21-catalogue-at-scale`, from `main` at the PH-20 merge             |
+| Kind     | Reference                                                                                                                                                                                                     |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ADR-0001 | Repository, toolchain and package architecture (APPROVED)                                                                                                                                                     |
+| ADR-0002 | Deterministic entropy architecture (APPROVED)                                                                                                                                                                 |
+| ADR-0003 | Conditional sign symmetry as the anti-predictability architecture (APPROVED)                                                                                                                                  |
+| ADR-0004 | Canonical price representation: an integer log lattice (APPROVED)                                                                                                                                             |
+| ADR-0005 | A multifractal cascade as the volatility process (APPROVED)                                                                                                                                                   |
+| ADR-0006 | A layered sign-blind market model (APPROVED)                                                                                                                                                                  |
+| ADR-0007 | At-the-money settlement: a tie is refunded (APPROVED, Human Owner)                                                                                                                                            |
+| ADR-0008 | Full delegation: automatic audits, autonomous decisions (APPROVED)                                                                                                                                            |
+| ADR-0009 | Hosted CI reinstated after the repository was made public (APPROVED)                                                                                                                                          |
+| ADR-0010 | The catch-up bound: no unobserved burst may span a contract (APPROVED)                                                                                                                                        |
+| ADR-0011 | Subagents are an engineering decision; audits use independent ones (APPROVED)                                                                                                                                 |
+| ADR-0012 | Generation is single-writer per asset; leadership is a fenced lease (APPROVED)                                                                                                                                |
+| Backlog  | [GitHub Issues](https://github.com/NovaHub2026/otcv6/issues) #1–#14 (migrated 2026-09-02); `docs/BACKLOG.md` is the archive                                                                                   |
+| Roadmap  | `docs/phases/ROADMAP.md`                                                                                                                                                                                      |
+| Branch   | `main` — the out-of-band audit merged 2026-09-02 (code tree `023f694`, record commit after it); `feature/ph-21-catalogue-at-scale` is the other session's PH-21 work, local only, at `aefe1ee`, to be rebased |
+| Audit    | [`docs/audits/OUT-OF-BAND-AUDIT-001.md`](docs/audits/OUT-OF-BAND-AUDIT-001.md) — 83 findings, 6 critical, seven independent auditors                                                                          |
 
 ---
 
 ## EXACT NEXT LEGAL ACTION
 
-**Run the out-of-band full audit the Human Owner requested on 2026-09-02, fix
-what it finds, and make hosted CI green; then continue PH-21.1.**
+**Continue PH-21 from PH-21.2, on a branch rebased onto `main` — which now
+carries the out-of-band audit and its fixes, merged 2026-09-02.**
 
-The Human Owner asked for a complete audit of the project with authority to fix
-everything found — `GOVERNANCE.md` §29 and §33 both name an explicit Human
-request as sufficient for a full audit before a cycle completes. It is conducted
-by independent agents, one git worktree each (§4.2, B-020), and recorded under
-`docs/audits/`. It does not reset the cycle counter: Cycle Audit 7 still runs
-after PH-21 is approved.
+The out-of-band audit the Human Owner requested on 2026-09-02 is complete and
+recorded: seven independent auditors, 83 findings, every material one fixed on
+`feature/out-of-band-audit` and watched failing first; what remains is fourteen
+GitHub Issues, two of them the Human Owner's (`GOVERNANCE.md` contradictions,
+the licence). The audit does not reset the cycle counter: Cycle 7 still has two
+approved phases, and Cycle Audit 7 still follows PH-21.
 
-The first finding is already known and is the one everything else is verified
-through: **hosted CI is red on `main`**, three runs in a row, with every test
-passing. Until the statistical gate is green on a hosted runner, no approval in
-Cycle 7 after PH-19 stands under §40.1.
+Concretely, in order:
 
-PH-21.1 is ACTIVE with its implementation in the tree and its verification
-pending: the hundred-asset run is recorded, the gate on this tree has not yet
-been executed by the approving session, and the watchdog it added has to be
-watched failing before it counts as a guard.
-
-After PH-21: **Cycle Audit 7**, automatically and without asking
-(`GOVERNANCE.md` §28, ADR-0008). One git worktree per auditor (B-020), and
-plants against every guard the cycle added — the browser layer above all, since
-it is the newest and it has already been green on a lie once.
-
-### Open findings carried into PH-21
-
-| Finding | What it is                                                                |
-| ------- | ------------------------------------------------------------------------- |
-| B-029   | `xauusd`'s realised quarterly spread exceeds its calibrated one by 20–33% |
-| B-030   | One unit run in seven failed seven files; not reproduced in six attempts  |
-| CA6-07  | Open from Cycle Audit 6                                                   |
-| CA6-17  | Partly closed — the dispersion bias above                                 |
-| B-018   | Open from an earlier cycle                                                |
+1. _Done._ Hosted CI green on `feature/out-of-band-audit` (`run 33671271767 — **success**, Quality Gate and Statistical Gate, 19:06–19:53 UTC; statistical 40 files, 271 tests (the six browser tests ran on the runner), worst RPC round trip 9.4 s, no orphaned process at cleanup`), which is the first
+   green hosted run on a tree containing PH-19 and PH-20 — the corroboration
+   `GOVERNANCE.md` §40.1 has owed both approvals since 2026-09-01.
+2. _Done._ Merged into `main` on 2026-09-02; `main` is trusted again, and the
+   push to `main` runs its own hosted CI.
+3. The other session's `feature/ph-21-catalogue-at-scale` carries PH-21.1 under
+   a second hash (`36bbf89`, identical to `3a5f0a5`) and PH-21.3 (`aefe1ee`)
+   ahead of PH-21.2: rebase it onto the new `main` (the duplicate drops out),
+   create PH-21.2's document, and continue. `venueScale.ts` is written; its
+   measurement must be taken on a quiet machine.
+4. PH-21 phase gate, merge, then **Cycle Audit 7** — automatically, one worktree
+   per auditor, plants against every guard this cycle added, and the audit's
+   own record of this out-of-band audit as input rather than as a substitute.
 
 No authorization is required for any of it and none should be requested
 (`GOVERNANCE.md` §28).

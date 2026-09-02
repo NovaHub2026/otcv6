@@ -1,6 +1,7 @@
 // Invariant evidence: INV-007 (asset differentiation).
 import { describe, expect, it } from 'vitest';
 import { MasterKeyring, type RandomSource } from '@otc/core';
+import { yieldToLoop } from '@otc/core';
 import {
   archetypeById,
   assertArchetypeFeasible,
@@ -219,21 +220,21 @@ describe('sampling draws an asset rather than copying one', () => {
       const source = stream(`brief-${archetype.id}`);
       for (let draw = 0; draw < 8; draw += 1) {
         const sample = sampleArchetype(archetype, source);
-        // Inside the band, **or** at the ceiling this rhythm can actually
-        // reach. `alt-crypto` draws depths at which the cascade cannot supply
-        // its own band's upper end, and Cycle Audit 6 (CA6-24) measured 3.64%
-        // of its briefs as unauthorable — 36% of hundred-asset builds failing
-        // outright. The target is clamped now, the way `cascadeSpacing`
-        // already was.
-        const ceiling =
-          reachableExcessKurtosis(sample.traits, stream(`ceiling-${archetype.id}-${draw}`)) *
-          KURTOSIS_HEADROOM;
+        // Inside the band. `alt-crypto` drew depths at which the cascade
+        // could not supply its own band's *upper* end, and Cycle Audit 6
+        // (CA6-24) measured 3.64% of its briefs as unauthorable; the target is
+        // clamped to the reachable ceiling now, the way `cascadeSpacing`
+        // already was. **Cycle Audit 7, a3-05.** The clamp then fell below the
+        // band's *lower* end for one alt-crypto draw in twenty, silently; the
+        // box was narrowed so that a family's band means what it says, and a
+        // clamp below it is recorded when it happens. The ceiling itself is
+        // not re-derived here: it is a 20,000-step estimate, exact only for
+        // the stream that produced it.
         expect(sample.excessKurtosis).toBeLessThanOrEqual(archetype.excessKurtosis.max);
-        expect(
-          sample.excessKurtosis >= archetype.excessKurtosis.min ||
-            sample.excessKurtosis <= ceiling * 1.05,
-          `${archetype.id} draw ${draw}: ${sample.excessKurtosis} vs ceiling ${ceiling}`,
-        ).toBe(true);
+        expect(sample.excessKurtosis, `${archetype.id} draw ${draw}`).toBeGreaterThanOrEqual(
+          archetype.excessKurtosis.min,
+        );
+        expect(sample.clampedFrom, `${archetype.id} draw ${draw}`).toBeUndefined();
         expect(sample.dispersion).toBeGreaterThanOrEqual(archetype.dispersion.min);
         expect(sample.dispersion).toBeLessThanOrEqual(archetype.dispersion.max);
         expect(sample.tickRms).toBeGreaterThan(0);
@@ -244,11 +245,12 @@ describe('sampling draws an asset rather than copying one', () => {
   });
 
   it('clamps a target the rhythm cannot reach, on the personality that proved it', () => {
-    // A depth-5 `alt-crypto` draw, recorded rather than searched for at test
-    // time: its cascade tops out at an excess kurtosis of about 128 while the
-    // archetype's band asks for 130 to 165. Under the old rule `sampleArchetype`
-    // handed that band straight to `authorPersonality`, which refused —
-    // 3.64% of alt-crypto briefs, and 36% of hundred-asset builds (CA6-24).
+    // A depth-5 draw from the `alt-crypto` box as it stood before a3-05,
+    // recorded rather than searched for at test time: its cascade tops out at
+    // an excess kurtosis of about 128 while the archetype's band asks for 130
+    // to 165. Under the old rule `sampleArchetype` handed that band straight
+    // to `authorPersonality`, which refused — 3.64% of alt-crypto briefs, and
+    // 36% of hundred-asset builds (CA6-24).
     const cornered: PersonalityTraits = {
       tempoMs: 560.6339400438212,
       volatility: 0.000043520995997473905,
@@ -281,28 +283,46 @@ describe('sampling draws an asset rather than copying one', () => {
     ).not.toThrow();
   }, 120_000);
 
-  it('never draws a brief the solve cannot author', () => {
-    // The property CA6-24 falsified, asserted directly. Sampling and authoring
-    // are separate steps and nothing connected them: `sampleArchetype` drew a
-    // tail weight from a band and `authorPersonality` refused it.
-    for (const archetype of ASSET_ARCHETYPES) {
-      const source = stream(`authorable-${archetype.id}`);
-      for (let draw = 0; draw < 6; draw += 1) {
-        const sample = sampleArchetype(archetype, source);
-        const derive = (purpose: string): RandomSource =>
-          stream(`solve-${archetype.id}-${draw}-${purpose}`);
-        expect(
-          () =>
-            authorPersonality(
-              sample.traits,
-              { excessKurtosis: sample.excessKurtosis, tickRms: sample.tickRms },
-              derive,
-            ),
-          `${archetype.id} draw ${draw}`,
-        ).not.toThrow();
-      }
+  it('says so when a rhythm cannot reach the floor of its band', () => {
+    // **Cycle Audit 7, a3-05.** The record has to distinguish a draw the
+    // family asked for from one the rhythm imposed. A band no rhythm in the
+    // catalogue can reach — the realism ceiling is 200 — forces the clamp on
+    // every draw, and every draw says which floor it fell below.
+    const unreachable: AssetArchetype = {
+      ...archetypeById('alt-crypto'),
+      excessKurtosis: { min: 5_000, max: 6_000 },
+    };
+    const source = stream('unreachable');
+    for (let draw = 0; draw < 4; draw += 1) {
+      const sample = sampleArchetype(unreachable, source);
+      expect(sample.clampedFrom, `draw ${draw}`).toBe(5_000);
+      expect(sample.excessKurtosis, `draw ${draw}`).toBeLessThan(5_000);
     }
-  }, 120_000);
+  });
+
+  it('draws alt-crypto inside its band, at the scale the clamp used to miss', async () => {
+    // **Cycle Audit 7, a3-05.** Measured at 2,000 draws per candidate: with a
+    // depth floor of 5 one draw in twenty landed below the band, all at depths
+    // 5 and 6; with a floor of 7, none did. Three hundred draws here is the
+    // scale a unit test affords, and it would have failed the old box about
+    // fifteen times over.
+    const archetype = archetypeById('alt-crypto');
+    const source = stream('alt-crypto-band');
+    let belowBand = 0;
+    for (let draw = 0; draw < 300; draw += 1) {
+      const sample = sampleArchetype(archetype, source);
+      if (
+        sample.clampedFrom !== undefined ||
+        sample.excessKurtosis < archetype.excessKurtosis.min
+      ) {
+        belowBand += 1;
+      }
+      // A draw costs a 20,000-step structure simulation; three hundred of them
+      // in one synchronous block would starve the worker's RPC channel.
+      if (draw % 20 === 0) await yieldToLoop();
+    }
+    expect(belowBand).toBe(0);
+  }, 60_000);
 
   it('samples times on a log scale, so the range is not crowded at the top', () => {
     // The meaningful distance between 500 ms and 1 s is the same as between

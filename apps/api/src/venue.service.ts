@@ -56,6 +56,17 @@ export class VenueService implements OnModuleDestroy {
    * a chart that stopped moving (CA6-33).
    */
   private readonly stalled = new Map<string, string>();
+  /**
+   * The class of failure last logged per asset, so the log line is written once
+   * per *kind* of stall rather than once per scheduler tick (a6-05).
+   *
+   * The dedup used to key on the message, and the message carries the seconds
+   * behind the clock, which grows every tick: five stalled assets wrote five
+   * ERROR lines a second for the life of the process — 270 lines in 54 s
+   * measured — and the one line that mattered was the first. The changing
+   * number is still available, in `/health`.
+   */
+  private readonly stalledLogged = new Map<string, string>();
   private lastCheckpointAt = 0;
   /** The advance currently running, so shutdown can wait for it. */
   private inFlight: Promise<void> = Promise.resolve();
@@ -353,17 +364,23 @@ export class VenueService implements OnModuleDestroy {
     // away by the only caller that mattered.
     const { published, failures } = this.venue.advanceDetailed(epochMillis(this.clock.now()));
     for (const failure of failures) {
-      const previous = this.stalled.get(failure.assetId);
       this.stalled.set(failure.assetId, failure.error.message);
-      // Logged once per distinct reason: a market that has stopped emits this
-      // on every scheduler tick, and a log nobody can read is a log nobody
-      // reads.
-      if (previous !== failure.error.message) {
-        this.logger.error(`${failure.assetId}: STALLED — ${failure.error.message}`);
+      // Logged once per distinct *kind* of failure, keyed on the error's name:
+      // a market that has stopped emits this on every scheduler tick, and a log
+      // nobody can read is a log nobody reads (a6-05). The message is not the
+      // key because it carries the lag, and the lag changes every tick.
+      const kind = failure.error.name;
+      if (this.stalledLogged.get(failure.assetId) !== kind) {
+        this.stalledLogged.set(failure.assetId, kind);
+        this.logger.error(
+          `${failure.assetId}: STALLED — ${failure.error.message} ` +
+            `(logged once per ${kind}; the current lag is in /health)`,
+        );
       }
     }
     for (const { assetId, ticks } of published) {
       if (this.stalled.delete(assetId)) {
+        this.stalledLogged.delete(assetId);
         this.logger.log(`${assetId}: publishing again`);
       }
       const last = ticks[ticks.length - 1];

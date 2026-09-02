@@ -10,6 +10,7 @@ import {
   registrationKeyLabel,
   type RegisteredAsset,
 } from '@otc/engine';
+import { yieldToLoop } from '@otc/lab';
 
 /**
  * The runner behind the dispersion evidence, in the repository this time.
@@ -127,7 +128,7 @@ async function realisedSigma(asset: RegisteredAsset, options: Options): Promise<
       sinceYield += 1;
       if (sinceYield >= 250_000) {
         sinceYield = 0;
-        await new Promise<void>((resolve) => setImmediate(resolve));
+        await yieldToLoop();
       }
     }
     if (anchor === null)

@@ -218,6 +218,17 @@ export interface ArchetypeSample {
   readonly tickRms: number;
   /** σ of the terminal log return over a quarter, the asset is fitted to. */
   readonly dispersion: number;
+  /**
+   * The archetype's tail-weight floor, present only when the rhythm just drawn
+   * cannot reach it and {@link ArchetypeSample.excessKurtosis} therefore sits
+   * *below* the family's own band.
+   *
+   * **Cycle Audit 7, a3-05.** The clamp below did this silently for one
+   * `alt-crypto` draw in twenty, by up to 27%, and nothing downstream could
+   * tell a draw the family asked for from one the rhythm imposed. The record
+   * now says so; `families.test.ts` measures how often it has to.
+   */
+  readonly clampedFrom?: number;
 }
 
 /** Draw a complete authoring brief: a personality, a tail weight, a budget. */
@@ -236,10 +247,10 @@ export function sampleArchetype(archetype: AssetArchetype, stream: RandomSource)
   // Clamped the way `cascadeSpacing` already is, rather than refused: the
   // ceiling is computed from this personality with `clustering` at its own upper
   // bound, which is exactly what the solve would be searching against.
-  const ceiling = reachableExcessKurtosis(traits, stream);
+  const ceiling = reachableExcessKurtosis(traits, stream) * KURTOSIS_HEADROOM;
   const excessKurtosis = uniform(stream, {
-    min: Math.min(archetype.excessKurtosis.min, ceiling * KURTOSIS_HEADROOM),
-    max: Math.min(archetype.excessKurtosis.max, ceiling * KURTOSIS_HEADROOM),
+    min: Math.min(archetype.excessKurtosis.min, ceiling),
+    max: Math.min(archetype.excessKurtosis.max, ceiling),
   });
   const dispersion = logUniform(stream, archetype.dispersion);
   return {
@@ -250,6 +261,11 @@ export function sampleArchetype(archetype: AssetArchetype, stream: RandomSource)
     excessKurtosis,
     tickRms: provisionalTickRms(traits, dispersion),
     dispersion,
+    // Below the floor, the range above collapsed to the ceiling and the draw
+    // is the ceiling: the family asked for more than this rhythm can give.
+    ...(ceiling < archetype.excessKurtosis.min
+      ? { clampedFrom: archetype.excessKurtosis.min }
+      : {}),
   };
 }
 
@@ -473,12 +489,31 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
       // else. A family is a *region*, and a region this small is a template
       // with jitter. Widened on the five traits that were tightest, keeping the
       // character — fast, shallow, extreme — and the feasible spacing corner.
+      //
+      // **Cycle Audit 7, a3-05.** The depth floor was 5, and a five- or
+      // six-rung cascade cannot reach this band's floor of 130 at the lower
+      // end of the regime and structure spreads however wide its components
+      // are, so the CA6-24 clamp drew *below* the band — silently — for one
+      // asset in twenty. Measured at 2,000 draws per candidate:
+      //
+      // | change                    | below band | where                       |
+      // | ------------------------- | ---------- | --------------------------- |
+      // | none (depth floor 5)      | 97         | d5: 95/435, d6: 2/377       |
+      // | depth floor 6             | 0          | d6 min 130.1 — 2/377 above  |
+      // | depth floor 7             | 0          | every d7+ draw ≥ 130.0      |
+      // | band floor 120 / 100 / 95 | 56 / 9 / 2 | d5 ceilings reach 84.7      |
+      // | regimeSpread floor 1.35   | 17         | d5 still short              |
+      //
+      // A band floor would have to fall to about 84 to hold, which is a
+      // `metal`; a depth floor of 6 misses about one draw in five hundred.
+      // Seven keeps the band and the character — still the shallowest ladder
+      // in the catalogue beside `cross-fx` and `energy`.
       tempoMs: { min: 450, max: 1_100 },
       burstiness: { min: 0.72, max: 0.88 },
       regimeSpread: { min: 1.2, max: 1.5 },
       structureSpread: { min: 0.8, max: 1.2 },
       durationCoupling: { min: 0.3, max: 0.65 },
-      cascadeDepth: { min: 5, max: 9 },
+      cascadeDepth: { min: 7, max: 9 },
       cascadeSpanMs: { min: 1.5 * HOUR, max: 5 * HOUR },
       cascadeSpacing: { min: 2.6, max: 4.2 },
       regimeTempo: { min: 0.3, max: 0.6 },

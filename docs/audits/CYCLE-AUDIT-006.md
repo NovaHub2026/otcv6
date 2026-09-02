@@ -193,3 +193,63 @@ first, then the guards, then the measurements, then the surface.
 
 Nothing here is waived. Findings not closed in PH-19 are carried in
 `docs/BACKLOG.md` with the reason.
+
+## 7. Closure table
+
+Added 2026-09-02 by the out-of-band audit (a7-05), because "40 of 46" could
+not be reconstructed from the record: only 17 finding ids appear in the PH-19
+documents, the rest were named only in commit messages, three were closed
+without their id being written anywhere, and one was tracked nowhere.
+
+| Finding | Closed by                                                                    | State                                                                          |
+| ------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| CA6-01  | `51eb22c`, PH-19 §5                                                          | closed                                                                         |
+| CA6-02  | PH-19 §7 claimed hosted CI green; the out-of-band audit falsified it (a7-01) | **reopened** — B-021, hosted CI red on every push                              |
+| CA6-03  | `ca68b1e`, PH-19.1                                                           | closed                                                                         |
+| CA6-04  | `6ac858c`, PH-19.2                                                           | closed                                                                         |
+| CA6-05  | `51eb22c`, PH-19 §5                                                          | closed                                                                         |
+| CA6-06  | `51eb22c`, PH-19 §5 (hourly tier)                                            | closed; the minute tier has the same defect, found 2026-09-02 (a5-01)          |
+| CA6-07  | carried in PH-19 §6                                                          | open — GitHub Issue                                                            |
+| CA6-08  | `51eb22c`, PH-19 §5                                                          | closed                                                                         |
+| CA6-09  | `ca68b1e` (commit only)                                                      | closed in config; coverage not re-measured (a7-14)                             |
+| CA6-10  | carried in PH-19 §6; PH-20.1 then put the panel under a real browser         | closed by PH-20.1                                                              |
+| CA6-11  | `ca68b1e`, PH-19.1                                                           | closed                                                                         |
+| CA6-12  | `ca68b1e`, PH-19.1                                                           | closed for the dependency guard; `guardrails.test.ts` still `.ts`-only (a2-03) |
+| CA6-13  | `ca68b1e`, PH-19.1                                                           | closed                                                                         |
+| CA6-14  | `ca68b1e`, PH-19.1                                                           | closed for `singleWriter`; three guard files still unmutated (a2-11)           |
+| CA6-15  | `6f5a38c` and `b817521`, PH-19.3/19.4                                        | closed                                                                         |
+| CA6-16  | `6f5a38c`, PH-19.3                                                           | closed                                                                         |
+| CA6-17  | `6f5a38c`, PH-19.3                                                           | partly closed — B-029                                                          |
+| CA6-18  | `6f5a38c`, PH-19.3                                                           | closed                                                                         |
+| CA6-19  | PH-19.3 (described without its id)                                           | closed                                                                         |
+| CA6-20  | `6f5a38c`, PH-19.3                                                           | closed; refused after the calibration rather than before (a3-06)               |
+| CA6-21  | `6f5a38c`, PH-19.3                                                           | closed                                                                         |
+| CA6-22  | `c26dd53`, PH-19.4                                                           | closed                                                                         |
+| CA6-23  | `c26dd53`, PH-19.4                                                           | closed                                                                         |
+| CA6-24  | `b817521`, PH-19.4; the residual 1-in-400 closed in PH-21.1                  | closed                                                                         |
+| CA6-25  | `b817521`, PH-19.4                                                           | closed                                                                         |
+| CA6-26  | `c26dd53`, PH-19.4                                                           | closed                                                                         |
+| CA6-27  | `c26dd53`, PH-19.4                                                           | closed                                                                         |
+| CA6-28  | `c13c89f`, PH-19.5                                                           | closed                                                                         |
+| CA6-29  | `51eb22c`, PH-19 §5                                                          | closed; a leading-edge residue remains (a5-04)                                 |
+| CA6-30  | `c13c89f` and `f195a3c`, PH-19.5                                             | closed                                                                         |
+| CA6-31  | `e772597`, PH-19.5                                                           | closed                                                                         |
+| CA6-32  | `e772597`, PH-19.5                                                           | closed                                                                         |
+| CA6-33  | `c13c89f`, PH-19.5                                                           | closed; the stall log floods (a6-05)                                           |
+| CA6-34  | `c13c89f`, PH-19.5                                                           | closed                                                                         |
+| CA6-35  | PH-19.5 (described without its id) — `FileStateStore`                        | closed there; the registry has the same race (a5-07, a6-02)                    |
+| CA6-36  | `6f5a38c`, PH-19.3                                                           | closed                                                                         |
+| CA6-37  | annotated in PH-17 §5; no assertion was added                                | open — GitHub Issue                                                            |
+| CA6-38  | `a6e9a51` (`CYCLE-6-DRIFT.md` corrected)                                     | closed                                                                         |
+| CA6-39  | nowhere                                                                      | **open, untracked until 2026-09-02** — GitHub Issue                            |
+| CA6-40  | `a6e9a51` (PH-18.2 corrected)                                                | closed                                                                         |
+| CA6-41  | `a6e9a51` (PH-16 table corrected)                                            | closed                                                                         |
+| CA6-42  | `a6e9a51` (`CYCLE-AUDIT-005.md` closed)                                      | closed                                                                         |
+| CA6-43  | `8b68b13` (`CATALOGUE_AND_PANEL.md`)                                         | closed for Cycle 6; Cycle 5's layers written 2026-09-02 (B-023)                |
+| CA6-44  | annotated in PH-18.3 §3                                                      | closed                                                                         |
+| CA6-45  | `41ed1c6` and the CORS fix, before PH-19 (PH-19 §5)                          | closed                                                                         |
+| CA6-46  | `41ed1c6`, before PH-19 (PH-19 §5)                                           | closed                                                                         |
+
+Forty-one rows read closed or partly closed; four are open (CA6-02 reopened,
+CA6-07, CA6-37, CA6-39); one is partly closed (CA6-17). "40 of 46" was
+therefore approximately right and unverifiable, which is the defect.

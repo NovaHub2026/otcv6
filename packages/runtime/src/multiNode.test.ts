@@ -1,6 +1,7 @@
 // Invariant evidence: INV-002 (shared market), INV-003 (single underlying stream), INV-008 (continuous market state).
 import { describe, expect, it } from 'vitest';
 import { durationMillis, epochMillis, MasterKeyring, SteppableClock, type Tick } from '@otc/core';
+import { yieldToLoop } from '@otc/core';
 import { ASSET_CATALOGUE } from '@otc/engine';
 import { FollowerMarket } from './follower.js';
 import { AssetLease, MemoryCoordinatedStore } from './lease.js';
@@ -151,7 +152,7 @@ describe('INV-002 across nodes: one leader, many followers, one market', () => {
       // Long enough to matter, short enough to stay in the unit project — but
       // still yielding, because a synchronous driver starves the worker's own
       // RPC channel and the failure looks like a green suite with exit 1 (B-005).
-      if (step % 20 === 0) await new Promise((resolve) => setImmediate(resolve));
+      if (step % 20 === 0) await yieldToLoop();
     }
 
     for (const entry of followers) {

@@ -53,7 +53,7 @@ function ticks(count: number, everyMs = 6_000): Tick[] {
 }
 
 const stream = ticks(3_600); // six hours
-const recorder = new HistoryRecorder();
+const recorder = new HistoryRecorder({ continuesAfter: null });
 recorder.accept(stream);
 const base = recorder.drain();
 

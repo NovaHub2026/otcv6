@@ -57,6 +57,48 @@ describe('the accumulator classifies windows the way settlement does', () => {
     expect(outcome!.ups).toBe(1); // both say the window closed above its open
   });
 
+  it('closes at the LAST tick when several share the boundary instant', () => {
+    // **Out-of-band audit, a4-12.** Settlement's `priceAtOrBefore` returns the
+    // last tick at an instant; the accumulator closed the window on the *first*
+    // tick to land on the boundary and let the second, at the same instant,
+    // pass. The engine floors intervals at 1 ms so it cannot produce the case,
+    // but the observer boundary accepts non-decreasing instants, so an external
+    // record can — and the docstring promised agreement with settlement.
+    const instants = new Float64Array([0, 9, 10, 10]);
+    const prices = Int32Array.from([100, 100, 500, 90]);
+    const settled = priceAtOrBefore(instants, prices, epochMillis(10));
+    expect(settled?.price).toBe(90);
+
+    const acc = new HorizonAccumulator([spec('10', 10)], 0, 100);
+    acc.observe(9, 100);
+    acc.observe(10, 500);
+    acc.observe(10, 90);
+    const [outcome] = acc.outcomes();
+    expect(outcome!.windows).toBe(1);
+    expect(outcome!.downs).toBe(1); // 90 < 100, as settlement says
+    expect(outcome!.ups).toBe(0);
+
+    // Once the clock moves on, the closed window is final and the next one
+    // opened at the settled price.
+    acc.observe(11, 700);
+    const [later] = acc.outcomes();
+    expect(later!.windows).toBe(1);
+    expect(later!.downs).toBe(1);
+    acc.observe(20, 700);
+    acc.observe(21, 700);
+    expect(acc.outcomes()[0]!.ups).toBe(1); // [10,20) opened at 90, closed at 700
+  });
+
+  it('revises a boundary window while ticks can still share its instant', () => {
+    const acc = new HorizonAccumulator([spec('10', 10)], 0, 100);
+    acc.observe(10, 500);
+    expect(acc.outcomes()[0]!.ups).toBe(1);
+    acc.observe(10, 90);
+    expect(acc.outcomes()[0]!.ups).toBe(0);
+    expect(acc.outcomes()[0]!.downs).toBe(1);
+    expect(acc.slowestHorizonWindows).toBe(1);
+  });
+
   it('tiles the timeline rather than sliding along it', () => {
     // Non-overlapping is what makes the independent error bar defensible, so it
     // is asserted rather than assumed: N windows in N durations, never more.

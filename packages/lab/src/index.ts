@@ -35,11 +35,14 @@ export {
   buildObserverDataset,
   datasetFromTicks,
   toPublicInstrument,
+  yieldToLoop,
   type DatasetBuildOptions,
   type ObserverDataset,
   type PublicInstrument,
 } from './observer.js';
 export {
+  defaultStrideMs,
+  PHASE_SWEEP_OFFSET_MS,
   sampleOutcomes,
   upRate,
   type EntryMode,

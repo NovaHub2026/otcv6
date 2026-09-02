@@ -7,6 +7,7 @@ import {
   type TickSource,
   type TimeframeId,
 } from '@otc/core';
+import { yieldToLoop } from '@otc/lab';
 
 export interface SimulationRequest {
   readonly source: TickSource;
@@ -137,7 +138,7 @@ export async function runSimulationAsync(
     if (part.tickCount === 0) break;
     merged.push(part);
     if (part.tickCount < chunkTicks) break;
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await yieldToLoop();
   }
   return mergeResults(merged, source.instrument.id);
 }

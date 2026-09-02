@@ -21,6 +21,7 @@ export {
   assertCascadeConfig,
   CascadeMagnitudeModel,
   DEFAULT_CASCADE,
+  MAX_CASCADE_COMPONENTS,
   VolatilityCascade,
   type CascadeConfig,
   type CascadeSnapshot,
@@ -38,6 +39,7 @@ export { ModulatedMagnitudeModel, type Modulator } from './modulator.js';
 export {
   assertRegimeConfig,
   DEFAULT_REGIMES,
+  MAX_TRANSITIONS_PER_TICK,
   VOLATILITY_REGIMES,
   VolatilityRegimeModulator,
   weibullSample,
@@ -57,8 +59,10 @@ export {
   type StructureSnapshot,
 } from './structure.js';
 export {
+  MAX_REPORTED_DIVERGENCES,
   runMirrorTest,
   SignInvertingStream,
+  type InteriorRange,
   type MirrorDivergence,
   type MirrorOptions,
   type MirrorResult,
@@ -80,6 +84,7 @@ export {
   solveClustering,
   structureInflation,
   STRUCTURE_INFLATION_STEPS,
+  TailWeightUnreachableError,
   TRAIT_BOUNDS,
   type AuthoredPersonality,
   type PersonalityTraits,
@@ -140,7 +145,12 @@ export {
 } from './catalogue.js';
 export {
   ASSET_ID_PATTERN,
+  checkAssetId,
   checkIdentity,
+  MAX_ASSET_ID_LENGTH,
+  MAX_DISPLAY_PRECISION,
+  MAX_LABEL_COMPONENT_LENGTH,
+  REFERENCE_PRICE_BOUNDS,
   registerAsset,
   type DifferentiationCheck,
   type RegistrationOptions,

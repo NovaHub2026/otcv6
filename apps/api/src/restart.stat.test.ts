@@ -1,6 +1,7 @@
 // Invariant evidence: INV-008 (continuous market state), INV-002 (shared market).
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { access, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,6 +31,8 @@ const SECRET = 'a'.repeat(64);
 interface Running {
   readonly child: ChildProcess;
   readonly port: number;
+  /** Everything the child has written to stdout and stderr so far. */
+  readonly output: () => string;
 }
 
 const started: ChildProcess[] = [];
@@ -41,29 +44,41 @@ afterAll(async () => {
 });
 
 async function boot(stateDir: string, port: number): Promise<Running> {
+  // A nonce `/health` echoes, so a foreign engine on this fixed port is not
+  // mistaken for the child (a6-14).
+  const nonce = randomUUID();
   const child = spawn(process.execPath, [entry], {
     env: {
       ...process.env,
       OTC_STATE_DIR: stateDir,
       OTC_MASTER_SECRET: SECRET,
+      OTC_BOOT_NONCE: nonce,
       PORT: String(port),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   started.push(child);
-  await waitForHealth(port, child);
-  return { child, port };
+  let output = '';
+  child.stdout?.on('data', (chunk: Buffer) => (output += chunk.toString()));
+  child.stderr?.on('data', (chunk: Buffer) => (output += chunk.toString()));
+  await waitForHealth(port, child, nonce);
+  return { child, port, output: () => output };
 }
 
-async function waitForHealth(port: number, child: ChildProcess): Promise<void> {
+async function waitForHealth(port: number, child: ChildProcess, nonce: string): Promise<void> {
   const deadline = Date.now() + 30_000;
   let lastError = 'never responded';
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`service exited early (${child.exitCode})`);
     try {
       const response = await fetch(`http://127.0.0.1:${port}/health`);
-      if (response.ok) return;
-      lastError = `status ${response.status}`;
+      if (response.ok) {
+        const health = (await response.json()) as { bootNonce: string | null };
+        if (health.bootNonce === nonce) return;
+        lastError = `a service without this boot's nonce is answering on ${port}`;
+      } else {
+        lastError = `status ${response.status}`;
+      }
     } catch (error) {
       lastError = String(error);
     }
@@ -134,6 +149,64 @@ describe('the venue survives being killed', () => {
       );
     }
   }, 180_000);
+
+  it('shuts down once on SIGTERM, exits 0, closes the history, and tells its stream clients', async () => {
+    // **a6-09.** Two handlers raced on SIGTERM — this file's own and Nest's —
+    // so the final checkpoint ran twice from one pid, the process died by
+    // signal (143) rather than exiting, and the SQLite history was never
+    // closed: a multi-megabyte WAL beside a 4 KB database at every shutdown.
+    // A connected stream client is the other half: the listener's close waits
+    // for active connections, and a live market's clients are all active.
+    const stateDir = await mkdtemp(path.join(tmpdir(), 'otc-sigterm-'));
+    directories.push(stateDir);
+    const running = await boot(stateDir, 34_104);
+    await waitForTicks(running.port, 1);
+
+    const controller = new AbortController();
+    const stream = await fetch(`http://127.0.0.1:${running.port}/markets/btcusd/stream`, {
+      signal: controller.signal,
+    });
+    expect(stream.status).toBe(200);
+    const reader = (stream.body as ReadableStream<Uint8Array>).getReader();
+    const decoder = new TextDecoder();
+    let received = '';
+    const drained = (async (): Promise<void> => {
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) return;
+        received += decoder.decode(chunk.value, { stream: true });
+      }
+    })().catch(() => undefined);
+
+    const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>
+      running.child.on('exit', (code, signal) => {
+        resolve({ code, signal });
+      }),
+    );
+    running.child.kill('SIGTERM');
+    const outcome = await Promise.race([
+      exited,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => {
+          reject(new Error(`still running 20 s after SIGTERM:\n${running.output().slice(-2_000)}`));
+        }, 20_000),
+      ),
+    ]);
+    // Exited, not killed: the shutdown ran to its end.
+    expect(outcome, running.output().slice(-2_000)).toEqual({ code: 0, signal: null });
+    await drained;
+    controller.abort();
+    // The client was told, in the stream's own vocabulary, rather than dropped.
+    expect(received).toContain('event: close');
+    expect(received).toContain('server shutting down');
+    // One checkpoint, one close.
+    expect(running.output()).toContain('candle history closed');
+    expect(running.output()).not.toMatch(/ENOENT|ERROR/);
+    // A closed SQLite connection checkpoints and removes its WAL; a WAL left
+    // behind is the signature of a database that was never closed.
+    await expect(access(path.join(stateDir, 'history.db'))).resolves.toBeUndefined();
+    await expect(access(path.join(stateDir, 'history.db-wal'))).rejects.toThrow();
+  }, 120_000);
 
   it('refuses to start without a master secret', async () => {
     // The runtime must never invent a secret: doing so would produce a different

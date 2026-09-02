@@ -56,7 +56,6 @@ export interface HostedMarketOptions {
     Tick | { sequence: number; instant: EpochMillis; price: LogPrice } | null;
 }
 
-/** Default catch-up bound: one hour. */
 /**
  * Catch-up bound: 15 seconds, half the shortest expiry the product sells.
  *

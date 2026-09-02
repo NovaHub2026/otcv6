@@ -464,6 +464,36 @@ export function describeCoordinatedStore(name: string, create: () => StoreUnderT
         expect(await harness.store.seams(ASSET)).toHaveLength(1);
       });
 
+      it('refuses a batch that repeats or reorders a sequence, and writes none of it (a5-05)', async () => {
+        // **B-019, SQL-3.** The two stores disagreed: the reference refused
+        // `[n, n]` and SQLite accepted it, deduplicating the second against
+        // the row the same batch had just inserted — and raised
+        // `RecordForkError`, defined as the signature of two concurrent
+        // leaders, for `[n, n']` from one writer. Differential fuzzing put the
+        // divergence at 138 of 400 seeds. One rule now, specified here so
+        // both stores are held to it: a batch is one writer's output and is
+        // strictly ordered, or it is refused whole. `HostedMarket` produces
+        // nothing else, so no legitimate caller is affected.
+        const harness = create();
+        const token = (await mustAcquire(harness.store, ASSET, 'node-a#1')).token;
+        await harness.store.appendTicks(ASSET, token, [stubTick(1)]);
+        await expect(
+          harness.store.appendTicks(ASSET, token, [stubTick(2), stubTick(2)]),
+        ).rejects.toBeInstanceOf(RangeError);
+        await expect(
+          harness.store.appendTicks(ASSET, token, [stubTick(2), stubTick(2, 999_999)]),
+        ).rejects.toBeInstanceOf(RangeError);
+        await expect(
+          harness.store.appendTicks(ASSET, token, [stubTick(3), stubTick(2)]),
+        ).rejects.toBeInstanceOf(RangeError);
+        expect(await harness.store.recordHead(ASSET)).toBe(1);
+        expect(await harness.store.readRecord(ASSET, 1, 10)).toHaveLength(1);
+        // An ordered batch that replays the head and continues past it is the
+        // resume path, and is still accepted.
+        await harness.store.appendTicks(ASSET, token, [stubTick(1), stubTick(2)]);
+        expect(await harness.store.recordHead(ASSET)).toBe(2);
+      });
+
       it('reports no record for an asset that has none', async () => {
         const { store } = create();
         expect(await store.recordHead(ASSET)).toBeNull();

@@ -1,12 +1,13 @@
 import { epochMillis } from '@otc/core';
 import { assessEconomics, PAYOUT_PROMOTIONAL, profitabilityThresholdPoints } from '../economics.js';
 import { BINARY_HORIZONS, type HorizonSpec } from '../horizons.js';
-import type { ObserverDataset } from '../observer.js';
+import { yieldToLoop, type ObserverDataset } from '../observer.js';
 import { sampleOutcomes, type SamplingOptions } from '../outcomes.js';
 import {
   benjaminiHochberg,
   binomialProportionTest,
   minimumDetectableEffect,
+  normalQuantile,
 } from '../statistics.js';
 import { buildFeatureFrame } from './frame.js';
 import { ATTACK_FAMILIES } from './registry.js';
@@ -47,10 +48,46 @@ export interface AttackFinding {
 export interface HorizonSensitivity {
   readonly horizon: string;
   readonly samples: number;
-  /** Smallest detectable deviation from a fair coin, in percentage points. */
+  /**
+   * Smallest detectable deviation from a fair coin, in percentage points, for
+   * **one** test of the whole decided sample at α = 0.05 and 80% power.
+   *
+   * This is the classical figure, and it is not the gate's. The gate corrects
+   * over the whole hypothesis surface, requires the finding to reproduce on a
+   * held-out split, and tests buckets rather than the whole sample; see
+   * {@link gateMinimumDetectableEffectPoints} for what it can actually see.
+   */
   readonly minimumDetectableEffectPoints: number;
-  /** Whether that sensitivity is finer than the payout threshold it must police. */
+  /** Whether that single-test sensitivity is finer than the payout threshold. */
   readonly sufficientForPayout: boolean;
+  /**
+   * The edge at which the largest bucket tested at this horizon reaches **both**
+   * the Benjamini–Hochberg threshold over this run's whole surface and the
+   * confirmation threshold on its held-out split — at 50% power, in percentage
+   * points. This is the smallest edge the gate could have turned on.
+   *
+   * **Out-of-band audit, a4-01.** The quoted figure above is for a test the
+   * battery did not run. Over ~750 hypotheses the first BH rejection needs
+   * `|z| ≥ Φ⁻¹(1 − q/2m) ≈ 3.99`, the largest bucket any conditioning family
+   * offers is about half the sample, and confirmation needs `|z| > 1.96` on a
+   * quarter of the data — so a coin re-signed at a realised 0.23pp at 30 s,
+   * "detectable" by the single-test figure, produced no significant 30-second
+   * hypothesis at all. Computed as
+   * `max(z_BH·√(0.25/n_bucket), 1.96·√(0.25/n_confirmation))`, with `n_bucket`
+   * the largest occupancy actually tested here and `n_confirmation` that
+   * bucket's confirmation occupancy; infinite when nothing at this horizon
+   * could have been confirmed. It is a 50%-power point where the figure above
+   * is an 80%-power one, so on a small surface (few hypotheses, `z_BH` near 2)
+   * the two can cross; on the calibration surface `z_BH ≈ 4` and the gate
+   * figure is well above the single-test one.
+   */
+  readonly gateMinimumDetectableEffectPoints: number;
+  /** Whether the gate figure is finer than the payout threshold. */
+  readonly gateSufficientForPayout: boolean;
+  /** Occupancy of the largest bucket actually tested at this horizon. */
+  readonly largestBucketSamples: number;
+  /** That bucket's occupancy on the confirmation split. */
+  readonly largestBucketConfirmationSamples: number;
 }
 
 export interface VerdictCoverage {
@@ -58,7 +95,17 @@ export interface VerdictCoverage {
   readonly featureKinds: readonly FeatureKind[];
   readonly horizons: number;
   readonly hypothesesTested: number;
+  /** Buckets that received entries, but fewer decided ones than the floor. */
   readonly bucketsSkippedForOccupancy: number;
+  /**
+   * Buckets that received no entry at all — a gap in the sampling grid or a
+   * bucket the family never produces, not sample scarcity.
+   *
+   * **Out-of-band audit, a4-02.** These were counted with the under-occupied
+   * buckets, so a verdict described a family that had never been given a
+   * phase to test as one that lacked samples for it.
+   */
+  readonly bucketsNeverVisited: number;
 }
 
 export interface Verdict {
@@ -99,6 +146,20 @@ interface BucketTally {
   down: number;
   ties: number;
 }
+
+/** What a horizon's sensitivity is computed from, gathered while its buckets run. */
+interface HorizonPower {
+  readonly label: string;
+  readonly decided: number;
+  largestBucket: number;
+  largestBucketConfirmation: number;
+}
+
+/**
+ * The z a finding must reach on its confirmation split, with the same sign, to
+ * count as reproduced: a two-sided 5% test on its own terms.
+ */
+const CONFIRMATION_Z = 1.96;
 
 export function defaultFamilies(): AttackFamily[] {
   return [...ATTACK_FAMILIES, new LogisticAttackFamily()];
@@ -165,8 +226,11 @@ function* batteryCore(
   const materialityPoints = profitabilityThresholdPoints(payout);
 
   const raw: Omit<AttackFinding, 'significant' | 'exploitable'>[] = [];
-  const sensitivity: HorizonSensitivity[] = [];
+  const power: HorizonPower[] = [];
   let bucketsSkippedForOccupancy = 0;
+  let bucketsNeverVisited = 0;
+  // A bucket needs this many decided confirmation outcomes to be confirmable.
+  const minimumConfirmationSamples = Math.max(50, minimumBucketSamples / 4);
 
   // Families whose fit does not depend on the horizon are fitted once.
   for (const family of families) {
@@ -189,13 +253,13 @@ function* batteryCore(
       notes.push(`${horizon.label}: no decided outcomes in the evaluation split; skipped.`);
       continue;
     }
-    const mde = minimumDetectableEffect(sampling.decided) * 100;
-    sensitivity.push({
-      horizon: horizon.label,
-      samples: sampling.decided,
-      minimumDetectableEffectPoints: mde,
-      sufficientForPayout: mde < materialityPoints,
-    });
+    const horizonPower: HorizonPower = {
+      label: horizon.label,
+      decided: sampling.decided,
+      largestBucket: 0,
+      largestBucketConfirmation: 0,
+    };
+    power.push(horizonPower);
 
     for (const family of families) {
       if (family.fit !== undefined && family.horizonDependent === true) {
@@ -242,6 +306,10 @@ function* batteryCore(
       for (let bucket = 0; bucket < family.buckets; bucket += 1) {
         const tallyEntry = tallies[bucket]!;
         const decided = tallyEntry.up + tallyEntry.down;
+        if (decided + tallyEntry.ties === 0) {
+          bucketsNeverVisited += 1;
+          continue;
+        }
         if (decided < minimumBucketSamples) {
           bucketsSkippedForOccupancy += 1;
           continue;
@@ -257,9 +325,14 @@ function* batteryCore(
         // Reproduces means: same direction, and significant on its own terms.
         const confirmed =
           confirmTest !== null &&
-          confirmDecided >= Math.max(50, minimumBucketSamples / 4) &&
+          confirmDecided >= minimumConfirmationSamples &&
           Math.sign(confirmEdge) === Math.sign(economics.edgePoints) &&
-          Math.abs(confirmTest.z) > 1.96;
+          Math.abs(confirmTest.z) > CONFIRMATION_Z;
+
+        if (decided > horizonPower.largestBucket) {
+          horizonPower.largestBucket = decided;
+          horizonPower.largestBucketConfirmation = confirmDecided;
+        }
 
         raw.push({
           family: family.name,
@@ -297,6 +370,32 @@ function* batteryCore(
     return { ...f, significant, exploitable: significant && f.material && f.confirmed };
   });
 
+  // The gate's own sensitivity, which needs the size of the surface it was
+  // corrected over — so it is computed once every horizon has run (a4-01).
+  const zGate =
+    raw.length === 0 ? Number.NaN : normalQuantile(1 - falseDiscoveryRate / (2 * raw.length));
+  const sensitivity: HorizonSensitivity[] = power.map((h) => {
+    const mde = minimumDetectableEffect(h.decided) * 100;
+    const confirmable =
+      h.largestBucket > 0 && h.largestBucketConfirmation >= minimumConfirmationSamples;
+    const gate = confirmable
+      ? Math.max(
+          zGate * Math.sqrt(0.25 / h.largestBucket),
+          CONFIRMATION_Z * Math.sqrt(0.25 / h.largestBucketConfirmation),
+        ) * 100
+      : Number.POSITIVE_INFINITY;
+    return {
+      horizon: h.label,
+      samples: h.decided,
+      minimumDetectableEffectPoints: mde,
+      sufficientForPayout: mde < materialityPoints,
+      gateMinimumDetectableEffectPoints: gate,
+      gateSufficientForPayout: gate < materialityPoints,
+      largestBucketSamples: h.largestBucket,
+      largestBucketConfirmationSamples: h.largestBucketConfirmation,
+    };
+  });
+
   const exploitable = findings.filter((f) => f.exploitable);
   const worst = findings.reduce<AttackFinding | null>(
     (a, b) => (a === null || Math.abs(b.z) > Math.abs(a.z) ? b : a),
@@ -313,12 +412,26 @@ function* batteryCore(
         'outcomes and were not tested. A bucket with a handful of samples cannot support a finding.',
     );
   }
+  if (bucketsNeverVisited > 0) {
+    notes.push(
+      `${bucketsNeverVisited} buckets received no entry at all and were not tested. That is a ` +
+        'gap in what was sampled, not a shortage of samples: the family never saw that condition.',
+    );
+  }
   const insufficient = sensitivity.filter((s) => !s.sufficientForPayout);
   if (insufficient.length > 0) {
     notes.push(
       `Sensitivity is coarser than the ${(payout * 100).toFixed(0)}% payout threshold of ` +
         `${materialityPoints.toFixed(2)}pp at: ${insufficient.map((s) => s.horizon).join(', ')}. ` +
         'A clean verdict at those horizons means "no edge above the stated resolution", not "no edge".',
+    );
+  }
+  const gateInsufficient = sensitivity.filter((s) => !s.gateSufficientForPayout);
+  if (gateInsufficient.length > 0) {
+    notes.push(
+      `The gate itself — one correction over ${raw.length} hypotheses, plus confirmation — ` +
+        `could not have turned on an edge below ${materialityPoints.toFixed(2)}pp at: ` +
+        `${gateInsufficient.map((s) => s.horizon).join(', ')}. The single-test floor is not the gate's.`,
     );
   }
 
@@ -335,6 +448,7 @@ function* batteryCore(
       horizons: horizons.length,
       hypothesesTested: raw.length,
       bucketsSkippedForOccupancy,
+      bucketsNeverVisited,
     },
     notes,
     elapsedSeconds: Number(process.hrtime.bigint() - started) / 1e9,
@@ -362,7 +476,7 @@ export async function runBatteryAsync(
   for (;;) {
     const step = pass.next();
     if (step.done === true) return step.value;
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await yieldToLoop();
   }
 }
 
@@ -393,11 +507,20 @@ export function formatVerdict(verdict: Verdict): string {
   if (verdict.exploitable.length > 10) {
     lines.push(`  ... and ${verdict.exploitable.length - 10} more exploitable findings`);
   }
-  lines.push('  sensitivity:');
+  lines.push(
+    '  sensitivity: MDE is one test of the full sample at 80% power; gate MDE is the edge at ' +
+      'which the largest tested bucket (n_eval/n_confirmation) reaches the corrected and ' +
+      'confirmation thresholds, at 50% power',
+  );
   for (const s of verdict.sensitivity) {
+    const gate = Number.isFinite(s.gateMinimumDetectableEffectPoints)
+      ? `${s.gateMinimumDetectableEffectPoints.toFixed(3)}pp`
+      : 'unconfirmable';
     lines.push(
       `    ${s.horizon.padStart(4)}: n=${String(s.samples).padStart(8)} ` +
-        `MDE=${s.minimumDetectableEffectPoints.toFixed(3)}pp ${s.sufficientForPayout ? '' : '(coarser than the payout threshold)'}`,
+        `MDE=${s.minimumDetectableEffectPoints.toFixed(3)}pp${s.sufficientForPayout ? '' : ' (coarser than the payout threshold)'} ` +
+        `| gate MDE=${gate} at n=${s.largestBucketSamples}/${s.largestBucketConfirmationSamples}` +
+        `${s.gateSufficientForPayout ? '' : ' (coarser than the payout threshold)'}`,
     );
   }
   for (const note of verdict.notes) lines.push(`  note: ${note}`);

@@ -17,7 +17,9 @@ import { buildObserverDataset, formatValidationReport, runValidation } from '@ot
  * engine must clear at the promotional payout is 0.2513pp, so a clean verdict at
  * that floor did not answer the question the phase exists to answer.
  *
- * This run buys enough simulated time to resolve the product's own margin.
+ * This run buys enough simulated time to resolve the product's own margin — by
+ * the single-test floor. The gate's own figure at 30 s is 0.315pp here, and the
+ * verdict says so beside the floor (a4-01).
  */
 
 const instrument: InstrumentSpec = {
@@ -81,6 +83,21 @@ describe('PH-3 acceptance: the canonical engine', () => {
     expect(shortest.horizon).toBe('30s');
     expect(shortest.minimumDetectableEffectPoints).toBeLessThan(0.2513);
     expect(shortest.sufficientForPayout).toBe(true);
+
+    // The figures the living documents quote, pinned rather than printed
+    // (out-of-band audit, a4-10). Both are deterministic: the engine is seeded
+    // and portable, and each floor is arithmetic on an integer sample count. If
+    // either moves, `CURRENT_STATE.md`, `MARKET_MODEL.md` and `VALIDATION.md`
+    // carry the old number and must move with it.
+    //
+    // The single-test floor is the classical one — one test of the whole
+    // sample at 80% power. The gate figure is what the verdict can actually turn
+    // on: the largest tested bucket reaching the corrected and confirmation
+    // thresholds, at 50% power (a4-01). The first is finer than the margin; the
+    // second is not, and the documents say which is which.
+    expect(shortest.minimumDetectableEffectPoints).toBeCloseTo(0.221, 3);
+    expect(shortest.gateMinimumDetectableEffectPoints).toBeCloseTo(0.315, 3);
+    expect(shortest.gateSufficientForPayout).toBe(false);
 
     // Every attack family must actually have run.
     expect([...report.predictability.coverage.featureKinds].sort()).toEqual([

@@ -86,3 +86,9 @@ hundred-asset build has never been run against this surface. That is PH-21.
 
 **B-030**, an unexplained unit run that failed seven files and has not
 reproduced.
+
+> **Note, 2026-09-02 (out-of-band audit, a6-03).** On the host audited, no
+> Chromium build can launch (`libnss3`, `libnspr4`, `libasound2` absent), and the
+> suite then reported its six tests as _passed_ while running nothing. The lines
+> above were produced on a host that could launch a browser, or by that silent
+> path; the record cannot tell which. The suite reports _skipped_ now.

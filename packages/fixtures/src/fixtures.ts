@@ -25,6 +25,12 @@ const MAX_SIGN_PERSISTENCE = 0.25;
 const MAX_COARSENING_STEPS = 200;
 const MAX_TIMING_BIAS = 0.25;
 const MAX_LEVEL_MODULATION = 0.9;
+/**
+ * Per-tick sign bias at strength 1: `P(up) = 0.52`. Measured on the calibration
+ * configuration (5-second mean interval) that is about 3.2pp of edge at 30 s,
+ * so the product margin of 0.2513pp sits near strength 0.08.
+ */
+const MAX_COIN_BIAS = 0.02;
 
 /** The cell width of the level-anchored fixture, in lattice steps. */
 export const LEVEL_ANCHOR_CELL_STEPS = 4_000;
@@ -148,6 +154,32 @@ class DisplayQuantizationFixture extends FixtureSource {
     const coarse = 1 + Math.round(this.options.strength * MAX_COARSENING_STEPS);
     // Round the SIGNED price, which is exactly what makes this asymmetric.
     this.price = Math.round(this.#internal / coarse) * coarse;
+    return this.price;
+  }
+}
+
+/**
+ * A uniform per-tick sign bias: the coin is simply not fair.
+ *
+ * The smallest leak there is — no conditioning, no structure — and the one the
+ * battery's quoted sensitivity describes, since the minimum detectable effect
+ * is computed for exactly this: a uniform edge tested at the whole sample.
+ *
+ * **Out-of-band audit, a4-01** planted it at the product margin and found the
+ * gate blind to it at 30 s at about half of what the quoted figure promised.
+ * It is in the corpus so the gate's own sensitivity is measured against the
+ * leak it is quoted for (`gateSensitivity.stat.test.ts`) rather than inferred.
+ * The edge grows with the horizon, roughly as the square root of the ticks a
+ * window holds, so a strength set for 30 s leaks several times harder at 15 m.
+ */
+class BiasedCoinFixture extends FixtureSource {
+  protected step(intervalMs: number): number {
+    const volatility = this.volatility.advance(this.streams, intervalMs);
+    const magnitude = nextMagnitude(this.streams, volatility);
+    const steps = quantise(this.streams.magnitude, magnitude, this.instrument.logQuantum);
+    const upProbability = 0.5 + this.options.strength * MAX_COIN_BIAS;
+    const sign = this.streams.sign.nextFloat64() < upProbability ? 1 : -1;
+    this.price += sign * steps;
     return this.price;
   }
 }
@@ -278,6 +310,13 @@ export const FIXTURES: readonly Fixture[] = [
     'rounding a signed price is asymmetric about the unrounded value; fade the last displayed quantum',
     [1, 5, 30],
     (o) => new DisplayQuantizationFixture(o, 'display-quantization'),
+  ),
+  fixture(
+    'biasedCoin',
+    'The control with an unfair sign coin: a uniform per-tick bias.',
+    'P(up) is not 0.5 at any tick — the smallest possible leak, visible unconditionally and growing with the horizon',
+    [30, 60, 300],
+    (o) => new BiasedCoinFixture(o, 'biased-coin'),
   ),
   fixture(
     'boundaryTiming',

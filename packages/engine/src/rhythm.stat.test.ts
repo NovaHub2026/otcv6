@@ -1,6 +1,7 @@
 // Invariant evidence: INV-007 (asset differentiation).
 import { describe, expect, it } from 'vitest';
 import { MasterKeyring, type InstrumentSpec, type RandomSource } from '@otc/core';
+import { yieldToLoop } from '@otc/core';
 import {
   DEFAULT_TRAITS,
   expandPersonality,
@@ -37,7 +38,7 @@ describe('the co-varied solve across every admissible depth', () => {
     // Yields between depths: fifteen solves is fifteen pairs of 400k-step
     // simulations, and a synchronous block that long starves the worker's RPC
     // channel (B-005).
-    const breathe = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
+    const breathe = yieldToLoop;
     const misses: string[] = [];
     for (
       let depth = TRAIT_BOUNDS.cascadeDepth.min;

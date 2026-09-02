@@ -1,0 +1,23 @@
+Copyright (c) 2026 the Orbit OTC Engine project. All rights reserved.
+
+This source code is published so that its verification can be reproduced and
+its claims checked by anyone: the repository is public, hosted CI runs on it,
+and every statistical result in it is seeded and re-runnable. Publication is
+for that purpose and for no other.
+
+No licence is granted. You may read this repository and reproduce its
+verification for your own evaluation. You may not use, copy, modify, merge,
+publish, distribute, sublicense or sell any part of it, or any work derived
+from it, without prior written permission from the copyright holder.
+
+Third-party dependencies keep their own licences, which are the licences under
+which those parts may be used. In particular the chart component is TradingView
+Lightweight Charts, used under Apache-2.0 (see NOTICE).
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

@@ -8,6 +8,12 @@ import type { HistoryCandle, InstrumentView } from '@otc/chart';
  * retiring one — and they arrived in that order for a reason: an operator who
  * cannot see an asset has no business creating one, and one who cannot create
  * one has nothing to retire.
+ *
+ * Every write is sent as `application/json`, retire included, because the
+ * engine refuses anything else (a6-01): a write a browser could send without a
+ * preflight is a write any page could send. The credential the engine also
+ * needs is not here — the proxy under `/engine` adds it on the server, and the
+ * browser never holds it.
  */
 
 export interface CatalogueEntry extends InstrumentView {
@@ -31,6 +37,13 @@ export interface HistoryResponse {
   readonly from: number;
   readonly to: number;
   readonly candles: readonly HistoryCandle[];
+}
+
+/** What `/health` says: whether the venue is publishing, and which markets are not. */
+export interface HealthView {
+  readonly status: 'ok' | 'degraded';
+  readonly assets: number;
+  readonly stalled: readonly { readonly assetId: string; readonly reason: string }[];
 }
 
 export class ApiError extends Error {
@@ -57,6 +70,17 @@ async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
 
 export function fetchCatalogue(apiBase: string, signal?: AbortSignal): Promise<CatalogueEntry[]> {
   return getJson<CatalogueEntry[]>(`${apiBase}/catalogue`, signal);
+}
+
+/**
+ * The engine's own account of itself (a6-18).
+ *
+ * A stalled market keeps its stream open and publishes nothing, so a chart
+ * cannot tell a quiet market from a stopped one. `/health` can: the venue
+ * records every market that failed its last advance and why.
+ */
+export function fetchHealth(apiBase: string, signal?: AbortSignal): Promise<HealthView> {
+  return getJson<HealthView>(`${apiBase}/health`, signal);
 }
 
 export function fetchHistory(
@@ -105,6 +129,7 @@ export interface RegistrationJobView {
   readonly id: string;
   readonly brief: AssetBriefInput;
   readonly state: 'queued' | 'running' | 'registered' | 'refused' | 'failed';
+  /** The stage running, or the one that refused; null before the pipeline starts (a6-06). */
   readonly stage: string | null;
   readonly reason: string | null;
   readonly assetId: string | null;
@@ -128,28 +153,16 @@ export async function createAsset(
   brief: AssetBriefInput,
   signal?: AbortSignal,
 ): Promise<{ job: string }> {
-  const response = await fetch(`${apiBase}/assets`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(brief),
-    ...(signal === undefined ? {} : { signal }),
-  });
-  if (!response.ok) {
-    // A refusal here is a *named* one — a duplicate id, an unknown family, a
-    // display coarser than the lattice. Reducing it to "could not create" would
-    // discard the only part an operator can act on.
-    const body = (await response.text()).slice(0, 500);
-    let message = body;
-    try {
-      message = (JSON.parse(body) as { message?: string }).message ?? body;
-    } catch {
-      /* not JSON; the text is the message */
-    }
-    throw new ApiError(response.status, message);
-  }
-  return (await response.json()) as { job: string };
+  return (await write(`${apiBase}/assets`, 'POST', brief, signal)) as { job: string };
 }
 
+/**
+ * One poll of a registration job.
+ *
+ * A 404 here is not "not yet": the job id came from this engine, so an engine
+ * that does not know it is an engine that restarted and forgot every job it
+ * had (a6-10). Callers stop polling on it.
+ */
 export function fetchRegistration(
   apiBase: string,
   jobId: string,
@@ -175,18 +188,28 @@ export async function renameAsset(
 
 /** Retire an asset: stop hosting it, keep everything it published. Final. */
 export async function retireAsset(apiBase: string, assetId: string): Promise<void> {
-  await write(`${apiBase}/assets/${assetId}/retire`, 'POST', null);
+  // An empty object rather than no body: the engine takes writes as JSON only,
+  // so that no write is a request a browser sends without a preflight.
+  await write(`${apiBase}/assets/${assetId}/retire`, 'POST', {});
 }
 
-async function write(url: string, method: string, body: unknown): Promise<unknown> {
+async function write(
+  url: string,
+  method: string,
+  body: unknown,
+  signal?: AbortSignal,
+): Promise<unknown> {
   const response = await fetch(url, {
     method,
-    ...(body === null
-      ? {}
-      : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    ...(signal === undefined ? {} : { signal }),
   });
   const text = (await response.text()).slice(0, 500);
   if (!response.ok) {
+    // A refusal here is a *named* one — a duplicate id, an unknown family, a
+    // display coarser than the lattice, a missing token. Reducing it to "could
+    // not write" would discard the only part an operator can act on.
     let message = text;
     try {
       message = (JSON.parse(text) as { message?: string }).message ?? text;

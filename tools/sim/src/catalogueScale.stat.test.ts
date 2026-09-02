@@ -1,6 +1,7 @@
 // Invariant evidence: INV-007 (assets have genuinely distinct personalities), INV-003 (one stream per asset).
 import { describe, expect, it } from 'vitest';
 import { MasterKeyring } from '@otc/core';
+import { yieldToLoop } from '@otc/core';
 import {
   ASSET_ARCHETYPES,
   ASSET_CATALOGUE,
@@ -73,13 +74,13 @@ describe('a catalogue of a hundred is feasible', () => {
         });
         if (retreats > 0) retreated.push(`${id} (${retreats})`);
         if (retreats >= AUTHORING_ATTEMPTS) exhausted.push(id);
-        if (index % 5 === 4) await new Promise((resolve) => setImmediate(resolve));
+        if (index % 5 === 4) await yieldToLoop();
       }
       // Yield between families. Each is seconds of solving, and a worker that
       // never returns to its own event loop fails the whole run with every test
       // passing — which this file did, at 99.9 seconds, until the watchdog in
       // `vitest.setup.statistical.ts` measured it.
-      await new Promise((resolve) => setImmediate(resolve));
+      await yieldToLoop();
     }
     expect(exhausted, `${exhausted.length} briefs no solve could author`).toEqual([]);
     // Informational, and worth keeping in the record: the retreat is rare, so
@@ -103,7 +104,7 @@ describe('a catalogue of a hundred is feasible', () => {
           }).request.traits,
         });
       }
-      await new Promise((resolve) => setImmediate(resolve));
+      await yieldToLoop();
     }
     for (const asset of ASSET_CATALOGUE) {
       drawn.push({ id: asset.definition.id, traits: asset.definition.traits });
@@ -112,7 +113,7 @@ describe('a catalogue of a hundred is feasible', () => {
     let closest = { distance: Infinity, a: '', b: '' };
     let pairs = 0;
     for (let i = 0; i < drawn.length; i += 1) {
-      if (i % 32 === 0) await new Promise((resolve) => setImmediate(resolve));
+      if (i % 32 === 0) await yieldToLoop();
       for (let j = i + 1; j < drawn.length; j += 1) {
         pairs += 1;
         const distance = traitDistance(drawn[i]!.traits, drawn[j]!.traits);
@@ -160,7 +161,7 @@ describe('a catalogue of a hundred is feasible', () => {
       // Yield between families: each of these is seconds of simulation, and a
       // worker that never returns to its own event loop fails the run with every
       // test passing (`CLAUDE.md` §5).
-      await new Promise((resolve) => setImmediate(resolve));
+      await yieldToLoop();
     }
     expect(registered.length).toBe(ASSET_ARCHETYPES.length);
   }, 600_000);

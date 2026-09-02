@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { epochMillis, MasterKeyring, type RandomSource } from '@otc/core';
+import { yieldToLoop } from '@otc/core';
 import type { MagnitudeContext } from './magnitude.js';
 import {
   assertStructureConfig,
@@ -130,7 +131,7 @@ describe('phase durations are non-lattice', () => {
     // count; the hazard is synchronous duration. The convention in `CLAUDE.md`
     // §5 — yield every few hundred thousand iterations — is what applies here,
     // and it was enforced by nothing.
-    const breathe = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
+    const breathe = yieldToLoop;
     const modulator = new StructurePhaseModulator(DEFAULT_STRUCTURE, derive('lattice'));
     const instants: number[] = [];
     let previous = modulator.phase;

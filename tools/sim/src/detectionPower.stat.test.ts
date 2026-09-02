@@ -8,6 +8,7 @@ import {
   HorizonAccumulator,
   minimumDetectableEffect,
   minimumDetectableEffectUnderDependence,
+  yieldToLoop,
   type HorizonOutcome,
 } from '@otc/lab';
 
@@ -61,8 +62,6 @@ const REPLICATES = 100;
 const SLOWEST_WINDOWS = 800;
 const YIELD_TICKS = 250_000;
 
-const breathe = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
-
 async function replicate(index: number): Promise<HorizonOutcome[]> {
   const keyring = MasterKeyring.forTesting(`detection-power-${index}`);
   const engine = createMarketEngine({
@@ -81,7 +80,7 @@ async function replicate(index: number): Promise<HorizonOutcome[]> {
     ticks += 1;
     // B-010: a synchronous block this long starves the worker's RPC channel and
     // the gate exits non-zero while reporting every test as passed.
-    if (ticks % YIELD_TICKS === 0) await breathe();
+    if (ticks % YIELD_TICKS === 0) await yieldToLoop();
   }
   return accumulator.outcomes();
 }
@@ -91,7 +90,7 @@ describe('the independent error bar is honest for direction', () => {
     const runs: HorizonOutcome[][] = [];
     for (let index = 0; index < REPLICATES; index += 1) {
       runs.push(await replicate(index));
-      await breathe();
+      await yieldToLoop();
     }
 
     const rows: string[] = [];

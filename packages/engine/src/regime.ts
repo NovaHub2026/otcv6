@@ -113,6 +113,17 @@ export function weibullSample(stream: RandomSource, scaleMs: number, shape: numb
   return scaleMs * pow(-ln(u), 1 / shape);
 }
 
+/**
+ * Transitions one tick may consume before the sojourn law is declared broken.
+ *
+ * A single interval can outlast several short sojourns, which is why the
+ * advance below loops; a thousand in one tick means the scale has collapsed
+ * toward zero, and continuing would spin rather than model. Never reached by a
+ * configuration `assertRegimeConfig` accepts at any tempo `TRAIT_BOUNDS`
+ * allows.
+ */
+export const MAX_TRANSITIONS_PER_TICK = 1_000;
+
 export interface RegimeSnapshot {
   readonly regime: VolatilityRegime;
   readonly remainingMs: number;
@@ -165,9 +176,9 @@ export class VolatilityRegimeModulator implements Modulator {
       this.#regime = this.#transition(this.#regime);
       this.#remainingMs += this.#drawSojourn(this.#regime);
       guard += 1;
-      if (guard > 1_000) {
+      if (guard > MAX_TRANSITIONS_PER_TICK) {
         throw new RangeError(
-          'Regime sojourns are degenerate: more than 1000 transitions in one tick.',
+          `Regime sojourns are degenerate: more than ${MAX_TRANSITIONS_PER_TICK} transitions in one tick.`,
         );
       }
     }

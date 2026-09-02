@@ -62,7 +62,7 @@ describe('ruin decays exponentially in the cushion', () => {
   });
 
   // The Monte Carlo check that this bound holds against a simulated walk lives
-  // in `ruinSimulation.stat.test.ts`. It is 20,000 paths of up to 2,000 steps —
+  // in `ruinSimulation.stat.test.ts`. It is 2,000 paths of up to 20,000 events —
   // a statistical assertion by every definition this project uses, and it sat
   // at 2.5s solo against the unit project's 5s timeout. It failed the moment
   // the suite got busier, which is the exact failure `testCost.test.ts`

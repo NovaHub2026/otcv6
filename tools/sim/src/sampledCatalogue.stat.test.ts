@@ -22,6 +22,7 @@ import {
   measureDifferentiation,
   SHAPE_FEATURES,
   type AssetSignature,
+  yieldToLoop,
 } from '@otc/lab';
 
 /**
@@ -166,9 +167,17 @@ async function signaturesFor(
   asset: RegisteredAsset,
   seed: string,
 ): Promise<readonly AssetSignature[]> {
+  // **Out-of-band audit, a1-01.** This built 80,010 ticks per asset with the
+  // default 250,000-tick chunk, so the builder's only yield never fired, and
+  // twenty-four assets plus their control clones — 92 s on the hosted runner —
+  // ran as one macrotask-free stretch while the previous test's task update was
+  // in flight. Vitest's sixty-second reply timer then fired before the reply
+  // was read: `Timeout calling "onTaskUpdate"`, every test passing, `main` red
+  // on four consecutive pushes and green locally on 8% of headroom.
   const dataset = await buildObserverDataset({
     source: engineFor(asset, SIGNATURE_TICKS, seed),
     maxTicks: SIGNATURE_TICKS,
+    chunkTicks: 10_000,
   });
   return Array.from({ length: WINDOWS }, (_, w) =>
     assetSignature(dataset, w * WINDOW_TICKS, WINDOW_TICKS),
@@ -236,7 +245,7 @@ describe('a catalogue drawn from the archetypes', () => {
       // worker's own progress channel: every test passes and the run still
       // exits 1 with `Timeout calling "onTaskUpdate"`. It cost PH-4 a phase
       // gate (B-005), recurred in PH-10.3, and recurred here.
-      await new Promise((resolve) => setImmediate(resolve));
+      await yieldToLoop();
     }
   }, 900_000);
 
@@ -352,6 +361,7 @@ describe('a catalogue drawn from the archetypes', () => {
       const signatures = new Map<string, readonly AssetSignature[]>();
       for (const entry of catalogue) {
         signatures.set(entry.asset.definition.id, await signaturesFor(entry.asset, seed));
+        await yieldToLoop(); // a1-01: a full loop turn between assets
       }
 
       const whole = measureDifferentiation(
@@ -385,8 +395,10 @@ describe('a catalogue drawn from the archetypes', () => {
         for (const suffix of ['c1', 'c2', 'c3']) {
           const id = `${archetype.id}-${suffix}`;
           clones.push({ asset: id, signatures: await signaturesFor(under(clone, id), seed) });
+          await yieldToLoop(); // a1-01: a full loop turn between clones
         }
         control.push(measureDifferentiation(clones, SHAPE_FEATURES).accuracy);
+        await yieldToLoop(); // a1-01: and between archetypes
       }
       const mean = (values: readonly number[]) =>
         values.reduce((sum, value) => sum + value, 0) / values.length;

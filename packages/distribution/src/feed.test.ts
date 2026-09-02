@@ -169,6 +169,23 @@ describe('resumption is exact', () => {
     expect(() => feed.subscribe('eurusd', recorder(), 600)).toThrow(UnknownSequenceError);
   });
 
+  it('refuses an unpublished sequence before anything has been published (a5-09)', () => {
+    // The empty case slipped past the Cycle Audit 3 guard: with no history the
+    // feed returned [] for any sequence, so a client asking for 600 of an asset
+    // that had published nothing was accepted silently — holding a record this
+    // feed never produced, and told it was current. Only the first sequence is
+    // a legitimate request of an empty feed: "send me what comes next".
+    const feed = new TickFeed();
+    expect(() => feed.since('eurusd', 600)).toThrow(UnknownSequenceError);
+    expect(() => feed.subscribe('eurusd', recorder(), 600)).toThrow(UnknownSequenceError);
+    expect(() => feed.since('eurusd', 2)).toThrow(UnknownSequenceError);
+    expect(feed.since('eurusd', 1)).toEqual([]);
+    const sink = recorder();
+    feed.subscribe('eurusd', sink, 1);
+    feed.publish('eurusd', ticks(1, 3));
+    expect(sink.received.map((t) => t.sequence)).toEqual([1, 2, 3]);
+  });
+
   it('rejects a nonsensical retention bound', () => {
     expect(() => new TickFeed({ retainTicks: 0 })).toThrow(RangeError);
   });

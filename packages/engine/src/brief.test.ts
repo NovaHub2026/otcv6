@@ -1,12 +1,40 @@
 // Invariant evidence: INV-006 (no directional rule an operator can supply), INV-007 (assets differ).
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MasterKeyring } from '@otc/core';
-import { requestFromBrief } from './brief.js';
+import { AUTHORING_ATTEMPTS, requestFromBrief } from './brief.js';
 import { ASSET_ARCHETYPES, archetypeById } from './families.js';
 import { dispersionLogSigma } from './dispersion.js';
+import { MAX_ASSET_ID_LENGTH } from './registration.js';
+import { TailWeightUnreachableError } from './personality.js';
+import type * as Personality from './personality.js';
+
+type Solve = (...args: unknown[]) => unknown;
+
+/**
+ * A switch on the solve, so a refusal can be staged without finding a brief
+ * that produces one: the real `authorPersonality` runs unless a test says
+ * otherwise, and the module's other exports are untouched. `actual` is the
+ * unmocked solve, for an override that wants to fall through to it.
+ */
+const solve = vi.hoisted(() => ({
+  override: null as null | Solve,
+  actual: null as null | Solve,
+}));
+vi.mock('./personality.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof Personality>();
+  solve.actual = actual.authorPersonality as Solve;
+  return {
+    ...actual,
+    authorPersonality: (...args: unknown[]) => (solve.override ?? solve.actual!)(...args),
+  };
+});
 
 const keyring = MasterKeyring.forTesting('brief-spec');
 const options = { keyring, environment: 'simulation' as const };
+
+afterEach(() => {
+  solve.override = null;
+});
 
 function brief(over: Partial<Parameters<typeof requestFromBrief>[0]> = {}) {
   return {
@@ -70,6 +98,85 @@ describe('an operator brief becomes a full registration request', () => {
 
   it('refuses an archetype nobody declared', () => {
     expect(() => requestFromBrief(brief({ archetypeId: 'not-a-family' }), options)).toThrow();
+  });
+
+  it('refuses an id the key label cannot hold before deriving anything', () => {
+    // **Cycle Audit 7, a3-04.** The id enters the key derivation here, before
+    // `registerAsset` can refuse it, and an id of 52 to 64 characters threw
+    // from inside the keyring with a message about a stream label. The
+    // operator's terms, first, and nothing derived.
+    const untouched = {
+      derive: () => {
+        throw new Error('derived a stream from a refused id');
+      },
+    } as unknown as MasterKeyring;
+    expect(() =>
+      requestFromBrief(brief({ id: 'a'.repeat(MAX_ASSET_ID_LENGTH + 1) }), {
+        ...options,
+        keyring: untouched,
+      }),
+    ).toThrow(/maximum is 51/);
+    expect(
+      requestFromBrief(brief({ id: 'a'.repeat(MAX_ASSET_ID_LENGTH) }), options).request.id,
+    ).toHaveLength(MAX_ASSET_ID_LENGTH);
+  });
+
+  it('carries what the family drew beside what the solve was given', () => {
+    // **Cycle Audit 7, a3-05.** A retreat or a clamp used to leave the request
+    // carrying only the number that survived. The draw travels with it, so
+    // the registered record can say whether the family asked for more.
+    const { request, sample, retreats } = requestFromBrief(brief(), options);
+    expect(request.targets.drawnExcessKurtosis).toBe(sample.excessKurtosis);
+    expect(request.targets.retreats).toBe(retreats);
+    expect(request.targets.clampedFrom).toBe(sample.clampedFrom);
+    expect(request.targets.excessKurtosis).toBe(sample.excessKurtosis * 0.9 ** retreats);
+  });
+});
+
+describe('the retreat is for one refusal only', () => {
+  // **Cycle Audit 7, a3-12.** `authorPersonality` refuses three ways, and the
+  // brief retried all of them six times at a structure simulation each. Only
+  // the tail weight being out of the cascade's reach is fixed by a lower
+  // target; the other two are reported at once, with their own words.
+  it('retreats while the tail weight is out of reach, and records how far', () => {
+    let refusals = 2;
+    let calls = 0;
+    solve.override = (...args) => {
+      calls += 1;
+      if (refusals > 0) {
+        refusals -= 1;
+        throw new TailWeightUnreachableError('needs more cascade inflation');
+      }
+      return solve.actual!(...args);
+    };
+    const { request, sample, retreats } = requestFromBrief(brief({ id: 'retreating' }), options);
+    expect(retreats).toBe(2);
+    expect(calls).toBe(3);
+    expect(request.targets.excessKurtosis).toBeCloseTo(sample.excessKurtosis * 0.81, 12);
+    expect(request.targets.drawnExcessKurtosis).toBe(sample.excessKurtosis);
+  });
+
+  it('rethrows a refusal a lower target cannot fix, after one solve', () => {
+    let calls = 0;
+    solve.override = () => {
+      calls += 1;
+      throw new RangeError('The regime and structure layers alone predict an excess kurtosis');
+    };
+    expect(() => requestFromBrief(brief({ id: 'hopeless' }), options)).toThrow(
+      /regime and structure layers/,
+    );
+    expect(calls).toBe(1);
+  });
+
+  it('gives up after the last attempt and lets registration refuse', () => {
+    let calls = 0;
+    solve.override = () => {
+      calls += 1;
+      throw new TailWeightUnreachableError('needs more cascade inflation');
+    };
+    const { retreats } = requestFromBrief(brief({ id: 'exhausted' }), options);
+    expect(retreats).toBe(AUTHORING_ATTEMPTS);
+    expect(calls).toBe(AUTHORING_ATTEMPTS);
   });
 
   it('has no field that could express a direction', () => {

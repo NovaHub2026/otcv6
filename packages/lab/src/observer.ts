@@ -150,6 +150,13 @@ export async function buildObserverDataset(options: DatasetBuildOptions): Promis
   const instants = new Float64Array(maxTicks);
   let count = 0;
 
+  // At least one full loop turn per call, whatever the size (a1-01). The only
+  // yield used to be the one every `chunkTicks`, so a caller building datasets
+  // smaller than that never turned the loop at all: `sampledCatalogue`'s last
+  // test built twenty-four 80,010-tick datasets in one macrotask-free stretch —
+  // 92 s on the hosted runner — while a task update was in flight, and failed
+  // every push to `main` with every test passing.
+  await yieldToLoop();
   while (count < maxTicks) {
     const tick = source.next();
     if (tick === null) break;
@@ -161,7 +168,7 @@ export async function buildObserverDataset(options: DatasetBuildOptions): Promis
     prices[count] = tick.price;
     instants[count] = tick.instant;
     count += 1;
-    if (count % chunkTicks === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+    if (count % chunkTicks === 0) await yieldToLoop();
   }
 
   if (count < 2) {
@@ -173,6 +180,12 @@ export async function buildObserverDataset(options: DatasetBuildOptions): Promis
     instants.subarray(0, count),
   );
 }
+
+// `yieldToLoop` lives in `@otc/core` since 2026-09-02 (one definition for every
+// package); it is re-exported here so `@otc/lab`'s surface is unchanged.
+import { yieldToLoop } from '@otc/core';
+
+export { yieldToLoop };
 
 /** Build a dataset from an already-materialised tick array. */
 export function datasetFromTicks(

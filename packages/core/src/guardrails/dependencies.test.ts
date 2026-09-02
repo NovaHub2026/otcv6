@@ -1,8 +1,15 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { builtinModules } from 'node:module';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { moduleSpecifiers } from './sourceScan.js';
+import { listSourceFiles, repoRoot } from './repository.js';
+import {
+  importSpecifiers,
+  isTestFile,
+  scanOptionsFor,
+  SHIPPED_EXTENSIONS,
+  stripCommentsKeepingStrings,
+} from './sourceScan.js';
 
 /**
  * Dependency direction.
@@ -18,9 +25,6 @@ import { moduleSpecifiers } from './sourceScan.js';
  * depend on the runtime, the runtime on the engine, the engine on the kernel,
  * and never the reverse.
  */
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(here, '../../../..');
 
 /** What each workspace package is permitted to depend on. */
 const ALLOWED: Record<string, readonly string[]> = {
@@ -57,12 +61,93 @@ const ALLOWED: Record<string, readonly string[]> = {
 const FORBIDDEN_BELOW_APPS =
   /^(@nestjs\/|next(\/|$)|react(\/|$)|react-dom|express(\/|$)|fastify(\/|$)|socket\.io)/;
 
+/** Node's own modules, with or without the `node:` prefix. */
+const NODE_BUILTINS: ReadonlySet<string> = new Set(
+  builtinModules.map((name) => name.replace(/^node:/, '')),
+);
+
+interface Alias {
+  /** A specifier, or a pattern with one `*`. */
+  readonly pattern: string;
+  /** What it stands for; a relative target is resolved against `base`. */
+  readonly target: string;
+  readonly base: string;
+  readonly origin: string;
+}
+
 interface Workspace {
   readonly name: string;
   /** `packages`, `tools` or `apps`. Frameworks are permitted only in `apps`. */
   readonly group: string;
   readonly dir: string;
+  /**
+   * Every dependency field.
+   *
+   * **a2-12.** This read `dependencies` and `devDependencies`, so an edge
+   * declared under `peerDependencies` or `optionalDependencies` was neither
+   * policed by {@link ALLOWED} nor walked by the cycle check. A peer dependency
+   * is still a dependency.
+   */
   readonly declared: readonly string[];
+  /**
+   * Specifier rewrites the toolchain honours before an import resolves:
+   * `compilerOptions.paths` in the workspace's tsconfig, and the `imports`
+   * field of its manifest (a2-12). A rule applied to the specifier as written
+   * and not as resolved is a rule an alias walks past.
+   */
+  readonly aliases: readonly Alias[];
+}
+
+interface Manifest {
+  readonly name: string;
+  readonly dependencies?: Record<string, string>;
+  readonly devDependencies?: Record<string, string>;
+  readonly peerDependencies?: Record<string, string>;
+  readonly optionalDependencies?: Record<string, string>;
+  readonly imports?: Record<string, string | Record<string, string>>;
+}
+
+interface TsConfig {
+  readonly extends?: string;
+  readonly compilerOptions?: {
+    readonly baseUrl?: string;
+    readonly paths?: Record<string, readonly string[]>;
+  };
+}
+
+/** A tsconfig may carry comments, which the JSON parser may not see. */
+function readJsonWithComments<T>(file: string): T {
+  return JSON.parse(stripCommentsKeepingStrings(readFileSync(file, 'utf8'))) as T;
+}
+
+/** `compilerOptions.paths`, following `extends` until a file defines them. */
+function tsconfigPaths(dir: string): Alias[] {
+  let file = path.join(dir, 'tsconfig.json');
+  for (let hops = 0; hops < 8 && existsSync(file); hops += 1) {
+    const config = readJsonWithComments<TsConfig>(file);
+    const paths = config.compilerOptions?.paths;
+    if (paths !== undefined) {
+      const base = path.resolve(path.dirname(file), config.compilerOptions?.baseUrl ?? '.');
+      const origin = `${path.relative(repoRoot, file)} paths`;
+      return Object.entries(paths).flatMap(([pattern, targets]) =>
+        targets.length === 0 ? [] : [{ pattern, target: targets[0]!, base, origin }],
+      );
+    }
+    if (config.extends === undefined) break;
+    file = path.resolve(path.dirname(file), config.extends);
+  }
+  return [];
+}
+
+/** The manifest's `imports` field: `#name` subpaths, possibly conditional. */
+function manifestImports(dir: string, manifest: Manifest): Alias[] {
+  const aliases: Alias[] = [];
+  for (const [pattern, value] of Object.entries(manifest.imports ?? {})) {
+    const target = typeof value === 'string' ? value : (value.default ?? Object.values(value)[0]);
+    if (target === undefined) continue;
+    aliases.push({ pattern, target, base: dir, origin: 'package.json imports' });
+  }
+  return aliases;
 }
 
 /**
@@ -85,21 +170,19 @@ function workspaces(): Workspace[] {
     const base = path.join(repoRoot, group);
     for (const entry of readdirSync(base)) {
       const dir = path.join(base, entry);
-      const manifest = path.join(dir, 'package.json');
       if (!statSync(dir).isDirectory()) continue;
-      const parsed = JSON.parse(readFileSync(manifest, 'utf8')) as {
-        name: string;
-        dependencies?: Record<string, string>;
-        devDependencies?: Record<string, string>;
-      };
+      const manifest = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8')) as Manifest;
       found.push({
-        name: parsed.name,
+        name: manifest.name,
         group,
         dir,
         declared: [
-          ...Object.keys(parsed.dependencies ?? {}),
-          ...Object.keys(parsed.devDependencies ?? {}),
+          ...Object.keys(manifest.dependencies ?? {}),
+          ...Object.keys(manifest.devDependencies ?? {}),
+          ...Object.keys(manifest.peerDependencies ?? {}),
+          ...Object.keys(manifest.optionalDependencies ?? {}),
         ],
+        aliases: [...tsconfigPaths(dir), ...manifestImports(dir, manifest)],
       });
     }
   }
@@ -107,41 +190,86 @@ function workspaces(): Workspace[] {
 }
 
 /**
- * What counts as a source file here.
+ * Tooling every workspace may use from the root manifest — `vitest` above all.
+ * Hoisted, so a test importing it works; declared at the root, so it is not an
+ * undeclared dependency. Only tests may lean on it: shipped code that imports
+ * a root dev dependency is shipped code with an undeclared dependency.
+ */
+function rootTooling(): ReadonlySet<string> {
+  const root = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as Manifest;
+  return new Set(Object.keys(root.devDependencies ?? {}));
+}
+
+/**
+ * Every file that ships from `src/`.
  *
  * **Cycle Audit 6, CA6-12.** This read only `.ts`, so seven of `apps/web`'s nine
  * files — every React component, including the whole browser bundle — were never
- * opened. An auditor imported `@otc/fixtures`, the planted-defect corpus, into
- * the shipped panel and every check in the repository stayed green; the same
- * import into a `.ts` file two directories away was caught by name.
- *
- * `.mts`/`.cts` are included for the same reason `.tsx` now is: the guard should
- * fail because a rule was broken, never because of how a file was spelled.
+ * opened. The extensions now come from the one shared list (a2-03), and that
+ * list includes `.js`: a checked-in `.js` under `src/` is still code the package
+ * publishes, and `import '@otc/lab'` in one was invisible (a2-12, D-14).
  */
-const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts'] as const;
+function sourceFiles(workspace: Workspace): string[] {
+  const src = path.relative(repoRoot, path.join(workspace.dir, 'src'));
+  return listSourceFiles(src, { extensions: SHIPPED_EXTENSIONS }).map((file) =>
+    path.join(repoRoot, file),
+  );
+}
 
-function sourceFiles(dir: string): string[] {
-  const found: string[] = [];
-  const walk = (absolute: string): void => {
-    for (const entry of readdirSync(absolute)) {
-      if (entry === 'node_modules' || entry === 'dist') continue;
-      const child = path.join(absolute, entry);
-      if (statSync(child).isDirectory()) walk(child);
-      else if (SOURCE_EXTENSIONS.some((extension) => entry.endsWith(extension))) found.push(child);
+/** The alias a specifier matches and what it resolves to, or `null` for none. */
+export function resolveAlias(
+  specifier: string,
+  aliases: readonly Alias[],
+): { readonly resolved: string; readonly alias: Alias } | null {
+  for (const alias of aliases) {
+    const star = alias.pattern.indexOf('*');
+    let captured: string | null = null;
+    if (star === -1) {
+      if (specifier === alias.pattern) captured = '';
+    } else {
+      const prefix = alias.pattern.slice(0, star);
+      const suffix = alias.pattern.slice(star + 1);
+      if (
+        specifier.startsWith(prefix) &&
+        specifier.endsWith(suffix) &&
+        specifier.length >= prefix.length + suffix.length
+      ) {
+        captured = specifier.slice(prefix.length, specifier.length - suffix.length);
+      }
     }
-  };
-  const src = path.join(dir, 'src');
-  walk(src);
-  return found;
+    if (captured === null) continue;
+    const target = alias.target.replace('*', captured);
+    const resolved = /^[./]/.test(target) ? path.resolve(alias.base, target) : target;
+    return { resolved, alias };
+  }
+  return null;
 }
 
-function allSpecifiers(file: string): string[] {
-  return moduleSpecifiers(readFileSync(file, 'utf8'));
+interface Resolved {
+  /** The specifier as the toolchain resolves it: bare, or an absolute path. */
+  readonly specifier: string;
+  /** How it was written, when an alias rewrote it. */
+  readonly via?: string;
 }
 
-/** Bare specifiers only: package names, not relative paths. */
-function importedModules(file: string): string[] {
-  return allSpecifiers(file).filter((specifier) => !specifier.startsWith('.'));
+/** A file's literal specifiers with aliases resolved, and its computed ones. */
+function specifiersOf(
+  file: string,
+  workspace: Workspace,
+): { readonly resolved: Resolved[]; readonly computed: readonly string[] } {
+  const found = importSpecifiers(readFileSync(file, 'utf8'), scanOptionsFor(file));
+  const resolved = found.literal.map((specifier): Resolved => {
+    const match = resolveAlias(specifier, workspace.aliases);
+    if (match === null) {
+      return {
+        specifier: specifier.startsWith('.')
+          ? path.resolve(path.dirname(file), specifier)
+          : specifier,
+      };
+    }
+    return { specifier: match.resolved, via: `${specifier} (${match.alias.origin})` };
+  });
+  return { resolved, computed: found.computed };
 }
 
 /**
@@ -157,26 +285,20 @@ function packageOf(specifier: string): string {
   return specifier.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0]!;
 }
 
-/**
- * Relative specifiers that leave their own package.
- *
- * `../../trading/dist/index.js` is a dependency by any honest reading, and it
- * bypassed the allowlist, the TypeScript project graph and lint simultaneously
- * because none of them treat a relative path as a dependency edge.
- */
-function escapingRelativeImports(file: string, packageDir: string): string[] {
-  const offenders: string[] = [];
-  for (const specifier of allSpecifiers(file)) {
-    if (!specifier.startsWith('.')) continue;
-    const resolved = path.resolve(path.dirname(file), specifier);
-    if (!resolved.startsWith(packageDir + path.sep)) {
-      offenders.push(`${path.relative(repoRoot, file)} imports ${specifier}`);
-    }
-  }
-  return offenders;
+function isNodeBuiltin(specifier: string): boolean {
+  return NODE_BUILTINS.has(packageOf(specifier.replace(/^node:/, '')));
+}
+
+function shown(file: string, entry: Resolved): string {
+  const target = path.isAbsolute(entry.specifier)
+    ? path.relative(repoRoot, entry.specifier)
+    : entry.specifier;
+  const via = entry.via === undefined ? '' : ` via ${entry.via}`;
+  return `${path.relative(repoRoot, file)} imports ${target}${via}`;
 }
 
 const all = workspaces();
+const tooling = rootTooling();
 
 describe('dependencies only point down', () => {
   it('finds every workspace', () => {
@@ -206,17 +328,29 @@ describe('dependencies only point down', () => {
     (name, workspace) => {
       // Workspace hoisting makes an undeclared dependency work anyway, right up
       // until the package is built or published on its own.
+      //
+      // **a2-12.** This checked `@otc/*` only, so `import 'lodash'` in
+      // `trading` was nobody's business. Below `apps/` every bare specifier
+      // must now be declared — by the workspace, or for a test file by the root
+      // manifest's tooling. The applications keep the internal rule only:
+      // their frameworks bring transitive packages a manifest never names.
       const permitted = new Set(workspace.declared);
       const offenders: string[] = [];
-      for (const file of sourceFiles(workspace.dir)) {
-        for (const specifier of importedModules(file)) {
-          if (!specifier.startsWith('@otc/')) continue;
-          if (!permitted.has(packageOf(specifier))) {
-            offenders.push(`${path.relative(repoRoot, file)} imports ${specifier}`);
+      for (const file of sourceFiles(workspace)) {
+        for (const entry of specifiersOf(file, workspace).resolved) {
+          if (path.isAbsolute(entry.specifier)) continue;
+          const pkg = packageOf(entry.specifier);
+          if (permitted.has(pkg)) continue;
+          if (pkg.startsWith('@otc/')) {
+            offenders.push(shown(file, entry));
+            continue;
           }
+          if (workspace.group === 'apps' || isNodeBuiltin(entry.specifier)) continue;
+          if (isTestFile(path.basename(file)) && tooling.has(pkg)) continue;
+          offenders.push(`${shown(file, entry)} (undeclared)`);
         }
       }
-      expect(offenders, `${name} has undeclared internal imports`).toEqual([]);
+      expect(offenders, `${name} has undeclared imports`).toEqual([]);
     },
   );
 
@@ -227,10 +361,10 @@ describe('dependencies only point down', () => {
     '%s imports no framework or server',
     (name, workspace) => {
       const offenders: string[] = [];
-      for (const file of sourceFiles(workspace.dir)) {
-        for (const specifier of importedModules(file)) {
-          if (FORBIDDEN_BELOW_APPS.test(specifier)) {
-            offenders.push(`${path.relative(repoRoot, file)} imports ${specifier}`);
+      for (const file of sourceFiles(workspace)) {
+        for (const entry of specifiersOf(file, workspace).resolved) {
+          if (!path.isAbsolute(entry.specifier) && FORBIDDEN_BELOW_APPS.test(entry.specifier)) {
+            offenders.push(shown(file, entry));
           }
         }
       }
@@ -244,14 +378,42 @@ describe('dependencies only point down', () => {
   it.each(all.map((w) => [w.name, w] as const))(
     '%s never reaches into another package by relative path',
     (name, workspace) => {
-      const offenders = sourceFiles(workspace.dir).flatMap((file) =>
-        escapingRelativeImports(file, workspace.dir),
-      );
+      // `../../trading/dist/index.js` is a dependency by any honest reading, and
+      // it bypassed the allowlist, the TypeScript project graph and lint
+      // simultaneously because none of them treat a relative path as a
+      // dependency edge. An alias whose target is a path is the same edge with
+      // a shorter name (a2-12).
+      const offenders: string[] = [];
+      for (const file of sourceFiles(workspace)) {
+        for (const entry of specifiersOf(file, workspace).resolved) {
+          if (!path.isAbsolute(entry.specifier)) continue;
+          if (!entry.specifier.startsWith(workspace.dir + path.sep)) {
+            offenders.push(shown(file, entry));
+          }
+        }
+      }
       expect(
         offenders,
         `${name} reaches outside itself without declaring a dependency — a relative path into ` +
           `another package's dist/ satisfies none of the allowlist, the build graph or lint`,
       ).toEqual([]);
+    },
+  );
+
+  it.each(all.filter((w) => w.group !== 'apps').map((w) => [w.name, w] as const))(
+    '%s writes no import specifier that is computed at run time',
+    (name, workspace) => {
+      // **a2-12, D-06 and D-07.** `import(spec)` and
+      // `import(['@otc', 'lab'].join('/'))` name their target only when they
+      // run. No scan can say what they reach, so below `apps/` there are none:
+      // every specifier is a literal the rules above can read.
+      const offenders: string[] = [];
+      for (const file of sourceFiles(workspace)) {
+        for (const argument of specifiersOf(file, workspace).computed) {
+          offenders.push(`${path.relative(repoRoot, file)} imports (${argument})`);
+        }
+      }
+      expect(offenders, `${name} has import specifiers no scan can read`).toEqual([]);
     },
   );
 
@@ -280,5 +442,137 @@ describe('dependencies only point down', () => {
     };
     for (const workspace of all) visit(workspace.name, []);
     expect([...state.values()].every((v) => v === 'done')).toBe(true);
+  });
+});
+
+describe('an alias is judged by what it resolves to (a2-12: D-09, D-10)', () => {
+  const trading = path.join(repoRoot, 'packages/trading');
+  const aliases: Alias[] = [
+    { pattern: 'otc-lab-alias', target: '../lab/src/index.ts', base: trading, origin: 'paths' },
+    { pattern: '#lab', target: '@otc/lab', base: trading, origin: 'imports' },
+    { pattern: '@app/*', target: './src/*', base: trading, origin: 'paths' },
+    { pattern: '#deep/*', target: '@otc/engine/*', base: trading, origin: 'imports' },
+  ];
+
+  it('resolves a path alias to the path, so the escape rule sees it', () => {
+    const match = resolveAlias('otc-lab-alias', aliases);
+    expect(match?.resolved).toBe(path.join(repoRoot, 'packages/lab/src/index.ts'));
+    expect(match!.resolved.startsWith(trading + path.sep)).toBe(false);
+  });
+
+  it('resolves a bare alias to the package, so the direction rule sees it', () => {
+    expect(resolveAlias('#lab', aliases)?.resolved).toBe('@otc/lab');
+    expect(packageOf(resolveAlias('#deep/thing', aliases)!.resolved)).toBe('@otc/engine');
+  });
+
+  it('substitutes a wildcard, and a target inside the package stays inside it', () => {
+    expect(resolveAlias('@app/settle.js', aliases)?.resolved).toBe(
+      path.join(trading, 'src/settle.js'),
+    );
+  });
+
+  it('leaves an ordinary specifier alone', () => {
+    expect(resolveAlias('@otc/core', aliases)).toBeNull();
+    expect(resolveAlias('./settle.js', aliases)).toBeNull();
+  });
+
+  it('reads the aliases a workspace declares — none, today', () => {
+    // Asserted so that the first alias to appear is judged by the rules above
+    // from the day it lands, and so that this test is known to have read the
+    // manifests and tsconfigs rather than found nothing by accident.
+    for (const workspace of all) expect(workspace.aliases, workspace.name).toEqual([]);
+    expect(
+      tsconfigPaths(path.join(repoRoot, 'packages/trading')),
+      'tsconfigPaths must follow extends to the base config and find no paths there',
+    ).toEqual([]);
+  });
+});
+
+/**
+ * The chart component is TradingView Lightweight Charts and nothing else.
+ *
+ * **ADR-0014.** Two products carry the TradingView name. `lightweight-charts`
+ * is a free Apache-2.0 npm package and is what the panel draws with; the
+ * *Charting Library* is a separate commercial product, distributed through a
+ * private repository under a licence agreement, and the Human Owner decided on
+ * 2026-09-02 that this project does not use it.
+ *
+ * "We use the free one" is a sentence that decays — it is true until someone
+ * needs a feature, and then it is renegotiated by whoever is closest to a
+ * deadline. This makes it a build failure with the ADR's name on it. The check
+ * is by name in every manifest and every import, because that is how the paid
+ * library arrives: as a dependency on a private tarball, or as a vendored
+ * `charting_library/` directory the bundler picks up.
+ */
+describe('the paid TradingView Charting Library never enters the tree (ADR-0014)', () => {
+  /** How the commercial product is spelled, in a manifest or on disk. */
+  const FORBIDDEN = [
+    'charting_library',
+    'charting-library',
+    '@tradingview/charting',
+    'tradingview/charting_library',
+    'advanced-charts',
+  ] as const;
+
+  /** What the free product is spelled, so this test cannot refuse the right one. */
+  const PERMITTED = 'lightweight-charts';
+
+  it('is declared by exactly one workspace, and it is the free package', () => {
+    const declaring = all.filter((workspace) => workspace.declared.includes(PERMITTED));
+    expect(declaring.map((workspace) => workspace.name)).toEqual(['@otc/web']);
+  });
+
+  it('no manifest names the Charting Library', () => {
+    const offences: string[] = [];
+    for (const workspace of all) {
+      for (const name of workspace.declared) {
+        const lowered = name.toLowerCase();
+        if (FORBIDDEN.some((forbidden) => lowered.includes(forbidden))) {
+          offences.push(`${workspace.name} declares ${name}`);
+        }
+      }
+    }
+    expect(
+      offences,
+      'The paid Charting Library is refused by ADR-0014. Lightweight Charts is the ' +
+        'chart component; a feature that genuinely needs the commercial product needs a ' +
+        'new ADR with its licence cost in it, not a dependency.',
+    ).toEqual([]);
+  });
+
+  it('no source file imports it, under any spelling', () => {
+    const offences: string[] = [];
+    for (const workspace of all) {
+      for (const file of sourceFiles(workspace)) {
+        const { resolved, computed } = specifiersOf(file, workspace);
+        for (const entry of resolved) {
+          const lowered = entry.specifier.toLowerCase();
+          if (FORBIDDEN.some((forbidden) => lowered.includes(forbidden))) {
+            offences.push(shown(file, entry));
+          }
+        }
+        for (const specifier of computed) {
+          if (FORBIDDEN.some((forbidden) => specifier.toLowerCase().includes(forbidden))) {
+            offences.push(`${path.relative(repoRoot, file)} computes ${specifier}`);
+          }
+        }
+      }
+    }
+    expect(offences, 'ADR-0014: the Charting Library is not part of this product.').toEqual([]);
+  });
+
+  it('the free library is Apache-2.0, and NOTICE carries its attribution', () => {
+    // Apache-2.0 asks for attribution and for the notice to travel with the
+    // work. The repository is all-rights-reserved (ADR-0014), which makes the
+    // dependency's own licence the only thing granting anyone the right to use
+    // that part — so the notice is not decoration.
+    const manifest = JSON.parse(
+      readFileSync(path.join(repoRoot, 'node_modules/lightweight-charts/package.json'), 'utf8'),
+    ) as { license?: string };
+    expect(manifest.license).toBe('Apache-2.0');
+    const notice = readFileSync(path.join(repoRoot, 'NOTICE'), 'utf8');
+    expect(notice).toContain('Lightweight Charts');
+    expect(notice).toContain('Apache License');
+    expect(readFileSync(path.join(repoRoot, 'LICENSE'), 'utf8')).toContain('All rights reserved');
   });
 });

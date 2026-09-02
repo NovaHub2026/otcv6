@@ -1,5 +1,6 @@
 // Invariant evidence: INV-003 (one stream per asset), INV-007 (assets differ), INV-009 (records reproduce).
 import { spawn, type ChildProcess } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -26,6 +27,10 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
 const entry = path.join(repoRoot, 'apps/api/dist/main.js');
 const SECRET = 'c'.repeat(64);
+/** The operator's write credential. Public by construction: this is a test. */
+const TOKEN = 'registration-test-token-'.padEnd(32, 'r');
+const JSON_HEADERS = { 'content-type': 'application/json' };
+const WRITE_HEADERS = { ...JSON_HEADERS, authorization: `Bearer ${TOKEN}` };
 
 const started: ChildProcess[] = [];
 const directories: string[] = [];
@@ -48,9 +53,30 @@ function freePort(): Promise<number> {
   });
 }
 
-async function boot(stateDir: string, port: number): Promise<ChildProcess> {
+/**
+ * Boot the service and wait for *this* child to answer.
+ *
+ * **a6-14.** The first healthy `/health` on the port used to be taken as the
+ * child's; a foreign engine already listening there answers at once. The child
+ * is given a nonce and `/health` echoes it, so a service that answers without
+ * it is somebody else's.
+ */
+async function boot(
+  stateDir: string,
+  port: number,
+  env: Record<string, string> = { OTC_ADMIN_TOKEN: TOKEN },
+): Promise<ChildProcess> {
+  const nonce = randomUUID();
   const child = spawn(process.execPath, [entry], {
-    env: { ...process.env, OTC_STATE_DIR: stateDir, OTC_MASTER_SECRET: SECRET, PORT: String(port) },
+    env: {
+      ...process.env,
+      OTC_ADMIN_TOKEN: '',
+      ...env,
+      OTC_STATE_DIR: stateDir,
+      OTC_MASTER_SECRET: SECRET,
+      OTC_BOOT_NONCE: nonce,
+      PORT: String(port),
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   started.push(child);
@@ -63,7 +89,11 @@ async function boot(stateDir: string, port: number): Promise<ChildProcess> {
       throw new Error(`service exited (${child.exitCode}):\n${output.slice(-2_000)}`);
     }
     try {
-      if ((await fetch(`http://127.0.0.1:${port}/health`)).ok) return child;
+      const response = await fetch(`http://127.0.0.1:${port}/health`);
+      if (response.ok) {
+        const health = (await response.json()) as { bootNonce: string | null };
+        if (health.bootNonce === nonce) return child;
+      }
     } catch {
       /* not up yet */
     }
@@ -82,7 +112,7 @@ interface JobView {
 async function post(port: number, body: unknown): Promise<{ status: number; body: unknown }> {
   const response = await fetch(`http://127.0.0.1:${port}/assets`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: WRITE_HEADERS,
     body: JSON.stringify(body),
   });
   return { status: response.status, body: await response.json() };
@@ -180,7 +210,7 @@ describe('an asset created from the panel', () => {
     // `eurusd` was never registered here and is administered all the same.
     const renamed = await fetch(`http://127.0.0.1:${port}/assets/eurusd`, {
       method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
+      headers: WRITE_HEADERS,
       body: JSON.stringify({ displayName: 'Euro / Dollar' }),
     });
     expect(renamed.status).toBe(200);
@@ -190,7 +220,7 @@ describe('an asset created from the panel', () => {
     for (const field of ['id', 'logQuantum', 'referencePrice', 'traits']) {
       const response = await fetch(`http://127.0.0.1:${port}/assets/eurusd`, {
         method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
+        headers: WRITE_HEADERS,
         body: JSON.stringify({ [field]: 1 }),
       });
       expect(response.status, field).toBe(400);
@@ -207,7 +237,11 @@ describe('an asset created from the panel', () => {
       };
       if (before.sequence === null) await new Promise((resolve) => setTimeout(resolve, 500));
     }
-    const retired = await fetch(`http://127.0.0.1:${port}/assets/spx/retire`, { method: 'POST' });
+    const retired = await fetch(`http://127.0.0.1:${port}/assets/spx/retire`, {
+      method: 'POST',
+      headers: WRITE_HEADERS,
+      body: '{}',
+    });
     expect(retired.status).toBe(201);
 
     // No longer hosted, and the record it published is untouched: the history
@@ -224,7 +258,13 @@ describe('an asset created from the panel', () => {
     // Final, and final across a restart. A market resumed after a gap would
     // either invent the interval or seam the record.
     expect(
-      (await fetch(`http://127.0.0.1:${port}/assets/spx/retire`, { method: 'POST' })).status,
+      (
+        await fetch(`http://127.0.0.1:${port}/assets/spx/retire`, {
+          method: 'POST',
+          headers: WRITE_HEADERS,
+          body: '{}',
+        })
+      ).status,
     ).toBe(409);
     started[started.length - 1]!.kill('SIGKILL');
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -261,23 +301,90 @@ describe('an asset created from the panel', () => {
     const port = await freePort();
     await boot(stateDir, port);
 
+    const metal = { id: 'x', archetypeId: 'metal', displayName: 'x', referencePrice: 1 };
     for (const [body, expected] of [
       [{ archetypeId: 'metal', displayName: 'x', referencePrice: 1 }, /id must be a string/],
-      [{ id: 'x', archetypeId: 'nope', displayName: 'x', referencePrice: 1 }, /Unknown archetype/],
-      [{ id: 'x', archetypeId: 'metal', displayName: '', referencePrice: 1 }, /displayName/],
-      [{ id: 'x', archetypeId: 'metal', displayName: 'x', referencePrice: -1 }, /referencePrice/],
-      [
-        { id: 'x', archetypeId: 'metal', displayName: 'x', referencePrice: 1, dispersion: -0.2 },
-        /dispersion/,
-      ],
-      [
-        { id: 'X-BAD', archetypeId: 'metal', displayName: 'x', referencePrice: 1 },
-        /must match|filename/,
-      ],
+      [{ ...metal, archetypeId: 'nope' }, /Unknown archetype/],
+      [{ ...metal, displayName: '' }, /displayName/],
+      [{ ...metal, referencePrice: -1 }, /referencePrice/],
+      [{ ...metal, dispersion: -0.2 }, /dispersion/],
+      // A malformed id is the request's fault: 400, never 409 (a6-08).
+      [{ ...metal, id: 'X-BAD' }, /must match/],
+      [{ ...metal, id: 'a'.repeat(52) }, /maximum is 51/],
+      // `null` is not "not supplied", and an unknown field is not ignored (a6-07).
+      [{ ...metal, dispersion: null }, /dispersion .* null/],
+      // The body is compared as JSON text, so the quotes around the name are escaped.
+      [{ ...metal, drift: 5 }, /Unknown field \\"drift\\"/],
+      [{ ...metal, displayName: 'n'.repeat(65) }, /most a name may hold is 64/],
     ] as const) {
       const response = await post(port, body);
-      expect(response.status, JSON.stringify(body)).toBeGreaterThanOrEqual(400);
+      expect(response.status, JSON.stringify(body)).toBe(400);
       expect(JSON.stringify(response.body), JSON.stringify(body)).toMatch(expected);
     }
+  }, 180_000);
+
+  it('closes the write surface to anything but the operator, whatever the origin (a6-01)', async () => {
+    // Measured before this existed: `curl -X POST /assets/gbpjpy/retire -H
+    // 'Origin: http://evil.example'` answered 201 and the market was retired
+    // for good. A request with no body and no custom header is one a browser
+    // sends without a preflight, so CORS never saw it; and CORS only ever
+    // decided who may *read* an answer.
+    const stateDir = await mkdtemp(path.join(tmpdir(), 'otc-auth-'));
+    directories.push(stateDir);
+    const port = await freePort();
+    await boot(stateDir, port);
+    const retire = `http://127.0.0.1:${port}/assets/gbpjpy/retire`;
+    const evil = { Origin: 'http://evil.example' };
+
+    const simple = await fetch(retire, { method: 'POST', headers: evil });
+    expect(simple.status, 'the simple request a page can send').toBe(403);
+    expect(await simple.text()).toMatch(/Authorization: Bearer/);
+
+    const wrong = await fetch(retire, {
+      method: 'POST',
+      headers: { ...evil, ...JSON_HEADERS, authorization: 'Bearer not-the-operator-token-at-all' },
+    });
+    expect(wrong.status, 'the wrong token').toBe(403);
+
+    const text = await fetch(retire, {
+      method: 'POST',
+      headers: { ...evil, authorization: `Bearer ${TOKEN}`, 'content-type': 'text/plain' },
+      body: '{}',
+    });
+    expect(text.status, 'the right token with a body a browser would not preflight').toBe(415);
+
+    const still = (await catalogue(port)).find((entry) => entry.id === 'gbpjpy');
+    expect(still?.live, 'nothing above retired anything').toBe(true);
+
+    const genuine = await fetch(retire, {
+      method: 'POST',
+      headers: { ...evil, ...WRITE_HEADERS },
+      body: '{}',
+    });
+    expect(genuine.status, 'the operator, from any origin').toBe(201);
+
+    // Reads never needed a credential and still do not.
+    expect((await fetch(`http://127.0.0.1:${port}/catalogue`, { headers: evil })).status).toBe(200);
+  }, 180_000);
+
+  it('boots without a token with every write refused by name, and refuses a token too short to be one', async () => {
+    const stateDir = await mkdtemp(path.join(tmpdir(), 'otc-notoken-'));
+    directories.push(stateDir);
+    const port = await freePort();
+    await boot(stateDir, port, {});
+    const refused = await fetch(`http://127.0.0.1:${port}/assets/eurusd`, {
+      method: 'PATCH',
+      headers: WRITE_HEADERS,
+      body: JSON.stringify({ displayName: 'Nope' }),
+    });
+    expect(refused.status).toBe(403);
+    expect(await refused.text()).toMatch(/OTC_ADMIN_TOKEN is not set/);
+    expect((await fetch(`http://127.0.0.1:${port}/markets`)).status, 'reads are unaffected').toBe(
+      200,
+    );
+
+    await expect(boot(stateDir, await freePort(), { OTC_ADMIN_TOKEN: 'short' })).rejects.toThrow(
+      /OTC_ADMIN_TOKEN is 5 characters/,
+    );
   }, 180_000);
 });

@@ -24,10 +24,44 @@ export type EntryMode =
   /** Entries at tick instants. Conditions on "a tick just happened". */
   | 'tick';
 
+/**
+ * Added to the horizon to form the default clock stride, in milliseconds.
+ *
+ * **Out-of-band audit, a4-02.** Clock entries sat at `t0 + k·H`, so whenever the
+ * horizon divides a temporal grid every entry lands on the same phase of it. At
+ * every horizon of a minute or more `second-of-minute` — the family that exists
+ * to catch anything phase-locked to the clock — saw one sixth of the minute,
+ * and the verdict reported the other five as "held fewer than 500 decided
+ * outcomes": 46 of the 48 occupancy skips on the calibration control were this
+ * aliasing, described as sample scarcity. A leak keyed to any of the untested
+ * five sixths at 1 m–15 m was invisible to the family built for it.
+ *
+ * One second is coprime, on the one-second lattice, to every grid the battery
+ * conditions on. Every product horizon is a multiple of 30 s and every grid —
+ * 15 s, 60 s, 225 s, 300 s, 600 s, 900 s, 3600 s — factors into 2, 3 and 5
+ * only, so `H + 1 s ≡ 1 (mod 2, 3, 5)` and the entry phase `k·(H + 1 s)` visits
+ * every residue of every grid in turn. Windows stay non-overlapping. The cost
+ * is one second per window: 3.2% of the 30-second sample and 0.1% at 15 m,
+ * against 19% for the 7 s the audit suggested, which sweeps the same residues
+ * in a different order. The sweep advances one second per entry, so the
+ * slowest grid (3600 s at 15 m) takes 37.5 days of history to cover — far
+ * inside every evaluation span this project runs, and shorter than the history
+ * any bucket at that horizon needs to reach the occupancy floor.
+ * `outcomes.test.ts` asserts the sweep at every horizon.
+ */
+export const PHASE_SWEEP_OFFSET_MS = 1_000;
+
+/** The default clock stride for a horizon: non-overlapping, and phase-sweeping. */
+export function defaultStrideMs(horizonMs: number): number {
+  return horizonMs + PHASE_SWEEP_OFFSET_MS;
+}
+
 export interface SamplingOptions {
   /**
-   * Minimum gap between consecutive entries. Defaults to the horizon, which
-   * makes samples non-overlapping and therefore approximately independent.
+   * Minimum gap between consecutive entries. Defaults to the horizon plus
+   * {@link PHASE_SWEEP_OFFSET_MS}, which keeps samples non-overlapping — and
+   * therefore approximately independent — while sweeping every phase of every
+   * clock grid the temporal families condition on.
    */
   readonly strideMs?: number;
   readonly entryMode?: EntryMode;
@@ -80,7 +114,7 @@ export function sampleOutcomes(
   if (!Number.isFinite(horizonMs) || horizonMs <= 0) {
     throw new RangeError(`Horizon must be positive, received ${horizonMs}.`);
   }
-  const strideMs = options.strideMs ?? horizonMs;
+  const strideMs = options.strideMs ?? defaultStrideMs(horizonMs);
   if (!Number.isFinite(strideMs) || strideMs <= 0) {
     throw new RangeError(`Stride must be positive, received ${strideMs}.`);
   }

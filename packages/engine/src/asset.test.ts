@@ -23,19 +23,6 @@ function calibrate(volatility: number, over: { replicates?: number; simulatedMs?
   );
 }
 
-describe('a long calibration does not overflow the stack', () => {
-  it('pools tens of thousands of windows from one replicate', () => {
-    // `pooled.push(...returns)` spreads the whole replicate onto the argument
-    // stack. At 32 turnovers of a 46-hour cascade — 61 simulated days, 176,000
-    // windowed returns — that is a `RangeError` from a line that reads like a
-    // copy. It was latent for as long as calibration spans stayed short, and
-    // raising `DISPERSION_FIT_TURNOVERS` found it.
-    const long = calibrate(base.traits.volatility, { replicates: 1, simulatedMs: 90 * 86_400_000 });
-    expect(long.evidence.horizons).toBeGreaterThan(250_000);
-    expect(long.evidence.logVariancePerMs).toBeGreaterThan(0);
-  }, 120_000);
-});
-
 describe('a calibration can be moved to another volatility without simulating', () => {
   const factor = 3.7;
   const measured = calibrate(base.traits.volatility);

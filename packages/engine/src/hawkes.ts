@@ -122,6 +122,26 @@ function excitationPerEvent(config: HawkesConfig): number {
   return config.branchingRatio * config.baseIntervalMs * config.decayPerMs;
 }
 
+/**
+ * ln 2, to the last bit of a double, for the half-life weight below.
+ *
+ * Written out rather than taken from the portable module or `Math.LN2`: the
+ * fdlibm port keeps ln 2 split into a high and a low part for its own range
+ * reduction and exports neither, and ECMAScript specifies `Math.LN2` only as
+ * "approximately" this value. A literal is exactly specified everywhere.
+ */
+const LN2 = 0.693_147_180_559_945_3;
+
+/**
+ * Floor on the running-average magnitude the excitation is normalised by.
+ *
+ * The average starts at `referenceMagnitude` and tracks what the tick stream
+ * actually produces, so it is positive in every configuration; the floor is a
+ * guard against a division by a magnitude average that has decayed to zero on
+ * a market that stopped moving, not a value anything is tuned to.
+ */
+const MIN_REFERENCE_MAGNITUDE = 1e-9;
+
 export interface HawkesSnapshot {
   readonly excitation: number;
   readonly averageMagnitude: number;
@@ -152,12 +172,12 @@ export class HawkesArrivalModel implements ArrivalModel {
       const weight =
         1 -
         exp(
-          (-Math.max(1, context.elapsedSincePreviousMs) * 0.693_147_180_559_945_3) /
+          (-Math.max(1, context.elapsedSincePreviousMs) * LN2) /
             this.config.magnitudeAverageHalfLifeMs,
         );
       this.#averageMagnitude += (context.previousMagnitude - this.#averageMagnitude) * weight;
     }
-    const reference = Math.max(1e-9, this.#averageMagnitude);
+    const reference = Math.max(MIN_REFERENCE_MAGNITUDE, this.#averageMagnitude);
 
     // Then excite, in proportion to the relative size of the tick just produced.
     this.#excitation += excitationPerEvent(this.config) * (context.previousMagnitude / reference);

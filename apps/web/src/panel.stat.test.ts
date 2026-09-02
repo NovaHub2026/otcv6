@@ -1,10 +1,12 @@
 // Invariant evidence: INV-002 (shared market), INV-004 (timeframe observer independence).
 import { spawn, type ChildProcess } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, type TestContext } from 'vitest';
 import { chromium, type Browser, type ConsoleMessage, type Page } from 'playwright';
 
 /**
@@ -36,15 +38,30 @@ import { chromium, type Browser, type ConsoleMessage, type Page } from 'playwrig
  * `playwright install chromium` downloads the browser but not the system
  * libraries it links against, and installing those needs root. On a machine
  * without them this **fails** when `OTC_REQUIRE_BROWSER=1` — which CI sets —
- * and skips loudly otherwise, naming the one command that fixes it. A test that
- * skips quietly is not evidence, and a gate that silently drops its only
- * browser coverage is how CA6-10 happened in the first place.
+ * and otherwise **skips**, as a skip: every test is marked skipped in the
+ * summary, and one line names the packages that fix it. Until the out-of-band
+ * audit (a6-03) the six tests were reported as *passed* while doing nothing,
+ * on a host where no Chromium build could launch. A test that passes without
+ * running is not evidence, and a gate that silently drops its only browser
+ * coverage is how CA6-10 happened in the first place.
+ *
+ * ## Two children, two process groups
+ *
+ * The panel was started as `npx next start`, and `npx` runs `next` through a
+ * shell; killing `npx` in `afterAll` left `next-server` running — and holding
+ * its port — for the rest of every CI job (a1-05, the runner's own orphan
+ * cleanup lines). Both children are now spawned directly, each as the leader
+ * of its own process group, and the group is what is killed.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
 const SECRET = 'e'.repeat(64);
+/** The operator's write credential, shared by the engine and the panel. Public: a test. */
+const TOKEN = 'panel-test-token-'.padEnd(32, 'p');
 const BACKFILL_DAYS = 2;
+/** The one command that makes the browser launch on a Debian-family host. */
+const BROWSER_LIBRARIES = 'sudo apt-get install -y libnss3 libnspr4 libasound2t64';
 
 const started: ChildProcess[] = [];
 const directories: string[] = [];
@@ -55,11 +72,39 @@ let unavailable: string | null = null;
 
 afterAll(async () => {
   if (browser !== null) await browser.close();
-  for (const child of started) if (child.exitCode === null) child.kill('SIGKILL');
+  for (const child of started) killGroup(child);
   for (const directory of directories) await rm(directory, { recursive: true, force: true });
 });
 
-async function waitForHealth(port: number, pathname: string, child: ChildProcess): Promise<void> {
+/**
+ * Kill a child and everything it started (a1-05).
+ *
+ * Each child is spawned `detached`, which makes it the leader of its own
+ * process group; a negative pid addresses the group. The fallback is for a
+ * child that already died and took its group with it.
+ */
+function killGroup(child: ChildProcess): void {
+  if (child.exitCode !== null || child.pid === undefined) return;
+  try {
+    process.kill(-child.pid, 'SIGKILL');
+  } catch {
+    child.kill('SIGKILL');
+  }
+}
+
+/**
+ * Wait until *this* child answers at `pathname`.
+ *
+ * `ready` decides from the response body: the engine echoes the boot nonce it
+ * was given (a6-14), so a foreign engine on the port is never mistaken for the
+ * child while the child is still provisioning.
+ */
+async function waitUntilReady(
+  port: number,
+  pathname: string,
+  child: ChildProcess,
+  ready: (response: Response) => Promise<boolean>,
+): Promise<void> {
   let output = '';
   child.stdout?.on('data', (chunk: Buffer) => (output += chunk.toString()));
   child.stderr?.on('data', (chunk: Buffer) => (output += chunk.toString()));
@@ -69,7 +114,8 @@ async function waitForHealth(port: number, pathname: string, child: ChildProcess
       throw new Error(`service exited (${child.exitCode}):\n${output.slice(-2_000)}`);
     }
     try {
-      if ((await fetch(`http://127.0.0.1:${port}${pathname}`)).ok) return;
+      const response = await fetch(`http://127.0.0.1:${port}${pathname}`);
+      if (response.ok && (await ready(response))) return;
     } catch {
       /* not up yet */
     }
@@ -81,29 +127,49 @@ async function waitForHealth(port: number, pathname: string, child: ChildProcess
 async function bootEngine(port: number): Promise<void> {
   const stateDir = await mkdtemp(path.join(tmpdir(), 'otc-panel-'));
   directories.push(stateDir);
+  const nonce = randomUUID();
   const child = spawn(process.execPath, [path.join(repoRoot, 'apps/api/dist/main.js')], {
     env: {
       ...process.env,
       OTC_STATE_DIR: stateDir,
       OTC_HISTORY_DB: path.join(stateDir, 'history.db'),
       OTC_MASTER_SECRET: SECRET,
+      OTC_ADMIN_TOKEN: TOKEN,
       OTC_BACKFILL_DAYS: String(BACKFILL_DAYS),
+      OTC_BOOT_NONCE: nonce,
       PORT: String(port),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
   });
   started.push(child);
-  await waitForHealth(port, '/health', child);
+  await waitUntilReady(
+    port,
+    '/health',
+    child,
+    async (response) =>
+      ((await response.json()) as { bootNonce: string | null }).bootNonce === nonce,
+  );
 }
 
 async function bootPanel(port: number, enginePort: number): Promise<void> {
-  const child = spawn('npx', ['next', 'start', '-p', String(port)], {
+  // `next` itself, not `npx next`: a shell in between is a process the group
+  // kill would otherwise have to know about.
+  const next = createRequire(import.meta.url).resolve('next/dist/bin/next');
+  const child = spawn(process.execPath, [next, 'start', '-p', String(port)], {
     cwd: path.join(repoRoot, 'apps/web'),
-    env: { ...process.env, OTC_API_BASE: `http://127.0.0.1:${enginePort}` },
+    env: {
+      ...process.env,
+      OTC_API_BASE: `http://127.0.0.1:${enginePort}`,
+      // The panel adds the token to every write on its server (a6-01); the
+      // browser under test never holds it.
+      OTC_ADMIN_TOKEN: TOKEN,
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
   });
   started.push(child);
-  await waitForHealth(port, '/preview', child);
+  await waitUntilReady(port, '/preview', child, () => Promise.resolve(true));
 }
 
 /** A free port, found by asking the operating system for one. */
@@ -166,13 +232,16 @@ beforeAll(async () => {
     if (process.env['OTC_REQUIRE_BROWSER'] === '1') {
       throw new Error(
         `A browser is required here and could not be launched. ${detail}\n` +
-          `Install the system libraries it links against:\n` +
-          `  sudo apt-get install -y libnss3 libnspr4 libasound2t64`,
+          `Install the system libraries it links against:\n  ${BROWSER_LIBRARIES}`,
       );
     }
-    unavailable =
-      `no browser: ${detail.split('\n')[0] ?? ''} — ` +
-      `enable with: sudo apt-get install -y libnss3 libnspr4 libasound2t64`;
+    unavailable = `no browser: ${detail.split('\n')[0] ?? ''}`;
+    // Once, and in the run's output: the summary will say `skipped`, and this
+    // line says why and what fixes it (a6-03).
+    console.warn(
+      `panel.stat.test.ts: SKIPPED — ${unavailable}. Enable with: ${BROWSER_LIBRARIES} ` +
+        `(or set OTC_REQUIRE_BROWSER=1 to make this a failure, as CI does).`,
+    );
     return;
   }
   // **Build the panel from source, every run.** `next start` serves whatever
@@ -200,18 +269,18 @@ async function build(): Promise<void> {
 }
 
 describe('the panel, in a browser', () => {
-  const guard = (): void => {
-    if (unavailable !== null) {
-      // Loud, and in the run's output: a skip nobody reads is a check nobody has.
-      console.warn(`SKIPPED — ${unavailable}`);
-      expect(unavailable).toContain('no browser');
-    }
+  /**
+   * A real skip, not a pass (a6-03). `ctx.skip()` marks the test skipped in
+   * the summary; the previous guard returned early and six tests that had run
+   * nothing were counted as passed.
+   */
+  const requireBrowser = (ctx: TestContext): Browser => {
+    if (browser === null) ctx.skip(`no browser — ${unavailable ?? 'not launched'}`);
+    return browser;
   };
 
-  it('loads, reaches the engine, and draws bars in a chart with a size', async () => {
-    guard();
-    if (browser === null) return;
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  it('loads, reaches the engine, and draws bars in a chart with a size', async (ctx) => {
+    const page = await requireBrowser(ctx).newPage({ viewport: { width: 1440, height: 900 } });
     const observed = watch(page);
     try {
       await page.goto(`http://127.0.0.1:${webPort}/preview`, { waitUntil: 'networkidle' });
@@ -242,10 +311,8 @@ describe('the panel, in a browser', () => {
     }
   }, 300_000);
 
-  it('shows a price that moves', async () => {
-    guard();
-    if (browser === null) return;
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  it('shows a price that moves', async (ctx) => {
+    const page = await requireBrowser(ctx).newPage({ viewport: { width: 1440, height: 900 } });
     try {
       await page.goto(`http://127.0.0.1:${webPort}/preview`, { waitUntil: 'networkidle' });
       await expect
@@ -266,10 +333,8 @@ describe('the panel, in a browser', () => {
     }
   }, 300_000);
 
-  it('switches the whole screen when the asset changes', async () => {
-    guard();
-    if (browser === null) return;
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  it('switches the whole screen when the asset changes', async (ctx) => {
+    const page = await requireBrowser(ctx).newPage({ viewport: { width: 1440, height: 900 } });
     const observed = watch(page);
     try {
       await page.goto(`http://127.0.0.1:${webPort}/preview`, { waitUntil: 'networkidle' });
@@ -339,10 +404,8 @@ describe('the panel, in a browser', () => {
     }
   }, 300_000);
 
-  it('changes timeframe without refetching a different market', async () => {
-    guard();
-    if (browser === null) return;
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  it('changes timeframe without refetching a different market', async (ctx) => {
+    const page = await requireBrowser(ctx).newPage({ viewport: { width: 1440, height: 900 } });
     try {
       await page.goto(`http://127.0.0.1:${webPort}/preview`, { waitUntil: 'networkidle' });
       await page.locator('canvas').first().waitFor({ state: 'attached', timeout: 30_000 });
@@ -367,10 +430,8 @@ describe('the panel, in a browser', () => {
     }
   }, 300_000);
 
-  it('creates an asset from the panel and then shows it', async () => {
-    guard();
-    if (browser === null) return;
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  it('creates an asset from the panel and then shows it', async (ctx) => {
+    const page = await requireBrowser(ctx).newPage({ viewport: { width: 1440, height: 900 } });
     const observed = watch(page);
     try {
       await page.goto(`http://127.0.0.1:${webPort}/assets/new`, { waitUntil: 'networkidle' });
@@ -406,10 +467,8 @@ describe('the panel, in a browser', () => {
     }
   }, 600_000);
 
-  it('renames and retires from the panel, and refuses the rest', async () => {
-    guard();
-    if (browser === null) return;
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  it('renames and retires from the panel, and refuses the rest', async (ctx) => {
+    const page = await requireBrowser(ctx).newPage({ viewport: { width: 1440, height: 900 } });
     const observed = watch(page);
     try {
       await page.goto(`http://127.0.0.1:${webPort}/assets/manage`, { waitUntil: 'networkidle' });

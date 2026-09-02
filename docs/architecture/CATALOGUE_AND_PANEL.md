@@ -21,14 +21,14 @@ may refuse and each of which names itself when it does:
 identity → safety → authoring → dispersion → calibration → differentiation
 ```
 
-| Stage             | Refuses                                                                                               |
-| ----------------- | ----------------------------------------------------------------------------------------------------- |
-| `identity`        | an id that cannot be a filename or a key label; a duplicate; an unusable reference price              |
-| `safety`          | a personality whose layers compound past the realism ceiling — in microseconds, before the solve      |
-| `authoring`       | a tail weight the ladder cannot reach                                                                 |
-| `dispersion`      | a budget the personality cannot reach, or a calibration too short to fit it honestly                  |
-| `calibration`     | a lattice that cannot be derived; a display coarser than that lattice; an instrument the core rejects |
-| `differentiation` | an asset indistinguishable from one already registered                                                |
+| Stage             | Refuses                                                                                                                                                                               |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `identity`        | an id that cannot be a filename or a key label (51 characters at most, no trailing dot); a duplicate; a reference price outside [1e-15, 1e15]; a display precision above 18           |
+| `safety`          | a personality whose layers compound past the realism ceiling, or a target tail weight outside the realism band — in microseconds, before the solve                                    |
+| `authoring`       | a tail weight the ladder cannot reach                                                                                                                                                 |
+| `dispersion`      | a budget the personality cannot reach — including one that scales the base volatility out of bounds, checked ahead of the safety gate — or a calibration too short to fit it honestly |
+| `calibration`     | a lattice that cannot be derived; a display coarser than that lattice; an instrument the core rejects                                                                                 |
+| `differentiation` | an asset indistinguishable from one already registered                                                                                                                                |
 
 Two of these are simulation. Anything driving registration must treat it as a
 job, not an insert.
@@ -55,7 +55,13 @@ handled at sample time rather than by refusing the corner:
 - the **safety gate runs before the solve**, so the starting `clustering` holds
   the cascade's contribution flat across every depth;
 - the **tail-weight target must be reachable** by the rhythm just drawn, so it is
-  clamped to what that rhythm can supply.
+  clamped to what that rhythm can supply — and the sample records `clampedFrom`
+  when that happened, the request and the registered asset carry
+  `drawnExcessKurtosis` and `retreats` beside the achieved value, and a family
+  whose box cannot reach its own band is a defect in the box. The out-of-band
+  audit of 2026-09-02 (a3-05) measured `alt-crypto` landing below its band in
+  one draw in twenty at cascade depths 5 and 6; its depth floor is 7 now, and 0
+  of 2,000 draws land below the band.
 
 Each of those was a defect first. The third cost 36% of hundred-asset builds
 until Cycle Audit 6 measured it.
@@ -96,6 +102,15 @@ with the ticks. The hourly tier is derived from the **stored** minute series
 rather than from anything a process remembers, so the two agree by construction
 rather than by lifetime.
 
+A recorder never stores a bucket it did not see from its start: its first bucket
+is stored only when its first tick immediately follows the newest stored bar, or
+is sequence 1. A restart therefore leaves a visible one-minute hole rather than
+a short bar labelled whole; the backfill hands its own recorder to the live path
+so the join minute is whole (out-of-band audit, a5-01 — Cycle Audit 6 had fixed
+the same defect one tier up, CA6-06). The first bar of any coarser read, and the
+first hour ever rolled up, is withheld unless the series covers it from its start
+or it holds genesis (a5-04).
+
 Nothing finer than a minute is served from history, and the refusal is the point:
 returning a coarser series under a finer name would put a shape on the screen
 that no tick produced. Sub-minute is served live, from the tick stream, through
@@ -110,6 +125,30 @@ the chart looked right, and then the operator would be choosing the prices.
 ## 5. What the operator surface may reach
 
 Nothing that generates.
+
+**And nothing without the operator's token.** Every method other than `GET`,
+`HEAD` and `OPTIONS` needs `Authorization: Bearer <OTC_ADMIN_TOKEN>` and a JSON
+body (`AdminWriteGuard`, out-of-band audit a6-01); unset, the service boots
+with every write refused by name and reads unaffected. CORS decides only which
+origins may _read_ an answer — a `POST` with no body is a simple request a
+browser sends without a preflight, and until the audit the service executed a
+cross-origin retire. The service listens on `127.0.0.1` unless `OTC_BIND` says
+otherwise.
+
+### Operator environment
+
+| Variable            | Engine (`apps/api`)                                                   |
+| ------------------- | --------------------------------------------------------------------- |
+| `OTC_MASTER_SECRET` | required, 64 hex characters; the service refuses to boot without it   |
+| `OTC_ADMIN_TOKEN`   | at least 16 characters; unset means every write is refused            |
+| `OTC_BIND`          | default `127.0.0.1`; `0.0.0.0` exposes the port — set the token first |
+| `PORT`              | default 3000                                                          |
+| `OTC_STATE_DIR`     | checkpoints, the candle database and the registry; created if missing |
+| `OTC_BACKFILL_DAYS` | whole days as digits, at most 365; default 0 (a backfill is genesis)  |
+| `OTC_CORS_ORIGIN`   | origins allowed to read cross-origin; none by default                 |
+
+The panel (`next start`) reads `OTC_API_BASE` and the same `OTC_ADMIN_TOKEN`;
+without the token every panel write is the engine's 403, shown verbatim.
 
 `VenueService` publishes first and _then_ hands the ticks to the publisher and to
 the history recorder. Both are views of what happened; a view that could
@@ -133,7 +172,8 @@ clock to choose a window and is not part of any record.
 The browser talks to exactly one host and one port. The engine is served under
 the panel's own origin at `/engine`, by a route handler
 (`apps/web/src/app/engine/[...path]/route.ts`) that hands the upstream body to
-the response **unread**.
+the response **unread** — and adds the bearer token to every write from its own
+`OTC_ADMIN_TOKEN`, so the browser never holds it.
 
 Both halves of that sentence were learned the hard way.
 
@@ -157,10 +197,19 @@ engine's internal host to every viewer.
 ## 6. Creating an asset is a job
 
 `POST /assets` returns a **job id**, and the panel polls `/registrations/:id`.
+The pipeline reports each stage as it enters it (`onStage`, added by the
+out-of-band audit, a6-06 — until then a running job showed `identity` for its
+whole life), and a refusal names the stage that refused. Jobs live in the
+engine's memory; after a restart the poll answers 404 and the panel says so
+(a6-10).
 Four of the six stages are simulation: measured across the eight archetypes at
-two replicates of `minimumDispersionSpanMs`, a registration costs **0.5s to
-19.3s**, the outlier being `major-crypto` — a 625-hour fit span at its tick rate
-is simply a lot of ticks. That is CPU on the same event loop the venue publishes
+two replicates of `minimumDispersionSpanMs`, a registration costs **under a second
+to about twenty seconds** depending on the family — the canonical figures are the
+per-archetype table in
+[`CYCLE-7-CATALOGUE-SCALE.md`](../evidence/CYCLE-7-CATALOGUE-SCALE.md), produced
+by `tools/sim/src/catalogueScale.ts` and re-measured whenever that runner runs —
+the outlier being `major-crypto`: a 625-hour fit span at its tick rate is simply a
+lot of ticks. That is CPU on the same event loop the venue publishes
 from, for a duration that depends on which family was picked, which is not
 something to hold an HTTP request open across.
 
@@ -189,3 +238,4 @@ re-derives it (INV-009).
 | The durable asset registry    | `packages/runtime/src/registry.ts`           |
 | An operator brief             | `packages/engine/src/brief.ts`               |
 | The panel's one origin        | `apps/web/src/app/engine/[...path]/route.ts` |
+| The write credential          | `apps/api/src/adminAuth.guard.ts`            |

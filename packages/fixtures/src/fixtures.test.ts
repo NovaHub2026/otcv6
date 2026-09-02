@@ -34,11 +34,14 @@ function drain(fixtureName: string, options: FixtureOptions): number[] {
 }
 
 describe('fixture registry', () => {
-  it('exposes both controls and six planted defects', () => {
+  it('exposes both controls and seven planted defects', () => {
     // Two controls, not one: `symmetricControl` is the anti-predictability
     // control and `gaussianRandomWalk` is the realism control, which passes
-    // every attack precisely because it is not a market.
-    expect(FIXTURES).toHaveLength(8);
+    // every attack precisely because it is not a market. The seventh defect,
+    // `biasedCoin`, is the uniform edge the battery's sensitivity is quoted
+    // for (a4-01).
+    expect(FIXTURES).toHaveLength(9);
+    expect(FIXTURES.map((f) => f.name)).toContain('biasedCoin');
     expect(FIXTURES.map((f) => f.name)).toContain('symmetricControl');
     expect(FIXTURES.map((f) => f.name)).toContain('gaussianRandomWalk');
     expect(new Set(FIXTURES.map((f) => f.name)).size).toBe(FIXTURES.length);

@@ -13,9 +13,10 @@ import {
   Req,
   Query,
   Res,
+  type BeforeApplicationShutdown,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { EvictedError } from '@otc/distribution';
+import { EvictedError, UnknownSequenceError } from '@otc/distribution';
 import {
   ASSET_ARCHETYPES,
   archetypeById,
@@ -37,19 +38,36 @@ import { HistoryService } from './history.service.js';
 import { RegistrationService } from './registration.service.js';
 import { VenueService } from './venue.service.js';
 
+/** Injection token for the boot nonce `/health` echoes (a6-14). */
+export const BOOT_NONCE = 'BOOT_NONCE';
+
 /**
- * Read-only observation of the running venue.
+ * The HTTP surface: observation for anyone, administration for the operator.
  *
- * Deliberately thin. Public market distribution and multi-user consistency are
- * PH-7; what PH-5 needs is enough surface to see that the runtime is alive, what
- * it recovered as, and where each market currently is.
+ * Two kinds of route live here and the difference is enforced, not described.
+ * The reads — health, markets, history, the tick stream, the catalogue, the
+ * archetypes, the registration jobs — are open to every observer, because the
+ * market is public and every observer sees the same one (INV-002). The writes —
+ * creating, renaming and retiring an asset — need the operator's bearer token
+ * and a JSON body, checked by `AdminWriteGuard` before any handler below runs
+ * (a6-01). Until the out-of-band audit this docstring still said the controller
+ * was read-only, three subphases after it stopped being.
  *
- * Nothing here is economic. There are no positions, no payouts and no contracts
- * in this service at all — PH-6 introduces the trading boundary, and until then
- * the guardrail scan is what keeps that true.
+ * Nothing here is economic. There are no positions, no contracts and no
+ * settlement in this service; the trading boundary lives in `packages/trading`
+ * and the guardrail scan keeps that vocabulary out of `apps/api/src`. And
+ * nothing here generates: every handler reads a record the venue has already
+ * published, or asks a job to run, and none of them can reach the price path
+ * (INV-001).
  */
 @Controller()
-export class MarketController {
+export class MarketController implements BeforeApplicationShutdown {
+  /**
+   * Every tick stream this process is serving, so shutdown can end each one
+   * with an `event: close` rather than a dropped socket (a6-09).
+   */
+  private readonly streams = new Set<{ cancel: (reason?: string) => void }>();
+
   constructor(
     private readonly venue: VenueService,
     /**
@@ -65,6 +83,7 @@ export class MarketController {
     @Inject(RegistrationService)
     private readonly registration: RegistrationService | null = null,
     @Optional() @Inject('ASSET_REGISTRY') private readonly registry: AssetRegistry | null = null,
+    @Optional() @Inject(BOOT_NONCE) private readonly bootNonce: string | null = null,
   ) {}
 
   /**
@@ -75,6 +94,13 @@ export class MarketController {
    * later advance, and the failure list that says so was being discarded. A
    * health endpoint that cannot report the one failure its process has is worse
    * than none, because it is what a monitor watches.
+   *
+   * `bootNonce` echoes `OTC_BOOT_NONCE` (a6-14). A test that spawns this service
+   * on a port used to accept the first healthy answer on that port as its own
+   * engine; a foreign engine already listening there answered at once while the
+   * test's own child was still provisioning, and the suite ran its assertions
+   * against somebody else's market. The nonce is how a caller knows which
+   * process is answering.
    */
   @Get('health')
   health(): unknown {
@@ -83,6 +109,7 @@ export class MarketController {
       status: stalled.length === 0 ? 'ok' : 'degraded',
       assets: this.venue.assetIds.length,
       stalled,
+      bootNonce: this.bootNonce,
     };
   }
 
@@ -99,19 +126,6 @@ export class MarketController {
     return this.describe(id);
   }
 
-  /**
-   * Server-sent tick stream, resumable by sequence.
-   *
-   * `?from=N` asks for sequence N onwards. A client that was delivered through M
-   * resumes with `from=M+1` and gets an exact continuation — no gap, no repeat.
-   * Asking for something the replay window has evicted is a 400 rather than a
-   * silent jump forward, because a client cannot detect what it never received.
-   *
-   * Backpressure disconnects. `res.write` returning false means the socket
-   * buffer is full, and the two honest responses are to deliver everything in
-   * order or to stop; sending this client a summary of what it missed would give
-   * it a different market than everyone else has (INV-002).
-   */
   /**
    * The vocabulary an operator picks from.
    *
@@ -138,14 +152,6 @@ export class MarketController {
   }
 
   /**
-   * Every registered asset, with the evidence its registration produced.
-   *
-   * More than {@link MarketController.markets} reports, and deliberately: that
-   * endpoint answers "where is this market now" for anyone, this one answers
-   * "what kind of market is this" for whoever runs it. Both are read-only and
-   * neither is economic.
-   */
-  /**
    * Create an asset. Returns a **job**, not an asset.
    *
    * Four of the pipeline's six stages are simulation, and it costs between half
@@ -159,6 +165,11 @@ export class MarketController {
    * direction, or a payout here, and that is structural rather than validated:
    * the only quantity an operator supplies about *movement* is a quarterly
    * dispersion budget, which is symmetric by construction (INV-001, INV-006).
+   *
+   * Two status codes for an identity refusal (a6-08): a **duplicate** id is a
+   * conflict with something that exists, 409; a malformed, over-long or
+   * otherwise unusable brief is the request's own fault, 400. The message is
+   * the pipeline's in both cases.
    */
   @Post('assets')
   createAsset(@Body() body: unknown): unknown {
@@ -169,7 +180,10 @@ export class MarketController {
     // The refusals that need no simulation are given now. An operator who
     // mistypes an id that already exists should not wait for a solve to hear it.
     const identity = checkIdentity(brief, this.venue.catalogue);
-    if (identity !== null) throw new ConflictException(identity);
+    if (identity !== null) {
+      const duplicate = this.venue.catalogue.some((asset) => asset.definition.id === brief.id);
+      throw duplicate ? new ConflictException(identity) : new BadRequestException(identity);
+    }
     const job = this.registration.submit(brief);
     return { job: job.id, state: job.state, poll: `/registrations/${job.id}` };
   }
@@ -182,6 +196,11 @@ export class MarketController {
    * read, and a personality *is* the market. Each is refused **by name**, so an
    * operator who tries learns which invariant they were about to break rather
    * than that "the request was invalid".
+   *
+   * The store is written before the venue is renamed (a6-02). Overlay writes
+   * are serialised in the registry, so twenty concurrent renames land in order;
+   * applying the in-memory name only after its write resolved is what keeps the
+   * catalogue this process serves equal to the one the next boot will read.
    */
   @Patch('assets/:id')
   async editAsset(@Param('id') id: string, @Body() body: unknown): Promise<unknown> {
@@ -196,15 +215,26 @@ export class MarketController {
     if ('retiredAt' in body) {
       throw new BadRequestException('Use POST /assets/:id/retire to retire an asset.');
     }
+    const raw = body as Record<string, unknown>;
+    if (!('displayName' in raw)) {
+      // The closed list first, so an immutable field is refused by name even
+      // when nothing editable came with it.
+      try {
+        assertOverlay(body);
+      } catch (error) {
+        if (error instanceof ImmutableFieldError) throw new BadRequestException(error.message);
+        throw new BadRequestException((error as Error).message);
+      }
+      throw new BadRequestException(`Nothing to change. Editable: ${OVERLAY_FIELDS.join(', ')}.`);
+    }
+    // Shape before the store sees it (a6-13): the registry's own check assumed
+    // a string and answered `123` with "trim is not a function".
+    const displayName = displayNameParam(raw['displayName']);
     try {
-      assertOverlay(body);
+      assertOverlay({ ...raw, displayName });
     } catch (error) {
       if (error instanceof ImmutableFieldError) throw new BadRequestException(error.message);
       throw new BadRequestException((error as Error).message);
-    }
-    const { displayName } = body as { displayName?: string };
-    if (displayName === undefined) {
-      throw new BadRequestException(`Nothing to change. Editable: ${OVERLAY_FIELDS.join(', ')}.`);
     }
     await registry.putOverlay(id, { displayName });
     this.venue.rename(id, displayName);
@@ -258,6 +288,14 @@ export class MarketController {
     return job;
   }
 
+  /**
+   * Every registered asset, with the evidence its registration produced.
+   *
+   * More than {@link MarketController.markets} reports, and deliberately: that
+   * endpoint answers "where is this market now" for anyone, this one answers
+   * "what kind of market is this" for whoever runs it. Both are read-only and
+   * neither is economic.
+   */
   @Get('catalogue')
   catalogue(): unknown {
     const live = new Set(this.venue.assetIds);
@@ -348,6 +386,23 @@ export class MarketController {
     }
   }
 
+  /**
+   * Server-sent tick stream, resumable by sequence.
+   *
+   * `?from=N` asks for sequence N onwards. A client that was delivered through M
+   * resumes with `from=M+1` and gets an exact continuation — no gap, no repeat.
+   * Asking for something the replay window has evicted is a 400 rather than a
+   * silent jump forward, because a client cannot detect what it never received.
+   * So is asking for a sequence that has not been published (a6-04): the feed
+   * refuses it in its own words, and a browser's `EventSource` closes for good
+   * on any non-200, so the status has to be the refusal and not a 500 with a
+   * stack trace in the log.
+   *
+   * Backpressure disconnects. `res.write` returning false means the socket
+   * buffer is full, and the two honest responses are to deliver everything in
+   * order or to stop; sending this client a summary of what it missed would give
+   * it a different market than everyone else has (INV-002).
+   */
   @Get('markets/:id/stream')
   stream(
     @Param('id') id: string,
@@ -419,7 +474,9 @@ export class MarketController {
         fromSequence,
       );
     } catch (error) {
-      if (error instanceof EvictedError) throw new BadRequestException(error.message);
+      if (error instanceof EvictedError || error instanceof UnknownSequenceError) {
+        throw new BadRequestException(error.message);
+      }
       throw error;
     }
 
@@ -431,9 +488,30 @@ export class MarketController {
     headersSent = true;
     for (const chunk of buffered) res.write(chunk);
 
+    const live = subscription;
+    this.streams.add(live);
     res.on('close', () => {
-      subscription?.cancel('client disconnected');
+      this.streams.delete(live);
+      live.cancel('client disconnected');
     });
+  }
+
+  /**
+   * Tell every connected stream the service is going away (a6-09).
+   *
+   * Runs after every `onModuleDestroy` — the venue has checkpointed and is not
+   * publishing — and before the listener is closed. Each client receives an
+   * `event: close` naming the reason and then the end of its response, which is
+   * what a client needs to know that a reconnect is in order rather than a
+   * gap. Without this the listener's own close waited on these connections for
+   * ever, or `forceCloseConnections` destroyed them with nothing said.
+   */
+  async beforeApplicationShutdown(): Promise<void> {
+    for (const stream of this.streams) stream.cancel('server shutting down');
+    this.streams.clear();
+    // One turn of the loop, so the close frames reach the sockets before the
+    // listener's own close destroys them.
+    await new Promise<void>((resolve) => setImmediate(resolve));
   }
 
   private describe(id: string): unknown {
@@ -480,18 +558,71 @@ function displayPrice(
  */
 const MAX_CANDLES_PER_REQUEST = 20_000;
 
+/**
+ * The longest display name an asset may carry.
+ *
+ * A name is rendered in every viewer's sidebar and in the manage table; the
+ * audit stored a 100,000-character one and served it to everyone (a6-13). The
+ * longest name in the catalogue is fourteen characters; sixty-four is room for
+ * "Sterling / Japanese Yen (London fixing)" and not for a paragraph.
+ */
+export const MAX_DISPLAY_NAME_LENGTH = 64;
+
 function timeframeMs(id: Parameters<typeof timeframeById>[0]): number {
   return timeframeById(id).durationMs;
 }
 
+/**
+ * An instant from the query string: digits only.
+ *
+ * **a6-12.** `Number.parseInt` discards the tail before the check runs, so
+ * `1788349926509abc` was accepted as the instant, `1.9` as 1 and `0x10` as 0 —
+ * the same defect Cycle Audit 6 corrected on the stream's `from` and left here.
+ */
 function instantParam(name: string, raw: string | undefined): ReturnType<typeof epochMillis> {
   if (raw === undefined) throw new BadRequestException(`${name} is required.`);
-  const value = Number.parseInt(raw, 10);
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new BadRequestException(`${name} must be a non-negative integer instant, got ${raw}.`);
+  if (!/^\d+$/.test(raw)) {
+    throw new BadRequestException(
+      `${name} must be a non-negative integer instant in milliseconds, got ${raw}.`,
+    );
+  }
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value)) {
+    throw new BadRequestException(`${name} is beyond the safe integer range, got ${raw}.`);
   }
   return epochMillis(value);
 }
+
+/**
+ * A display name off an untrusted body: a string, trimmed, one to sixty-four
+ * characters (a6-13). Every refusal says what it was given.
+ */
+function displayNameParam(value: unknown): string {
+  if (typeof value !== 'string') {
+    throw new BadRequestException(
+      `displayName must be a string, got ${value === null ? 'null' : typeof value}.`,
+    );
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) throw new BadRequestException('displayName must not be empty.');
+  if (trimmed.length > MAX_DISPLAY_NAME_LENGTH) {
+    throw new BadRequestException(
+      `displayName is ${trimmed.length.toLocaleString()} characters; the most a name may ` +
+        `hold is ${MAX_DISPLAY_NAME_LENGTH}. It is rendered in every viewer's sidebar.`,
+    );
+  }
+  return trimmed;
+}
+
+/** The fields a brief may carry. A closed set, refused by name otherwise (a6-07). */
+const BRIEF_FIELDS = [
+  'id',
+  'archetypeId',
+  'displayName',
+  'referencePrice',
+  'dispersion',
+  'displayPrecision',
+] as const;
 
 /**
  * Read a brief off an untrusted body, refusing anything that is not one.
@@ -500,15 +631,35 @@ function instantParam(name: string, raw: string | undefined): ReturnType<typeof 
  * this service accepts and a validation library would be a dependency carrying
  * one rule. Every refusal says what was wrong with the field it names — a 400
  * reading "validation failed" is a support ticket.
+ *
+ * Two things this parser does not see. Unknown fields *are* refused by name
+ * (a6-07): a brief that quietly accepted `drift` would be INV-006 broken by an
+ * administrative form, and ignoring is not the same as refusing. `null` for an
+ * optional number is refused too, because the panel used to send it for a
+ * budget the operator had typed and could not parse, and "not supplied" is not
+ * what they meant. What it cannot see is a **duplicate key** (a6-17): the body
+ * arrives through the standard `JSON.parse`, in which the last of two
+ * `referencePrice` keys wins silently. Refusing that needs the raw bytes and a
+ * second parser, which is more machinery than the one field it protects
+ * warrants; the reference price a job used is on the job record for anyone who
+ * needs to check.
  */
 function asBrief(body: unknown): AssetBrief {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
     throw new BadRequestException('Body must be a JSON object.');
   }
   const raw = body as Record<string, unknown>;
+  for (const key of Object.keys(raw)) {
+    if (!(BRIEF_FIELDS as readonly string[]).includes(key)) {
+      throw new BadRequestException(
+        `Unknown field ${JSON.stringify(key)}. A brief is ${BRIEF_FIELDS.slice(0, 4).join(', ')}, ` +
+          `and optionally ${BRIEF_FIELDS.slice(4).join(' and ')}; nothing else is read, so ` +
+          `nothing else is accepted.`,
+      );
+    }
+  }
   const id = raw['id'];
   const archetypeId = raw['archetypeId'];
-  const displayName = raw['displayName'];
   const referencePrice = raw['referencePrice'];
   if (typeof id !== 'string') throw new BadRequestException('id must be a string.');
   if (typeof archetypeId !== 'string') {
@@ -521,9 +672,7 @@ function asBrief(body: unknown): AssetBrief {
       `Unknown archetype ${archetypeId}. GET /archetypes lists the families.`,
     );
   }
-  if (typeof displayName !== 'string' || displayName.trim().length === 0) {
-    throw new BadRequestException('displayName must be a non-empty string.');
-  }
+  const displayName = displayNameParam(raw['displayName']);
   if (
     typeof referencePrice !== 'number' ||
     !Number.isFinite(referencePrice) ||
@@ -539,19 +688,23 @@ function asBrief(body: unknown): AssetBrief {
     dispersion?: number;
     displayPrecision?: number;
   } = { id, archetypeId, displayName, referencePrice };
-  const dispersion = raw['dispersion'];
-  if (dispersion !== undefined && dispersion !== null) {
+  if ('dispersion' in raw) {
+    const dispersion = raw['dispersion'];
     if (typeof dispersion !== 'number' || !Number.isFinite(dispersion) || dispersion <= 0) {
       throw new BadRequestException(
-        'dispersion is σ of the quarterly log return and must be a positive number.',
+        'dispersion is σ of the quarterly log return and must be a positive number, or left ' +
+          `out to take the family's own draw; got ${JSON.stringify(dispersion)}.`,
       );
     }
     brief.dispersion = dispersion;
   }
-  const displayPrecision = raw['displayPrecision'];
-  if (displayPrecision !== undefined && displayPrecision !== null) {
+  if ('displayPrecision' in raw) {
+    const displayPrecision = raw['displayPrecision'];
     if (!Number.isInteger(displayPrecision) || (displayPrecision as number) < 0) {
-      throw new BadRequestException('displayPrecision must be a non-negative integer.');
+      throw new BadRequestException(
+        'displayPrecision must be a non-negative integer, or left out to take the ' +
+          `lattice's own; got ${JSON.stringify(displayPrecision)}.`,
+      );
     }
     brief.displayPrecision = displayPrecision as number;
   }

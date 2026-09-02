@@ -25,6 +25,7 @@ import {
   readTimeframe,
   resumeMarket,
 } from '@otc/runtime';
+import { yieldToLoop } from '@otc/lab';
 
 /**
  * PH-17 end to end: an asset nobody wrote down, with a past, still running.
@@ -189,7 +190,7 @@ describe('an asset drawn, registered, backfilled and carried forward', () => {
       // CPU, which is enough to starve the worker's progress channel — the
       // failure where every test passes and the run exits 1 anyway.
       if (now % (600 * DEFAULT_MAX_CATCH_UP_MS) < DEFAULT_MAX_CATCH_UP_MS) {
-        await new Promise((resolve) => setImmediate(resolve));
+        await yieldToLoop();
       }
     }
 

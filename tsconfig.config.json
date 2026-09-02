@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["vitest.config.ts", "vitest.setup.statistical.ts"]
+  "include": ["vitest.config.ts", "vitest.setup.statistical.ts", "vitest.reporter.probe.ts"]
 }

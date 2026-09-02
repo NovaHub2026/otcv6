@@ -60,6 +60,7 @@ export { StaleFenceError, type FenceToken } from './fence.js';
 export {
   entrySequence,
   lowerBound,
+  malformedBatch,
   RecordForkError,
   sameTick,
   SeamError,
@@ -71,6 +72,7 @@ export {
   DEFAULT_CHECKPOINT_INTERVAL_MS,
   LeaderSession,
   LeadershipLostError,
+  MAX_CONSECUTIVE_APPEND_FAILURES,
   type SessionAdvance,
   type TakeOverOptions,
   type TakeOverResult,
@@ -82,18 +84,22 @@ export {
   type FollowerMarketOptions,
   type ServeResult,
 } from './follower.js';
-export { SqliteCoordinatedStore } from './sqliteStore.js';
-export { SqliteCandleHistory } from './sqliteHistory.js';
+export { SqliteCoordinatedStore, STORE_SCHEMA_VERSION } from './sqliteStore.js';
+export { HISTORY_SCHEMA_VERSION, SqliteCandleHistory } from './sqliteHistory.js';
+export { DEFAULT_BUSY_TIMEOUT_MS } from './sqlite.js';
 export {
+  FIRST_SEQUENCE,
   HistoryError,
   HistoryRecorder,
   HISTORY_BASE_TIMEFRAME,
   HISTORY_ROLLUP_TIMEFRAME,
   HISTORY_TIMEFRAMES,
   InMemoryCandleHistory,
+  lastStoredSequence,
   readTimeframe,
   refreshRollup,
   type CandleHistory,
+  type HistoryRecorderStart,
 } from './history.js';
 export {
   backfillMarket,
