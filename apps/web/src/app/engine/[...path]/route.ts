@@ -105,3 +105,18 @@ export async function POST(
 ): Promise<Response> {
   return proxy(request, (await context.params).path);
 }
+
+/**
+ * `PATCH` is exported for the same reason `POST` is, and it was forgotten once.
+ *
+ * A route handler serves only the methods it exports; everything else is a 405
+ * with no explanation from the engine. The panel's rename silently did nothing
+ * until this existed, and the browser test that caught it did so by checking the
+ * name on screen rather than the status of the request.
+ */
+export async function PATCH(
+  request: NextRequest,
+  context: { params: Promise<{ path: string[] }> },
+): Promise<Response> {
+  return proxy(request, (await context.params).path);
+}

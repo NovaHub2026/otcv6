@@ -6,6 +6,7 @@ import type { ReactElement } from 'react';
 const ENTRIES = [
   { href: '/preview', label: 'Preview' },
   { href: '/assets/new', label: 'Create asset' },
+  { href: '/assets/manage', label: 'Assets' },
 ] as const;
 
 /**

@@ -7,9 +7,12 @@ import { FixedClock, SteppableClock, durationMillis, epochMillis } from '@otc/co
 import { assetById } from '@otc/engine';
 import {
   AlreadyRegisteredError,
+  assertOverlay,
   CorruptRegistrationError,
   FileAssetRegistry,
+  ImmutableFieldError,
   MemoryAssetRegistry,
+  OVERLAY_FIELDS,
 } from './registry.js';
 
 const directories: string[] = [];
@@ -137,3 +140,92 @@ function renamed(id: string) {
     instrument: { ...asset.instrument, id },
   };
 }
+
+describe('what an operator may change about an asset', () => {
+  it('is a label and a decision to stop, and nothing else', () => {
+    // Written as a closed list rather than as a set of individual refusals: the
+    // failure this prevents is a *future* field being added to the overlay
+    // because it was convenient, and a list is what makes that a deliberate act.
+    expect([...OVERLAY_FIELDS]).toEqual(['displayName', 'retiredAt']);
+  });
+
+  it('refuses every field that decided what already happened, by name', () => {
+    for (const field of [
+      'id',
+      'logQuantum',
+      'referencePrice',
+      'displayPrecision',
+      'traits',
+      'family',
+      'evidence',
+    ]) {
+      let thrown: unknown;
+      try {
+        assertOverlay({ [field]: 1 });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown, field).toBeInstanceOf(ImmutableFieldError);
+      // The message names the field *and* says which invariant it protects. An
+      // operator who is told "invalid request" learns nothing.
+      expect((thrown as Error).message, field).toContain(field);
+      expect((thrown as Error).message, field).toContain('INV-009');
+    }
+  });
+
+  it('refuses an empty display name', () => {
+    expect(() => {
+      assertOverlay({ displayName: '   ' });
+    }).toThrow(/needs a display name/);
+  });
+
+  it('stores and merges overlays, for compiled assets too', async () => {
+    const store = await registry();
+    // `eurusd` is compiled into the catalogue and was never registered here.
+    // Administering it is exactly the case an overlay exists for.
+    await store.putOverlay('eurusd', { displayName: 'Euro / Dollar' });
+    await store.putOverlay('eurusd', { retiredAt: 1_700_000 });
+    const overlays = await store.overlays();
+    expect(overlays.get('eurusd')).toEqual({
+      displayName: 'Euro / Dollar',
+      retiredAt: 1_700_000,
+    });
+    // And the overlay file is not itself read as a registration: it was
+    // `overlays.json` for one test run, and `list()` duly tried.
+    expect(await store.list(), 'an overlay is not a registration').toEqual([]);
+  });
+
+  it('survives a reopen', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'otc-registry-'));
+    directories.push(directory);
+    const clock = new FixedClock(epochMillis(5));
+    await new FileAssetRegistry(directory, clock).putOverlay('spx', { retiredAt: 42 });
+    const reopened = await new FileAssetRegistry(directory, clock).overlays();
+    expect(reopened.get('spx')?.retiredAt).toBe(42);
+  });
+
+  it('refuses a stored overlay carrying an immutable field', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'otc-registry-'));
+    directories.push(directory);
+    // A hand-edited file is the realistic route to this, and hosting a market
+    // whose quantum came from an overlay is the outcome worth refusing.
+    await writeFile(
+      path.join(directory, '_overlays.json'),
+      JSON.stringify({ eurusd: { logQuantum: 1e-6 } }),
+    );
+    await expect(
+      new FileAssetRegistry(directory, new FixedClock(epochMillis(0))).overlays(),
+    ).rejects.toBeInstanceOf(ImmutableFieldError);
+  });
+
+  it('has no overlays before anything is administered', async () => {
+    const store = await registry();
+    expect((await store.overlays()).size).toBe(0);
+  });
+
+  it('refuses an immutable field in memory too', async () => {
+    await expect(
+      new MemoryAssetRegistry().putOverlay('eurusd', { id: 'other' } as never),
+    ).rejects.toBeInstanceOf(ImmutableFieldError);
+  });
+});

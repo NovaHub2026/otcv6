@@ -3,10 +3,11 @@ import type { HistoryCandle, InstrumentView } from '@otc/chart';
 /**
  * The panel's view of the engine, and it is read-only by construction.
  *
- * Every function here maps onto an endpoint that answers a question about what
- * the engine *is* or *was*. None of them writes, because PH-18 is Preview: an
- * operator who cannot see an asset has no business creating one, so seeing comes
- * first and the submenus that change things come after.
+ * Most of it maps onto an endpoint that answers a question about what the engine
+ * *is* or *was*. Three functions write — creating an asset, renaming one,
+ * retiring one — and they arrived in that order for a reason: an operator who
+ * cannot see an asset has no business creating one, and one who cannot create
+ * one has nothing to retire.
  */
 
 export interface CatalogueEntry extends InstrumentView {
@@ -14,6 +15,7 @@ export interface CatalogueEntry extends InstrumentView {
   readonly displayName: string;
   readonly family: string;
   readonly live: boolean;
+  readonly retired?: boolean;
   readonly meanIntervalMs: number;
   readonly tieRate: number;
   readonly excessKurtosis: number;
@@ -154,4 +156,44 @@ export function fetchRegistration(
   signal?: AbortSignal,
 ): Promise<RegistrationJobView> {
   return getJson<RegistrationJobView>(`${apiBase}/registrations/${jobId}`, signal);
+}
+
+/**
+ * Rename an asset. The display name is the only editable field there is.
+ *
+ * Everything else about a market — its id, its lattice, its reference price, its
+ * personality — decided what already happened, and the engine refuses to change
+ * any of it **by name**, so the message a refusal carries is worth showing.
+ */
+export async function renameAsset(
+  apiBase: string,
+  assetId: string,
+  displayName: string,
+): Promise<void> {
+  await write(`${apiBase}/assets/${assetId}`, 'PATCH', { displayName });
+}
+
+/** Retire an asset: stop hosting it, keep everything it published. Final. */
+export async function retireAsset(apiBase: string, assetId: string): Promise<void> {
+  await write(`${apiBase}/assets/${assetId}/retire`, 'POST', null);
+}
+
+async function write(url: string, method: string, body: unknown): Promise<unknown> {
+  const response = await fetch(url, {
+    method,
+    ...(body === null
+      ? {}
+      : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+  });
+  const text = (await response.text()).slice(0, 500);
+  if (!response.ok) {
+    let message = text;
+    try {
+      message = (JSON.parse(text) as { message?: string }).message ?? text;
+    } catch {
+      /* not JSON; the text is the message */
+    }
+    throw new ApiError(response.status, message);
+  }
+  return text === '' ? null : (JSON.parse(text) as unknown);
 }

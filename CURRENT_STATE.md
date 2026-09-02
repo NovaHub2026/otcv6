@@ -2,7 +2,7 @@
 
 Type: CURRENT STATE
 Status: Authoritative record of current project state
-Last synchronized: 2026-09-01
+Last synchronized: 2026-09-02
 
 > This document is not a diary. It records where the project is **now** and what
 > the **exact next legal action** is. History lives in Git, phase documents and
@@ -15,20 +15,20 @@ Last synchronized: 2026-09-01
 | Field                            | Value                                                                   |
 | -------------------------------- | ----------------------------------------------------------------------- |
 | Active development cycle         | Cycle 7                                                                 |
-| Approved phases in current cycle | **1 of 3**                                                              |
+| Approved phases in current cycle | **2 of 3**                                                              |
 | Cycle Audit state                | **006 closed** — 40 of 46 findings closed in PH-19                      |
 | Last Cycle Audit                 | [Cycle Audit 006](docs/audits/CYCLE-AUDIT-006.md) — recorded 2026-09-01 |
 
 ## Phase and subphase
 
-| Field                  | Value                                      |
-| ---------------------- | ------------------------------------------ |
-| Active phase           | PH-20 — A panel that can be trusted        |
-| Phase lifecycle        | n/a                                        |
-| Active subphase        | none                                       |
-| Subphase lifecycle     | n/a                                        |
-| Last approved phase    | PH-19 — Close what Cycle Audit 6 falsified |
-| Last approved subphase | PH-19.5 — The surface                      |
+| Field                  | Value                                    |
+| ---------------------- | ---------------------------------------- |
+| Active phase           | none — PH-21 is next and has not started |
+| Phase lifecycle        | n/a                                      |
+| Active subphase        | none                                     |
+| Subphase lifecycle     | n/a                                      |
+| Last approved phase    | PH-20 — The operator panel               |
+| Last approved subphase | PH-20.3 — Editing and retiring           |
 
 ## Cycle 1 result
 
@@ -89,17 +89,20 @@ PH-10 was conditional on a previous build's `dist/` being present.
 
 ## Verification state
 
-Executed 2026-09-01 on the PH-18 phase gate: 116 files, 2,014 tests, 303 seconds.
+Executed 2026-09-02 on the PH-20 phase gate. The browser layer is part of it now:
+`OTC_REQUIRE_BROWSER=1` makes a missing Chromium a failure rather than a skip.
 
-| Check                            | Status                         |
-| -------------------------------- | ------------------------------ |
-| `npm run gate`                   | **PASSED (exit 0)**            |
-| `npm run format:check`           | PASSED (exit 0)                |
-| `npm run build` (full typecheck) | PASSED (exit 0)                |
-| `npm run lint`                   | PASSED (exit 0), warning-free  |
-| Unit suite                       | PASSED — 86 files, 1,792 tests |
-| Statistical suite                | PASSED — 33 files, 222 tests   |
-| Unhandled errors                 | none                           |
+| Check                            | Status               |
+| -------------------------------- | -------------------- |
+| `npm run gate`                   | **PASSED (exit 0)**  |
+| `npm run format:check`           | PASSED (exit 0)      |
+| `npm run build` (full typecheck) | PASSED (exit 0)      |
+| `npm run typecheck:web`          | PASSED (exit 0)      |
+| `npm run typecheck:config`       | PASSED (exit 0)      |
+| `npm run lint`                   | PASSED (exit 0)      |
+| Unit suite                       | PASSED — 1,866 tests |
+| Statistical suite                | PASSED               |
+| Unhandled errors                 | none                 |
 
 Cycle 1's numbers, and the coverage figure, are in
 [`docs/evidence/CYCLE-1-VERIFICATION.md`](docs/evidence/CYCLE-1-VERIFICATION.md).
@@ -123,11 +126,16 @@ Cycle 1's numbers, and the coverage figure, are in
   battery a deployment backend must pass — but no such backend exists yet. A
   real cluster needs a store with native compare-and-set, and choosing one is
   PH-15's.
-- **The panel can look and cannot touch.** PH-18 built Preview: browse the
-  catalogue, chart any asset at any offered timeframe from stored history, watch
-  it live. Creating, editing and retiring an asset are the next submenus; the
-  pipeline they will drive exists and refuses for named reasons, and the surface
-  does not.
+- **The panel administers five assets, and has never been run against fifty.**
+  PH-20 gave it Preview, Create and Assets: browse and chart any asset, register
+  a new one as a job that reports each stage, rename one, retire one. What is
+  untested is scale — a hundred-asset catalogue's cost in storage, scheduling
+  and differentiation headroom is PH-21's subject, and the sidebar is a flat
+  list that will not survive it.
+- **A retired asset cannot come back.** That is a decision, not a gap
+  (`DECISION-LOG.md`, 2026-09-02): resuming a market after a gap either invents
+  the interval or seams a published record. Everything it published stays
+  readable.
 - **Provisioning is manual and irreversible.** `OTC_BACKFILL_DAYS` defaults to
   zero, because a backfill is genesis and refuses to run twice. An operator asks
   for it; nothing asks on their behalf.
@@ -163,46 +171,32 @@ Cycle 1's numbers, and the coverage figure, are in
 
 ## EXACT NEXT LEGAL ACTION
 
-**Continue Cycle Audit 5 remediation.** The audit is recorded in
-[`docs/audits/CYCLE-AUDIT-005.md`](docs/audits/CYCLE-AUDIT-005.md); the open
-findings are listed there in full and each is confirmed by a constructed
-counterexample or an uncaught plant.
+**Begin PH-21 — the catalogue at scale.**
 
-**Cycle 5's three phases are APPROVED WITH OPEN FINDINGS.** They delivered their
-deliverables and several of their stated claims are false as built. That is the
-honest state and it is deliberately not "approved": a phase whose central claim
-an auditor falsified is not a phase whose approval should read the same as one
-whose claims held.
+Cycle 7 has two of its three phases approved. PH-19 closed 40 of Cycle Audit 6's
+46 findings; PH-20 made the operator panel real and, in doing so, found that the
+browser suite it had just shipped was testing the wrong engine.
 
-### Closed by remediation so far
+PH-21's subject is the gap PH-20 leaves: **five assets is not a catalogue.**
+PH-19.4 measured a registration failing on 36% of hundred-asset builds before the
+tail-weight clamp; what a hundred assets cost in storage, in scheduling, in
+differentiation headroom and in a sidebar that is currently a flat list is
+unmeasured. The registration path exists and is exercised one asset at a time.
 
-| Finding | What it was                                                               |
+After PH-21: **Cycle Audit 7**, automatically and without asking
+(`GOVERNANCE.md` §28, ADR-0008). One git worktree per auditor (B-020), and
+plants against every guard the cycle added — the browser layer above all, since
+it is the newest and it has already been green on a lie once.
+
+### Open findings carried into PH-21
+
+| Finding | What it is                                                                |
 | ------- | ------------------------------------------------------------------------- |
-| CA5-01  | A routine failover killed the asset permanently and silently, at defaults |
-| CA5-02  | A retired key signed live history under a non-canonical hex alias         |
-| CA5-03  | Rotation was not bound to any position in the record                      |
-| CA5-04  | The append-only anchor was append-only only when nothing was appended     |
-| M-11/12 | `NOT APPROVED` read as approved; a live contradiction it could not see    |
+| B-029   | `xauusd`'s realised quarterly spread exceeds its calibrated one by 20–33% |
+| B-030   | One unit run in seven failed seven files; not reproduced in six attempts  |
+| CA6-07  | Open from Cycle Audit 6                                                   |
+| CA6-17  | Partly closed — the dispersion bias above                                 |
+| B-018   | Open from an earlier cycle                                                |
 
-### Open, in rough order of severity
-
-| Finding | What it is                                                               |
-| ------- | ------------------------------------------------------------------------ |
-| CA5-06  | The standing verdict runs no attack family — it checks four **names**    |
-| CA5-05  | A follower can generate; INV-002 broken at 120 of 120 sampled instants   |
-| CA5-07  | A profitable leak reports `undecided`, because it inflates its own floor |
-| CA5-08  | The operator's headline risk spread is understated by (1+r)/r ≈ 2×       |
-| CA5-09  | The limiter is defeated 39.6× by one millisecond of entry jitter         |
-| CA5-10  | Retention deletes entry ticks of settlements still under dispute         |
-| CA5-11  | Guardrail blind spots one syntactic form wide, across most guards        |
-| SQL-1   | `acquire`/`renew` read the clock outside the transaction they atomise    |
-| SQL-3   | The two `CoordinatedStore` implementations disagree on duplicate batches |
-
-CA5-12 bounds the blast radius of CA5-08 through CA5-10: nothing in `apps/` or
-`packages/runtime` calls the risk or retention modules yet. That is a reprieve,
-not a defence — the first time they are wired up is the first time those defects
-bite.
-
-**Cycle 6 does not begin until these are closed or explicitly deferred with a
-recorded reason.** No authorization is required for any of it and none should be
-requested (`GOVERNANCE.md` §28).
+No authorization is required for any of it and none should be requested
+(`GOVERNANCE.md` §28).

@@ -405,4 +405,52 @@ describe('the panel, in a browser', () => {
       await page.close();
     }
   }, 600_000);
+
+  it('renames and retires from the panel, and refuses the rest', async () => {
+    guard();
+    if (browser === null) return;
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    const observed = watch(page);
+    try {
+      await page.goto(`http://127.0.0.1:${webPort}/assets/manage`, { waitUntil: 'networkidle' });
+
+      // Renaming a compiled catalogue asset, which is the case an overlay
+      // exists for: `gbpjpy` was never registered here and is administered
+      // exactly like one that was.
+      await page.getByTestId('rename-gbpjpy').click();
+      await page.getByTestId('rename-input-gbpjpy').fill('Sterling / Yen');
+      await page.getByTestId('rename-save-gbpjpy').click();
+      // A failed write puts the engine's own words on the screen. Checking for
+      // it first turns a timeout into a message.
+      expect(await page.getByTestId('manage-error').count(), 'the rename was refused').toBe(0);
+      await expect
+        .poll(async () => page.getByTestId('name-gbpjpy').textContent(), { timeout: 30_000 })
+        .toBe('Sterling / Yen');
+
+      // Retiring asks first, and the confirmation says it cannot be undone.
+      await page.getByTestId('retire-xauusd').click();
+      await page.getByTestId('retire-confirm-xauusd').waitFor({ state: 'visible' });
+      await page.getByTestId('retire-confirm-xauusd').click();
+      await expect
+        .poll(async () => page.getByTestId('state-xauusd').textContent(), { timeout: 30_000 })
+        .toBe('retired');
+
+      // And it is gone from the screen that hosts markets, while the one that
+      // was renamed is still there under its new name.
+      await page.goto(`http://127.0.0.1:${webPort}/preview`, { waitUntil: 'networkidle' });
+      await page.getByTestId('asset-gbpjpy').click();
+      await expect
+        .poll(async () => page.getByTestId('stream-status').textContent(), { timeout: 60_000 })
+        .toBe('live');
+      await page.getByTestId('asset-xauusd').click();
+      await expect
+        .poll(async () => page.getByTestId('stream-status').textContent(), { timeout: 30_000 })
+        .toContain('not hosted');
+
+      expect(observed.consoleErrors, 'console errors').toEqual([]);
+      expect(observed.failedRequests, 'failed requests').toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 300_000);
 });

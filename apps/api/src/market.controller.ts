@@ -8,6 +8,7 @@ import {
   NotFoundException,
   Optional,
   Param,
+  Patch,
   Post,
   Req,
   Query,
@@ -24,7 +25,14 @@ import {
   type AssetBrief,
 } from '@otc/engine';
 import { epochMillis, isTimeframeId, timeframe as timeframeById } from '@otc/core';
-import { HistoryError, HISTORY_BASE_TIMEFRAME } from '@otc/runtime';
+import {
+  assertOverlay,
+  HistoryError,
+  HISTORY_BASE_TIMEFRAME,
+  ImmutableFieldError,
+  OVERLAY_FIELDS,
+  type AssetRegistry,
+} from '@otc/runtime';
 import { HistoryService } from './history.service.js';
 import { RegistrationService } from './registration.service.js';
 import { VenueService } from './venue.service.js';
@@ -56,6 +64,7 @@ export class MarketController {
     @Optional()
     @Inject(RegistrationService)
     private readonly registration: RegistrationService | null = null,
+    @Optional() @Inject('ASSET_REGISTRY') private readonly registry: AssetRegistry | null = null,
   ) {}
 
   /**
@@ -165,6 +174,76 @@ export class MarketController {
     return { job: job.id, state: job.state, poll: `/registrations/${job.id}` };
   }
 
+  /**
+   * Edit an asset. The editable surface is one field.
+   *
+   * An id derives the keystream (ADR-0002), a quantum decides every settlement
+   * (ADR-0004), a reference price maps those integers to the numbers a viewer
+   * read, and a personality *is* the market. Each is refused **by name**, so an
+   * operator who tries learns which invariant they were about to break rather
+   * than that "the request was invalid".
+   */
+  @Patch('assets/:id')
+  async editAsset(@Param('id') id: string, @Body() body: unknown): Promise<unknown> {
+    const registry = this.requireRegistry();
+    if (this.venue.assetFor(id) === null) throw new NotFoundException(`Unknown asset ${id}.`);
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      throw new BadRequestException('Body must be a JSON object.');
+    }
+    // `retiredAt` is refused here even though it is a stored overlay field:
+    // retiring is a decision with consequences for a running market, and it has
+    // its own endpoint that performs them.
+    if ('retiredAt' in body) {
+      throw new BadRequestException('Use POST /assets/:id/retire to retire an asset.');
+    }
+    try {
+      assertOverlay(body);
+    } catch (error) {
+      if (error instanceof ImmutableFieldError) throw new BadRequestException(error.message);
+      throw new BadRequestException((error as Error).message);
+    }
+    const { displayName } = body as { displayName?: string };
+    if (displayName === undefined) {
+      throw new BadRequestException(`Nothing to change. Editable: ${OVERLAY_FIELDS.join(', ')}.`);
+    }
+    await registry.putOverlay(id, { displayName });
+    this.venue.rename(id, displayName);
+    return { id, displayName };
+  }
+
+  /**
+   * Retire an asset: stop hosting it, keep everything it published.
+   *
+   * Final, and deliberately. A market resumed after a gap either invents the
+   * interval nobody generated — which this runtime refuses outright — or takes a
+   * seam in a published record, which an operator would be choosing to put into
+   * a market that had already printed prices. The history, the settlements and
+   * the publication journal remain exactly as they were and stay readable.
+   */
+  @Post('assets/:id/retire')
+  async retireAsset(@Param('id') id: string): Promise<unknown> {
+    const registry = this.requireRegistry();
+    if (this.venue.assetFor(id) === null) throw new NotFoundException(`Unknown asset ${id}.`);
+    if (this.venue.isRetired(id)) {
+      throw new ConflictException(`Asset ${id} is already retired. Retirement is final.`);
+    }
+    const retiredAt = this.venue.now();
+    // The venue first: if writing the overlay failed after the market had been
+    // dropped, a restart would silently host it again and print a tick after a
+    // gap. This order fails the other way — stored but still hosted until the
+    // next restart, which is visible and harmless.
+    await this.venue.retire(id);
+    await registry.putOverlay(id, { retiredAt });
+    return { id, retiredAt };
+  }
+
+  private requireRegistry(): AssetRegistry {
+    if (this.registry === null) {
+      throw new NotFoundException('This deployment does not administer assets at runtime.');
+    }
+    return this.registry;
+  }
+
   /** Every registration this process has run, newest first. */
   @Get('registrations')
   registrations(): unknown {
@@ -187,6 +266,7 @@ export class MarketController {
       displayName: asset.definition.displayName,
       family: asset.definition.family,
       live: live.has(asset.definition.id),
+      retired: this.venue.isRetired(asset.definition.id),
       referencePrice: asset.instrument.referencePrice,
       displayPrecision: asset.instrument.displayPrecision,
       logQuantum: asset.instrument.logQuantum,

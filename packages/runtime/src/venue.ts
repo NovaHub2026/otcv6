@@ -83,6 +83,22 @@ export class Venue {
     this.#assets.set(id, asset);
   }
 
+  /**
+   * Stop hosting a market, leaving its record untouched.
+   *
+   * The venue forgets it; nothing about what it published is removed, rewritten
+   * or replayed. Every checkpoint, candle and journal entry stays exactly where
+   * it was, because a retirement is a decision to stop generating and never a
+   * statement about the past (INV-009).
+   */
+  unhost(assetId: string): void {
+    if (!this.#markets.has(assetId)) {
+      throw new RangeError(`Unknown asset ${assetId}; the venue does not host it.`);
+    }
+    this.#markets.delete(assetId);
+    this.#assets.delete(assetId);
+  }
+
   marketFor(assetId: string): HostedMarket {
     const market = this.#markets.get(assetId);
     if (market === undefined) {

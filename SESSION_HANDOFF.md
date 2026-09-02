@@ -8,11 +8,11 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 | Field              | Value                                                    |
 | ------------------ | -------------------------------------------------------- |
-| Last clean session | 2026-09-01                                               |
-| Branch             | `main` — PH-19 merged                                    |
+| Last clean session | 2026-09-02                                               |
+| Branch             | `main` — PH-20 merged                                    |
 | Remote             | `origin` → NovaHub2026/otcv6 — public, hosted CI running |
-| Active cycle       | Cycle 7, **1 of 3** phases approved                      |
-| Active phase       | none — PH-20 is the next legal action                    |
+| Active cycle       | Cycle 7, **2 of 3** phases approved                      |
+| Active phase       | none — PH-21 is the next legal action                    |
 | Active subphase    | none                                                     |
 | Cycle Audit        | **006 closed** — 40 of 46 findings closed in PH-19       |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)       |
@@ -21,62 +21,73 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 Read `CURRENT_STATE.md` for the authoritative position; this is the short form.
 
-**Choose PH-20 and start it.** Cycle 7's roadmap deliberately leaves PH-20 and
-PH-21 undecided: Cycle 6 named all three phases in advance and built the third
-on measurements the audit then falsified.
+**Begin PH-21 — the catalogue at scale.** Five assets is not a catalogue. The
+registration path exists and is exercised one asset at a time; what a hundred
+assets cost in storage, in scheduling, in differentiation headroom and in a
+sidebar that is a flat list is unmeasured. PH-19.4 measured a registration
+failing on 36% of hundred-asset builds before the tail-weight clamp.
 
-What the product still lacks, in the order the Human Owner has asked for things:
+Then **Cycle Audit 7**, automatically and without asking. One worktree per
+auditor (B-020), and plants against every guard this cycle added.
 
-1. **The admin panel can look and cannot touch.** Creating, editing and retiring
-   an asset are the next submenus. The pipeline they would drive exists and
-   refuses for named reasons; only the surface is missing.
-2. **The catalogue is five assets.** Everything needed to reach fifty to a
-   hundred is in place — eight archetypes, sampled personalities, dispersion
-   budgets, backdated history — and nobody has run it at that scale.
-3. **Nothing runs continuously.** The assurance battery, the commitment
-   publication and the standing verdict are things an operator _can_ run rather
-   than things the venue _does_.
+### The thing worth knowing before touching the panel
 
-What PH-19 leaves open, all recorded rather than waived: **B-029** (`xauusd`'s
-realised spread exceeds its calibrated one by 20–33%, cause unknown, and it
-bounds how well any dispersion budget can be honoured), **CA6-07** (nothing
-asserts that both test suites ran), **CA6-10** (no test references
-`apps/web/src` at all), and **B-018** (two guardrail blind spots deferred in
-PH-16.3).
+PH-20.2 found that PH-20.1's browser suite **was not testing the engine it
+booted**. `next.config.mjs` carried `env: { OTC_API_BASE }`, which Next inlines
+at _build_ time, so the panel proxied to the baked-in default — a stale, stalled
+engine on port 3000 that answered the catalogue and the history from stored
+state and published no ticks. The suite was green on a lie for part of its life,
+and the test that was supposed to guard the proxy read the config file rather
+than exercising the behaviour.
+
+The general form of that, which the audit should look for everywhere: **a test
+of a configuration value is not a test of the behaviour that value was chosen
+for.**
+
+### Open, carried forward
+
+**B-029** (`xauusd`'s realised spread exceeds its calibrated one by 20–33%,
+cause unknown), **B-030** (one unit run in seven failed seven files, one test per
+file, not reproduced in six further attempts including one under load),
+**CA6-07**, **CA6-17** (partly closed), **B-018**.
 
 The audit's own standard, for whoever continues: falsify rather than confirm,
 re-execute rather than read, and plant a defect against every guard. Six of the
 things Cycle Audit 6 found were things a previous phase had recorded as fixed.
 
-## What Cycle 5 has established so far
+## What Cycle 7 has established so far
 
-- **PH-13 APPROVED** — operator risk: the settlement event as the unit of risk
-  rather than the contract, a Lundberg adjustment coefficient for ruin, capacity
-  and growth-optimal fraction, and enforcement that is provably blind to price
-  generation.
-- **PH-14 APPROVED** — multi-node consistency. It rests on an impossibility
-  result ([ADR-0012](docs/decisions/ADR-0012-single-writer-generation.md)): two
-  nodes cannot independently generate the same asset and stay identical across a
-  restart, because `resumeMarket` seams forward to the resuming node's own
-  clock. So generation is single-writer per asset, leadership is a fenced
-  expiring lease, followers serve the record and cannot construct an engine at
-  all, and a failover seam is recorded rather than hidden.
+- **PH-19 APPROVED** — closed 40 of Cycle Audit 6's 46 findings, starting with
+  the instrument: `vitest.config.ts` was in no TypeScript program and two options
+  that do not exist had been silently ignored for a cycle.
+- **PH-20 APPROVED** — the operator panel. Three subphases: the panel under a
+  real browser against a real engine (PH-20.1), creating an asset as a job that
+  reports each of its six stages (PH-20.2), and editing and retiring with the
+  editable surface reduced to one field (PH-20.3).
+
+  Two measurements from it worth carrying: a registration costs **0.5s to 19.3s**
+  across the eight archetypes, not the "order of a minute" the documents claimed;
+  and a Next **rewrite to an external destination does not stream**, which is why
+  the engine is proxied by a route handler that hands the upstream body to the
+  response unread.
 
 Earlier phases and audits are summarised in `docs/phases/ROADMAP.md` and the
 records under `docs/audits/`. This document is not the place for them.
 
 ## Last executed verification
 
-`npm run gate` on the Cycle Audit 5 remediation tree, 2026-09-01: **exit 0** —
-103 files, 1,770 tests (unit 74/1,566, statistical 29/204).
+`npm run gate` on the PH-20 tree, 2026-09-02: **exit 0**, with
+`OTC_REQUIRE_BROWSER=1` — a missing Chromium is a failure in that run, not a
+skip. Unit 1,866 tests; the statistical suite includes the browser layer
+(`apps/web/src/panel.stat.test.ts`, six tests) and the end-to-end registration
+acceptance (`apps/api/src/registration.stat.test.ts`, four tests).
 
-Before that run the gate was **not reproducible**: an auditor measured a ~25%
-failure rate on an idle box, because ten unit tests sat between 2.5s and 4.2s
-against a 5s timeout. The timeout is now 20s and eleven consecutive unit runs
-have passed. B-021's other half — the `onTaskUpdate` RPC starvation when two
-long statistical suites overlap — is still open. Format, build and lint all exit 0,
-in that order — build before lint, because the type-aware rules resolve workspace
-types through emitted declarations.
+Format, build and lint all exit 0, in that order — build before lint, because the
+type-aware rules resolve workspace types through emitted declarations.
+
+**B-030 is open against this suite**: one unit run in seven failed seven files,
+one test per file, and has not reproduced in six further attempts. On the next
+occurrence, capture the whole output to a file before anything else.
 
 ## Process, in force
 

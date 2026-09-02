@@ -1,8 +1,12 @@
 export {
   AlreadyRegisteredError,
+  assertOverlay,
   CorruptRegistrationError,
   FileAssetRegistry,
+  ImmutableFieldError,
   MemoryAssetRegistry,
+  OVERLAY_FIELDS,
+  type AssetOverlay,
   type AssetRegistry,
 } from './registry.js';
 export {

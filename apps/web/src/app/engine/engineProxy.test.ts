@@ -1,7 +1,7 @@
 // Invariant evidence: INV-002 (shared market) — the panel must be able to reach the record at all.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
-import { GET, POST } from './[...path]/route.js';
+import { GET, PATCH, POST } from './[...path]/route.js';
 
 /**
  * The panel talks to one origin, and the proxy that makes that true must stream.
@@ -178,6 +178,23 @@ describe('the engine proxy', () => {
     // that mapped every failure to 502 would throw that away.
     expect(response.status).toBe(404);
     expect(await response.text()).toBe('Unknown asset nope.');
+  });
+
+  it('proxies a PATCH, so an asset can be renamed from this origin too', async () => {
+    // A route handler serves only the methods it exports. `PATCH` was missing
+    // for one build, and the panel's rename silently did nothing.
+    const spy = vi.fn().mockResolvedValue(new Response('{"id":"gbpjpy"}', { status: 200 }));
+    globalThis.fetch = spy;
+    const response = await PATCH(
+      request('http://panel.test/engine/assets/gbpjpy', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+      }),
+      params(['assets', 'gbpjpy']),
+    );
+    expect(response.status).toBe(200);
+    const [, init] = spy.mock.calls[0] as [URL, { method: string }];
+    expect(init.method).toBe('PATCH');
   });
 
   it('proxies a POST, so an asset can be created from this origin too', async () => {

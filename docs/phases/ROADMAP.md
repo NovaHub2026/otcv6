@@ -492,7 +492,7 @@ finding is verified through it.
 | Phase | Title                                               | State        |
 | ----- | --------------------------------------------------- | ------------ |
 | PH-19 | Close what Cycle Audit 6 falsified                  | **APPROVED** |
-| PH-20 | The operator panel: trusted, and able to administer | **ACTIVE**   |
+| PH-20 | The operator panel: trusted, and able to administer | **APPROVED** |
 | PH-21 | The catalogue at scale                              | not started  |
 | —     | **Cycle Audit 7**                                   | not started  |
 
@@ -526,7 +526,7 @@ too.
 | -------- | ----------------------------------------------------- | -------- |
 | PH-20.1  | The panel under a real browser, against a real engine | APPROVED |
 | PH-20.2  | Creating an asset from the panel                      | APPROVED |
-| PH-20.3  | Editing and retiring, and what may never be edited    | planned  |
+| PH-20.3  | Editing and retiring, and what may never be edited    | APPROVED |
 
 ### PH-21 — The Catalogue At Scale
 

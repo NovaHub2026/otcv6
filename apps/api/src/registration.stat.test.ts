@@ -170,6 +170,71 @@ describe('an asset created from the panel', () => {
     expect(survived!.logQuantum).toBe(created!.logQuantum);
   }, 600_000);
 
+  it('is renamed, retired, and stays retired across a restart', async () => {
+    const stateDir = await mkdtemp(path.join(tmpdir(), 'otc-retire-'));
+    directories.push(stateDir);
+    const port = await freePort();
+    await boot(stateDir, port);
+
+    // Renaming a *compiled* asset, which is the case an overlay exists for:
+    // `eurusd` was never registered here and is administered all the same.
+    const renamed = await fetch(`http://127.0.0.1:${port}/assets/eurusd`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ displayName: 'Euro / Dollar' }),
+    });
+    expect(renamed.status).toBe(200);
+    expect((await catalogue(port)).find((e) => e.id === 'eurusd')).toBeDefined();
+
+    // Everything that decided what already happened is refused by name.
+    for (const field of ['id', 'logQuantum', 'referencePrice', 'traits']) {
+      const response = await fetch(`http://127.0.0.1:${port}/assets/eurusd`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ [field]: 1 }),
+      });
+      expect(response.status, field).toBe(400);
+      expect(JSON.stringify(await response.json()), field).toContain(field);
+    }
+
+    // Retire a market that is actually publishing, not one that has not started.
+    // `spx` ticks slowly enough that sampling immediately finds no sequence.
+    const deadline = Date.now() + 120_000;
+    let before: { sequence: number | null } = { sequence: null };
+    while (Date.now() < deadline && before.sequence === null) {
+      before = (await (await fetch(`http://127.0.0.1:${port}/markets/spx`)).json()) as {
+        sequence: number | null;
+      };
+      if (before.sequence === null) await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    const retired = await fetch(`http://127.0.0.1:${port}/assets/spx/retire`, { method: 'POST' });
+    expect(retired.status).toBe(201);
+
+    // No longer hosted, and the record it published is untouched: the history
+    // endpoint still answers, because retiring stops generation and says nothing
+    // about the past (INV-009).
+    const after = await catalogue(port);
+    expect(after.find((e) => e.id === 'spx')?.live).toBe(false);
+    const to = Date.now();
+    const history = await fetch(
+      `http://127.0.0.1:${port}/markets/spx/history?timeframe=1h&from=${to - 86_400_000}&to=${to}`,
+    );
+    expect(history.status, 'a retired market keeps its record').toBe(200);
+
+    // Final, and final across a restart. A market resumed after a gap would
+    // either invent the interval or seam the record.
+    expect(
+      (await fetch(`http://127.0.0.1:${port}/assets/spx/retire`, { method: 'POST' })).status,
+    ).toBe(409);
+    started[started.length - 1]!.kill('SIGKILL');
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const second = await freePort();
+    await boot(stateDir, second);
+    const survived = (await catalogue(second)).find((e) => e.id === 'spx');
+    expect(survived?.live, 'a retired market is not resumed').toBe(false);
+    expect(before.sequence, 'it had been publishing before').not.toBeNull();
+  }, 300_000);
+
   it('refuses a duplicate id without running a solve', async () => {
     const stateDir = await mkdtemp(path.join(tmpdir(), 'otc-register-'));
     directories.push(stateDir);

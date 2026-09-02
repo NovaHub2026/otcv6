@@ -28,9 +28,55 @@ import type { RegisteredAsset } from '@otc/engine';
  * as an instrument" is to refuse to host it rather than to host something
  * approximating it.
  */
+/**
+ * What an operator may change about an asset after it exists.
+ *
+ * Two fields, and the shortness of the list is the design. An id enters the key
+ * derivation (ADR-0002); a quantum defines the published integers every
+ * settlement is decided on (ADR-0004); a reference price is the map from those
+ * integers to the numbers a viewer read; a personality *is* the market. Editing
+ * any of them would rewrite what already happened — a chart of last month drawn
+ * against a lattice that did not exist then, and settlements that can no longer
+ * be reproduced from the record (INV-009).
+ *
+ * So what is editable is a **label** and a **decision to stop**, and everything
+ * else is refused by name rather than guarded by care.
+ */
+export interface AssetOverlay {
+  /** Human-facing name. Never used in a comparison. */
+  readonly displayName?: string;
+  /**
+   * When the operator stopped hosting this market, if they have.
+   *
+   * Retirement is final, and that is a product decision rather than a technical
+   * limit. A market resumed after a gap either invents the interval nobody
+   * generated or takes a seam in the published record; the first is forbidden
+   * outright and the second is a discontinuity an operator would be choosing to
+   * put into a market that had already printed prices. The record of a retired
+   * asset stays readable for ever — history, settlement, publication — it simply
+   * stops advancing.
+   */
+  readonly retiredAt?: number;
+}
+
+/** The fields an overlay may carry. Anything else is refused by name. */
+export const OVERLAY_FIELDS = ['displayName', 'retiredAt'] as const;
+
 export interface AssetRegistry {
   /** Every registered asset, in registration order. */
   list(): Promise<readonly RegisteredAsset[]>;
+
+  /** Operator overlays, by asset id — for compiled and registered assets alike. */
+  overlays(): Promise<ReadonlyMap<string, AssetOverlay>>;
+
+  /**
+   * Apply an overlay to an asset, merging with what is stored.
+   *
+   * Takes an id that need not be in {@link AssetRegistry.list}: the five
+   * compiled catalogue entries are assets an operator administers too, and an
+   * overlay is the only thing about them that is data.
+   */
+  putOverlay(assetId: string, patch: AssetOverlay): Promise<void>;
   /**
    * Persist a newly registered asset.
    *
@@ -71,7 +117,11 @@ export class FileAssetRegistry implements AssetRegistry {
     }
     const stored: { asset: RegisteredAsset; at: number }[] = [];
     for (const name of names.sort()) {
+      // Only files whose name is an asset id. The overlay file starts with an
+      // underscore precisely so it falls out here rather than being read as a
+      // registration — which is what it did on its first test run.
       if (!name.endsWith('.json')) continue;
+      if (!/^[a-z0-9][a-z0-9._-]{0,63}\.json$/.test(name)) continue;
       const raw = JSON.parse(await readFile(path.join(this.directory, name), 'utf8')) as unknown;
       stored.push(asStored(name, raw));
     }
@@ -81,6 +131,51 @@ export class FileAssetRegistry implements AssetRegistry {
     // different order too.
     stored.sort((a, b) => a.at - b.at);
     return stored.map((entry) => entry.asset);
+  }
+
+  /**
+   * `_overlays.json`, and the underscore is doing work.
+   *
+   * An asset id must match `^[a-z0-9][a-z0-9._-]{0,63}$`, so it can never begin
+   * with an underscore — which means this file can never collide with an asset
+   * named `overlays`. It was `overlays.json` for one test run, and `list()`
+   * duly tried to read it as a registration.
+   */
+  #overlayPath(): string {
+    return path.join(this.directory, '_overlays.json');
+  }
+
+  async overlays(): Promise<ReadonlyMap<string, AssetOverlay>> {
+    let text: string;
+    try {
+      text = await readFile(this.#overlayPath(), 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return new Map();
+      throw error;
+    }
+    const parsed = JSON.parse(text) as unknown;
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new CorruptRegistrationError('_overlays.json', 'did not parse to an object');
+    }
+    const out = new Map<string, AssetOverlay>();
+    for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
+      out.set(id, asOverlay(id, value));
+    }
+    return out;
+  }
+
+  async putOverlay(assetId: string, patch: AssetOverlay): Promise<void> {
+    assertOverlay(patch);
+    if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(assetId)) {
+      throw new RangeError(`Unsafe asset id: ${assetId}.`);
+    }
+    await mkdir(this.directory, { recursive: true });
+    const current = new Map(await this.overlays());
+    current.set(assetId, { ...current.get(assetId), ...patch });
+    const target = this.#overlayPath();
+    const temporary = `${target}.${process.pid}.tmp`;
+    await writeFile(temporary, JSON.stringify(Object.fromEntries(current), null, 2));
+    await rename(temporary, target);
   }
 
   async add(asset: RegisteredAsset): Promise<void> {
@@ -102,6 +197,7 @@ export class FileAssetRegistry implements AssetRegistry {
 /** An in-memory registry, for tests and for a deployment that stores nothing. */
 export class MemoryAssetRegistry implements AssetRegistry {
   readonly #assets: RegisteredAsset[] = [];
+  readonly #overlays = new Map<string, AssetOverlay>();
 
   constructor(initial: readonly RegisteredAsset[] = []) {
     this.#assets.push(...initial);
@@ -118,6 +214,52 @@ export class MemoryAssetRegistry implements AssetRegistry {
     this.#assets.push(asset);
     return Promise.resolve();
   }
+
+  overlays(): Promise<ReadonlyMap<string, AssetOverlay>> {
+    return Promise.resolve(new Map(this.#overlays));
+  }
+
+  // eslint-disable-next-line @typescript-eslint/require-await -- the interface is async
+  async putOverlay(assetId: string, patch: AssetOverlay): Promise<void> {
+    assertOverlay(patch);
+    this.#overlays.set(assetId, { ...this.#overlays.get(assetId), ...patch });
+  }
+}
+
+export class ImmutableFieldError extends Error {
+  constructor(readonly field: string) {
+    super(
+      `${field} cannot be edited. An id derives the keystream, a quantum decides ` +
+        `every settlement, a reference price maps those integers to what a viewer ` +
+        `read, and a personality is the market itself — changing any of them ` +
+        `rewrites what already happened (INV-009). Editable: ${OVERLAY_FIELDS.join(', ')}.`,
+    );
+    this.name = 'ImmutableFieldError';
+  }
+}
+
+/** Refuse an overlay carrying anything but a label or a retirement. */
+export function assertOverlay(patch: object): void {
+  for (const key of Object.keys(patch)) {
+    if (!OVERLAY_FIELDS.includes(key as (typeof OVERLAY_FIELDS)[number])) {
+      throw new ImmutableFieldError(key);
+    }
+  }
+  const named = patch as AssetOverlay;
+  if (named.displayName !== undefined && named.displayName.trim().length === 0) {
+    throw new RangeError('An asset needs a display name.');
+  }
+  if (named.retiredAt !== undefined && !Number.isFinite(named.retiredAt)) {
+    throw new RangeError(`retiredAt must be an instant, got ${String(named.retiredAt)}.`);
+  }
+}
+
+function asOverlay(id: string, value: unknown): AssetOverlay {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new CorruptRegistrationError('_overlays.json', `overlay for ${id} is not an object`);
+  }
+  assertOverlay(value);
+  return value;
 }
 
 export class AlreadyRegisteredError extends Error {

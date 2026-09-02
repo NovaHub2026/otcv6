@@ -15,6 +15,7 @@ import {
   type HostedMarket,
   type RecoveryOutcome,
   type StateStore,
+  type AssetOverlay,
 } from '@otc/runtime';
 import { TickFeed } from '@otc/distribution';
 import { HistoryService } from './history.service.js';
@@ -58,6 +59,8 @@ export class VenueService implements OnModuleDestroy {
   private lastCheckpointAt = 0;
   /** The advance currently running, so shutdown can wait for it. */
   private inFlight: Promise<void> = Promise.resolve();
+  /** Assets an operator has retired. Read at `start`, never hosted. */
+  private readonly retired = new Set<string>();
 
   constructor(
     private readonly store: StateStore,
@@ -120,6 +123,13 @@ export class VenueService implements OnModuleDestroy {
     }
     const markets: { asset: RegisteredAsset; market: HostedMarket }[] = [];
     for (const asset of this.assets) {
+      // A retired market is not resumed. Resuming one would either invent the
+      // interval since it stopped or take a seam in a published record, and an
+      // operator who retired an asset asked for neither.
+      if (this.retired.has(asset.definition.id)) {
+        this.logger.log(`${asset.definition.id}: retired, not hosted`);
+        continue;
+      }
       const { market, outcome } = await resumeMarket({
         asset,
         keyring: this.keyring,
@@ -175,6 +185,77 @@ export class VenueService implements OnModuleDestroy {
   /** Every asset this deployment knows about, hosted or not. */
   get catalogue(): readonly RegisteredAsset[] {
     return this.assets;
+  }
+
+  /**
+   * Take the operator's overlays before anything is hosted.
+   *
+   * A rename is applied to the in-memory asset; a retirement is remembered so
+   * `start` does not resume that market. Called before `start`, because the
+   * decision not to host something must be known before the resume loop runs.
+   */
+  applyOverlays(overlays: ReadonlyMap<string, AssetOverlay>): void {
+    for (const [id, overlay] of overlays) {
+      if (overlay.displayName !== undefined && this.assetFor(id) !== null) {
+        this.rename(id, overlay.displayName);
+      }
+      if (overlay.retiredAt !== undefined) this.retired.add(id);
+    }
+  }
+
+  /** Whether an asset has been retired by an operator. */
+  isRetired(assetId: string): boolean {
+    return this.retired.has(assetId);
+  }
+
+  /**
+   * The venue's clock, for a caller that needs to stamp an instant.
+   *
+   * `apps/api/src` is inside the replayable set, so nothing here may read
+   * ambient time — the guardrail scan enforces it, and it caught a bare
+   * `Date.now()` in the retire handler. A retirement instant comes from the same
+   * clock the markets are advanced against or it is not the same timeline.
+   */
+  now(): EpochMillis {
+    return this.clock.now();
+  }
+
+  /**
+   * Rename an asset, and nothing else.
+   *
+   * The display name is the one thing about a market that is presentation. It is
+   * never used in a comparison, never derived from, and never part of a record —
+   * so changing it changes what an operator reads and nothing that happened.
+   */
+  rename(assetId: string, displayName: string): void {
+    const index = this.assets.findIndex((asset) => asset.definition.id === assetId);
+    if (index < 0) throw new RangeError(`Unknown asset ${assetId}.`);
+    const asset = this.assets[index]!;
+    this.assets[index] = {
+      ...asset,
+      definition: { ...asset.definition, displayName },
+    };
+  }
+
+  /**
+   * Stop hosting a market.
+   *
+   * Between advances, like {@link VenueService.host}: removing a market from
+   * under the tick loop would drop a batch that had already been consumed from
+   * its engine. Everything it published stays readable — this is a decision to
+   * stop generating, not to forget.
+   */
+  async retire(assetId: string): Promise<void> {
+    if (!this.assetIds.includes(assetId)) {
+      throw new RangeError(`Asset ${assetId} is not hosted.`);
+    }
+    await this.inFlight;
+    // A final checkpoint before it leaves, so the last tick it published is the
+    // last tick its record holds.
+    await this.checkpoint();
+    this.venue?.unhost(assetId);
+    this.retired.add(assetId);
+    this.logger.log(`${assetId}: retired — no longer hosted, record untouched`);
   }
 
   assetFor(id: string): RegisteredAsset | null {
