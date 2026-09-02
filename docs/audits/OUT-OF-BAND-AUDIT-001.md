@@ -41,7 +41,9 @@ were kept on a separate branch in a separate worktree, and the two sessions
 agreed a split in writing (`SESSION_HANDOFF.md`).
 
 **Findings: 83**, of which 6 are critical. Every one carries the command that
-produced it. Fixes are recorded per finding in §7.
+produced it. Fixes are recorded per finding in §7. The auditors' and the
+implementation agents' full reports are preserved in
+[`OUT-OF-BAND-AUDIT-001/`](OUT-OF-BAND-AUDIT-001/README.md).
 
 ## 2. The findings that matter most
 
