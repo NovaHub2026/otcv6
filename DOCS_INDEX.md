@@ -38,11 +38,12 @@ documents disagree, the canonical one wins and the other is a defect.
 
 ## Backlog, history and verification
 
-| Source                                       | Canonical for                                                                                                                                                                                                                             |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`docs/BACKLOG.md`](docs/BACKLOG.md)         | **Interim** backlog for verified bugs, technical debt, deferred work and blockers, used only until a GitHub remote exists. `GOVERNANCE.md` §42 makes GitHub Issues canonical once available; migration is tracked inside the file itself. |
-| Git history and Pull Requests                | Implementation and integration history.                                                                                                                                                                                                   |
-| Executed local verification + GitHub Actions | Verification evidence. Never report CI as passing if it did not run (`GOVERNANCE.md` §40).                                                                                                                                                |
+| Source                                                              | Canonical for                                                                                                                                                       |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [GitHub Issues](https://github.com/NovaHub2026/otcv6/issues)        | Verified bugs, technical debt, deferred work, blockers and open audit findings — canonical since the 2026-09-02 migration (`GOVERNANCE.md` §42).                    |
+| [`docs/BACKLOG.md`](docs/BACKLOG.md)                                | The **archive** of the interim backlog: closed entries with their closing notes, and the map from the last open entries to their Issues. Nothing new is added here. |
+| Git history (merge commits; no Pull Requests have been used, a7-17) | Implementation and integration history.                                                                                                                             |
+| Executed local verification + GitHub Actions                        | Verification evidence. Never report CI as passing if it did not run (`GOVERNANCE.md` §40).                                                                          |
 
 ## Architecture documents
 
