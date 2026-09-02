@@ -158,9 +158,13 @@ engine's internal host to every viewer.
 
 `POST /assets` returns a **job id**, and the panel polls `/registrations/:id`.
 Four of the six stages are simulation: measured across the eight archetypes at
-two replicates of `minimumDispersionSpanMs`, a registration costs **0.5s to
-19.3s**, the outlier being `major-crypto` — a 625-hour fit span at its tick rate
-is simply a lot of ticks. That is CPU on the same event loop the venue publishes
+two replicates of `minimumDispersionSpanMs`, a registration costs **under a second
+to about twenty seconds** depending on the family — the canonical figures are the
+per-archetype table in
+[`CYCLE-7-CATALOGUE-SCALE.md`](../evidence/CYCLE-7-CATALOGUE-SCALE.md), produced
+by `tools/sim/src/catalogueScale.ts` and re-measured whenever that runner runs —
+the outlier being `major-crypto`: a 625-hour fit span at its tick rate is simply a
+lot of ticks. That is CPU on the same event loop the venue publishes
 from, for a duration that depends on which family was picked, which is not
 something to hold an HTTP request open across.
 

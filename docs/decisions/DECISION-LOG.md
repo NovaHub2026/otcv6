@@ -25,7 +25,8 @@ reason to write it down.
 
 ## How to read it
 
-Newest first. Each entry states what was decided, what the alternative was, and
+Oldest first, newest at the end, so a reader who follows the log reads the
+decisions in the order they were made. Each entry states what was decided, what the alternative was, and
 what would make it worth revisiting. Where a decision has an ADR, the log links
 to it rather than repeating it.
 
@@ -202,12 +203,14 @@ contract — is something the settlement path has to be able to _ask_, not assum
 **Revisit when:** a deployment store implements the log. The seam is part of the
 `CoordinatedStore` contract and its conformance battery.
 
+---
+
 ## 2026-09-02 — Retiring an asset is final
 
-**Decision.** An operator may retire a market. There is no un-retire, in the
+**Decided:** an operator may retire a market. There is no un-retire, in the
 surface or in the store.
 
-**Why.** A market resumed after a gap either invents the interval nobody
+**Why:** a market resumed after a gap either invents the interval nobody
 generated — which the catch-up bound (ADR-0010) refuses outright — or takes a
 seam in a published record. The second is available and is worse than it looks:
 an operator would be _choosing_ to put a discontinuity into a market that had
@@ -219,6 +222,13 @@ cannot come back is the _generator_, and an operator who wants that market again
 registers one — which is a new id, a new keystream and an honest new market
 rather than an old one with a hole in it.
 
-**Where.** `AssetOverlay.retiredAt`, `VenueService.retire`,
+**Alternative:** an un-retire that resumes the generator after the gap.
+Rejected, because both ways of doing it are worse than a new registration: the
+interval is either invented (which ADR-0010 refuses) or seamed on purpose.
+
+**Where:** `AssetOverlay.retiredAt`, `VenueService.retire`,
 `POST /assets/:id/retire` (409 on a second call), and the panel's confirmation
 wording. Guarded by three plants in PH-20.3.
+
+**Revisit when:** never in the direction of resuming a retired generator. A new
+registration is the honest way back.

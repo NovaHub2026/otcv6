@@ -103,17 +103,30 @@ npm run lint           # ESLint 9, type-aware
 npm run format         # Prettier write
 npm run format:check   # Prettier check
 
-npx vitest run --project unit          # fast unit suite      (~90s)
-npx vitest run --project statistical   # slow statistical suite (~10min)
-npm test                               # both projects          (~12min)
+npm run typecheck:web     # the Next.js app, which is outside the reference graph
+npm run typecheck:config  # vitest.config.ts and the root setup/reporter files
 
-npm run gate           # format:check + build + lint + both suites (~13min)
-npm run test:cov       # coverage over packages/ and tools/, both projects
+npm run test:unit      # fast unit suite, 86 files             (~30s)
+npm run test:stat      # statistical suite, SERIAL (~20min locally, ~40min hosted)
+npm test               # both, in that order
+
+npm run gate           # format:check → build → typecheck:web → typecheck:config
+                       #   → lint → unit → statistical             (~25min)
+npm run test:cov       # coverage over packages/, tools/ and apps/, both projects
 ```
 
-**Budget the time.** `npm run gate` runs the statistical suite and takes roughly
-thirteen minutes — it has not hung. Run it in the background rather than under a
-short command timeout. During subphase work use a **targeted** gate (a justified
+**Always `npm run test:stat`, never a bare `npx vitest run --project statistical`.**
+The script carries `--no-file-parallelism`, and that flag cannot live in the
+config: Vitest 3 silently drops it inside a project block (Cycle Audit 6,
+CA6-01). The bare command runs the statistical files concurrently, oversubscribes
+the machine, and makes every wall-clock assertion in the suite measure
+contention. The out-of-band audit of 2026-09-02 found this file recommending the
+bare command (a7-07).
+
+**Budget the time.** `npm run gate` runs the statistical suite serially and takes
+roughly twenty-five minutes locally; the hosted Statistical Gate takes 38 to 45
+minutes. Neither has hung. Run it in the background rather than under a short
+command timeout. During subphase work use a **targeted** gate (a justified
 subset — see `GOVERNANCE.md` §21); the full gate belongs at phase boundaries.
 
 **Build precedes lint, and that ordering is load-bearing.** The type-aware ESLint
@@ -135,7 +148,8 @@ A claim is only as true as the run behind it. Never write "PASSED" from a comman
 whose exit code you did not see — `| tail -1` discards it, and that is how a
 failing `npm run lint` survived two subphase approvals in PH-4.
 
-Coverage measures `packages/*/src` **and** `tools/*/src` (PH-11.3 closed B-003).
+Coverage measures `packages/*/src`, `tools/*/src` **and** `apps/*/src` (PH-11.3
+closed B-003; PH-19.1 added `apps/`).
 Run it with `npm run test:cov`, which sets `OTC_COVERAGE=1` — instrumentation
 makes wall-clock assertions meaningless, so that variable relaxes the unit
 timeout and stands down one throughput floor. A file exercised solely by
@@ -258,7 +272,7 @@ designer reaches for when asked to make support and resistance feel real.
 
 ```bash
 npx vitest run --project unit packages/engine     # includes the mirror test
-npx vitest run --project statistical              # includes the full battery
+npm run test:stat                                 # includes the full battery, serially
 ```
 
 The mirror test is fast and exact; the battery is slow and statistical. A change

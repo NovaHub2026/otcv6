@@ -1,7 +1,7 @@
 # ADR-0008 — Full delegation: automatic audits, autonomous decisions, no hosted CI
 
 Type: ARCHITECTURAL DECISION
-Status: APPROVED
+Status: APPROVED — Decision 3 (hosted CI) SUPERSEDED by ADR-0009 on 2026-08-31
 Date: 2026-08-31
 Deciders: **Human Owner** (amendment to Governance, `GOVERNANCE.md` §5.1)
 Amends: `GOVERNANCE.md` §5, §28, §29, §40, §59
@@ -52,6 +52,9 @@ the verification model.
    documentation.
 3. **Hosted CI is out of the verification model.** `npm run gate` is the
    verification authority.
+   _Superseded the same day_: the Human Owner made the repository public and
+   [ADR-0009](ADR-0009-hosted-ci-reinstated.md) reinstated hosted CI as a
+   required corroborating layer. Decisions 1 and 2 stand.
 
 Two things remain with the Human Owner, and only two: **Governance itself**, and
 **commitments that bind them outside the repository** (legal, contractual,
@@ -122,6 +125,7 @@ which §28.1 does.
 
 **Make the repository public to obtain free Actions.** Not taken here, because it
 is a commitment about the product's positioning rather than an engineering
-choice, and it belongs to the Human Owner under §5.1. It remains available and is
-recorded in `docs/DECISION-LOG.md` as the standing way to restore independent
-verification at zero cost.
+choice, and it belongs to the Human Owner under §5.1. It remained available and
+was recorded in `docs/decisions/DECISION-LOG.md` as the standing way to restore
+independent verification at zero cost — and it was taken hours later
+([ADR-0009](ADR-0009-hosted-ci-reinstated.md)).

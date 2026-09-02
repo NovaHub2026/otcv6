@@ -71,6 +71,17 @@ commit with the measurement that found it.
 closed it, with the measurement that found it and the plant that watched the fix
 fail.
 
+> **Corrected 2026-09-02 by the out-of-band audit (a7-05, a7-11).** The count
+> above was not reconstructible from the record: only 17 finding ids appear in
+> the PH-19 documents and the rest were named only in commit messages, three
+> findings (CA6-19, CA6-35, CA6-37) were closed without their id being written
+> anywhere, and CA6-39 was tracked nowhere. The closure table now appended to
+> [CYCLE-AUDIT-006.md](../audits/CYCLE-AUDIT-006.md) §7 is the reconstruction,
+> one row per finding. And PH-19.3, PH-19.4 and PH-19.5 record **no plants**:
+> their fixes were verified by re-measured tests, not by a defect watched
+> failing. The sentence "and the plant that watched the fix fail" is true of
+> PH-19.1 and PH-19.2 only.
+
 **Partly closed, and recorded as such:**
 
 - **CA6-17** — the acceptance now _executes_ the line that computes the diffusion
@@ -96,6 +107,16 @@ fail.
 
 `npm run gate` — **exit 0**, and **hosted CI green on the same tree**, which
 `GOVERNANCE.md` §40.1 requires and CA6-02 found missing from PH-18's approval.
+
+> **Corrected 2026-09-02 by the out-of-band audit (a7-01). The sentence above
+> was false when written.** The green hosted run was 33571388945, a
+> `workflow_dispatch` on `ca68b1e` — PH-19.1's commit, before PH-19.2 through
+> PH-19.5 existed. On the approval tree (`8b68b13`, merged as `2707f27`) run
+> 33587082478 was **red**: Statistical Gate, every test passing, one
+> `Timeout calling "onTaskUpdate"`, exit 1 — the same shape as CA6-02. Under
+> §40.1 this approval stands on the local gate only, until hosted CI is green
+> on a tree that contains it. The hosted failure is B-021, and the out-of-band
+> audit's own record carries the root cause.
 
 | Check                       | Command                    | Exit |
 | --------------------------- | -------------------------- | ---- |
