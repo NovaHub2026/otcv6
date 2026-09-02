@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { fetchCatalogue, renameAsset, retireAsset, type CatalogueEntry } from '../../../lib/api.js';
+import { filterCatalogue } from '../../../lib/catalogueView.js';
 
 /**
  * Editing and retiring, and a screen that says what it cannot do.
@@ -33,6 +34,7 @@ export function ManageAssets({ apiBase }: { apiBase: string }): ReactElement {
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
 
   const reload = useCallback(async (): Promise<void> => {
     try {
@@ -90,9 +92,33 @@ export function ManageAssets({ apiBase }: { apiBase: string }): ReactElement {
         </div>
       )}
 
+      {/*
+        The same filter as the preview sidebar, for the same reason: a table of
+        a hundred rows is a table nobody finds one row in.
+      */}
+      <input
+        data-testid="manage-filter"
+        value={query}
+        onChange={(event) => {
+          setQuery(event.target.value);
+        }}
+        placeholder="filter by id, name or family"
+        style={{
+          width: '100%',
+          maxWidth: 320,
+          padding: '6px 8px',
+          marginBottom: 14,
+          background: '#0b0e14',
+          border: '1px solid #242c3d',
+          color: '#d7dce5',
+          font: 'inherit',
+          fontSize: 12,
+        }}
+      />
+
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <tbody>
-          {catalogue.map((entry) => (
+          {filterCatalogue(catalogue, query).map((entry) => (
             <tr
               key={entry.id}
               data-testid={`row-${entry.id}`}

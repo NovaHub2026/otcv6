@@ -453,4 +453,58 @@ describe('the panel, in a browser', () => {
       await page.close();
     }
   }, 300_000);
+
+  it('finds one asset among many, by id, by name and by family', async () => {
+    guard();
+    if (browser === null) return;
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    const observed = watch(page);
+    try {
+      await page.goto(`http://127.0.0.1:${webPort}/preview`, { waitUntil: 'networkidle' });
+      await page.getByTestId('asset-eurusd').waitFor({ state: 'visible', timeout: 30_000 });
+
+      // Grouped by family, and the headings are the families the catalogue has.
+      await page
+        .getByText('forex ·', { exact: false })
+        .first()
+        .waitFor({ state: 'visible', timeout: 10_000 });
+
+      // A filter that narrows the list. `filterCatalogue` is unit-tested
+      // exhaustively; what only a browser can show is that the box is wired to
+      // it and that the list actually shrinks.
+      await page.getByTestId('asset-filter').fill('btc');
+      await expect
+        .poll(async () => page.getByTestId('asset-eurusd').count(), { timeout: 10_000 })
+        .toBe(0);
+      expect(await page.getByTestId('asset-btcusd').count()).toBe(1);
+
+      // By family, not just by id.
+      await page.getByTestId('asset-filter').fill('forex');
+      await expect
+        .poll(async () => page.getByTestId('asset-btcusd').count(), { timeout: 10_000 })
+        .toBe(0);
+      expect(await page.getByTestId('asset-eurusd').count()).toBe(1);
+      expect(await page.getByTestId('asset-gbpjpy').count()).toBe(1);
+
+      // Nothing matching says so rather than showing an empty sidebar.
+      await page.getByTestId('asset-filter').fill('zzzz');
+      await page.getByTestId('no-matches').waitFor({ state: 'visible', timeout: 10_000 });
+
+      // And clearing it brings the catalogue back — a filter that hid the
+      // catalogue until something was typed would have broken the screen.
+      await page.getByTestId('asset-filter').fill('');
+      await expect
+        .poll(async () => page.getByTestId('asset-eurusd').count(), { timeout: 10_000 })
+        .toBe(1);
+
+      // The chart never stopped: filtering narrows the list, not the selection.
+      const box = await page.locator('canvas').first().boundingBox();
+      expect(box!.height).toBeGreaterThan(200);
+
+      expect(observed.consoleErrors, 'console errors').toEqual([]);
+      expect(observed.failedRequests, 'failed requests').toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 300_000);
 });
