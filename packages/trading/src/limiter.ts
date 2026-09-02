@@ -1,5 +1,5 @@
 import type { Contract } from './contract.js';
-import { exposureByEvent, type EntryResolver, type EventExposure } from './exposure.js';
+import { eventKey, exposureByEvent, type EntryResolver, type EventExposure } from './exposure.js';
 
 /**
  * Declines a trade that would put too much on one settlement event.
@@ -76,32 +76,45 @@ export function admit(
   open: readonly Contract[],
   incoming: Contract,
   policy: LimiterPolicy,
+  /**
+   * How an entry instant maps onto the settlement event it belongs to.
+   *
+   * **Cycle Audit 6, A6-04.** PH-16.3 threaded an `EntryResolver` through
+   * `exposureByEvent`, `assessBookRisk` and `ExposureBook` and stopped there —
+   * so this function, which is the one a venue calls to decide whether to take a
+   * trade, still grouped by raw entry instant. Cycle Audit 5's construction was
+   * rebuilt against it exactly: 200 contracts one millisecond apart, on a market
+   * ticking every 11.4 seconds, are **one** settlement event and were counted as
+   * 200. All 200 were admitted against a limit of 500 while the true single-event
+   * net exposure reached 19,800 — **39.6x** — and `breaches` returned nothing.
+   *
+   * Optional, because a caller with no tick record to resolve against is honest
+   * to have; but a caller that has one and does not pass it is measuring
+   * something other than its own risk.
+   */
+  resolve?: EntryResolver,
 ): Admission {
   if (!(policy.maxEventExposure > 0)) {
     throw new RangeError(`maxEventExposure must be positive, received ${policy.maxEventExposure}.`);
   }
-  const before = exposureByEvent(open);
-  const after = exposureByEvent([...open, incoming]);
+  const before = exposureByEvent(open, resolve);
+  const after = exposureByEvent([...open, incoming], resolve);
 
-  const expiry = incoming.entryInstant + incoming.horizonMs;
-  const target = after.find(
-    (e) =>
-      e.event.assetId === incoming.assetId &&
-      e.event.entryInstant === incoming.entryInstant &&
-      e.event.expiryInstant === expiry,
-  );
+  // Matched on the grouping key, not on the event's instants: the event carries
+  // the *first* contract of its group and therefore that contract's raw entry,
+  // while the grouping happens on resolved ones. Comparing the two is how the
+  // first attempt at this fix admitted all 200 contracts again — it looked for
+  // an event whose raw entry equalled a resolved instant, found none, and
+  // concluded there was nothing to cap.
+  const key = eventKey(incoming, resolve);
+  const target = after.find((e) => e.key === key);
   if (target === undefined) return { accepted: true };
 
   if (target.netExposure <= policy.maxEventExposure) return { accepted: true };
 
   // Already over the limit, and this contract reduces it: accepting is strictly
   // safer than refusing.
-  const previous = before.find(
-    (e) =>
-      e.event.assetId === target.event.assetId &&
-      e.event.entryInstant === target.event.entryInstant &&
-      e.event.expiryInstant === target.event.expiryInstant,
-  );
+  const previous = before.find((e) => e.key === target.key);
   if (previous !== undefined && target.netExposure < previous.netExposure) {
     return { accepted: true };
   }
@@ -120,8 +133,12 @@ export function admit(
 }
 
 /** Events in an open book that are at or beyond the limit. */
-export function breaches(open: readonly Contract[], policy: LimiterPolicy): EventExposure[] {
-  return exposureByEvent(open).filter((e) => e.netExposure > policy.maxEventExposure);
+export function breaches(
+  open: readonly Contract[],
+  policy: LimiterPolicy,
+  resolve?: EntryResolver,
+): EventExposure[] {
+  return exposureByEvent(open, resolve).filter((e) => e.netExposure > policy.maxEventExposure);
 }
 
 /**

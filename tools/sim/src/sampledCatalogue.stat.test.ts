@@ -55,7 +55,13 @@ const PER_ARCHETYPE = 3;
  * refuses a span below the bound, so this is not politeness.
  */
 function spanFor(cascadeSpanMs: number): { replicates: number; simulatedMs: number } {
-  return { replicates: 1, simulatedMs: minimumDispersionSpanMs({ cascadeSpanMs }) };
+  // Three replicates of a third of the required span, not one of all of it.
+  // **Cycle Audit 6, CA6-26.** The quantum is a 1% quantile of a heavy-tailed
+  // variable and `CALIBRATION_REPLICATES` exists because one realisation puts
+  // it only within 18.5%; combining three by median is what brings it inside
+  // 15%. At one replicate the acceptance's published lattices spanned 2.4x for
+  // one personality registered three times.
+  return { replicates: 3, simulatedMs: minimumDispersionSpanMs({ cascadeSpanMs }) / 3 };
 }
 
 /** Verification runs twice as long again, on an unrelated keyring. */
@@ -63,7 +69,9 @@ function verificationSpanFor(cascadeSpanMs: number): {
   replicates: number;
   simulatedMs: number;
 } {
-  return { replicates: 1, simulatedMs: 2 * minimumDispersionSpanMs({ cascadeSpanMs }) };
+  // Three replicates here too: the check is only as sharp as its own estimator,
+  // and a single realisation of a quantity with memory is what CA6-15 was about.
+  return { replicates: 3, simulatedMs: (2 * minimumDispersionSpanMs({ cascadeSpanMs })) / 3 };
 }
 
 const MIRROR_TICKS = 120_000;
@@ -274,11 +282,15 @@ describe('a catalogue drawn from the archetypes', () => {
     // The budget is honoured in the mean. A two-day realisation of a process
     // whose volatility remembers for up to two days is a noisy estimate of its
     // own diffusion rate, so the per-asset band is wide and says so.
-    // Four turnovers of volatility memory in the fit and eight in the check, so
-    // each estimate carries roughly ±25% and the ratio of two of them rather
-    // more. The band is what that arithmetic allows, not what the run produced.
-    expect(median).toBeGreaterThan(0.75);
-    expect(median).toBeLessThan(1.35);
+    // Sixteen turnovers in the fit and thirty-two in the check, three replicates
+    // each. **Cycle Audit 6 (CA6-15/16) moved the median from 1.156 to 1.024**:
+    // the old four-turnover fit was systematically low, and since the rescale
+    // factor is `budget / measured`, every asset overshot its declared budget by
+    // about that much. The median is the number that shows a *bias*; the
+    // per-asset band shows how noisy a single estimate still is, and is left
+    // where one run's observed range (0.63 to 1.52) supports it.
+    expect(median).toBeGreaterThan(0.8);
+    expect(median).toBeLessThan(1.25);
     expect(ratios[0]).toBeGreaterThan(0.5);
     expect(ratios[ratios.length - 1]).toBeLessThan(2);
 
@@ -313,7 +325,25 @@ describe('a catalogue drawn from the archetypes', () => {
     // measurement with the personalities made identical. Under three unrelated
     // stream families, so the comparison is between two distributions rather
     // than between two draws.
-    const SEEDS = ['signatures-a', 'signatures-b', 'signatures-c'] as const;
+    // **Cycle Audit 6, CA6-22.** Three seeds, compared as `min(real)` against
+    // `max(control)`, is a comparison of two extremes over a small sample: an
+    // auditor measured that assertion failing on **26 of 120** seed triples
+    // drawn from ten families, while the underlying distributions separate by
+    // 11 points of mean. The statistic was the problem, not the property.
+    //
+    // Six seeds, compared **pairwise** — each stream family's sampled figure
+    // against its own control — plus the mean difference. Pairing removes the
+    // between-seed variance that made the extremes overlap, and it is the
+    // comparison the design actually supports: the control exists to be run
+    // alongside the real thing on the same seed.
+    const SEEDS = [
+      'signatures-a',
+      'signatures-b',
+      'signatures-c',
+      'signatures-d',
+      'signatures-e',
+      'signatures-f',
+    ] as const;
     const realBySeed: number[] = [];
     const controlBySeed: number[] = [];
     let lastWhole = 0;
@@ -387,6 +417,16 @@ describe('a catalogue drawn from the archetypes', () => {
     // exists to prevent — and the bare comparison survived it at 35.7% against
     // 34.8%. The real separation is 11 points; five is comfortably below that
     // and comfortably above the one point a near-clone catalogue produced.
-    expect(Math.min(...realBySeed)).toBeGreaterThan(Math.max(...controlBySeed) + 0.05);
+    const differences = realBySeed.map((real, index) => real - controlBySeed[index]!);
+    console.info(
+      `paired lift per seed: ${differences.map((d) => (100 * d).toFixed(1)).join(', ')}`,
+    );
+    // Every stream family separates, and the mean lift is large. Neither is a
+    // comparison of extremes.
+    for (const [index, difference] of differences.entries()) {
+      expect(difference, `seed ${SEEDS[index]!}`).toBeGreaterThan(0.03);
+    }
+    const meanLift = differences.reduce((sum, value) => sum + value, 0) / differences.length;
+    expect(meanLift).toBeGreaterThan(0.07);
   }, 1_800_000);
 });

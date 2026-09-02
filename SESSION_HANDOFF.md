@@ -9,45 +9,44 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Field              | Value                                                    |
 | ------------------ | -------------------------------------------------------- |
 | Last clean session | 2026-09-01                                               |
-| Branch             | `main` — PH-18 merged                                    |
+| Branch             | `main` — PH-19 merged                                    |
 | Remote             | `origin` → NovaHub2026/otcv6 — public, hosted CI running |
-| Active cycle       | Cycle 6, **3 of 3** phases approved                      |
-| Active phase       | none — the cycle is complete                             |
+| Active cycle       | Cycle 7, **1 of 3** phases approved                      |
+| Active phase       | none — PH-20 is the next legal action                    |
 | Active subphase    | none                                                     |
-| Cycle Audit        | **006 is the next legal action**                         |
+| Cycle Audit        | **006 closed** — 40 of 46 findings closed in PH-19       |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)       |
 
 ## Continuation point
 
 Read `CURRENT_STATE.md` for the authoritative position; this is the short form.
 
-**Run Cycle Audit 6.** Three phases are approved and the loop pauses here to
-change the mode of work from building to examining. Nothing is requested and
-nothing is waited for (ADR-0008).
+**Choose PH-20 and start it.** Cycle 7's roadmap deliberately leaves PH-20 and
+PH-21 undecided: Cycle 6 named all three phases in advance and built the third
+on measurements the audit then falsified.
 
-Two process rules this audit must follow, both bought with real damage:
+What the product still lacks, in the order the Human Owner has asked for things:
 
-- **One `git worktree` per auditor** (B-020). Cycle Audit 5 ran seven auditors
-  against one tree; three reported the contamination independently, one had a
-  restore clobbered mid-campaign, and two rebuilt private copies to finish.
-- **Never bulk-stage while agents are active** (B-006). That is how a planted
-  backdoor reached `main` in Cycle Audit 2.
+1. **The admin panel can look and cannot touch.** Creating, editing and retiring
+   an asset are the next submenus. The pipeline they would drive exists and
+   refuses for named reasons; only the surface is missing.
+2. **The catalogue is five assets.** Everything needed to reach fifty to a
+   hundred is in place — eight archetypes, sampled personalities, dispersion
+   budgets, backdated history — and nobody has run it at that scale.
+3. **Nothing runs continuously.** The assurance battery, the commitment
+   publication and the standing verdict are things an operator _can_ run rather
+   than things the venue _does_.
 
-What Cycle 6 built, and therefore what is worth attacking:
+What PH-19 leaves open, all recorded rather than waived: **B-029** (`xauusd`'s
+realised spread exceeds its calibrated one by 20–33%, cause unknown, and it
+bounds how well any dispersion budget can be honoured), **CA6-07** (nothing
+asserts that both test suites ran), **CA6-10** (no test references
+`apps/web/src` at all), and **B-018** (two guardrail blind spots deferred in
+PH-16.3).
 
-- **PH-16** closed six Cycle Audit 5 findings, including a standing verdict that
-  compared four strings and ran no attack family at all.
-- **PH-17** made assets data: eight archetypes as regions rather than templates,
-  personalities sampled and solved, a quarterly dispersion budget instead of a
-  price ceiling, and a backfill that gives a new asset ninety days of past and
-  refuses to run twice.
-- **PH-18** built the Preview panel on TradingView Lightweight Charts, with the
-  bar bridge in `packages/chart` so it is inside the build and the lint.
-
-The audit's own standard is in `GOVERNANCE.md` §28.1: falsify rather than
-confirm, re-execute rather than read, and plant a defect against every guard.
-Ten independent agents found 31 findings in Cycle Audit 2; the authoring agent
-found one in Cycle Audit 3.
+The audit's own standard, for whoever continues: falsify rather than confirm,
+re-execute rather than read, and plant a defect against every guard. Six of the
+things Cycle Audit 6 found were things a previous phase had recorded as fixed.
 
 ## What Cycle 5 has established so far
 

@@ -6,6 +6,13 @@ Method: `backfillMarket` from genesis to genesis + 90 days, one asset per run,
 15-second steps, in-memory history, Node 24 on one core
 Command: `node backfillScale.mjs <asset> 90` against `packages/runtime/dist`
 
+> **Cycle Audit 6, CA6-36: that runner is not in the repository.** An auditor
+> re-measured what is seed-independent and it reproduces exactly — 129,599 minute
+> bars and 2,160 hourly bars for `spx` at 90 days, against 2,308,368 ticks on a
+> different seed — so the load-bearing claim, that the candle count is fixed by
+> the calendar rather than by the asset, holds. The tick and timing columns
+> cannot be re-executed as written.
+
 ---
 
 ## Why this exists

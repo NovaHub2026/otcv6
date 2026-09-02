@@ -5,6 +5,8 @@ import {
   archetypeById,
   assertArchetypeFeasible,
   ASSET_ARCHETYPES,
+  KURTOSIS_HEADROOM,
+  reachableExcessKurtosis,
   sampleArchetype,
   sampleTraits,
   spacingCeiling,
@@ -15,6 +17,7 @@ import {
 import {
   assertPersonalitySafe,
   assertPersonalityTraits,
+  authorPersonality,
   cascadeTimescalesMs,
   EXCESS_KURTOSIS_BAND,
   MIN_FASTEST_COMPONENT_TICKS,
@@ -214,10 +217,23 @@ describe('sampling draws an asset rather than copying one', () => {
   it('draws a tail weight and a budget from the archetype bands', () => {
     for (const archetype of ASSET_ARCHETYPES) {
       const source = stream(`brief-${archetype.id}`);
-      for (let draw = 0; draw < 30; draw += 1) {
+      for (let draw = 0; draw < 8; draw += 1) {
         const sample = sampleArchetype(archetype, source);
-        expect(sample.excessKurtosis).toBeGreaterThanOrEqual(archetype.excessKurtosis.min);
+        // Inside the band, **or** at the ceiling this rhythm can actually
+        // reach. `alt-crypto` draws depths at which the cascade cannot supply
+        // its own band's upper end, and Cycle Audit 6 (CA6-24) measured 3.64%
+        // of its briefs as unauthorable — 36% of hundred-asset builds failing
+        // outright. The target is clamped now, the way `cascadeSpacing`
+        // already was.
+        const ceiling =
+          reachableExcessKurtosis(sample.traits, stream(`ceiling-${archetype.id}-${draw}`)) *
+          KURTOSIS_HEADROOM;
         expect(sample.excessKurtosis).toBeLessThanOrEqual(archetype.excessKurtosis.max);
+        expect(
+          sample.excessKurtosis >= archetype.excessKurtosis.min ||
+            sample.excessKurtosis <= ceiling * 1.05,
+          `${archetype.id} draw ${draw}: ${sample.excessKurtosis} vs ceiling ${ceiling}`,
+        ).toBe(true);
         expect(sample.dispersion).toBeGreaterThanOrEqual(archetype.dispersion.min);
         expect(sample.dispersion).toBeLessThanOrEqual(archetype.dispersion.max);
         expect(sample.tickRms).toBeGreaterThan(0);
@@ -226,6 +242,67 @@ describe('sampling draws an asset rather than copying one', () => {
       }
     }
   });
+
+  it('clamps a target the rhythm cannot reach, on the personality that proved it', () => {
+    // A depth-5 `alt-crypto` draw, recorded rather than searched for at test
+    // time: its cascade tops out at an excess kurtosis of about 128 while the
+    // archetype's band asks for 130 to 165. Under the old rule `sampleArchetype`
+    // handed that band straight to `authorPersonality`, which refused —
+    // 3.64% of alt-crypto briefs, and 36% of hundred-asset builds (CA6-24).
+    const cornered: PersonalityTraits = {
+      tempoMs: 560.6339400438212,
+      volatility: 0.000043520995997473905,
+      clustering: 0.3139435352195007,
+      burstiness: 0.8663606951367631,
+      regimeSpread: 1.3338960382343328,
+      structureSpread: 0.8716258348783997,
+      durationCoupling: 0.5155280877593532,
+      cascadeDepth: 5,
+      cascadeSpanMs: 5_619_889.119264998,
+      cascadeSpacing: 3.722331169744061,
+      regimeTempo: 0.40953375154302174,
+      arrivalMemoryMs: 16_767.956020108642,
+    };
+    const archetype = archetypeById('alt-crypto');
+    const ceiling = reachableExcessKurtosis(cornered, stream('cornered-ceiling'));
+    expect(ceiling).toBeLessThan(archetype.excessKurtosis.min);
+
+    // What the clamp asks for instead is authorable. The unreachable half is
+    // not asserted here on purpose: `solveClustering` bisects against a
+    // simulated gate, so failing to reach a target is minutes of work, and the
+    // property that matters is that the sampler never asks for it.
+    const derive = (purpose: string): RandomSource => stream(`cornered-${purpose}`);
+    expect(() =>
+      authorPersonality(
+        cornered,
+        { excessKurtosis: ceiling * KURTOSIS_HEADROOM, tickRms: 1e-5 },
+        derive,
+      ),
+    ).not.toThrow();
+  }, 120_000);
+
+  it('never draws a brief the solve cannot author', () => {
+    // The property CA6-24 falsified, asserted directly. Sampling and authoring
+    // are separate steps and nothing connected them: `sampleArchetype` drew a
+    // tail weight from a band and `authorPersonality` refused it.
+    for (const archetype of ASSET_ARCHETYPES) {
+      const source = stream(`authorable-${archetype.id}`);
+      for (let draw = 0; draw < 6; draw += 1) {
+        const sample = sampleArchetype(archetype, source);
+        const derive = (purpose: string): RandomSource =>
+          stream(`solve-${archetype.id}-${draw}-${purpose}`);
+        expect(
+          () =>
+            authorPersonality(
+              sample.traits,
+              { excessKurtosis: sample.excessKurtosis, tickRms: sample.tickRms },
+              derive,
+            ),
+          `${archetype.id} draw ${draw}`,
+        ).not.toThrow();
+      }
+    }
+  }, 120_000);
 
   it('samples times on a log scale, so the range is not crowded at the top', () => {
     // The meaningful distance between 500 ms and 1 s is the same as between

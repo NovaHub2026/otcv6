@@ -127,6 +127,23 @@ describe('the live edge of the chart', () => {
     expect(fresh!.time).toBe(Math.floor((throughMs + 60_000) / 1000));
   });
 
+  it('leaves the bucket that was already open when the client connected', () => {
+    // **Cycle Audit 6, CA6-30.** `historyThroughMs` is the last bar that had
+    // been *flushed*; a bucket that began before the client connected but had
+    // not been flushed fell between the two, and the builder rebuilt it from
+    // whichever ticks arrived after connect. Measured live: a candle whose open
+    // was wrong by 30 display units and which was missing the record's high.
+    const connectedAt = ORIGIN + 90_000; // 30 seconds into the second minute
+    const builder = new LiveBarBuilder(durationMs, instrument, ORIGIN, connectedAt);
+    // Ticks in the minute that was already running: not ours to draw.
+    expect(builder.accept(tick(1, connectedAt + 1_000, 9_000))).toBeNull();
+    expect(builder.accept(tick(2, connectedAt + 20_000, 1_000))).toBeNull();
+    // The next minute is.
+    const fresh = builder.accept(tick(3, ORIGIN + 121_000, 1_500));
+    expect(fresh).not.toBeNull();
+    expect(fresh!.time).toBe(Math.floor((ORIGIN + 120_000) / 1000));
+  });
+
   it('refuses a duration that is not one', () => {
     expect(() => new LiveBarBuilder(0, instrument)).toThrow(SeriesError);
     expect(() => new LiveBarBuilder(-1, instrument)).toThrow(SeriesError);

@@ -81,7 +81,7 @@ export class HistoryService {
       if ((await options.store.load(id)) !== null) continue;
       const targetInstant = epochMillis(options.clock.now());
       const genesisInstant = epochMillis(targetInstant - options.days * 86_400_000);
-      const started = Date.now();
+      const started = options.clock.now();
       const result = await backfillMarket({
         asset,
         keyring: options.keyring,
@@ -97,7 +97,7 @@ export class HistoryService {
       this.logger.log(
         `${id}: provisioned ${options.days} days — ${result.ticksGenerated.toLocaleString()} ` +
           `ticks, ${result.baseCandles.toLocaleString()} minute bars, ` +
-          `${((Date.now() - started) / 1000).toFixed(1)}s`,
+          `${((options.clock.now() - started) / 1000).toFixed(1)}s`,
       );
     }
     if (built.length > 0) await this.#catchUp(built, options.store, options.clock);

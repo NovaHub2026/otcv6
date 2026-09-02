@@ -131,6 +131,31 @@ describe('registration runs every stage, and any of them may refuse', () => {
     expect(outcome.reason).toMatch(/coarser than the lattice/);
   }, 120_000);
 
+  it('refuses a display the core itself would reject', async () => {
+    // **Cycle Audit 6, CA6-20.** `checkIdentity` asked only for a non-negative
+    // integer, and nothing re-validated the instrument that is actually
+    // returned — so 19 and 30 registered and produced an instrument
+    // `assertValidInstrument` rejects. A registration whose output the rest of
+    // the system will not accept is not a registration.
+    for (const displayPrecision of [19, 30]) {
+      const outcome = await registerAsset(request({ displayPrecision }), options());
+      expect(outcome, `precision ${displayPrecision}`).toMatchObject({
+        kind: 'refused',
+        stage: 'calibration',
+      });
+    }
+  }, 180_000);
+
+  it('refuses a turnover count that would switch the span guard off', async () => {
+    // CA6-21: `pooledMs < NaN` is false, so `NaN` disabled the guard rather
+    // than relaxing it, as did 0 and a negative.
+    for (const dispersionTurnovers of [0, -5, Number.NaN]) {
+      await expect(
+        registerAsset(request({ dispersion: 0.12 }), options({ dispersionTurnovers })),
+      ).rejects.toThrow(/positive number/);
+    }
+  }, 120_000);
+
   it('accepts a display finer than the lattice', async () => {
     const outcome = await registerAsset(request({ displayPrecision: 12 }), options());
     if (outcome.kind !== 'registered') throw new Error(outcome.reason);

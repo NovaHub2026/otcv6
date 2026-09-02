@@ -46,6 +46,17 @@ export interface SettlementEvent {
 }
 
 export interface EventExposure {
+  /**
+   * The identity this group was formed under.
+   *
+   * Published because {@link EventExposure.event} is the *first* contract of the
+   * group, carrying its raw instants — while the grouping happens on the
+   * resolved ones. Comparing the two is how Cycle Audit 6's first fix for A6-04
+   * silently admitted all 200 contracts again: the limiter looked for an event
+   * whose raw entry equalled a resolved instant, found none, and concluded there
+   * was nothing to cap.
+   */
+  readonly key: string;
   readonly event: SettlementEvent;
   /** Stake on the market rising. */
   readonly callStake: number;
@@ -117,7 +128,8 @@ export interface BookRisk {
  */
 export type EntryResolver = (assetId: string, instant: number) => number;
 
-function eventKey(contract: Contract, resolve?: EntryResolver): string {
+/** The identity a contract settles under: asset, entry event, expiry event. */
+export function eventKey(contract: Contract, resolve?: EntryResolver): string {
   const entry = resolve ? resolve(contract.assetId, contract.entryInstant) : contract.entryInstant;
   const expiry = resolve
     ? resolve(contract.assetId, contract.entryInstant + contract.horizonMs)
@@ -179,7 +191,8 @@ export function exposureByEvent(
     groups.set(key, existing);
   }
 
-  return [...groups.values()].map(({ event, call, put, onRise, onFall }) => ({
+  return [...groups.entries()].map(([key, { event, call, put, onRise, onFall }]) => ({
+    key,
     event,
     callStake: call,
     putStake: put,

@@ -177,7 +177,51 @@ const TEMPORAL: AttackFamily[] = [
     4,
     (_frame, _i, t) => Math.min(3, Math.floor((((t % 900_000) + 900_000) % 900_000) / 225_000)),
   ),
+  /**
+   * **Cycle Audit 6, CA6-04.** Every temporal family above conditions on the
+   * clock's *phase* — where in a minute, an hour, a 15-minute grid. None
+   * conditions on the clock's **identity**.
+   *
+   * An auditor built a record whose direction inside each 60-second block is a
+   * bit of `splitmix32(blockIndex)` — public arithmetic anyone can recompute —
+   * and paid an observer **+1.4% per trade**, 3.8x the profitability threshold
+   * this laboratory exports. The full battery returned 70 hypotheses, **zero**
+   * exploitable, worst z = 2.26, and `runStandingAssurance` signed `clean`.
+   *
+   * These three families close that class: a pseudorandom function of the block
+   * index at three block sizes. They cannot close the *general* case — an
+   * adversary may key on any public function, and no finite battery enumerates
+   * them all — which is why `standing.ts` now says what `clean` means and does
+   * not mean.
+   */
+  ...[15_000, 60_000, 300_000].map((blockMs) =>
+    family(
+      `block-index-digest-${blockMs / 1000}s`,
+      'temporal',
+      `a hash of which ${blockMs / 1000}-second block the entry falls in`,
+      'Catches direction keyed to the identity of a clock block rather than its phase.',
+      8,
+      (_frame, _i, t) => digestBucket(Math.floor(t / blockMs), 8),
+    ),
+  ),
 ];
+
+/**
+ * A pseudorandom bucket for an integer, computed the way an adversary would.
+ *
+ * `splitmix32`'s finalizer: integer arithmetic only, identical on every engine,
+ * and cheap. It is here rather than in the kernel because it is an *attacker's*
+ * function — nothing that generates prices may use it, and `guardrails.test.ts`
+ * would refuse it there.
+ */
+function digestBucket(value: number, buckets: number): number {
+  let x = value | 0;
+  x = (x + 0x9e37_79b9) | 0;
+  x = Math.imul(x ^ (x >>> 16), 0x21f0_aaad);
+  x = Math.imul(x ^ (x >>> 15), 0x735a_2d97);
+  x = x ^ (x >>> 15);
+  return (x >>> 0) % buckets;
+}
 
 // ---------------------------------------------------------------------------
 // Level-anchored families.

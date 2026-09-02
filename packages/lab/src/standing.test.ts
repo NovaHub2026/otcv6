@@ -1,12 +1,13 @@
 // Invariant evidence: INV-006 (no exploitable directional rules), INV-009 (reproducible settlement).
 import { describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, MasterKeyring, type Tick } from '@otc/core';
-import { ATTACK_FAMILIES, WITHHELD_FAMILY_NAMES } from './attacks/index.js';
+import { ATTACK_FAMILIES, WITHHELD_FAMILY_NAMES, withheldFamilies } from './attacks/index.js';
 import type { AttackFamily } from './attacks/types.js';
 import type { PublicInstrument } from './observer.js';
 import {
   assertIndependentFamilies,
   classifyStanding,
+  composeFamilies,
   DEFAULT_STANDING_CADENCE_MS,
   isStandingRunDue,
   PRODUCT_MARGIN_PP,
@@ -223,6 +224,7 @@ describe('the detection floor is the battery own, and it moves with the history'
       expect(horizon.detectionFloorPp).toBeGreaterThan(0);
       expect(horizon.samples).toBeGreaterThanOrEqual(0);
       expect(typeof horizon.sufficientForPayout).toBe('boolean');
+      expect(typeof horizon.sufficientForProductMargin).toBe('boolean');
     }
   });
 
@@ -343,12 +345,69 @@ describe('each rule of the classifier, on its own', () => {
   // unit test can hold. Tested directly so every rule can fail for its own
   // reason.
   const powerful = [
-    { horizon: '30s', samples: 1e6, detectionFloorPp: 0.05, sufficientForPayout: true },
-    { horizon: '15m', samples: 1e5, detectionFloorPp: 0.2, sufficientForPayout: true },
+    {
+      horizon: '30s',
+      samples: 1e6,
+      detectionFloorPp: 0.05,
+      sufficientForPayout: true,
+      sufficientForProductMargin: true,
+    },
+    {
+      horizon: '15m',
+      samples: 1e5,
+      detectionFloorPp: 0.2,
+      sufficientForPayout: true,
+      sufficientForProductMargin: true,
+    },
   ];
-  const weak = [{ horizon: '30s', samples: 100, detectionFloorPp: 12, sufficientForPayout: false }];
+  const weak = [
+    {
+      horizon: '30s',
+      samples: 100,
+      detectionFloorPp: 12,
+      sufficientForPayout: false,
+      sufficientForProductMargin: false,
+    },
+  ];
+
+  /**
+   * Enough power for a generous payout, and not for the product's margin.
+   *
+   * **Cycle Audit 6, A6-03.** The classifier read `sufficientForPayout`, which
+   * the battery computes against whatever payout its caller supplied — and 0.85
+   * is a payout this repository ships. A floor of 4.040pp was declared
+   * sufficient and the verdict published as `clean`, sixteen times coarser than
+   * the margin the product actually runs on.
+   */
+  const generousPayoutOnly = [
+    {
+      horizon: '30s',
+      samples: 1e5,
+      detectionFloorPp: 4.04,
+      sufficientForPayout: true,
+      sufficientForProductMargin: false,
+    },
+  ];
   const oneFinding = { length: 1 };
   const noFindings = { length: 0 };
+
+  it('composing the family set carries every family it was given', () => {
+    // A6-05: the refusal that used to sit here could not fire, because
+    // composition is a concatenation. What is worth asserting is the property
+    // itself — every built withheld family reaches the run — and it is asserted
+    // on the function the verdict calls.
+    const built = withheldFamilies({
+      seamIndices: [10],
+      reference: {
+        instants: new Float64Array(64).map((_, i) => GENESIS + i * 1_000),
+        prices: new Int32Array(64).map((_, i) => i % 7),
+      },
+    });
+    expect(built.length).toBeGreaterThan(0);
+    const names = composeFamilies(built).map((family) => family.name);
+    for (const family of built) expect(names).toContain(family.name);
+    for (const family of ATTACK_FAMILIES) expect(names).toContain(family.name);
+  });
 
   it('reports clean only when everything holds', () => {
     expect(classifyStanding({ clean: true, exploitable: noFindings }, powerful, [])).toBe('clean');
@@ -362,6 +421,15 @@ describe('each rule of the classifier, on its own', () => {
 
   it('an insufficient floor alone forces undecided', () => {
     expect(classifyStanding({ clean: true, exploitable: noFindings }, weak, [])).toBe('undecided');
+  });
+
+  it('a floor sufficient for a generous payout is not sufficient for the product', () => {
+    // The distinction A6-03 found missing. `sufficientForPayout` answers the
+    // caller's question; `clean` is published about the product.
+    expect(generousPayoutOnly[0]!.sufficientForPayout).toBe(true);
+    expect(classifyStanding({ clean: true, exploitable: noFindings }, generousPayoutOnly, [])).toBe(
+      'undecided',
+    );
   });
 
   it('no horizons at all is undecided, not clean', () => {

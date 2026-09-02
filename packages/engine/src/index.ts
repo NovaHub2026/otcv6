@@ -102,7 +102,9 @@ export {
   archetypeById,
   assertArchetypeFeasible,
   ASSET_ARCHETYPES,
+  KURTOSIS_HEADROOM,
   provisionalTickRms,
+  reachableExcessKurtosis,
   sampleArchetype,
   sampleTraits,
   spacingCeiling,
@@ -115,7 +117,6 @@ export {
   type SampledTraitRanges,
 } from './families.js';
 export {
-  MINIMUM_DISPERSION_RATIO,
   MINIMUM_TRAIT_DISTANCE,
   traitDistance,
   traitDistanceCheck,

@@ -18,9 +18,12 @@ const repoRoot = path.resolve(here, '../../../..');
 /**
  * Packages whose code generates, carries or transforms market data.
  *
- * **Widened by Cycle Audit 4 (M-4).** This listed `core`, `engine` and
- * `fixtures` only, so `runtime`, `trading`, `distribution` and everything under
- * `apps/` were unscanned — and those are precisely where economic state lives.
+ * **Widened by Cycle Audit 4 (M-4), and again by Cycle Audit 6 (CA6-11).** It
+ * listed `core`, `engine` and `fixtures` only, so `runtime`, `trading`,
+ * `distribution` and everything under `apps/` were unscanned. Cycle Audit 4
+ * added the packages; `apps/` stayed in this sentence and out of the list for
+ * two more cycles, which is how a docstring comes to describe a fix that did not
+ * happen. `apps/api/src` is in {@link REPLAYABLE_ROOTS} now — and those are precisely where economic state lives.
  * An auditor put a module-level channel in `packages/core/src/market/`, wrote it
  * from `packages/trading/src/settle.ts`, and read it back into the engine. The
  * write side was in a directory this scan never opened.
@@ -54,7 +57,28 @@ const GENERATION_ROOTS = [
  *
  * Cycle Audit 4 (M-4) found neither being scanned at all.
  */
-const REPLAYABLE_ROOTS = [...GENERATION_ROOTS, 'packages/runtime/src', 'packages/trading/src'];
+const REPLAYABLE_ROOTS = [
+  ...GENERATION_ROOTS,
+  'packages/runtime/src',
+  'packages/trading/src',
+  /**
+   * **Cycle Audit 6, CA6-11.** `apps/` is named in the docstring above as part
+   * of what Cycle Audit 4 widened this to cover, and it was never added. PH-18
+   * then cited "the guardrail scan" as what keeps INV-001 true of the panel it
+   * built — in a directory this scan did not open. An auditor put an ambient
+   * economic channel in the venue's publish loop and all 297 guardrail tests
+   * passed; the identical line in `packages/runtime/src/venue.ts` failed
+   * instantly.
+   *
+   * The service hosts and persists markets, so it belongs to the replayable set
+   * for the same reason `runtime` does. `apps/web` deliberately does **not**:
+   * a browser panel reads the wall clock to choose a window and is not part of
+   * any record. What protects the browser bundle is the dependency guard, which
+   * CA6-12 fixed to read `.tsx` — and PH-18 §5's sentence about this scan was
+   * corrected rather than made true.
+   */
+  'apps/api/src',
+];
 
 /**
  * `publishingKeyFromEnvironment` is the sanctioned reader of ambient state.
@@ -65,7 +89,21 @@ const REPLAYABLE_ROOTS = [...GENERATION_ROOTS, 'packages/runtime/src', 'packages
  * somewhere unscanned to keep this list short would trade a guaranteed refusal
  * for a tidier scan. `publishingKey.test.ts` asserts the refusal still exists.
  */
-const AMBIENT_STATE_ALLOWLIST = ['packages/distribution/src/signing.ts'];
+const AMBIENT_STATE_ALLOWLIST = [
+  'packages/distribution/src/signing.ts',
+  /**
+   * Configuration, read once at composition and never again.
+   *
+   * These are the service's edge: the state directory, the history database, the
+   * publishing secret, the listening port. Something has to read the
+   * environment, and confining it to the module that wires the application
+   * together is the same containment `signing.ts` gets — with the same
+   * consequence, that nothing below them can.
+   */
+  'apps/api/src/app.module.ts',
+  'apps/api/src/main.ts',
+  'apps/api/src/publication.service.ts',
+];
 
 /**
  * `SystemClock` is the single sanctioned reader of ambient time: something must

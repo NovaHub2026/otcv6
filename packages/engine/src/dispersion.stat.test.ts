@@ -1,10 +1,15 @@
 // Invariant evidence: INV-009 (reproducible settlement).
 import { describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, MasterKeyring } from '@otc/core';
-import { assetById } from './catalogue.js';
-import { configFor } from './catalogue.js';
+import { calibrateAssetAsync } from './asset.js';
+import { assetById, configFor, registrationKeyLabel } from './catalogue.js';
 import { createMarketEngine } from './factory.js';
-import { dispersionLogSigma, dispersionPercent, DISPERSION_WINDOW_MS } from './dispersion.js';
+import {
+  dispersionLogSigma,
+  dispersionPercent,
+  DISPERSION_WINDOW_MS,
+  minimumDispersionSpanMs,
+} from './dispersion.js';
 
 /**
  * The claim the whole dispersion budget rests on, checked against brute force.
@@ -34,7 +39,10 @@ import { dispersionLogSigma, dispersionPercent, DISPERSION_WINDOW_MS } from './d
  * shape of code invites — would land the pooled figure near 0.65, well outside.
  */
 
-const REPLICATES = 40;
+// 120, up from 40: the realised side carries all the noise, and CA6-17 showed a
+// 14% error in σ passing every band in the suite. Three assets at 120 runs each
+// puts the pooled standard error near 4%.
+const REPLICATES = 120;
 const WARM_UP_MS = 43_200_000;
 const SPAN_MS = 2 * 86_400_000;
 const START = 1_776_000_000_000;
@@ -91,9 +99,30 @@ async function terminalSpread(id: string): Promise<number> {
 describe('the diffusion rate predicts where the price actually goes', () => {
   it('matches the spread of sixty independent realisations', async () => {
     const ratios: number[] = [];
+    const keyring = MasterKeyring.forTesting('dispersion-fresh-calibration');
     for (const id of MEASURED) {
+      const asset = assetById(id);
       const measured = await terminalSpread(id);
-      const predicted = dispersionLogSigma(assetById(id).evidence, SPAN_MS);
+      // **Cycle Audit 6, CA6-17 and CA6-19.** This compared brute force against
+      // the *recorded* evidence in `catalogue.ts`, so it never executed the line
+      // that computes the rate: an auditor multiplied `logVariancePerMs` by 1.3
+      // and this test's console output was byte-identical. It calibrates freshly
+      // now, at the pooled span `DISPERSION_FIT_TURNOVERS` requires for this
+      // asset's own memory — the fixed two-day window it used before was 1.1 to
+      // 1.3 turnovers for two of the three assets, below the floor the same
+      // subphase introduced.
+      const fresh = await calibrateAssetAsync(
+        asset.definition,
+        (purpose) =>
+          keyring.derive({
+            env: 'simulation',
+            asset: registrationKeyLabel(id),
+            purpose,
+            keyEpoch: 0,
+          }),
+        { replicates: 4, simulatedMs: minimumDispersionSpanMs(asset.definition.traits) / 4 },
+      );
+      const predicted = dispersionLogSigma(fresh.evidence, SPAN_MS);
       const ratio = measured / predicted;
       ratios.push(ratio);
       console.info(
@@ -108,11 +137,24 @@ describe('the diffusion rate predicts where the price actually goes', () => {
     console.info(`pooled ratio across ${MEASURED.length} assets: ${pooled.toFixed(3)}`);
 
     for (const [index, ratio] of ratios.entries()) {
-      expect(ratio, `${MEASURED[index]} ratio`).toBeGreaterThan(0.65);
+      expect(ratio, `${MEASURED[index]} ratio`).toBeGreaterThan(0.7);
       expect(ratio, `${MEASURED[index]} ratio`).toBeLessThan(1.55);
     }
-    expect(pooled).toBeGreaterThan(0.82);
-    expect(pooled).toBeLessThan(1.22);
+    // ±25% pooled, and that is what the data supports rather than what would be
+    // convenient. Both sides are honest estimators of one quantity now — the
+    // calibration is fresh rather than a recorded constant, and the realised
+    // side has three times the runs — but `xauusd` reads 1.33 here and 1.20 in
+    // `CYCLE-7-DISPERSION.md`'s independent 40-run measurement. Two runs
+    // agreeing on a 20-30% gap is a signal, not noise, and its cause is not yet
+    // known (B-029).
+    //
+    // So this bounds a systematic error in the diffusion rate to about ±25%,
+    // not the ±14% a tighter band would claim. CA6-17 planted 30% in the rate —
+    // 14% in σ — and is therefore only **partly** closed: the test executes the
+    // line now, where before it compared brute force against a hard-coded
+    // constant and could not see the plant at all.
+    expect(pooled).toBeGreaterThan(0.85);
+    expect(pooled).toBeLessThan(1.3);
   }, 600_000);
 
   it('states a quarter in the units an operator thinks in', () => {

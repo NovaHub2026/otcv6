@@ -136,6 +136,22 @@ export class LiveBarBuilder {
     readonly instrument: InstrumentView,
     /** Bucket start of the newest bar already drawn from history, if any. */
     private readonly historyThroughMs: number | null = null,
+    /**
+     * When this client's stream opened.
+     *
+     * **Cycle Audit 6, CA6-30.** `historyThroughMs` is the last bar that had
+     * been *flushed* when the history was read, and a bucket that began before
+     * the client connected but had not yet been flushed fell between the two:
+     * the builder rebuilt it from whichever ticks arrived after connect.
+     * Measured live — the panel's 22:03 candle opened at 68795.53 where the
+     * record says 68825.00, and was **missing the high of 68825.00**, a price
+     * the record holds and the extreme-preserving contract exists to protect.
+     *
+     * So a live bar is built only for a bucket that *started after* this client
+     * connected. Until the next boundary the newest bar on the chart is the
+     * newest bar in the record, which is the only honest thing to draw.
+     */
+    private readonly openedAtMs: number | null = null,
   ) {
     if (!Number.isFinite(durationMs) || durationMs <= 0) {
       throw new SeriesError(`A bar duration must be positive, got ${durationMs}.`);
@@ -155,8 +171,12 @@ export class LiveBarBuilder {
     this.#lastSequence = tick.sequence;
 
     const start = bucketStart(tick.instant, this.durationMs);
-    // The bucket the last stored bar belongs to is the record's, not ours.
+    // Any bucket that had already begun is the record's, not ours — whether it
+    // was flushed to history or was still open when this client connected.
     if (this.historyThroughMs !== null && start <= this.historyThroughMs) return null;
+    if (this.openedAtMs !== null && start <= bucketStart(this.openedAtMs, this.durationMs)) {
+      return null;
+    }
 
     const price = displayPrice(tick.price, this.instrument);
     if (this.#open === null || this.#open.time * 1000 !== start) {

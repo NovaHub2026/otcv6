@@ -102,4 +102,5 @@ export {
   type StandingOutcome,
   type StandingRunOptions,
   type StandingVerdict,
+  composeFamilies,
 } from './standing.js';

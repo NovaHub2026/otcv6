@@ -67,10 +67,25 @@ export class FileStateStore implements StateStore {
     return asRecord(assetId, parsed);
   }
 
+  /**
+   * Sequence number for temporary file names, unique within this process.
+   *
+   * **Cycle Audit 6, minor.** The temporary path was `${target}.${pid}.tmp` —
+   * unique per *process*, not per call. Two concurrent saves of one asset raced:
+   * the first `rename` moved the file the second was still writing, and the
+   * second failed with `ENOENT`. Reproduced 200 times out of 200, and observed
+   * on two ordinary SIGTERM shutdowns of the shipped configuration, where
+   * `VenueService.stop()` clears the timer without awaiting an in-flight
+   * `tick()` whose `checkpoint()` is running. The rejection then aborts the
+   * checkpoint loop, so the remaining markets get no final checkpoint either.
+   */
+  #saveSequence = 0;
+
   async save(record: MarketStateRecord): Promise<void> {
     await mkdir(this.directory, { recursive: true });
     const target = this.#pathFor(record.assetId);
-    const temporary = `${target}.${process.pid}.tmp`;
+    this.#saveSequence += 1;
+    const temporary = `${target}.${process.pid}.${this.#saveSequence}.tmp`;
     await writeFile(temporary, JSON.stringify(record), 'utf8');
     await rename(temporary, target);
   }

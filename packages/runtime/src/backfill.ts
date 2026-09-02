@@ -2,7 +2,12 @@ import { epochMillis, logPrice, SteppableClock, type EpochMillis, type Tick } fr
 import { configFor, createMarketEngine, type RegisteredAsset } from '@otc/engine';
 import type { Environment, MasterKeyring } from '@otc/core';
 import { DEFAULT_MAX_CATCH_UP_MS, HostedMarket } from './hosted.js';
-import { HistoryRecorder, refreshRollup, type CandleHistory } from './history.js';
+import {
+  HistoryRecorder,
+  HISTORY_BASE_TIMEFRAME,
+  refreshRollup,
+  type CandleHistory,
+} from './history.js';
 import { checkpointMarket, DEFAULT_LEASE_BLOCKS } from './resume.js';
 import type { StateStore } from './state.js';
 
@@ -147,6 +152,28 @@ export async function backfillMarket(options: BackfillOptions): Promise<Backfill
         `genesis: generating a second history would publish a different market under the same ` +
         `id, spend keystream positions twice, and leave every settlement already recorded ` +
         `against the first series unreproducible.`,
+    );
+  }
+  // **Cycle Audit 6, CA6-28.** The guard consulted the state store while the
+  // damage happens in the history one — and the two are written at different
+  // times: candles flush throughout, the checkpoint is written once at the end.
+  // A crash between them left history rows and no record, and the guard then
+  // admitted a re-run which either died on the first append (leaving the asset
+  // permanently unprovisionable) or, with a later genesis, **spliced a second
+  // market into the same id**: an auditor measured 5,070 minute rows spanning
+  // two histories with a 2,130-minute hole and a 3,984-step price jump.
+  //
+  // Both stores are consulted now. The refusal names the repair, because there
+  // is no safe automatic one: deleting the history of an asset is an operator's
+  // decision, and it is the same decision `CorruptRecordError` describes.
+  const storedHistory = await options.history.head(assetId, HISTORY_BASE_TIMEFRAME);
+  if (storedHistory !== null) {
+    throw new BackfillError(
+      `${assetId} has no state record but its history already holds candles through ` +
+        `${storedHistory}. That is a backfill which did not finish, or a record deleted from ` +
+        `under one. Generating again would splice a second market into the same id. To start ` +
+        `this asset over, delete its history as well as its record — deliberately, because ` +
+        `doing so discards a past that settlements may already have been recorded against.`,
     );
   }
 

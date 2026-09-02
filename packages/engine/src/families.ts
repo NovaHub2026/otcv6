@@ -1,8 +1,12 @@
 import { pow, type AssetFamily, type RandomSource } from '@otc/core';
 import { DISPERSION_WINDOW_MS } from './dispersion.js';
 import {
+  cascadeInflation,
   cascadeRmsGain,
   MIN_FASTEST_COMPONENT_TICKS,
+  personalityConfig,
+  regimeInflation,
+  structureInflation,
   TRAIT_BOUNDS,
   type PersonalityTraits,
 } from './personality.js';
@@ -110,6 +114,37 @@ export function startingClustering(depth: number): number {
   return Math.sqrt(pow(STARTING_CASCADE_INFLATION, 1 / depth) - 1);
 }
 
+/**
+ * Margin between the reachable tail weight and the one a sample may ask for.
+ *
+ * `solveClustering` bisects, and the analytic gate it bisects against is itself
+ * estimated by simulation, so a target sitting exactly on the ceiling is a
+ * target the solve reaches only on the stream that measured it. Five per cent
+ * is enough that a draw survives being solved against a different one.
+ */
+export const KURTOSIS_HEADROOM = 0.95;
+
+/**
+ * Steps behind the ceiling estimate.
+ *
+ * A twentieth of what `predictedExcessKurtosis` uses by default, because this is
+ * a *ceiling* with five per cent of headroom under it rather than a number
+ * anything is solved to. At the full 400,000 steps sampling an asset cost about
+ * 120 ms and a unit test drawing 240 of them timed out; at 20,000 the ceiling
+ * moves by well under the headroom and a draw is free again.
+ */
+export const CEILING_INFLATION_STEPS = 20_000;
+
+/** The largest excess kurtosis this rhythm can reach, at maximum clustering. */
+export function reachableExcessKurtosis(traits: PersonalityTraits, stream: RandomSource): number {
+  const config = personalityConfig({ ...traits, clustering: TRAIT_BOUNDS.clustering.max });
+  const product =
+    cascadeInflation(config.cascade) *
+    regimeInflation(config.regimes) *
+    structureInflation(config.structure, stream, CEILING_INFLATION_STEPS);
+  return 3 * product - 3;
+}
+
 function uniform(stream: RandomSource, range: Range): number {
   return range.min + stream.nextFloat64() * (range.max - range.min);
 }
@@ -188,7 +223,24 @@ export interface ArchetypeSample {
 /** Draw a complete authoring brief: a personality, a tail weight, a budget. */
 export function sampleArchetype(archetype: AssetArchetype, stream: RandomSource): ArchetypeSample {
   const traits = sampleTraits(archetype, stream);
-  const excessKurtosis = uniform(stream, archetype.excessKurtosis);
+  // The tail weight the *rhythm just drawn* can actually reach.
+  //
+  // **Cycle Audit 6, CA6-24.** `alt-crypto` draws a target in [130, 165] and a
+  // cascade depth in [5, 8], and at depth 5 the cascade cannot supply that much
+  // inflation however wide its components are: 3.64% of its briefs could not be
+  // authored at all, so `registerAsset` refused them at stage `authoring`.
+  // P(a 12-asset draw hits one) is 36% — better than one in three builds of the
+  // hundred-asset catalogue this exists for, failing outright. The acceptance
+  // survived only because its first three draws happened to be feasible.
+  //
+  // Clamped the way `cascadeSpacing` already is, rather than refused: the
+  // ceiling is computed from this personality with `clustering` at its own upper
+  // bound, which is exactly what the solve would be searching against.
+  const ceiling = reachableExcessKurtosis(traits, stream);
+  const excessKurtosis = uniform(stream, {
+    min: Math.min(archetype.excessKurtosis.min, ceiling * KURTOSIS_HEADROOM),
+    max: Math.min(archetype.excessKurtosis.max, ceiling * KURTOSIS_HEADROOM),
+  });
   const dispersion = logUniform(stream, archetype.dispersion);
   return {
     traits: {
@@ -309,8 +361,14 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
     dispersion: { min: 0.01, max: 0.022 },
     excessKurtosis: { min: 30, max: 55 },
     traits: {
-      tempoMs: { min: 4_200, max: 7_000 },
-      burstiness: { min: 0.38, max: 0.52 },
+      // **Cycle Audit 6, CA6-27.** At 7,000 ms and 38% branching the mean
+      // interval is 4.3 s, and Hawkes gaps then leave more than 1% of
+      // 30-second horizons with no tick at all — so the 1% quantile of
+      // `|30s return|` is exactly zero and the calibration refuses with "the
+      // asset does not move", blaming amplitude for a tempo problem. Narrowed
+      // to a 3.5-second mean interval at the worst corner.
+      tempoMs: { min: 4_200, max: 6_000 },
+      burstiness: { min: 0.42, max: 0.56 },
       regimeSpread: { min: 0.75, max: 0.95 },
       structureSpread: { min: 1.2, max: 1.45 },
       durationCoupling: { min: 0.18, max: 0.32 },
@@ -409,16 +467,22 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
     dispersion: { min: 0.48, max: 0.68 },
     excessKurtosis: { min: 130, max: 165 },
     traits: {
-      tempoMs: { min: 500, max: 1_000 },
-      burstiness: { min: 0.78, max: 0.88 },
-      regimeSpread: { min: 1.3, max: 1.5 },
-      structureSpread: { min: 0.85, max: 1.1 },
-      durationCoupling: { min: 0.35, max: 0.6 },
-      cascadeDepth: { min: 5, max: 8 },
-      cascadeSpanMs: { min: 1.5 * HOUR, max: 4 * HOUR },
-      cascadeSpacing: { min: 2.8, max: 4.2 },
-      regimeTempo: { min: 0.3, max: 0.5 },
-      arrivalMemoryMs: { min: 15 * SECOND, max: 25 * SECOND },
+      // **Cycle Audit 6, CA6-23.** This was the narrowest box in the
+      // catalogue, and its siblings were not distinguishable from three clones
+      // of one personality: a 4.7pp lift at p ≈ 0.17, against 8–20pp everywhere
+      // else. A family is a *region*, and a region this small is a template
+      // with jitter. Widened on the five traits that were tightest, keeping the
+      // character — fast, shallow, extreme — and the feasible spacing corner.
+      tempoMs: { min: 450, max: 1_100 },
+      burstiness: { min: 0.72, max: 0.88 },
+      regimeSpread: { min: 1.2, max: 1.5 },
+      structureSpread: { min: 0.8, max: 1.2 },
+      durationCoupling: { min: 0.3, max: 0.65 },
+      cascadeDepth: { min: 5, max: 9 },
+      cascadeSpanMs: { min: 1.5 * HOUR, max: 5 * HOUR },
+      cascadeSpacing: { min: 2.6, max: 4.2 },
+      regimeTempo: { min: 0.3, max: 0.6 },
+      arrivalMemoryMs: { min: 15 * SECOND, max: 45 * SECOND },
     },
   },
 ];

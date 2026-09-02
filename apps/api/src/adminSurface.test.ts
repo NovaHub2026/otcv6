@@ -10,12 +10,16 @@ import type { VenueService } from './venue.service.js';
 
 const ORIGIN = 1_776_000_000_000;
 
-/** A venue stub: the controller reads three things from it and nothing else. */
-function venueStub(liveIds: readonly string[]): VenueService {
+/** A venue stub: the controller reads four things from it and nothing else. */
+function venueStub(
+  liveIds: readonly string[],
+  stalled: readonly { assetId: string; reason: string }[] = [],
+): VenueService {
   return {
     assetIds: liveIds,
     lastTick: () => null,
     recoveryFor: () => null,
+    stalledMarkets: stalled,
   } as unknown as VenueService;
 }
 
@@ -33,6 +37,29 @@ async function populated(assetId = 'eurusd'): Promise<HistoryService> {
   await service.flush();
   return service;
 }
+
+describe('health says whether the venue is publishing, not merely running', () => {
+  it('is ok when every market is advancing', () => {
+    expect(new MarketController(venueStub(['eurusd'])).health()).toEqual({
+      status: 'ok',
+      assets: 1,
+      stalled: [],
+    });
+  });
+
+  it('is degraded when a market has stopped, and says which and why', () => {
+    // **Cycle Audit 6, CA6-33.** A market past its catch-up bound refuses every
+    // later advance — `#lastAdvancedAt` only moves after the check — so it stops
+    // for good. `Venue.advance()` drops the failure list and this service called
+    // only that, so the venue reported `ok` while every chart froze.
+    const stalled = [{ assetId: 'btcusd', reason: 'Market is 20s behind the clock' }];
+    expect(new MarketController(venueStub(['eurusd', 'btcusd'], stalled)).health()).toEqual({
+      status: 'degraded',
+      assets: 2,
+      stalled,
+    });
+  });
+});
 
 describe('the catalogue an operator picks from', () => {
   it('reports every asset with the evidence its registration produced', () => {
@@ -93,7 +120,10 @@ describe('the archetypes an operator chooses between', () => {
 });
 
 describe('reading stored history over HTTP', () => {
-  const window = { from: '0', to: String(ORIGIN + 86_400_000) };
+  // A day either side of the fixture, not "from zero": Cycle Audit 6 (CA6-34)
+  // capped what one request may return, and a window starting at the epoch is
+  // two million 15-minute bars.
+  const window = { from: String(ORIGIN - 86_400_000), to: String(ORIGIN + 86_400_000) };
 
   it('returns candles at a timeframe folded from what was stored', async () => {
     const controller = new MarketController(venueStub(['eurusd']), await populated());
@@ -130,6 +160,16 @@ describe('reading stored history over HTTP', () => {
     const controller = new MarketController(venueStub(['eurusd']), await populated());
     await expect(controller.history_('eurusd', timeframe, from, to)).rejects.toThrow(
       BadRequestException,
+    );
+  });
+
+  it('refuses a window larger than one request may return', async () => {
+    // Measured: a 90-day minute request is 20.5 MB of JSON and 1,496 ms of
+    // blocked event loop, and sixty concurrent ones took the process from
+    // 100 MB to 1.86 GB. No cap, no pagination, no auth.
+    const controller = new MarketController(venueStub(['eurusd']), await populated());
+    await expect(controller.history_('eurusd', '1m', '0', String(ORIGIN))).rejects.toThrow(
+      /past the 20,000 a single request may return/,
     );
   });
 

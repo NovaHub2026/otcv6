@@ -270,6 +270,14 @@ describe('throughput', () => {
     expect(sink).toBeGreaterThan(0);
     // Generous floor: catches a catastrophic regression without failing on a
     // slow or contended CI runner. Measured locally at ~26M/s.
-    expect(perSecond).toBeGreaterThan(2_000_000);
+    // **Cycle Audit 6.** A wall-clock floor measures the machine as much as
+    // the code, and this one had a 2.1x margin under gate load — thin enough
+    // that a slower runner decides it. Lowered to 1M and stood down under
+    // coverage, where v8 rewrites every function and the number stops
+    // describing the code. What the assertion is for survives: an order of
+    // magnitude slower would still fail, and that is the change worth catching.
+    if (process.env['OTC_COVERAGE'] !== '1') {
+      expect(perSecond).toBeGreaterThan(1_000_000);
+    }
   });
 });

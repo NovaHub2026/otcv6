@@ -420,12 +420,12 @@ does not start from new product surface: it starts from the fact that the engine
 currently _claims_ a standing guarantee it does not compute, and _claims_ a
 follower cannot generate when it can.
 
-| Phase | Title                                                | State        |
-| ----- | ---------------------------------------------------- | ------------ |
-| PH-16 | Close what the audit falsified                       | **APPROVED** |
-| PH-17 | Assets become data: families, sampling, history      | **APPROVED** |
-| PH-18 | The admin panel: Preview                             | **APPROVED** |
-| —     | **Cycle Audit 6** — one worktree per auditor (B-020) | **ACTIVE**   |
+| Phase | Title                                                | State                                                 |
+| ----- | ---------------------------------------------------- | ----------------------------------------------------- |
+| PH-16 | Close what the audit falsified                       | **APPROVED**                                          |
+| PH-17 | Assets become data: families, sampling, history      | **APPROVED**                                          |
+| PH-18 | The admin panel: Preview                             | **APPROVED**                                          |
+| —     | **Cycle Audit 6** — one worktree per auditor (B-020) | **RECORDED** — [record](../audits/CYCLE-AUDIT-006.md) |
 
 ### PH-16 — Close What the Audit Falsified
 
@@ -477,6 +477,43 @@ hides no extreme. That half is wiring, not design.
 pipeline that has to exist first; once PH-17 lands it is days of work, not a
 phase. Deployment and any TradingView licence remain the Human Owner's
 (`GOVERNANCE.md` §5.1).
+
+## Cycle 7 — Close what Cycle Audit 6 falsified, then build on it
+
+Six independent auditors returned **46 findings** against a tree whose gate was
+green, and the headline one is about the gate itself: `vitest.config.ts` was in
+no TypeScript program, and two options that do not exist had been silently
+ignored for a cycle. The statistical suite had never run serially despite a
+comment saying it did.
+
+So Cycle 7 starts where Cycle 6 did — with the instrument — because every other
+finding is verified through it.
+
+| Phase | Title                                 | State        |
+| ----- | ------------------------------------- | ------------ |
+| PH-19 | Close what Cycle Audit 6 falsified    | **APPROVED** |
+| PH-20 | (undecided — chosen when PH-19 lands) | not started  |
+| PH-21 | (undecided)                           | not started  |
+| —     | **Cycle Audit 7**                     | not started  |
+
+### PH-19 — Close What Cycle Audit 6 Falsified
+
+Ordered by what the other findings are verified _through_: the instrument first,
+then the guarantees it is supposed to police, then the measurements, then the
+catalogue, then the surface.
+
+| Subphase | Title                                                         | State    |
+| -------- | ------------------------------------------------------------- | -------- |
+| PH-19.1  | The instrument: the gate, the guards, and what they read      | APPROVED |
+| PH-19.2  | The guarantees: the follower, the verdict, the limiter        | APPROVED |
+| PH-19.3  | The measurements: turnovers, recorded rates, evidence runners | APPROVED |
+| PH-19.4  | The catalogue: feasibility, differentiation, acceptance       | APPROVED |
+| PH-19.5  | The surface: the join, the stream, and what an endpoint costs | APPROVED |
+
+**PH-20 and PH-21 are deliberately undecided.** Cycle 6's roadmap named all
+three phases in advance and the third of them (the panel) was built on an engine
+whose measurements the audit then falsified. What comes after PH-19 is chosen
+when PH-19 is done and the instrument can be trusted to judge it.
 
 ## Major dependencies
 

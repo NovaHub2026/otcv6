@@ -14,21 +14,21 @@ Last synchronized: 2026-09-01
 
 | Field                            | Value                                                                   |
 | -------------------------------- | ----------------------------------------------------------------------- |
-| Active development cycle         | Cycle 6                                                                 |
-| Approved phases in current cycle | **3 of 3** — Cycle Audit 6 is the next legal action                     |
-| Cycle Audit state                | 005 recorded; findings remediated in PH-16                              |
-| Last Cycle Audit                 | [Cycle Audit 004](docs/audits/CYCLE-AUDIT-004.md) — APPROVED 2026-09-01 |
+| Active development cycle         | Cycle 7                                                                 |
+| Approved phases in current cycle | **1 of 3**                                                              |
+| Cycle Audit state                | **006 closed** — 40 of 46 findings closed in PH-19                      |
+| Last Cycle Audit                 | [Cycle Audit 006](docs/audits/CYCLE-AUDIT-006.md) — recorded 2026-09-01 |
 
 ## Phase and subphase
 
-| Field                  | Value                                            |
-| ---------------------- | ------------------------------------------------ |
-| Active phase           | none — Cycle 6 is complete                       |
-| Phase lifecycle        | n/a                                              |
-| Active subphase        | None                                             |
-| Subphase lifecycle     | n/a                                              |
-| Last approved phase    | PH-18 — The admin panel: Preview                 |
-| Last approved subphase | PH-18.3 — Live preview: selection and timeframes |
+| Field                  | Value                                      |
+| ---------------------- | ------------------------------------------ |
+| Active phase           | none — PH-20 is the next legal action      |
+| Phase lifecycle        | n/a                                        |
+| Active subphase        | none                                       |
+| Subphase lifecycle     | n/a                                        |
+| Last approved phase    | PH-19 — Close what Cycle Audit 6 falsified |
+| Last approved subphase | PH-19.5 — The surface                      |
 
 ## Cycle 1 result
 

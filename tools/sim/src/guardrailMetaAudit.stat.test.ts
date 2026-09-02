@@ -124,6 +124,38 @@ const MUTATIONS: Mutation[] = [
     defect: 'a dependency edge invisible to the allowlist, the build graph and lint',
   },
   {
+    guard: 'single writer — a follower that can construct an engine',
+    test: 'packages/core/src/guardrails/singleWriter.test.ts',
+    file: 'packages/runtime/src/follower.ts',
+    // The evasion Cycle Audit 6 (CA6-03) used: a regular-expression literal
+    // whose character class contains `/*` opens a block comment the scanner
+    // does not close, and a plain static engine import vanishes from every
+    // check between it and the next `*/`. An auditor gave a follower a real
+    // engine and watched it produce ticks with all 297 guardrail tests green.
+    //
+    // This mutation exists because CA5-11 and CA6-14 both observed that the
+    // meta-audit had no mutation against `singleWriter.test.ts` at all — the
+    // guard PH-16.2 rewrote was the one nothing re-checked.
+    find: "import type { EpochMillis, LogPrice, Tick } from '@otc/core';",
+    replace:
+      "const SEPARATOR = /[/*]/;\nimport * as gen from '@otc/engine';\nconst CLOSE = '*/';\n" +
+      "import type { EpochMillis, LogPrice, Tick } from '@otc/core';\n" +
+      'export const probe = { SEPARATOR, CLOSE, gen };',
+    defect: 'INV-010: a follower able to generate, hidden behind a regex literal',
+  },
+  {
+    guard: 'dependency direction — a browser component importing the defect corpus',
+    test: 'packages/core/src/guardrails/dependencies.test.ts',
+    file: 'apps/web/src/app/preview/Preview.tsx',
+    // A `.tsx` file, deliberately: CA6-12 found the dependency guard reading
+    // only `.ts`, so seven of `apps/web`'s nine files — the entire browser
+    // bundle — were never opened, and the planted-defect corpus could be
+    // imported into the shipped panel with everything green.
+    find: "'use client';",
+    replace: "'use client';\nimport '@otc/fixtures';",
+    defect: 'the planted-defect corpus shipped in the browser bundle',
+  },
+  {
     guard: 'assertion cost in the fast suite',
     test: 'packages/core/src/guardrails/testCost.test.ts',
     file: 'packages/engine/src/cascade.test.ts',

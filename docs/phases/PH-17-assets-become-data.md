@@ -47,7 +47,9 @@ step.
 ## 4. Dispersion budgets, not price ceilings
 
 [`CYCLE-6-DRIFT.md`](../evidence/CYCLE-6-DRIFT.md) measured what a price does over
-90 days: the median is within half a percent of zero on all five assets, and the
+90 days: every median is a small fraction of that asset's own spread — four of
+the five within half a percent of zero and btcusd at +1.5% against a 75.6%
+dispersion, which is 0.02σ (corrected by Cycle Audit 6, CA6-38) — and the
 dispersion runs from 1.7% (spx) to 75.6% (btcusd).
 
 A price ceiling was considered and refused — near a boundary `P(down) > P(up)`,
@@ -85,9 +87,14 @@ asset that exists nowhere in source, in a fixture, or in the test file:
    and every instant increasing across the join.
 
 Its dispersion, measured from the published prices as realised quadratic
-variation, is **5.51% a quarter against a budget of 6.32%** — the family band
-drawn at authoring time, the volatility fitted to it from twelve turnovers of
-simulation, and the market that resulted, agreeing to 13%.
+variation, was 5.51% a quarter against a budget of 6.32% on the run that produced
+this document.
+
+**That figure is `console.info`, not an assertion** (CA6-37). What the test
+enforces is a band, and the band was −28% / +38% — two to three times wider than
+the agreement quoted. The honest reading is that the chain holds to within the
+band; the 13% is one observation, and Cycle Audit 6 found the same shape of claim
+in three other places in this cycle.
 
 ## 8. Approval
 
