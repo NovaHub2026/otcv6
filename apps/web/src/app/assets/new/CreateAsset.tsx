@@ -302,7 +302,7 @@ function JobReport({ job }: { job: RegistrationJobView }): ReactElement {
       </div>
       {(job.state === 'queued' || job.state === 'running') && (
         <div style={{ color: '#8b93a7', marginBottom: 8, fontSize: 12 }}>
-          the engine reports a stage only when one refuses; the list below is the outcome
+          the engine reports each stage as it enters it; a refusal names the one that refused
         </div>
       )}
       <ol style={{ margin: 0, padding: 0, listStyle: 'none', lineHeight: 1.9 }}>

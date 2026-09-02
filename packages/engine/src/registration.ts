@@ -137,6 +137,16 @@ export interface RegistrationOptions {
    * happened to hold.
    */
   readonly dispersionTurnovers?: number;
+  /**
+   * Called as each stage begins, in the order the pipeline runs them.
+   *
+   * **Out-of-band audit, a6-06.** A running job showed `identity` for its whole
+   * life — up to twenty seconds for `major-crypto` — because nothing reported
+   * progress and the service had nothing to report. A refusal still names its
+   * stage on the outcome; this is how the panel learns which of the six is
+   * running before that.
+   */
+  readonly onStage?: (stage: RegistrationStage) => void;
 }
 
 /**
@@ -280,6 +290,7 @@ export async function registerAsset(
   request: RegistrationRequest,
   options: RegistrationOptions,
 ): Promise<RegistrationOutcome> {
+  options.onStage?.('identity');
   const identity = checkIdentity(request, options.existing);
   if (identity !== null) return { kind: 'refused', stage: 'identity', reason: identity };
 
@@ -292,6 +303,7 @@ export async function registerAsset(
   // makes the budgets this personality can carry a simple rescaling of the
   // trait's own bounds.
   if (request.dispersion !== undefined) {
+    options.onStage?.('dispersion');
     if (!Number.isFinite(request.dispersion) || request.dispersion <= 0) {
       return {
         kind: 'refused',
@@ -330,6 +342,7 @@ export async function registerAsset(
   // a3-06.** The gate reads the traits *before* the solve, so a target of 250
   // with a safe starting clustering passed it, the solve reached 250, and the
   // calibration refused the result at `calibration` a simulation later.
+  options.onStage?.('safety');
   const target = request.targets.excessKurtosis;
   if (!(target >= EXCESS_KURTOSIS_BAND.min && target <= EXCESS_KURTOSIS_BAND.max)) {
     return {
@@ -347,6 +360,7 @@ export async function registerAsset(
     return { kind: 'refused', stage: 'safety', reason: (error as Error).message };
   }
 
+  options.onStage?.('authoring');
   let authored;
   try {
     authored = authorPersonality(request.traits, request.targets, derive);
@@ -365,6 +379,7 @@ export async function registerAsset(
   // Everything the budget needs that can be decided without simulating, decided
   // before the simulation. The gate-before-solve ordering, one stage later.
   if (request.dispersion !== undefined) {
+    options.onStage?.('dispersion');
     const pooledMs =
       (options.calibration?.simulatedMs ?? CALIBRATION_SPAN_MS) *
       (options.calibration?.replicates ?? CALIBRATION_REPLICATES);
@@ -386,6 +401,7 @@ export async function registerAsset(
     }
   }
 
+  options.onStage?.('calibration');
   let calibrated: CalibratedAsset;
   try {
     calibrated = await calibrateAssetAsync(definition, derive, options.calibration ?? {});
@@ -437,6 +453,7 @@ export async function registerAsset(
     };
   }
 
+  options.onStage?.('differentiation');
   const distinct = await options.differentiates(calibrated, options.existing);
   if (distinct !== null) {
     return { kind: 'refused', stage: 'differentiation', reason: distinct };

@@ -42,16 +42,14 @@ import { VenueService } from './venue.service.js';
  * would halve the venue's share for twice as long, and there is no operator
  * workflow that needs them.
  *
- * ## What a job reports, and what it cannot (a6-06)
+ * ## What a job reports (a6-06)
  *
  * A job is `queued`, `running`, and then one of `registered`, `refused` or
- * `failed`. While it runs, `stage` is null: `registerAsset` reports no progress
- * — `RegistrationOptions` has no callback — so this service cannot know which
- * of the six stages is running, and it used to say `identity` for the whole
- * nineteen seconds of a `major-crypto` job, which was a claim rather than a
- * fact. The stage is filled in only when one refuses. Threading an
- * `onStage(stage)` callback through `RegistrationOptions` would make progress
- * observable; until the engine offers it, nothing here pretends to.
+ * `failed`. While it runs, `stage` is the stage the pipeline has entered:
+ * `registerAsset` calls `onStage` as each begins, and the panel's poll reads
+ * it. Until the out-of-band audit of 2026-09-02 the service had no such hook
+ * and said `identity` for the whole nineteen seconds of a `major-crypto` job —
+ * a claim rather than a fact. A refusal still names the stage that refused.
  *
  * Jobs live in memory only. A restart forgets them, and the panel says so when
  * its poll comes back 404 (a6-10).
@@ -71,10 +69,8 @@ export interface RegistrationJob {
   readonly brief: AssetBrief;
   readonly state: JobState;
   /**
-   * The stage that refused, or null.
-   *
-   * Null while the job runs, too: the pipeline reports no progress, and a stage
-   * shown while running would be a guess (a6-06).
+   * The stage the pipeline is in while the job runs, the one that refused when
+   * it refused, and null before the pipeline starts (a6-06).
    */
   readonly stage: RegistrationStage | null;
   /** Why it refused or failed, verbatim from the pipeline. */
@@ -189,6 +185,9 @@ export class RegistrationService {
           replicates: CALIBRATION_REPLICATES,
           simulatedMs: minimumDispersionSpanMs(request.traits),
         },
+        // The panel's poll reads this; a job no longer says `identity` for
+        // twenty seconds while the calibration runs (a6-06).
+        onStage: (stage) => this.#update(id, { stage }),
       });
       if (outcome.kind === 'refused') {
         this.logger.warn(`${job.brief.id}: refused at ${outcome.stage} — ${outcome.reason}`);

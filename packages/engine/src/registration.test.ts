@@ -502,3 +502,25 @@ describe('two assets with one personality are two markets', () => {
     expect(first.asset.instrument.logQuantum).not.toBe(second.asset.instrument.logQuantum);
   }, 180_000);
 });
+
+describe('a registration reports each stage as it enters it (a6-06)', () => {
+  it('names the six stages in pipeline order on a registration that succeeds', async () => {
+    const stages: string[] = [];
+    const outcome = await registerAsset(request(), {
+      ...options(),
+      onStage: (stage) => stages.push(stage),
+    });
+    expect(outcome.kind).toBe('registered');
+    expect(stages[0]).toBe('identity');
+    expect(stages[stages.length - 1]).toBe('differentiation');
+    for (const stage of ['identity', 'safety', 'authoring', 'calibration', 'differentiation']) {
+      expect(stages, stage).toContain(stage);
+    }
+    // Every stage the pipeline names on a refusal is one it announced first.
+    const order = stages.filter((stage, i) => stages.indexOf(stage) === i);
+    expect(order.indexOf('safety')).toBeGreaterThan(order.indexOf('identity'));
+    expect(order.indexOf('authoring')).toBeGreaterThan(order.indexOf('safety'));
+    expect(order.indexOf('calibration')).toBeGreaterThan(order.indexOf('authoring'));
+    expect(order.indexOf('differentiation')).toBeGreaterThan(order.indexOf('calibration'));
+  }, 60_000);
+});

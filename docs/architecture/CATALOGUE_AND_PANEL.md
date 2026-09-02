@@ -126,6 +126,30 @@ the chart looked right, and then the operator would be choosing the prices.
 
 Nothing that generates.
 
+**And nothing without the operator's token.** Every method other than `GET`,
+`HEAD` and `OPTIONS` needs `Authorization: Bearer <OTC_ADMIN_TOKEN>` and a JSON
+body (`AdminWriteGuard`, out-of-band audit a6-01); unset, the service boots
+with every write refused by name and reads unaffected. CORS decides only which
+origins may _read_ an answer — a `POST` with no body is a simple request a
+browser sends without a preflight, and until the audit the service executed a
+cross-origin retire. The service listens on `127.0.0.1` unless `OTC_BIND` says
+otherwise.
+
+### Operator environment
+
+| Variable            | Engine (`apps/api`)                                                   |
+| ------------------- | --------------------------------------------------------------------- |
+| `OTC_MASTER_SECRET` | required, 64 hex characters; the service refuses to boot without it   |
+| `OTC_ADMIN_TOKEN`   | at least 16 characters; unset means every write is refused            |
+| `OTC_BIND`          | default `127.0.0.1`; `0.0.0.0` exposes the port — set the token first |
+| `PORT`              | default 3000                                                          |
+| `OTC_STATE_DIR`     | checkpoints, the candle database and the registry; created if missing |
+| `OTC_BACKFILL_DAYS` | whole days as digits, at most 365; default 0 (a backfill is genesis)  |
+| `OTC_CORS_ORIGIN`   | origins allowed to read cross-origin; none by default                 |
+
+The panel (`next start`) reads `OTC_API_BASE` and the same `OTC_ADMIN_TOKEN`;
+without the token every panel write is the engine's 403, shown verbatim.
+
 `VenueService` publishes first and _then_ hands the ticks to the publisher and to
 the history recorder. Both are views of what happened; a view that could
 influence what happens next would be the whole product broken (INV-001).
@@ -148,7 +172,8 @@ clock to choose a window and is not part of any record.
 The browser talks to exactly one host and one port. The engine is served under
 the panel's own origin at `/engine`, by a route handler
 (`apps/web/src/app/engine/[...path]/route.ts`) that hands the upstream body to
-the response **unread**.
+the response **unread** — and adds the bearer token to every write from its own
+`OTC_ADMIN_TOKEN`, so the browser never holds it.
 
 Both halves of that sentence were learned the hard way.
 
@@ -172,6 +197,11 @@ engine's internal host to every viewer.
 ## 6. Creating an asset is a job
 
 `POST /assets` returns a **job id**, and the panel polls `/registrations/:id`.
+The pipeline reports each stage as it enters it (`onStage`, added by the
+out-of-band audit, a6-06 — until then a running job showed `identity` for its
+whole life), and a refusal names the stage that refused. Jobs live in the
+engine's memory; after a restart the poll answers 404 and the panel says so
+(a6-10).
 Four of the six stages are simulation: measured across the eight archetypes at
 two replicates of `minimumDispersionSpanMs`, a registration costs **under a second
 to about twenty seconds** depending on the family — the canonical figures are the
@@ -208,3 +238,4 @@ re-derives it (INV-009).
 | The durable asset registry    | `packages/runtime/src/registry.ts`           |
 | An operator brief             | `packages/engine/src/brief.ts`               |
 | The panel's one origin        | `apps/web/src/app/engine/[...path]/route.ts` |
+| The write credential          | `apps/api/src/adminAuth.guard.ts`            |

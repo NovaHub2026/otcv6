@@ -129,7 +129,7 @@ export interface RegistrationJobView {
   readonly id: string;
   readonly brief: AssetBriefInput;
   readonly state: 'queued' | 'running' | 'registered' | 'refused' | 'failed';
-  /** The stage that refused, or null — including while the job runs (a6-06). */
+  /** The stage running, or the one that refused; null before the pipeline starts (a6-06). */
   readonly stage: string | null;
   readonly reason: string | null;
   readonly assetId: string | null;

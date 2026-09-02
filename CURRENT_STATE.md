@@ -151,8 +151,9 @@ Cycle 1's numbers, and the coverage figure, are in
   2026-09-02): resuming a market after a gap either invents the interval or
   seams a published record. Everything it published stays readable.
 - **Provisioning is manual and irreversible.** `OTC_BACKFILL_DAYS` defaults to
-  zero and is capped at 365, because a backfill is genesis and refuses to run
-  twice.
+  zero, must be whole days written as digits, and is capped at 365 (anything
+  else is refused by name at boot, a6-15), because a backfill is genesis and
+  refuses to run twice.
 - **History is candles beyond the retention window**, and a restart leaves a
   visible one-minute hole rather than a short bar labelled whole (out-of-band
   audit, a5-01). Anything finer than a minute is served from the tick record
