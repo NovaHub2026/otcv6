@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { isRecognisedStatus, normaliseStatus, STATUS_VOCABULARY } from './lifecycle.js';
 
 /**
  * Documentation integrity.
@@ -148,18 +149,27 @@ describe('phase states agree between documents and the roadmap', () => {
       // **Cycle Audit 5, M-11.** This tested the whole row, so it passed when
       // the word appeared in the description column, and it could not see a
       // negation: `NOT APPROVED` contains `APPROVED`. The status is read from
-      // its own cell, and a negation must be matched by a negation.
+      // its own cell.
+      //
+      // **a2-08, DOC-17.** Read from its own cell, it was still a substring
+      // test — `REVERTED (was APPROVED)` contained `APPROVED` and matched a
+      // document saying APPROVED — with a negation list one entry long. Both
+      // sides are now normalised against the lifecycle vocabulary and must be
+      // the same word, and a cell outside the vocabulary fails on its own.
       const cells = row!.split('|').map((cell) => cell.trim());
       const stated = cells[cells.length - 2] ?? '';
-      expect(stated.toUpperCase(), `roadmap status cell for ${id}: ${row!}`).toContain(
-        status.toUpperCase(),
-      );
-      if (/\bNOT\s+APPROVED\b/i.test(stated) !== /\bNOT\s+APPROVED\b/i.test(status)) {
-        expect.unreachable(
-          `roadmap and document disagree about whether ${id} is approved: ` +
-            `roadmap "${stated}", document "${status}"`,
-        );
-      }
+      expect(
+        isRecognisedStatus(stated),
+        `roadmap status cell for ${id} is outside ${STATUS_VOCABULARY.join(' | ')}: "${stated}"`,
+      ).toBe(true);
+      expect(
+        isRecognisedStatus(status),
+        `${id}'s document declares a status outside the vocabulary: "${status}"`,
+      ).toBe(true);
+      expect(
+        normaliseStatus(stated),
+        `roadmap and document disagree about ${id}: roadmap "${stated}", document "${status}"`,
+      ).toBe(normaliseStatus(status));
     },
   );
 });
