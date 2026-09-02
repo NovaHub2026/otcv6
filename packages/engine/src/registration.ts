@@ -22,7 +22,9 @@ import { registrationKeyLabel, type AuthoringTargets, type RegisteredAsset } fro
 import {
   assertPersonalitySafe,
   authorPersonality,
+  EXCESS_KURTOSIS_BAND,
   personalityConfig,
+  TRAIT_BOUNDS,
   type PersonalityTraits,
 } from './personality.js';
 
@@ -141,19 +143,100 @@ export interface RegistrationOptions {
  * The shape an asset id must take.
  *
  * It becomes a filename and part of a key derivation label, so the constraint is
- * the same one `FileStateStore` and `assertAssetId` already impose. Sharing the
- * shape rather than the code, because the engine may not import the runtime.
+ * the one `FileStateStore` and `assertAssetId` already impose — shared as a
+ * shape rather than as code, because the engine may not import the runtime —
+ * and then tightened at both ends. **Cycle Audit 7, a3-13.** The persistence
+ * pattern admits a trailing `.` and an inner `..`, which are distinct labels but
+ * not distinct filenames on every filesystem: NTFS strips a trailing dot, so
+ * `eurusd` and `eurusd.` would share a state file while deriving different
+ * keystreams. The last character is anchored to a letter or digit here, and
+ * `..` is refused by {@link checkAssetId}. Everything this admits, the
+ * persistence layer admits.
  */
-export const ASSET_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+export const ASSET_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/;
+
+/**
+ * Characters a stream-label component may hold.
+ *
+ * The limit `label.ts` imposes, shared as a number for the same reason the id
+ * pattern is shared as a shape; `registration.test.ts` pins it against
+ * `assertValidStreamLabel` so the two cannot drift apart silently.
+ */
+export const MAX_LABEL_COMPONENT_LENGTH = 64;
+
+/**
+ * The longest id a registration can derive streams for.
+ *
+ * **Cycle Audit 7, a3-04.** {@link ASSET_ID_PATTERN} admits sixty-four
+ * characters and {@link registrationKeyLabel} prefixes thirteen, so ids of
+ * fifty-two to sixty-four passed `checkIdentity`, were refused at `safety` with
+ * a message about a stream label, and made `requestFromBrief` throw from inside
+ * the keyring. The limit is derived from the prefix rather than written down,
+ * so a change to the label changes the limit with it.
+ */
+export const MAX_ASSET_ID_LENGTH = MAX_LABEL_COMPONENT_LENGTH - registrationKeyLabel('').length;
+
+/**
+ * The core's ceiling on display precision.
+ *
+ * `assertValidInstrument` refuses anything above eighteen decimals. **Cycle
+ * Audit 7, a3-06.** CA6-20 made registration refuse such a display, but only
+ * after the whole calibration — minutes at the production span — because the
+ * bound lived on the instrument the calibration produces. It is checked at
+ * `identity` now, and pinned against the core in `registration.test.ts`.
+ */
+export const MAX_DISPLAY_PRECISION = 18;
+
+/**
+ * Reference prices an asset may be registered at.
+ *
+ * Fifteen orders of magnitude either side of unity, which is where every quoted
+ * instrument lives, and the edge of what the display can honestly render: a
+ * double carries fifteen to sixteen significant digits, so below the floor an
+ * eighteen-decimal display shows fewer than three of them, and above the
+ * ceiling the integer part alone exhausts them and the screen would print
+ * digits the price does not have. **Cycle Audit 7, a3-07.** Outside this,
+ * `displayPrecisionFor` went infinite (a subnormal reference) or far negative
+ * (1e300), and the refusal arrived after the simulation with a message about
+ * display precision.
+ */
+export const REFERENCE_PRICE_BOUNDS = { min: 1e-15, max: 1e15 } as const;
+
+/**
+ * Why an id cannot be registered under, or null when it can.
+ *
+ * The identity stage's first question, split out because `requestFromBrief`
+ * has to ask it too: the id enters the key derivation *before* the request
+ * exists, and a refusal there has to say what `registerAsset` would have said.
+ */
+export function checkAssetId(id: string): string | null {
+  if (!ASSET_ID_PATTERN.test(id)) {
+    return (
+      `Asset id ${JSON.stringify(id)} must match ${String(ASSET_ID_PATTERN)}: lower-case letters, ` +
+      `digits, dots, underscores and hyphens, starting and ending with a letter or digit. It ` +
+      `becomes a filename and a key-derivation label.`
+    );
+  }
+  if (id.includes('..')) {
+    return `Asset id ${JSON.stringify(id)} may not contain "..": it becomes a filename, and consecutive dots are not the same name on every filesystem.`;
+  }
+  if (id.length > MAX_ASSET_ID_LENGTH) {
+    return (
+      `Asset id ${JSON.stringify(id)} is ${id.length} characters; the maximum is ` +
+      `${MAX_ASSET_ID_LENGTH}. Registration derives its streams under the label ` +
+      `${JSON.stringify(registrationKeyLabel(id))}, and a key label holds ${MAX_LABEL_COMPONENT_LENGTH}.`
+    );
+  }
+  return null;
+}
 
 /** Refuse an identity that cannot be a filename, a key label, or told apart. */
 export function checkIdentity(
   request: Pick<RegistrationRequest, 'id' | 'displayName' | 'referencePrice' | 'displayPrecision'>,
   existing: readonly RegisteredAsset[],
 ): string | null {
-  if (!ASSET_ID_PATTERN.test(request.id)) {
-    return `Asset id ${JSON.stringify(request.id)} must match ${String(ASSET_ID_PATTERN)}: it becomes a filename and a key-derivation label.`;
-  }
+  const id = checkAssetId(request.id);
+  if (id !== null) return id;
   if (existing.some((asset) => asset.definition.id === request.id)) {
     // Two assets sharing an id share a keystream, which is one market published
     // under two names — INV-003 broken at registration time.
@@ -163,10 +246,22 @@ export function checkIdentity(
     return `Reference price must be finite and positive, got ${request.referencePrice}.`;
   }
   if (
-    request.displayPrecision !== undefined &&
-    (!Number.isInteger(request.displayPrecision) || request.displayPrecision < 0)
+    request.referencePrice < REFERENCE_PRICE_BOUNDS.min ||
+    request.referencePrice > REFERENCE_PRICE_BOUNDS.max
   ) {
-    return `Display precision must be a non-negative integer, got ${request.displayPrecision}.`;
+    return (
+      `Reference price ${request.referencePrice} is outside ` +
+      `[${REFERENCE_PRICE_BOUNDS.min.toExponential(0)}, ${REFERENCE_PRICE_BOUNDS.max.toExponential(0)}], ` +
+      `the range a display can render to the precision the lattice needs.`
+    );
+  }
+  if (
+    request.displayPrecision !== undefined &&
+    (!Number.isInteger(request.displayPrecision) ||
+      request.displayPrecision < 0 ||
+      request.displayPrecision > MAX_DISPLAY_PRECISION)
+  ) {
+    return `Display precision must be an integer in [0, ${MAX_DISPLAY_PRECISION}], got ${request.displayPrecision}.`;
   }
   if (request.displayName.trim().length === 0) {
     return 'An asset needs a display name.';
@@ -188,6 +283,39 @@ export async function registerAsset(
   const identity = checkIdentity(request, options.existing);
   if (identity !== null) return { kind: 'refused', stage: 'identity', reason: identity };
 
+  // The budget's own sanity, ahead of the safety gate, because the gate reads
+  // the traits the budget has already scaled. **Cycle Audit 7, a3-06.** A brief
+  // with a quarterly dispersion of 50 arrived with a base volatility of 0.018,
+  // and `assertPersonalityTraits` refused it at `safety` as a volatility the
+  // operator never typed. They supplied a budget, so the refusal is about the
+  // budget: the calibration is homogeneous of degree one in `volatility`, which
+  // makes the budgets this personality can carry a simple rescaling of the
+  // trait's own bounds.
+  if (request.dispersion !== undefined) {
+    if (!Number.isFinite(request.dispersion) || request.dispersion <= 0) {
+      return {
+        kind: 'refused',
+        stage: 'dispersion',
+        reason: `A dispersion budget must be finite and positive, received ${request.dispersion}.`,
+      };
+    }
+    const { min, max } = TRAIT_BOUNDS.volatility;
+    const volatility = request.traits.volatility;
+    if (!(volatility >= min && volatility <= max)) {
+      const lowest = (request.dispersion * min) / volatility;
+      const highest = (request.dispersion * max) / volatility;
+      return {
+        kind: 'refused',
+        stage: 'dispersion',
+        reason:
+          `A quarterly dispersion of ${request.dispersion} puts this personality's base ` +
+          `volatility at ${volatility}, outside [${min}, ${max}]. Amplitude scales with the ` +
+          `budget, so the budgets this personality can carry lie in ` +
+          `[${lowest.toPrecision(3)}, ${highest.toPrecision(3)}].`,
+      };
+    }
+  }
+
   const derive = (purpose: string): RandomSource =>
     options.keyring.derive({
       env: options.environment,
@@ -197,6 +325,22 @@ export async function registerAsset(
     });
 
   // The gate first, because it is microseconds and the solve is a minute.
+  //
+  // The target is held to the same band as the personality. **Cycle Audit 7,
+  // a3-06.** The gate reads the traits *before* the solve, so a target of 250
+  // with a safe starting clustering passed it, the solve reached 250, and the
+  // calibration refused the result at `calibration` a simulation later.
+  const target = request.targets.excessKurtosis;
+  if (!(target >= EXCESS_KURTOSIS_BAND.min && target <= EXCESS_KURTOSIS_BAND.max)) {
+    return {
+      kind: 'refused',
+      stage: 'safety',
+      reason:
+        `A target excess kurtosis of ${target} lies outside the realism band ` +
+        `[${EXCESS_KURTOSIS_BAND.min}, ${EXCESS_KURTOSIS_BAND.max}]. The solve would reach it ` +
+        `and the calibration would refuse the result a simulation later.`,
+    };
+  }
   try {
     assertPersonalitySafe(personalityConfig(request.traits), derive('safety-probe'));
   } catch (error) {
@@ -221,13 +365,6 @@ export async function registerAsset(
   // Everything the budget needs that can be decided without simulating, decided
   // before the simulation. The gate-before-solve ordering, one stage later.
   if (request.dispersion !== undefined) {
-    if (!Number.isFinite(request.dispersion) || request.dispersion <= 0) {
-      return {
-        kind: 'refused',
-        stage: 'dispersion',
-        reason: `A dispersion budget must be finite and positive, received ${request.dispersion}.`,
-      };
-    }
     const pooledMs =
       (options.calibration?.simulatedMs ?? CALIBRATION_SPAN_MS) *
       (options.calibration?.replicates ?? CALIBRATION_REPLICATES);
@@ -286,10 +423,9 @@ export async function registerAsset(
 
   const derivedPrecision = calibrated.instrument.displayPrecision;
   // **Cycle Audit 6, CA6-20.** Nothing re-validated the instrument that is
-  // actually returned. `checkIdentity` requires a non-negative integer and
-  // `assertValidInstrument` caps display precision at 18, so `19` and `30` both
-  // registered and produced an instrument the core rejects — a registration
-  // whose output the rest of the system will not accept.
+  // actually returned, so `19` and `30` registered and produced an instrument
+  // the core rejects. `checkIdentity` now holds the core's ceiling (a3-06), and
+  // `assertValidInstrument` below stays as the backstop on what is returned.
   if (request.displayPrecision !== undefined && request.displayPrecision < derivedPrecision) {
     return {
       kind: 'refused',
@@ -330,6 +466,16 @@ export async function registerAsset(
         // What the asset actually diffuses at, after any rescaling — so the
         // recorded amplitude is the one the published lattice was cut for.
         tickRms: authored.tickRms * calibrated.evidence.volatilityScale,
+        // And what the family asked for, when it asked for something else:
+        // the draw, how far the brief retreated from it, and the band floor a
+        // clamp fell below. Absent on a hand-authored request (a3-05).
+        ...(request.targets.drawnExcessKurtosis === undefined
+          ? {}
+          : { drawnExcessKurtosis: request.targets.drawnExcessKurtosis }),
+        ...(request.targets.retreats === undefined ? {} : { retreats: request.targets.retreats }),
+        ...(request.targets.clampedFrom === undefined
+          ? {}
+          : { clampedFrom: request.targets.clampedFrom }),
       },
     },
   };

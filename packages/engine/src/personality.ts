@@ -136,6 +136,12 @@ export const DEFAULT_TRAITS: PersonalityTraits = {
  * These are the outer fence, not the safe region. Passing them means a
  * personality is individually sane; it does not mean the *combination* is, which
  * is what {@link assertPersonalitySafe} exists to decide.
+ *
+ * Every corner of the fence builds a running engine — `personality.test.ts`
+ * drives each one. `clustering: 0` is the constant cascade, admitted by
+ * `assertCascadeConfig` since Cycle Audit 7 (a3-03) rather than pushed off the
+ * fence, so that every registered asset's traits and every trait distance in
+ * `differentiation.ts` stay exactly what was measured.
  */
 export const TRAIT_BOUNDS = {
   tempoMs: { min: 250, max: 60_000 },
@@ -381,6 +387,15 @@ export function cascadeRmsGain(traits: PersonalityTraits): number {
 }
 
 /**
+ * The Lanczos shift `g + ½` for the nine-coefficient series below, `g = 7`.
+ *
+ * Kept as the single literal the series was derived with: `shifted + 7.5` and
+ * `shifted + 7 + 0.5` are not the same double for every `shifted`, and the
+ * coefficients are only valid for this shift.
+ */
+const LANCZOS_SHIFT = 7.5;
+
+/**
  * Γ(z) for z ≥ 1, by the Lanczos approximation.
  *
  * Only ever called with `1 + 1/shape`, and shape is bounded below 1 from above
@@ -398,9 +413,19 @@ function gamma(z: number): number {
   for (let i = 1; i < coefficients.length; i += 1) {
     series += coefficients[i]! / (shifted + i);
   }
-  const t = shifted + 7.5;
+  const t = shifted + LANCZOS_SHIFT;
   return Math.sqrt(2 * Math.PI) * pow(t, shifted + 0.5) * exp(-t) * series;
 }
+
+/**
+ * Power-iteration steps for the embedded chain's stationary vector.
+ *
+ * Four states, irreducible, and the chain mixes in tens of steps; two thousand
+ * is far past the point where the vector stops changing at double precision,
+ * and costs nothing. Fixed rather than convergence-tested so that the count —
+ * and therefore the floating-point result — is identical on every run.
+ */
+const STATIONARY_POWER_ITERATIONS = 2_000;
 
 /**
  * Exact inflation of the volatility regime layer.
@@ -419,7 +444,7 @@ export function regimeInflation(config: RegimeConfig): number {
   // Stationary vector of the embedded chain, by power iteration. The chain is
   // small and irreducible, so this converges quickly and needs no linear algebra.
   let embedded = VOLATILITY_REGIMES.map(() => 1 / VOLATILITY_REGIMES.length);
-  for (let iteration = 0; iteration < 2_000; iteration += 1) {
+  for (let iteration = 0; iteration < STATIONARY_POWER_ITERATIONS; iteration += 1) {
     embedded = embedded.map((_, target) =>
       embedded.reduce((sum, mass, source) => sum + mass * rows[source]![target]!, 0),
     );
@@ -447,6 +472,23 @@ export function regimeInflation(config: RegimeConfig): number {
 export const STRUCTURE_INFLATION_STEPS = 400_000;
 
 /**
+ * The fixed inputs the structure estimator drives its modulator with.
+ *
+ * The estimate is of the multiplier's fourth-to-second moment ratio under the
+ * phase process alone, so the modulator is fed a metronome: one tick a second,
+ * every tick the same size, from a fixed epoch. **The magnitude is
+ * load-bearing** even though its value is not — a constant path rate makes the
+ * compression term's tightness exactly 1 on every tick, so the estimate is of
+ * the phase multipliers under age-driven transitions only. Any positive constant
+ * gives that; ten matches the engine's own starting `referenceMagnitude`, and
+ * changing it would move the result by floating-point ulps, which is a
+ * different registered kurtosis for every asset in the catalogue.
+ */
+const STRUCTURE_PROBE_INTERVAL_MS = 1_000;
+const STRUCTURE_PROBE_MAGNITUDE = 10;
+const STRUCTURE_PROBE_EPOCH_MS = 1_776_000_000_000;
+
+/**
  * Inflation of the structural phase layer, by simulating that layer alone.
  *
  * Its hazard depends on phase age and on how compressed the path has been, so
@@ -459,15 +501,15 @@ export function structureInflation(
   steps: number = STRUCTURE_INFLATION_STEPS,
 ): number {
   const modulator = new StructurePhaseModulator(config, stream);
-  const intervalMs = 1_000;
-  let instant = 1_776_000_000_000;
+  const intervalMs = STRUCTURE_PROBE_INTERVAL_MS;
+  let instant = STRUCTURE_PROBE_EPOCH_MS;
   let second = 0;
   let fourth = 0;
   for (let step = 0; step < steps; step += 1) {
     instant += intervalMs;
     const multiplier = modulator.advance({
       intervalMs,
-      previousMagnitude: 10,
+      previousMagnitude: STRUCTURE_PROBE_MAGNITUDE,
       instant: epochMillis(instant),
       sequence: step,
     });
@@ -503,6 +545,32 @@ export function predictedExcessKurtosis(
     structureInflation(config.structure, stream);
   return 3 * product - 3;
 }
+
+/**
+ * The one solve failure a lower target can fix.
+ *
+ * {@link solveClustering} refuses three ways: the regime and structure layers
+ * alone already exceed the target, the target needs more cascade inflation than
+ * the clustering bound can provide, and — through `assertPersonalityTraits` on
+ * the result — a solved volatility outside its bounds. Only the second is about
+ * the *target*. **Cycle Audit 7, a3-12.** `brief.ts` retreated the target on
+ * every error, six times, at a fresh structure simulation each: for the first
+ * kind a lower target makes the refusal worse, and for the third it is
+ * irrelevant. This type is how the brief tells the one it can act on from the
+ * two it must report.
+ */
+export class TailWeightUnreachableError extends RangeError {
+  override readonly name = 'TailWeightUnreachableError';
+}
+
+/**
+ * Bisection steps for the clustering solve.
+ *
+ * Monotone on `[0, ceiling]`, so about sixty halvings reach the last
+ * representable step; a hundred is fixed rather than tolerance-driven so the
+ * count, and with it the solved bits, are the same on every run.
+ */
+const CLUSTERING_BISECTION_STEPS = 100;
 
 /**
  * The `clustering` that puts this personality at a target excess kurtosis.
@@ -565,18 +633,16 @@ export function solveClustering(
   const perComponent = pow(requiredCascade, 1 / traits.cascadeDepth);
   const ceiling: number = TRAIT_BOUNDS.clustering.max;
   if (cascadeInflationOfClustering(ceiling) < perComponent) {
-    throw new RangeError(
+    throw new TailWeightUnreachableError(
       `An excess kurtosis of ${targetExcessKurtosis} needs more cascade inflation than ` +
         `clustering ${ceiling} can provide at depth ${traits.cascadeDepth}. Raise ` +
         `cascadeDepth, or raise regimeSpread so another layer carries some of the tail.`,
     );
   }
 
-  // Monotone on [0, ceiling]; ~60 halvings reach the last representable step, and
-  // 100 costs nothing.
   let low = 0;
   let high = ceiling;
-  for (let iteration = 0; iteration < 100; iteration += 1) {
+  for (let iteration = 0; iteration < CLUSTERING_BISECTION_STEPS; iteration += 1) {
     const middle = (low + high) / 2;
     if (cascadeInflationOfClustering(middle) < perComponent) low = middle;
     else high = middle;

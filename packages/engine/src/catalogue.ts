@@ -18,6 +18,24 @@ export interface AuthoringTargets {
   readonly excessKurtosis: number;
   /** RMS per-tick magnitude from base volatility and the cascade. */
   readonly tickRms: number;
+  /**
+   * The tail weight the family drew, before the brief retreated from it.
+   *
+   * **Cycle Audit 7, a3-05.** The brief steps a target down when the solve
+   * cannot reach it, and the sampler clamps a draw to what the rhythm can
+   * supply; both happened silently, so a registered asset could sit below its
+   * family's band with a record that said only what was achieved. Absent on a
+   * hand-authored asset; equal to {@link AuthoringTargets.excessKurtosis} when
+   * nothing retreated.
+   */
+  readonly drawnExcessKurtosis?: number;
+  /** Retreats the brief took from that draw. Absent on a hand-authored asset. */
+  readonly retreats?: number;
+  /**
+   * The family's floor, present only when the rhythm drawn could not reach it
+   * and the target was clamped *below* the band the archetype declares.
+   */
+  readonly clampedFrom?: number;
 }
 
 /**

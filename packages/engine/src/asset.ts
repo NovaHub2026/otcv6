@@ -217,10 +217,36 @@ export const CALIBRATION_STREAM_PURPOSES = [
  * The display must never be coarser than the lattice: a trader seeing an
  * unchanged price on a move that settled would be a fairness problem even with
  * INV-009 intact.
+ *
+ * Floored at zero. **Cycle Audit 7, a3-07.** A lattice step of ten display
+ * units or more — a large reference price on a coarse quantum — made this
+ * negative, and a legal asset was refused after its whole calibration with a
+ * message about display precision. Zero decimals is the honest answer there:
+ * the lattice moves in whole units, and so does the screen.
  */
 function displayPrecisionFor(logQuantum: number, referencePrice: number): number {
-  return Math.ceil(ln(1 / (logQuantum * referencePrice)) / ln(10));
+  return Math.max(0, Math.ceil(ln(1 / (logQuantum * referencePrice)) / ln(10)));
 }
+
+/**
+ * The magnitude the first tick of a calibration is told preceded it, in units
+ * of the base volatility.
+ *
+ * No quantum exists yet, so `previousMagnitude` cannot be in lattice steps; the
+ * walk normalises every later magnitude by the base volatility instead, and
+ * this seeds the arrival process's running average at the same ten the engine's
+ * `referenceMagnitude` starts from. Only the first tick sees it.
+ */
+const CALIBRATION_INITIAL_MAGNITUDE = 10;
+
+/**
+ * Fewest windowed returns a replicate may contribute.
+ *
+ * The quantum is a 1% quantile, so a replicate with fewer than a hundred
+ * horizons has no observation in the tail it is meant to measure and would
+ * return its smallest return as the lattice.
+ */
+const MIN_HORIZONS_PER_REPLICATE = 100;
 
 function quantile(sorted: readonly number[], fraction: number): number {
   const index = Math.min(sorted.length - 1, Math.max(0, Math.floor(fraction * sorted.length)));
@@ -265,7 +291,7 @@ function* horizonReturnsCore(
   const returns: number[] = [];
   let elapsedMs = 0;
   let logPrice = 0;
-  let previousMagnitude = 10;
+  let previousMagnitude = CALIBRATION_INITIAL_MAGNITUDE;
   let previousIntervalMs = 0;
   let sequence = 0;
   let horizonEndMs = horizonMs;
@@ -348,7 +374,7 @@ function* calibrateAssetCore(
       simulatedMs,
       options.chunkTicks ?? CALIBRATION_CHUNK_TICKS,
     );
-    if (returns.length < 100) {
+    if (returns.length < MIN_HORIZONS_PER_REPLICATE) {
       throw new RangeError(
         `Calibration produced only ${returns.length} horizons; simulate a longer span.`,
       );

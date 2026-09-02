@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { MasterKeyring, type InstrumentSpec, type RandomSource } from '@otc/core';
+import {
+  epochMillis,
+  logPrice,
+  MasterKeyring,
+  type InstrumentSpec,
+  type RandomSource,
+} from '@otc/core';
 import { DEFAULT_CASCADE } from './cascade.js';
-import { DEFAULT_ENGINE_CONFIG } from './factory.js';
+import { createMarketEngine, DEFAULT_ENGINE_CONFIG } from './factory.js';
 import { DEFAULT_HAWKES } from './hawkes.js';
 import { DEFAULT_REGIMES } from './regime.js';
 import { DEFAULT_STRUCTURE } from './structure.js';
@@ -84,6 +90,66 @@ describe('trait bounds', () => {
     expect(() => assertPersonalityTraits({ ...DEFAULT_TRAITS, clustering: 0.9 })).toThrow(
       /clustering.*0\.9/,
     );
+  });
+});
+
+describe('every corner of the trait bounds builds a running engine', () => {
+  // **Cycle Audit 7, a3-03.** `TRAIT_BOUNDS` admitted `clustering: 0` and
+  // `VolatilityCascade` refused the `lowMultiplier: 1` it expands to, so two
+  // guards on one value disagreed: `assertPersonalityTraits` accepted a
+  // personality no engine could be built from, and a registration that started
+  // there was refused at `safety` with a cascade message about a trait the
+  // caller had set legally. The fence and the engine now agree at every corner.
+
+  /**
+   * A legal personality with one trait at a bound.
+   *
+   * The joint constraint on the ladder — the fastest component slower than half
+   * a tick — cannot hold at every corner of a box of independent ranges, so a
+   * corner that breaks it is taken on the shallowest ladder instead, and the
+   * deepest ladder on the narrowest spacing.
+   */
+  function corner(name: keyof PersonalityTraits, value: number): PersonalityTraits {
+    const traits: PersonalityTraits = { ...DEFAULT_TRAITS, [name]: value };
+    try {
+      assertPersonalityTraits(traits);
+      return traits;
+    } catch {
+      return name === 'cascadeDepth'
+        ? { ...traits, cascadeSpacing: TRAIT_BOUNDS.cascadeSpacing.min }
+        : { ...traits, cascadeDepth: TRAIT_BOUNDS.cascadeDepth.min };
+    }
+  }
+
+  const corners = (Object.keys(TRAIT_BOUNDS) as (keyof PersonalityTraits)[]).flatMap((name) => [
+    [`${name} at its minimum`, corner(name, TRAIT_BOUNDS[name].min)] as const,
+    [`${name} at its maximum`, corner(name, TRAIT_BOUNDS[name].max)] as const,
+  ]);
+
+  it.each(corners)('%s', (_label, traits) => {
+    expect(() => assertPersonalityTraits(traits)).not.toThrow();
+    const engine = createMarketEngine({
+      config: expandPersonality(traits, instrument),
+      keyring,
+      environment: 'test',
+      start: { instant: epochMillis(1_776_000_000_000), price: logPrice(0) },
+    });
+    let previousInstant = 0;
+    let invalid = 0;
+    for (let i = 0; i < 2_000; i += 1) {
+      const tick = engine.next();
+      if (
+        tick === null ||
+        !Number.isSafeInteger(tick.price) ||
+        !Number.isInteger(tick.instant) ||
+        tick.instant <= previousInstant
+      ) {
+        invalid += 1;
+      } else {
+        previousInstant = tick.instant;
+      }
+    }
+    expect(invalid).toBe(0);
   });
 });
 

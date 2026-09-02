@@ -32,9 +32,23 @@ describe('configuration', () => {
     ['zero hazard', { slowestHazardPerMs: 0 }],
     ['hazard ratio of one', { hazardRatio: 1 }],
     ['multiplier at zero', { lowMultiplier: 0 }],
-    ['multiplier at one', { lowMultiplier: 1 }],
+    ['multiplier above one', { lowMultiplier: 1.000_001 }],
   ])('rejects %s', (_name, override) => {
     expect(() => assertCascadeConfig({ ...DEFAULT_CASCADE, ...override })).toThrow(RangeError);
+  });
+
+  it('accepts a multiplier of exactly one as the constant cascade', () => {
+    // **Cycle Audit 7, a3-03.** `clustering: 0` is inside `TRAIT_BOUNDS` and
+    // expands to this; refusing it here made the two guards disagree about one
+    // value. The constant cascade multiplies by exactly 1 forever and still
+    // consumes its stream on every switch, so it is a market, just a dull one.
+    const constant = new VolatilityCascade({ ...DEFAULT_CASCADE, lowMultiplier: 1 }, derive('one'));
+    let offUnity = 0;
+    for (let i = 0; i < 5_000; i += 1) {
+      if (constant.advance(1_000) !== 1) offUnity += 1;
+    }
+    expect(offUnity).toBe(0);
+    expect(constant.current()).toBe(1);
   });
 });
 
