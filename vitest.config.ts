@@ -88,6 +88,38 @@ export default defineConfig({
      * was the one file nothing read.
      */
     maxWorkers: 8,
+    /**
+     * Worker output goes straight to stdout instead of over the RPC channel.
+     *
+     * Vitest intercepts `console.*` in a worker and forwards every call to the
+     * main thread as an RPC message, on the same channel as `onTaskUpdate`. The
+     * statistical suite prints heavily — it is how its evidence is recorded —
+     * and that traffic is what turns a busy box into a
+     * `Timeout calling "onTaskUpdate"` with every test passing.
+     *
+     * Cycle Audit 6 (C-2) recorded this as still open after `maxWorkers`
+     * narrowed it: 2,050 tests green and exit 1, on a run sharing the machine
+     * with a demo service. Removing the interception removes the traffic rather
+     * than the symptom, and the output is unchanged — it is the same text, on
+     * the same stream, not relayed.
+     */
+    disableConsoleIntercept: true,
+    /**
+     * A quiet reporter, because the default one *is* the RPC traffic.
+     *
+     * Vitest's default reporter subscribes to per-task updates, and each one is
+     * a message from the worker to the main thread. On a suite whose files run
+     * for six and seven hundred seconds each, that channel is the only thing
+     * that has to stay responsive — and `Timeout calling "onTaskUpdate"` is
+     * what happens when it does not.
+     *
+     * With the console interception gone as well, the channel carries almost
+     * nothing. That is the point: a run's exit code should depend on the tests,
+     * not on how chatty the runner is while something else uses the machine.
+     * Failures and summaries still print, and the statistical suite's evidence
+     * goes straight to stdout.
+     */
+    reporters: ['basic'],
     projects: [
       {
         resolve: { alias },
@@ -133,7 +165,14 @@ export default defineConfig({
       //
       // Entry points are deliberately *not* excluded. A CLI that no test drives
       // should read as uncovered, because it is.
-      include: ['packages/*/src/**/*.ts', 'tools/*/src/**/*.ts'],
+      // **Cycle Audit 6, CA6-10.** `apps/*` was excluded, which was defensible
+      // while the apps were thin wiring and stopped being so in PH-18: 840
+      // lines of `apps/api/src` — the history service, the controller, the
+      // venue — are directly unit-tested and were simply not measured, and not
+      // one line of `apps/web/src` is referenced by any test at all. A coverage
+      // figure that excludes the code you are least sure about is the wrong way
+      // round.
+      include: ['packages/*/src/**/*.ts', 'tools/*/src/**/*.ts', 'apps/*/src/**/*.ts?(x)'],
       // `**/*.test.ts` also matches `*.stat.test.ts`.
       exclude: ['**/*.test.ts', '**/index.ts', '**/*.d.ts'],
     },
