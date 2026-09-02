@@ -82,7 +82,7 @@ export class SqliteCoordinatedStore implements CoordinatedStore {
     //
     // It is set *before* the schema because opening is itself contended:
     // `journal_mode = WAL` and `CREATE TABLE` both take a lock, and eight
-    // processes opening the same new database at once had six of them die with
+    // processes opening the same new database at once had seven of them die with
     // "database is locked" during construction. The store was concurrency-safe
     // in every method and not in its constructor, which no single-process test
     // could have shown.

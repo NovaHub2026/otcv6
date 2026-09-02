@@ -23,15 +23,15 @@ guard in its subject, and to report findings about the audit's own limits
 (§28.1). Reports were required to carry the command and its output for every
 finding.
 
-| Auditor | Subject                                                                   |
-| ------- | ------------------------------------------------------------------------- |
-| a1      | The gate as an instrument, and why hosted CI is red                       |
-| a2      | Every guardrail watched failing, and the evasions one syntactic form wide |
-| a3      | `packages/core` and `packages/engine`: determinism, sign-blindness, the pipeline |
-| a4      | `packages/lab`, `packages/fixtures`, `tools/sim`, and the evidence         |
+| Auditor | Subject                                                                           |
+| ------- | --------------------------------------------------------------------------------- |
+| a1      | The gate as an instrument, and why hosted CI is red                               |
+| a2      | Every guardrail watched failing, and the evasions one syntactic form wide         |
+| a3      | `packages/core` and `packages/engine`: determinism, sign-blindness, the pipeline  |
+| a4      | `packages/lab`, `packages/fixtures`, `tools/sim`, and the evidence                |
 | a5      | `packages/runtime`, `packages/trading`, `packages/distribution`, `packages/chart` |
-| a6      | `apps/api` and `apps/web`: the operator surface and its browser suite     |
-| a7      | Documentation, process, Memory Audit, Cold Start Audit, Git/GitHub        |
+| a6      | `apps/api` and `apps/web`: the operator surface and its browser suite             |
+| a7      | Documentation, process, Memory Audit, Cold Start Audit, Git/GitHub                |
 
 The audit was interrupted twice — a host reboot and an API rate limit — and every
 auditor resumed from its persisted transcript; every report states what was
@@ -106,87 +106,88 @@ found and fixed this one tier up (CA6-06); the minute tier inherited it.
 
 ## 3. Critical
 
-| ID    | Finding                                                                                          | Auditor |
-| ----- | ------------------------------------------------------------------------------------------------ | ------- |
-| a3-01 | The mirror test reflects through the origin; an origin-symmetric level leak passes it unchanged  | a3      |
-| a2-01 | A regex after a keyword blinds all three `sourceScan` scanners, the follower guard included      | a2      |
-| a2-02 | A backtick inside `${}` blinds two of the three scanners                                         | a2      |
-| a1-01 | Hosted CI is red because one test runs 92 s without a loop turn with a request in flight         | a1      |
-| a7-01 | PH-19's approval claims a hosted CI result it did not have; PH-20's was pending                  | a7      |
-| a7-02 | PH-21.1 reached `main` unapproved; the feature branch duplicates it and carries PH-21.3 out of order | a7   |
+| ID    | Finding                                                                                              | Auditor |
+| ----- | ---------------------------------------------------------------------------------------------------- | ------- |
+| a3-01 | The mirror test reflects through the origin; an origin-symmetric level leak passes it unchanged      | a3      |
+| a2-01 | A regex after a keyword blinds all three `sourceScan` scanners, the follower guard included          | a2      |
+| a2-02 | A backtick inside `${}` blinds two of the three scanners                                             | a2      |
+| a1-01 | Hosted CI is red because one test runs 92 s without a loop turn with a request in flight             | a1      |
+| a7-01 | PH-19's approval claims a hosted CI result it did not have; PH-20's was pending                      | a7      |
+| a7-02 | PH-21.1 reached `main` unapproved; the feature branch duplicates it and carries PH-21.3 out of order | a7      |
 
 ## 4. Material
 
 ### The instrument
 
-| ID    | Finding                                                                                              | Auditor |
-| ----- | ---------------------------------------------------------------------------------------------------- | ------- |
-| a1-02 | The watchdog never measures a file's tail; a 65 s block reported nothing                             | a1      |
-| a1-03 | `disableConsoleIntercept` never applied to either project; the CA6-02 remedy was inert               | a1      |
-| a1-04 | Two unit tests of 25–31 s are synchronous and pass a 20 s timeout that cannot see them              | a1      |
-| a1-05 | The panel suite orphans a `next-server` for the rest of the CI job                                   | a1      |
-| a1-06 | `npm run gate` and `ci.yml` differ in five ways (browser requirement, heap, cancellation)             | a1      |
-| a4-01 | The quoted MDE is a single-test figure; the gate's 50%-power point at 30 s is ≈ 0.45–0.5 pp          | a4      |
-| a4-02 | Temporal families alias against the clock grid: one phase in six tested at every horizon ≥ 1 m       | a4      |
-| a4-03 | The founding look-ahead bug class has no unit guard                                                  | a4      |
-| a4-04 | The standing verdict never runs the learned family                                                   | a4      |
-| a4-05 | B-029's evidence is inside the realised estimator's own noise                                        | a4      |
-| a4-06 | "Targets fixed before the model existed" is not supported by the record                              | a4      |
+| ID    | Finding                                                                                        | Auditor |
+| ----- | ---------------------------------------------------------------------------------------------- | ------- |
+| a1-02 | The watchdog never measures a file's tail; a 65 s block reported nothing                       | a1      |
+| a1-03 | `disableConsoleIntercept` never applied to either project; the CA6-02 remedy was inert         | a1      |
+| a1-04 | Two unit tests of 25–31 s are synchronous and pass a 20 s timeout that cannot see them         | a1      |
+| a1-05 | The panel suite orphans a `next-server` for the rest of the CI job                             | a1      |
+| a1-06 | `npm run gate` and `ci.yml` differ in five ways (browser requirement, heap, cancellation)      | a1      |
+| a4-01 | The quoted MDE is a single-test figure; the gate's 50%-power point at 30 s is ≈ 0.45–0.5 pp    | a4      |
+| a4-02 | Temporal families alias against the clock grid: one phase in six tested at every horizon ≥ 1 m | a4      |
+| a4-03 | The founding look-ahead bug class has no unit guard                                            | a4      |
+| a4-04 | The standing verdict never runs the learned family                                             | a4      |
+| a4-05 | B-029's evidence is inside the realised estimator's own noise                                  | a4      |
+| a4-06 | "Targets fixed before the model existed" is not supported by the record                        | a4      |
 
 ### The guards
 
-| ID    | Finding                                                                                              | Auditor |
-| ----- | ---------------------------------------------------------------------------------------------------- | ------- |
-| a2-03 | `guardrails.test.ts` scans `.ts` only; `.mts`/`.tsx`/`.js` in the generation path are invisible      | a2      |
-| a2-04 | `tools/sim/src` is in neither enforcement layer                                                      | a2      |
-| a2-05 | Computed access, unicode escapes and indirection defeat every textual scan                           | a2      |
-| a2-06 | `publishingKey.test.ts`'s refusal check is a substring a dead string satisfies                       | a2      |
-| a2-07 | `testCost.test.ts` recognises one loop shape                                                         | a2      |
-| a2-08 | Subphase pointers, the lifecycle row, the handoff and a "reverted" status are unguarded              | a2      |
-| a2-09 | `traceability.test.ts` compares the status cell as an exact string                                   | a2      |
-| a2-11 | Three guard files have no meta-audit mutation                                                        | a2      |
-| a3-02 | The mirror test's own level-leak self-check is vacuous                                               | a3      |
+| ID    | Finding                                                                                         | Auditor |
+| ----- | ----------------------------------------------------------------------------------------------- | ------- |
+| a2-03 | `guardrails.test.ts` scans `.ts` only; `.mts`/`.tsx`/`.js` in the generation path are invisible | a2      |
+| a2-04 | `tools/sim/src` is in neither enforcement layer                                                 | a2      |
+| a2-05 | Computed access, unicode escapes and indirection defeat every textual scan                      | a2      |
+| a2-06 | `publishingKey.test.ts`'s refusal check is a substring a dead string satisfies                  | a2      |
+| a2-07 | `testCost.test.ts` recognises one loop shape                                                    | a2      |
+| a2-08 | Subphase pointers, the lifecycle row, the handoff and a "reverted" status are unguarded         | a2      |
+| a2-09 | `traceability.test.ts` compares the status cell as an exact string                              | a2      |
+| a2-11 | Three guard files have no meta-audit mutation                                                   | a2      |
+| a3-02 | The mirror test's own level-leak self-check is vacuous                                          | a3      |
 
 ### The engine and the catalogue
 
-| ID    | Finding                                                                                              | Auditor |
-| ----- | ---------------------------------------------------------------------------------------------------- | ------- |
-| a3-03 | `clustering: 0` is inside `TRAIT_BOUNDS` and no engine can be built from it                          | a3      |
-| a3-04 | Ids of 52–64 characters pass identity and fail at `safety` with a stream-label error                 | a3      |
-| a3-05 | The clamp and the retreat author a tail weight below the family's band, unrecorded                   | a3      |
-| a3-06 | Three refusals name the wrong stage; one after paying for the whole calibration                      | a3      |
+| ID    | Finding                                                                              | Auditor |
+| ----- | ------------------------------------------------------------------------------------ | ------- |
+| a3-03 | `clustering: 0` is inside `TRAIT_BOUNDS` and no engine can be built from it          | a3      |
+| a3-04 | Ids of 52–64 characters pass identity and fail at `safety` with a stream-label error | a3      |
+| a3-05 | The clamp and the retreat author a tail weight below the family's band, unrecorded   | a3      |
+| a3-06 | Three refusals name the wrong stage; one after paying for the whole calibration      | a3      |
 
 ### Runtime, persistence and the surface
 
-| ID    | Finding                                                                                              | Auditor |
-| ----- | ---------------------------------------------------------------------------------------------------- | ------- |
-| a5-01 | The minute tier stores a partial bar at every recorder handoff                                       | a5      |
-| a5-02 | The retention boundary B-017 closed is untested; `>=` passes all 24 tests                            | a5      |
-| a5-03 | One transient `appendTicks` failure wedges a `LeaderSession` for ever, with no seam                  | a5      |
-| a6-01 | The write surface is unauthenticated; CORS does not protect a simple-request retire                  | a6      |
-| a6-02 | Concurrent overlay writes lose updates and return 500; a rename can un-retire at the next boot       | a6, a5  |
-| a6-03 | Chromium cannot launch on this host; the recorded gate evidence says the browser layer ran            | a6      |
-| a6-04 | The stream answers 500 for a future sequence; an `EventSource` then never reconnects                 | a6      |
-| a6-05 | The stall log's dedup key contains the number that changes; a stalled venue floods                   | a6      |
+| ID    | Finding                                                                                        | Auditor |
+| ----- | ---------------------------------------------------------------------------------------------- | ------- |
+| a5-01 | The minute tier stores a partial bar at every recorder handoff                                 | a5      |
+| a5-02 | The retention boundary B-017 closed is untested; `>=` passes all 24 tests                      | a5      |
+| a5-03 | One transient `appendTicks` failure wedges a `LeaderSession` for ever, with no seam            | a5      |
+| a6-01 | The write surface is unauthenticated; CORS does not protect a simple-request retire            | a6      |
+| a6-02 | Concurrent overlay writes lose updates and return 500; a rename can un-retire at the next boot | a6, a5  |
+| a6-03 | Chromium cannot launch on this host; the recorded gate evidence says the browser layer ran     | a6      |
+| a6-04 | The stream answers 500 for a future sequence; an `EventSource` then never reconnects           | a6      |
+| a6-05 | The stall log's dedup key contains the number that changes; a stalled venue floods             | a6      |
 
 ### The record
 
-| ID    | Finding                                                                                              | Auditor |
-| ----- | ---------------------------------------------------------------------------------------------------- | ------- |
-| a7-03 | CI red on six pushes; the documents say three and record four settled causes                         | a7      |
-| a7-04 | GitHub Issues are enabled; the backlog says they are not (Cycle Audit 4 recurrence)                  | a7      |
-| a7-05 | "40 of 46" Cycle Audit 6 findings closed is not reconstructible; CA6-39 tracked nowhere              | a7      |
-| a7-06 | The backlog's Open table is mostly closed items; B-027/B-028 never existed                           | a7      |
-| a7-07 | `CLAUDE.md` recommends the bare command Cycle Audit 6 found runs files in parallel                   | a7      |
-| a7-08 | B-023 still true: PH-13/14/15's layers appear in no architecture document                            | a7      |
-| a7-09 | `CURRENT_STATE.md`'s limitations carry Cycle-5 statements as current                                 | a7      |
-| a7-10 | The roadmap is stale in header, structure and "pending Human decisions"                              | a7      |
-| a7-11 | Three of PH-19's five subphases record no plants; the phase document asserts one each                | a7      |
-| a7-12 | `CLAUDE.md`'s timings and gate description no longer describe the gate                               | a7      |
-| a7-13 | `PROJECT_CONTEXT.md` is stale against the guard it calls canonical                                   | a7      |
-| a7-14 | B-022 and the closure of CA6-09 contradict; no coverage measured since 2026-08-31                    | a7      |
-| a7-15 | ADR-0008 unannotated (B-024); a phantom path; the decision log's rule not followed                   | a7      |
-| a7-16 | `GOVERNANCE.md` internal contradictions — thirteen, for the Human Owner (§5.1)                       | a7      |
+| ID    | Finding                                                                                                   | Auditor  |
+| ----- | --------------------------------------------------------------------------------------------------------- | -------- |
+| a7-03 | CI red on six pushes; the documents say three and record four settled causes                              | a7       |
+| a7-04 | GitHub Issues are enabled; the backlog says they are not (Cycle Audit 4 recurrence)                       | a7       |
+| a7-05 | "40 of 46" Cycle Audit 6 findings closed is not reconstructible; CA6-39 tracked nowhere                   | a7       |
+| a7-06 | The backlog's Open table is mostly closed items; B-027/B-028 never existed                                | a7       |
+| a7-07 | `CLAUDE.md` recommends the bare command Cycle Audit 6 found runs files in parallel                        | a7       |
+| a7-08 | B-023 still true: PH-13/14/15's layers appear in no architecture document                                 | a7       |
+| a7-09 | `CURRENT_STATE.md`'s limitations carry Cycle-5 statements as current                                      | a7       |
+| a7-10 | The roadmap is stale in header, structure and "pending Human decisions"                                   | a7       |
+| a7-11 | Three of PH-19's five subphases record no plants; the phase document asserts one each                     | a7       |
+| a7-12 | `CLAUDE.md`'s timings and gate description no longer describe the gate                                    | a7       |
+| a7-13 | `PROJECT_CONTEXT.md` is stale against the guard it calls canonical                                        | a7       |
+| a7-14 | B-022 and the closure of CA6-09 contradict; no coverage measured since 2026-08-31                         | a7       |
+| a7-15 | ADR-0008 unannotated (B-024); a phantom path; the decision log's rule not followed                        | a7       |
+| a7-16 | `GOVERNANCE.md` internal contradictions — thirteen, for the Human Owner (§5.1)                            | a7       |
+| a7-25 | PH-13.3's enforcement and PH-15's standing guarantee are not composed into `apps/api`; no non-test caller | doc pass |
 
 ## 5. Minor
 

@@ -132,11 +132,17 @@ Cycle 1's numbers, and the coverage figure, are in
   assets (PH-10), and 46.0–47.8% against an identical-personality control at
   31.0–34.9% for three siblings drawn from one archetype (PH-17.2). Both are real
   and modest.
-- **The multi-node design is proved against SQLite and an in-memory reference,
-  never a cluster.** PH-15.1 delivered the durable `CoordinatedStore`; both
-  implementations pass the conformance battery; the SQLite one is single-machine
-  by its own docstring, and no follower is composed into `apps/api` yet
-  (`docs/architecture/MULTI_NODE_AND_OPERATIONS.md`).
+- **The multi-node design and the standing guarantee are built and tested, and
+  the service composes neither.** PH-15.1 delivered the durable
+  `CoordinatedStore` and both implementations pass the conformance battery, but
+  `apps/api` composes `FileStateStore`, `SqliteCandleHistory` and
+  `FileAssetRegistry` only: no `LeaderSession`, no follower, no
+  `SqliteCoordinatedStore`, and no non-test caller of `runStandingAssurance`,
+  `signRotation` or `partitionForRetention` exists anywhere (out-of-band audit,
+  a7-25; `docs/architecture/MULTI_NODE_AND_OPERATIONS.md` §8). PH-15's
+  acceptance intent — a venue that, left running, produces a current assurance
+  verdict — is not what the shipped service does. The limiter is likewise not at
+  the venue's trading boundary (PH-13.3 §6).
 - **The catalogue has been registered at a hundred and hosted at five.** PH-21.1
   measured a hundred-asset registration (0.6s to 20.5s per asset, closest pair
   2.8× the floor); hosting a hundred markets and the panel that holds them are

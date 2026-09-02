@@ -203,6 +203,9 @@ contract — is something the settlement path has to be able to _ask_, not assum
 **Revisit when:** a deployment store implements the log. The seam is part of the
 `CoordinatedStore` contract and its conformance battery.
 
+**Revisited 2026-09-02.** `SqliteCoordinatedStore.recordSeam` implements it and
+the conformance battery specifies it; the decision stands unchanged.
+
 ---
 
 ## 2026-09-02 — Retiring an asset is final
