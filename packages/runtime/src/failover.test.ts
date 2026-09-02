@@ -189,11 +189,13 @@ describe('a takeover that resumes changes the record by nothing', () => {
 
     const entries = await store.readRecord(ASSET, 1, 100_000);
     const seen = new Set<number>();
+    let duplicated = 0;
     for (const entry of entries) {
       if (entry.kind !== 'tick') continue;
-      expect(seen.has(entry.tick.sequence)).toBe(false);
+      if (seen.has(entry.tick.sequence)) duplicated += 1;
       seen.add(entry.tick.sequence);
     }
+    expect(duplicated).toBe(0);
     expect(seen.size).toBeGreaterThan(20);
   });
 });

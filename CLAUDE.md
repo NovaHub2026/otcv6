@@ -191,7 +191,9 @@ statistical tests reads as uncovered unless coverage is run over both projects.
    architecture tests, not by discipline alone.
 2. **No `Math.random()`, no ambient `Date.now()` inside the engine.** All
    randomness comes from an explicit deterministic stream; all time comes from an
-   injected clock. Both are enforced by lint/architecture tests.
+   injected clock. Both are enforced by lint and architecture tests under
+   `packages/*`, and by the architecture tests alone under `apps/api` and
+   `tools/sim`.
 3. **Determinism is testable.** Any engine state must be able to produce an
    identical continuation from a serialized snapshot.
 4. **No magic numbers in the market model.** Behavioural constants live in named,

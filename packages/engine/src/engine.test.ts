@@ -58,11 +58,17 @@ describe('tick generation', () => {
   it('produces a well-ordered stream on the canonical lattice', () => {
     const ticks = drain(build(), 20_000);
     expect(ticks).toHaveLength(20_000);
+    // Counted inside the loop, asserted once after it: 60,000 matcher calls
+    // were ~1.5 s of overhead in a 20 s budget (out-of-band audit, a2-07).
+    let misnumbered = 0;
+    let unsafe = 0;
+    let unordered = 0;
     for (let i = 0; i < ticks.length; i += 1) {
-      expect(ticks[i]!.sequence).toBe(i + 1);
-      expect(Number.isSafeInteger(ticks[i]!.price)).toBe(true);
-      if (i > 0) expect(ticks[i]!.instant).toBeGreaterThan(ticks[i - 1]!.instant);
+      if (ticks[i]!.sequence !== i + 1) misnumbered += 1;
+      if (!Number.isSafeInteger(ticks[i]!.price)) unsafe += 1;
+      if (i > 0 && !(ticks[i]!.instant > ticks[i - 1]!.instant)) unordered += 1;
     }
+    expect({ misnumbered, unsafe, unordered }).toEqual({ misnumbered: 0, unsafe: 0, unordered: 0 });
   });
 
   it('honours a tick limit', () => {

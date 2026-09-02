@@ -631,27 +631,9 @@ const KNOWN_ASSERTION_LOOPS: readonly {
   readonly bound: number;
   readonly owed: string;
 }[] = [
-  {
-    // **a2-07.** Found by the rewritten detector: the bound is `ticks.length`
-    // and `ticks` is `drain(build(), 20_000)`, asserted to hold exactly 20,000
-    // ticks two lines earlier. Three matchers per tick is 60,000 matcher calls,
-    // about 1.5 s of overhead in a 20 s budget. The old detector never matched
-    // a bound containing a `.`, so it read this as no loop at all.
-    file: 'packages/engine/src/engine.test.ts',
-    loop: 'for (let i = 0; i < ticks.length; i += 1)',
-    bound: 20_000,
-    owed: 'count the out-of-order ticks inside the loop and assert once after it',
-  },
-  {
-    // **a2-07.** `entries` is `store.readRecord(ASSET, 1, 100_000)`: the literal
-    // is a cap, and the record read is a few dozen entries. The detector reads
-    // what the file states — up to 100,000 — and cannot know the record is
-    // short; the test can say so by reading with the cap it expects.
-    file: 'packages/runtime/src/failover.test.ts',
-    loop: 'for…of entries',
-    bound: 100_000,
-    owed: 'read the record with a cap the test expects to fill, or count and assert once',
-  },
+  // Both loops the rewritten detector found (engine.test.ts, failover.test.ts)
+  // were fixed the same day; the list is empty and stays here so the next
+  // offence has somewhere honest to wait.
 ];
 
 function isKnown(offence: Offence): boolean {
