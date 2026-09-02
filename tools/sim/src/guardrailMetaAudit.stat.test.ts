@@ -1,4 +1,5 @@
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -194,28 +195,44 @@ afterAll(() => {
   for (const dir of workspaces) rmSync(dir, { recursive: true, force: true });
 });
 
+/**
+ * Everything here is asynchronous, and that is not a style choice.
+ *
+ * **Cycle Audit 6, C-2, and the standing hazard `CLAUDE.md` §5 names.** This
+ * file used `execFileSync` to run a *whole vitest invocation* per check — twice
+ * per mutation, twenty-four in all — plus a synchronous `tar` of the repository
+ * per workspace. Each of those blocks the worker's event loop from start to
+ * finish, and a worker that cannot run its own microtasks cannot answer the
+ * main thread: `Error: [vitest-worker]: Timeout calling "onTaskUpdate"`, every
+ * test passing, exit 1.
+ *
+ * It cost this project three phase gates and was attributed to machine load
+ * twice, including by me. The hosted runner settled it: an idle two-core box,
+ * 228 tests green, one error, exit 1. On a slower machine each of those blocking
+ * calls simply lasts longer.
+ *
+ * Awaiting them lets the loop breathe between and during, which is all the RPC
+ * channel needs.
+ */
+const run = promisify(execFile);
+
 /** A fresh copy of the repository with node_modules symlinked. */
-function isolatedCopy(): string {
+async function isolatedCopy(): Promise<string> {
   const dir = mkdtempSync(path.join(tmpdir(), 'otc-meta-'));
   workspaces.push(dir);
-  execFileSync(
-    'bash',
-    [
-      '-c',
-      `tar -cf - --exclude=node_modules --exclude=dist --exclude=.next --exclude=.git --exclude=coverage -C ${repoRoot} . | tar -xf - -C ${dir}`,
-    ],
-    { stdio: 'ignore' },
-  );
+  await run('bash', [
+    '-c',
+    `tar -cf - --exclude=node_modules --exclude=dist --exclude=.next --exclude=.git --exclude=coverage -C ${repoRoot} . | tar -xf - -C ${dir}`,
+  ]);
   symlinkSync(path.join(repoRoot, 'node_modules'), path.join(dir, 'node_modules'));
   return dir;
 }
 
 /** Run one guardrail file. Returns true when it PASSES. */
-function guardPasses(dir: string, testFile: string): boolean {
+async function guardPasses(dir: string, testFile: string): Promise<boolean> {
   try {
-    execFileSync('npx', ['vitest', 'run', '--project', 'unit', testFile], {
+    await run('npx', ['vitest', 'run', '--project', 'unit', testFile], {
       cwd: dir,
-      stdio: 'ignore',
       timeout: 180_000,
     });
     return true;
@@ -227,12 +244,14 @@ function guardPasses(dir: string, testFile: string): boolean {
 describe('every guardrail fails on the defect it names', () => {
   it.each(MUTATIONS.map((m) => [m.guard, m] as const))(
     'guard: %s',
-    (_label, mutation) => {
-      const dir = isolatedCopy();
+    async (_label, mutation) => {
+      const dir = await isolatedCopy();
 
       // The guard must pass before the mutation, or the result below proves
       // nothing about the mutation.
-      expect(guardPasses(dir, mutation.test), 'guard did not pass on a clean tree').toBe(true);
+      expect(await guardPasses(dir, mutation.test), 'guard did not pass on a clean tree').toBe(
+        true,
+      );
 
       const target = path.join(dir, mutation.file);
       const original = readFileSync(target, 'utf8');
@@ -244,7 +263,7 @@ describe('every guardrail fails on the defect it names', () => {
       writeFileSync(target, original.replace(mutation.find, mutation.replace), 'utf8');
 
       expect(
-        guardPasses(dir, mutation.test),
+        await guardPasses(dir, mutation.test),
         `the guard survived its own mutation (${mutation.defect}) — it is not evidence`,
       ).toBe(false);
 
