@@ -1,6 +1,7 @@
 // Invariant evidence: INV-009 (reproducible settlement).
 import { describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, MasterKeyring } from '@otc/core';
+import { yieldToLoop } from '@otc/core';
 import { calibrateAssetAsync } from './asset.js';
 import { assetById, configFor, registrationKeyLabel } from './catalogue.js';
 import { createMarketEngine } from './factory.js';
@@ -82,7 +83,7 @@ async function terminalSpread(id: string): Promise<number> {
       sinceYield += 1;
       if (sinceYield >= 250_000) {
         sinceYield = 0;
-        await new Promise<void>((resolve) => setImmediate(resolve));
+        await yieldToLoop();
       }
     }
     if (anchor === null) throw new Error(`${id} produced no tick past the warm-up`);

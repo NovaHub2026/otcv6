@@ -1,4 +1,5 @@
 import { epochMillis, logPrice, SteppableClock, type EpochMillis, type Tick } from '@otc/core';
+import { yieldToLoop } from '@otc/core';
 import { configFor, createMarketEngine, type RegisteredAsset } from '@otc/engine';
 import type { Environment, MasterKeyring } from '@otc/core';
 import { DEFAULT_MAX_CATCH_UP_MS, HostedMarket } from './hosted.js';
@@ -239,7 +240,7 @@ export async function backfillMarket(options: BackfillOptions): Promise<Backfill
     if (sinceYield >= chunkSteps) {
       sinceYield = 0;
       await flush();
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      await yieldToLoop();
     }
   }
   await flush();

@@ -2,6 +2,7 @@
 // settlement).
 import { describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, MasterKeyring } from '@otc/core';
+import { yieldToLoop } from '@otc/core';
 import { CALIBRATION_CHUNK_TICKS, MEASURED_LATTICE_TIE_RATES, TARGET_TIE_RATE } from './asset.js';
 import { ASSET_CATALOGUE, configFor } from './catalogue.js';
 import { createMarketEngine } from './factory.js';
@@ -66,7 +67,7 @@ const TOLERANCE = 0.002;
  * file reintroduced the defect in PH-10.3 by driving btcusd for 25 seconds
  * synchronously, and the full gate caught it.
  */
-const breathe = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
+const breathe = yieldToLoop;
 
 async function tieRate(index: number, label: string): Promise<number> {
   const asset = ASSET_CATALOGUE[index]!;

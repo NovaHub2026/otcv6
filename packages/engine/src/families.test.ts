@@ -1,6 +1,7 @@
 // Invariant evidence: INV-007 (asset differentiation).
 import { describe, expect, it } from 'vitest';
 import { MasterKeyring, type RandomSource } from '@otc/core';
+import { yieldToLoop } from '@otc/core';
 import {
   archetypeById,
   assertArchetypeFeasible,
@@ -318,7 +319,7 @@ describe('sampling draws an asset rather than copying one', () => {
       }
       // A draw costs a 20,000-step structure simulation; three hundred of them
       // in one synchronous block would starve the worker's RPC channel.
-      if (draw % 20 === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+      if (draw % 20 === 0) await yieldToLoop();
     }
     expect(belowBand).toBe(0);
   }, 60_000);

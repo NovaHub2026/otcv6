@@ -3,6 +3,7 @@
 // rejects a claim of evidence for an invariant the map still records as pending.
 import { beforeAll, describe, expect, it } from 'vitest';
 import { epochMillis, MasterKeyring, type InstrumentSpec, type RandomSource } from '@otc/core';
+import { yieldToLoop } from '@otc/core';
 import { CascadeMagnitudeModel } from './cascade.js';
 import { DurationCouplingModulator } from './hawkes.js';
 import { ModulatedMagnitudeModel } from './modulator.js';
@@ -79,7 +80,7 @@ async function measuredExcessKurtosis(
     // Yield periodically, matching `buildObserverDataset`. A million-iteration
     // synchronous block starves the test runner's progress channel, which
     // surfaces as an unrelated-looking worker RPC timeout at the end of the run.
-    if (step % 250_000 === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+    if (step % 250_000 === 0) await yieldToLoop();
   }
   const e2 = second / steps;
   const e4 = fourth / steps;

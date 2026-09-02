@@ -1,6 +1,7 @@
 // Invariant evidence: INV-002 (shared market), INV-003 (single underlying stream), INV-008 (continuous market state), INV-009 (reproducible settlement), INV-010 (private generator state).
 import { describe, expect, it } from 'vitest';
 import { durationMillis, epochMillis, logPrice, MasterKeyring, SteppableClock } from '@otc/core';
+import { yieldToLoop } from '@otc/core';
 import { ASSET_CATALOGUE, type RegisteredAsset } from '@otc/engine';
 import { LeaderSession, LeadershipLostError } from './failover.js';
 import { FollowerMarket } from './follower.js';
@@ -283,7 +284,7 @@ describe('a cluster that loses nodes still publishes one market', () => {
         }
       }
 
-      if (step % 15 === 0) await new Promise((resolve) => setImmediate(resolve));
+      if (step % 15 === 0) await yieldToLoop();
     }
 
     // The run has to have exercised what it claims to exercise.

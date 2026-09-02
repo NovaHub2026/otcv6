@@ -6,6 +6,7 @@ import {
   type InstrumentSpec,
   type RandomSource,
 } from '@otc/core';
+import { yieldToLoop } from '@otc/core';
 import { CascadeMagnitudeModel } from './cascade.js';
 import type { MarketEngineConfig } from './factory.js';
 import { DurationCouplingModulator, HawkesArrivalModel } from './hawkes.js';
@@ -524,6 +525,6 @@ export async function calibrateAssetAsync(
   for (;;) {
     const step = run.next();
     if (step.done === true) return step.value;
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await yieldToLoop();
   }
 }
