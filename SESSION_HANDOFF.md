@@ -9,11 +9,11 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Field              | Value                                                    |
 | ------------------ | -------------------------------------------------------- |
 | Last clean session | 2026-09-02                                               |
-| Branch             | `main` — PH-20 merged                                    |
-| Remote             | `origin` → NovaHub2026/otcv6 — public, hosted CI running |
+| Branch             | `feature/ph-21-catalogue-at-scale`                       |
+| Remote             | `origin` → NovaHub2026/otcv6 — public, hosted CI **red** |
 | Active cycle       | Cycle 7, **2 of 3** phases approved                      |
-| Active phase       | none — PH-21 is the next legal action                    |
-| Active subphase    | none                                                     |
+| Active phase       | PH-21 — the catalogue at scale (ACTIVE)                  |
+| Active subphase    | PH-21.1 — a hundred assets (ACTIVE)                      |
 | Cycle Audit        | **006 closed** — 40 of 46 findings closed in PH-19       |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)       |
 
@@ -21,14 +21,23 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 Read `CURRENT_STATE.md` for the authoritative position; this is the short form.
 
-**Begin PH-21 — the catalogue at scale.** Five assets is not a catalogue. The
-registration path exists and is exercised one asset at a time; what a hundred
-assets cost in storage, in scheduling, in differentiation headroom and in a
-sidebar that is a flat list is unmeasured. PH-19.4 measured a registration
-failing on 36% of hundred-asset builds before the tail-weight clamp.
+**An out-of-band full audit is in progress**, requested by the Human Owner on
+2026-09-02 with authority to fix everything it finds (`GOVERNANCE.md` §29, §33).
+Independent agents, one worktree each. Its record goes under `docs/audits/`.
 
-Then **Cycle Audit 7**, automatically and without asking. One worktree per
-auditor (B-020), and plants against every guard this cycle added.
+**Hosted CI is red on `main`** — three runs, 238 statistical tests passing, one
+`Timeout calling "onTaskUpdate"`, exit 1. PH-20 was approved without that
+corroboration (CA6-02 repeated). The event-loop watchdog in
+`vitest.setup.statistical.ts` exists to name the file; the local statistical run
+with it is the first measurement to read.
+
+**PH-21.1 is ACTIVE**: the hundred-asset runner, the brief's tail-weight retreat
+and the guard test are in the tree and the evidence is recorded; the gate on
+this tree and the CI run that corroborates it are still owed.
+
+Then PH-21.2 and PH-21.3, then **Cycle Audit 7**, automatically and without
+asking. One worktree per auditor (B-020), and plants against every guard this
+cycle added.
 
 ### The thing worth knowing before touching the panel
 

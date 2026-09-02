@@ -21,14 +21,14 @@ Last synchronized: 2026-09-02
 
 ## Phase and subphase
 
-| Field                  | Value                                    |
-| ---------------------- | ---------------------------------------- |
-| Active phase           | none — PH-21 is next and has not started |
-| Phase lifecycle        | n/a                                      |
-| Active subphase        | none                                     |
-| Subphase lifecycle     | n/a                                      |
-| Last approved phase    | PH-20 — The operator panel               |
-| Last approved subphase | PH-20.3 — Editing and retiring           |
+| Field                  | Value                                                       |
+| ---------------------- | ----------------------------------------------------------- |
+| Active phase           | PH-21 — The catalogue at scale                              |
+| Phase lifecycle        | ACTIVE                                                      |
+| Active subphase        | PH-21.1 — A hundred assets, and what registering them costs |
+| Subphase lifecycle     | ACTIVE                                                      |
+| Last approved phase    | PH-20 — The operator panel                                  |
+| Last approved subphase | PH-20.3 — Editing and retiring                              |
 
 ## Cycle 1 result
 
@@ -88,6 +88,14 @@ first reports 46 unresolved-type errors. Every `GATE_EXIT=0` recorded through
 PH-10 was conditional on a previous build's `dist/` being present.
 
 ## Verification state
+
+**Hosted CI is red on `main`.** The three pushes since PH-19 merged — the PH-19
+merge itself, the docs push after it, and the PH-20 merge — all failed the
+Statistical Gate the same way: every test passing, one
+`Error: [vitest-worker]: Timeout calling "onTaskUpdate"`, exit 1. PH-20 was
+approved on a green local gate with that corroboration outstanding, which is
+CA6-02 repeated and is recorded as such. Nothing below is a phase approval under
+`GOVERNANCE.md` §40.1 until CI is green on the same tree.
 
 Executed 2026-09-02 on the PH-20 phase gate. The browser layer is part of it now:
 `OTC_REQUIRE_BROWSER=1` makes a missing Chromium a failure rather than a skip.
@@ -165,23 +173,31 @@ Cycle 1's numbers, and the coverage figure, are in
 | ADR-0012 | Generation is single-writer per asset; leadership is a fenced lease (APPROVED) |
 | Backlog  | `docs/BACKLOG.md` — B-012 … B-020 **open** (Cycle Audit 5); B-001…B-011 closed |
 | Roadmap  | `docs/phases/ROADMAP.md`                                                       |
-| Branch   | `main` — PH-16 merged                                                          |
+| Branch   | `feature/ph-21-catalogue-at-scale`, from `main` at the PH-20 merge             |
 
 ---
 
 ## EXACT NEXT LEGAL ACTION
 
-**Begin PH-21 — the catalogue at scale.**
+**Run the out-of-band full audit the Human Owner requested on 2026-09-02, fix
+what it finds, and make hosted CI green; then continue PH-21.1.**
 
-Cycle 7 has two of its three phases approved. PH-19 closed 40 of Cycle Audit 6's
-46 findings; PH-20 made the operator panel real and, in doing so, found that the
-browser suite it had just shipped was testing the wrong engine.
+The Human Owner asked for a complete audit of the project with authority to fix
+everything found — `GOVERNANCE.md` §29 and §33 both name an explicit Human
+request as sufficient for a full audit before a cycle completes. It is conducted
+by independent agents, one git worktree each (§4.2, B-020), and recorded under
+`docs/audits/`. It does not reset the cycle counter: Cycle Audit 7 still runs
+after PH-21 is approved.
 
-PH-21's subject is the gap PH-20 leaves: **five assets is not a catalogue.**
-PH-19.4 measured a registration failing on 36% of hundred-asset builds before the
-tail-weight clamp; what a hundred assets cost in storage, in scheduling, in
-differentiation headroom and in a sidebar that is currently a flat list is
-unmeasured. The registration path exists and is exercised one asset at a time.
+The first finding is already known and is the one everything else is verified
+through: **hosted CI is red on `main`**, three runs in a row, with every test
+passing. Until the statistical gate is green on a hosted runner, no approval in
+Cycle 7 after PH-19 stands under §40.1.
+
+PH-21.1 is ACTIVE with its implementation in the tree and its verification
+pending: the hundred-asset run is recorded, the gate on this tree has not yet
+been executed by the approving session, and the watchdog it added has to be
+watched failing before it counts as a guard.
 
 After PH-21: **Cycle Audit 7**, automatically and without asking
 (`GOVERNANCE.md` §28, ADR-0008). One git worktree per auditor (B-020), and

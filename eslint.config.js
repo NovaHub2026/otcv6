@@ -47,7 +47,7 @@ export default tseslint.config(
   {
     // Root-level config files live outside every composite TS project; type-aware
     // rules cannot resolve them and would report only false positives.
-    files: ['*.config.ts', '*.config.js', 'eslint.config.js'],
+    files: ['*.config.ts', '*.config.js', 'eslint.config.js', 'vitest.setup.*.ts'],
     extends: [tseslint.configs.disableTypeChecked],
     rules: { 'no-console': 'off' },
   },

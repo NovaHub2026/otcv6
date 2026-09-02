@@ -41,10 +41,20 @@ const INTERNAL: Record<string, readonly string[]> = {
   // a fixture and produces no market; exporting it would invite something
   // outside the corpus to build on it.
   '@otc/fixtures': ['base.ts'],
-  // A binary entry point and the two evidence generators it drives. `@otc/sim`
-  // is a tool: nothing imports it, and its surface is the `otc-sim` command
-  // plus the statistical tests in the same package.
-  '@otc/sim': ['cli.ts', 'dispersionEvidence.ts', 'horizonCoverage.ts', 'horizonEvidence.ts'],
+  // A binary entry point and the evidence generators it drives. `@otc/sim` is a
+  // tool: nothing imports it, and its surface is the `otc-sim` command plus the
+  // statistical tests in the same package. `catalogueScale.ts` and
+  // `venueScale.ts` are PH-21's deliberate-act runners, each minutes long and
+  // each recorded in `docs/evidence/`; the gate guards the same properties
+  // through `catalogueScale.stat.test.ts` at a scale it can afford.
+  '@otc/sim': [
+    'catalogueScale.ts',
+    'cli.ts',
+    'dispersionEvidence.ts',
+    'horizonCoverage.ts',
+    'horizonEvidence.ts',
+    'venueScale.ts',
+  ],
 };
 
 interface Package {

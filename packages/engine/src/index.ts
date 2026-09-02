@@ -1,4 +1,4 @@
-export { requestFromBrief, type AssetBrief } from './brief.js';
+export { AUTHORING_ATTEMPTS, requestFromBrief, type AssetBrief } from './brief.js';
 export { PoissonArrivalModel } from './arrival.js';
 export {
   createMarketEngine,

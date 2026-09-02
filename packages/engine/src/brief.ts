@@ -1,7 +1,28 @@
-import type { MasterKeyring } from '@otc/core';
+import type { MasterKeyring, RandomSource } from '@otc/core';
 import { archetypeById, sampleArchetype, type ArchetypeSample } from './families.js';
 import { registrationKeyLabel } from './catalogue.js';
+import { authorPersonality } from './personality.js';
 import type { RegistrationRequest } from './registration.js';
+
+/**
+ * How far a drawn tail-weight target retreats when the solve cannot reach it.
+ *
+ * `sampleArchetype` clamps the target to `reachableExcessKurtosis`, and that
+ * ceiling has **no closed form** — it is estimated by simulation (PH-10.1 §5.1),
+ * so it is a noisy estimate and 0.95 of a noisy estimate is still sometimes too
+ * high. Measured after the CA6-24 clamp: **1 brief in 400** was still refused at
+ * `authoring`, all of them `alt-crypto`, which is a 22% chance that a
+ * hundred-asset build stops on one of them.
+ *
+ * The only exact oracle for "can this personality reach this tail weight" is the
+ * solve. So the brief runs it, and steps the target down by a tenth until it
+ * succeeds. Ten percent is coarse enough to converge in one or two steps and
+ * fine enough that the personality keeps the character its family drew.
+ */
+const AUTHORING_RETREAT = 0.9;
+
+/** Retreats before giving up. 0.9^6 is 0.53 — past that the draw was wrong. */
+export const AUTHORING_ATTEMPTS = 6;
 
 /**
  * What an operator actually supplies when creating an asset.
@@ -55,7 +76,17 @@ export function requestFromBrief(
     readonly keyring: MasterKeyring;
     readonly environment: Parameters<MasterKeyring['derive']>[0]['env'];
   },
-): { readonly request: RegistrationRequest; readonly sample: ArchetypeSample } {
+): {
+  readonly request: RegistrationRequest;
+  readonly sample: ArchetypeSample;
+  /**
+   * How far the drawn tail weight had to retreat before the solve accepted it.
+   *
+   * Zero almost always. `AUTHORING_ATTEMPTS` means it never did, and
+   * `registerAsset` will refuse this brief at `authoring` and say why.
+   */
+  readonly retreats: number;
+} {
   const archetype = archetypeById(brief.archetypeId);
   const stream = options.keyring.derive({
     env: options.environment,
@@ -68,6 +99,18 @@ export function requestFromBrief(
   const sample = sampleArchetype(archetype, stream);
   const dispersion = brief.dispersion ?? sample.dispersion;
 
+  // The same derivation `registerAsset` will use, so this check is not a
+  // rehearsal — it is the identical solve against the identical streams, and a
+  // target that authors here authors there.
+  const derive = (purpose: string): RandomSource =>
+    options.keyring.derive({
+      env: options.environment,
+      asset: registrationKeyLabel(brief.id),
+      purpose,
+      keyEpoch: 0,
+    });
+  const { target: excessKurtosis, retreats } = reachableTarget(sample, derive);
+
   // A supplied budget rescales the amplitude the draw implies. The calibration
   // is homogeneous of degree one in `volatility` (CATALOGUE_AND_PANEL.md §3),
   // so this is a multiplication rather than a second search — and the *shape*
@@ -76,6 +119,7 @@ export function requestFromBrief(
   const scale = dispersion / sample.dispersion;
   return {
     sample,
+    retreats,
     request: {
       id: brief.id,
       family: archetype.family,
@@ -83,8 +127,35 @@ export function requestFromBrief(
       referencePrice: brief.referencePrice,
       ...(brief.displayPrecision === undefined ? {} : { displayPrecision: brief.displayPrecision }),
       traits: { ...sample.traits, volatility: sample.traits.volatility * scale },
-      targets: { excessKurtosis: sample.excessKurtosis, tickRms: sample.tickRms * scale },
+      targets: { excessKurtosis, tickRms: sample.tickRms * scale },
       dispersion,
     },
   };
+}
+
+/**
+ * The drawn tail weight, or the highest one below it the solve can reach.
+ *
+ * Returns the target unchanged in the ordinary case — the estimated ceiling is
+ * right almost always — and retreats only when the solve says otherwise. A
+ * refusal that reaches an operator here would be a refusal about a personality
+ * they never chose, which is not something anyone can act on.
+ */
+function reachableTarget(
+  sample: ArchetypeSample,
+  derive: (purpose: string) => RandomSource,
+): { target: number; retreats: number } {
+  let target = sample.excessKurtosis;
+  for (let retreats = 0; retreats < AUTHORING_ATTEMPTS; retreats += 1) {
+    try {
+      authorPersonality(sample.traits, { excessKurtosis: target, tickRms: sample.tickRms }, derive);
+      return { target, retreats };
+    } catch {
+      target *= AUTHORING_RETREAT;
+    }
+  }
+  // Six retreats and still unauthorable means the *rhythm* is the problem, not
+  // the target. `registerAsset` refuses it at `authoring` and names the reason,
+  // which is the honest outcome for a draw nothing can solve.
+  return { target, retreats: AUTHORING_ATTEMPTS };
 }

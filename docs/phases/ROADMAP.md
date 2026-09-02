@@ -493,7 +493,7 @@ finding is verified through it.
 | ----- | --------------------------------------------------- | ------------ |
 | PH-19 | Close what Cycle Audit 6 falsified                  | **APPROVED** |
 | PH-20 | The operator panel: trusted, and able to administer | **APPROVED** |
-| PH-21 | The catalogue at scale                              | not started  |
+| PH-21 | The catalogue at scale                              | **ACTIVE**   |
 | —     | **Cycle Audit 7**                                   | not started  |
 
 ### PH-19 — Close What Cycle Audit 6 Falsified
@@ -533,6 +533,12 @@ too.
 Five assets is not a catalogue. PH-19.4 measured a registration failing on 36% of
 hundred-asset builds before the tail-weight clamp; what a hundred assets cost in
 storage, in scheduling and in differentiation headroom is still unmeasured.
+
+| Subphase | Title                                             | State   |
+| -------- | ------------------------------------------------- | ------- |
+| PH-21.1  | A hundred assets, and what registering them costs | ACTIVE  |
+| PH-21.2  | The venue and the store under a full catalogue    | planned |
+| PH-21.3  | A panel that can hold a hundred assets            | planned |
 
 ## Major dependencies
 
