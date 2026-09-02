@@ -231,6 +231,32 @@ export function measureDifferentiation(
   let correct = 0;
   let total = 0;
 
+  /**
+   * Every asset's centroid, computed once.
+   *
+   * The centroid of a candidate that is *not* the true asset does not depend on
+   * which window is held out, and it was being recomputed inside the innermost
+   * loop — a factor of `windowsPerAsset` of arithmetic that produced the same
+   * number every time. On the sampled catalogue that was a **7.5-second
+   * synchronous block**, which the event-loop watchdog added in PH-21 measured:
+   * long enough on a hosted runner to stop the worker answering the test runner,
+   * which fails the whole run with every test passing (`CLAUDE.md` §5). It is
+   * the fourth appearance of that failure and the first time it was located.
+   *
+   * The arithmetic is unchanged, deliberately: the sums are accumulated in the
+   * same order over the same values, and the held-out case below still runs its
+   * own exclusion loop rather than subtracting. Subtracting would be faster
+   * again and would change the last bits of a floating-point sum, which can flip
+   * an argmin at a tie.
+   */
+  const centroids = vectors.map((rows) =>
+    features.map((_feature, f) => {
+      let sum = 0;
+      for (let w = 0; w < windowsPerAsset; w += 1) sum += rows[w]![f]!;
+      return sum / windowsPerAsset;
+    }),
+  );
+
   for (let trueAsset = 0; trueAsset < assets.length; trueAsset += 1) {
     for (let held = 0; held < windowsPerAsset; held += 1) {
       // Centroids computed with the held-out window excluded from its own asset,
@@ -239,16 +265,22 @@ export function measureDifferentiation(
       let bestDistance = Number.POSITIVE_INFINITY;
       for (let candidate = 0; candidate < assets.length; candidate += 1) {
         const rows = vectors[candidate]!;
+        const own = candidate === trueAsset;
         let distance = 0;
         for (let f = 0; f < features.length; f += 1) {
-          let sum = 0;
-          let n = 0;
-          for (let w = 0; w < windowsPerAsset; w += 1) {
-            if (candidate === trueAsset && w === held) continue;
-            sum += rows[w]![f]!;
-            n += 1;
+          let centroid: number;
+          if (own) {
+            let sum = 0;
+            let n = 0;
+            for (let w = 0; w < windowsPerAsset; w += 1) {
+              if (w === held) continue;
+              sum += rows[w]![f]!;
+              n += 1;
+            }
+            centroid = sum / n;
+          } else {
+            centroid = centroids[candidate]![f]!;
           }
-          const centroid = sum / n;
           const delta = vectors[trueAsset]![held]![f]! - centroid;
           distance += delta * delta;
         }

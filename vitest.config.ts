@@ -148,6 +148,12 @@ export default defineConfig({
             'apps/*/src/**/*.stat.test.ts',
           ],
           exclude: commonExclude,
+          /**
+           * The event-loop watchdog. It reports the worst synchronous block per
+           * file, which is the one thing nobody could see the four times
+           * `Timeout calling "onTaskUpdate"` has failed a green run.
+           */
+          setupFiles: [path.resolve(root, 'vitest.setup.statistical.ts')],
           testTimeout: 900_000,
           hookTimeout: 900_000,
         },
