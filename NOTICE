@@ -1,0 +1,20 @@
+Third-party components
+======================
+
+TradingView Lightweight Charts (`lightweight-charts`)
+-----------------------------------------------------
+Copyright (c) 2025 TradingView, Inc.
+Licensed under the Apache License, Version 2.0.
+https://github.com/tradingview/lightweight-charts
+
+The panel's chart is drawn with this library and with no other TradingView
+product. The paid TradingView Charting Library is deliberately not used, and a
+guardrail refuses it — see ADR-0014 and
+`packages/core/src/guardrails/dependencies.test.ts`.
+
+The Apache-2.0 licence requires attribution and preservation of this notice; it
+does not require this repository to be Apache-licensed, and it is not (see
+LICENSE).
+
+Everything else in `package-lock.json` is a development dependency used to
+build and test this repository, under its own licence.

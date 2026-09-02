@@ -478,8 +478,10 @@ hides no extreme. That half is wiring, not design.
 
 **Excluded, deliberately:** the asset-proposal assistant. It is help on top of a
 pipeline that has to exist first; once PH-17 lands it is days of work, not a
-phase. Deployment and any TradingView licence remain the Human Owner's
-(`GOVERNANCE.md` §5.1).
+phase. Deployment remains the Human Owner's (`GOVERNANCE.md` §5.1); the
+TradingView question was decided on 2026-09-02 — the free Lightweight Charts
+library, never the paid Charting Library, which a guardrail now refuses
+([ADR-0014](../decisions/ADR-0014-chart-library-and-repository-licence.md)).
 
 ## Cycle 7 — Close what Cycle Audit 6 falsified, then build on it
 

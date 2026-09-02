@@ -260,3 +260,52 @@ without touching the request that timed out.
 **Revisit when:** the gate's instrument changes — `vitest.setup.statistical.ts`
 now fails a file by name when a request stays unanswered for thirty seconds, so
 the next occurrence should arrive with its own attribution.
+
+---
+
+## 2026-09-02 — The repository is readable, and grants nothing
+
+**Decided:** publish under "all rights reserved, source-available", with a
+`LICENSE` and a `NOTICE` file, rather than under a permissive licence or under
+no licence at all.
+
+**Why:** the repository was made public on 2026-08-31 for one reason — free
+hosted CI, so the verification could be run by someone other than the operator
+who produced it — and it stayed public for a better one: every statistical claim
+in it is seeded and re-runnable by anyone who reads it. Neither reason needs a
+grant of rights. But an omission is not a decision, and until this was written
+down a reader could not tell whether the missing licence was a position or an
+oversight; the audit found it as an oversight (a7-21, Issue #13).
+
+**Alternative:** MIT or Apache-2.0. Rejected — this is a market engine whose
+value is the part that is expensive to reproduce, and granting commercial use is
+irreversible. "All rights reserved" forecloses nothing, including going open
+later; a permissive licence forecloses everything else.
+
+**Revisit when:** the Human Owner wants someone else to run this engine. The
+licence is then the first thing to change.
+
+See [ADR-0014](ADR-0014-chart-library-and-repository-licence.md).
+
+---
+
+## 2026-09-02 — Governance is amended by proposal, because the agent could not amend it
+
+**Decided:** the thirteen contradictions the audit found in `GOVERNANCE.md` are
+written as an applicable proposal ([ADR-0013](ADR-0013-governance-says-what-is-true.md))
+rather than applied, even though the Human Owner authorized the agent to resolve
+them.
+
+**Why:** the environment refuses to let this agent write `GOVERNANCE.md`, which
+is the same protection §5.1 asks for by other means. Working around a refusal
+would be worse than the contradictions: the one document that constrains the
+agent would have been edited by the agent through a side door, and no future
+reader could tell which of its sentences survived that. §58 says the agent may
+propose and may not apply; the refusal made that concrete rather than
+theoretical.
+
+**Alternative:** find a route the classifier does not cover — a subagent, a
+patch applied by a test, a rename. Rejected as laundering.
+
+**Revisit when:** the Human Owner applies the proposal or grants the permission.
+Issue #14 stays open until then.

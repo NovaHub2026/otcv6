@@ -487,3 +487,92 @@ describe('an alias is judged by what it resolves to (a2-12: D-09, D-10)', () => 
     ).toEqual([]);
   });
 });
+
+/**
+ * The chart component is TradingView Lightweight Charts and nothing else.
+ *
+ * **ADR-0014.** Two products carry the TradingView name. `lightweight-charts`
+ * is a free Apache-2.0 npm package and is what the panel draws with; the
+ * *Charting Library* is a separate commercial product, distributed through a
+ * private repository under a licence agreement, and the Human Owner decided on
+ * 2026-09-02 that this project does not use it.
+ *
+ * "We use the free one" is a sentence that decays — it is true until someone
+ * needs a feature, and then it is renegotiated by whoever is closest to a
+ * deadline. This makes it a build failure with the ADR's name on it. The check
+ * is by name in every manifest and every import, because that is how the paid
+ * library arrives: as a dependency on a private tarball, or as a vendored
+ * `charting_library/` directory the bundler picks up.
+ */
+describe('the paid TradingView Charting Library never enters the tree (ADR-0014)', () => {
+  /** How the commercial product is spelled, in a manifest or on disk. */
+  const FORBIDDEN = [
+    'charting_library',
+    'charting-library',
+    '@tradingview/charting',
+    'tradingview/charting_library',
+    'advanced-charts',
+  ] as const;
+
+  /** What the free product is spelled, so this test cannot refuse the right one. */
+  const PERMITTED = 'lightweight-charts';
+
+  it('is declared by exactly one workspace, and it is the free package', () => {
+    const declaring = all.filter((workspace) => workspace.declared.includes(PERMITTED));
+    expect(declaring.map((workspace) => workspace.name)).toEqual(['@otc/web']);
+  });
+
+  it('no manifest names the Charting Library', () => {
+    const offences: string[] = [];
+    for (const workspace of all) {
+      for (const name of workspace.declared) {
+        const lowered = name.toLowerCase();
+        if (FORBIDDEN.some((forbidden) => lowered.includes(forbidden))) {
+          offences.push(`${workspace.name} declares ${name}`);
+        }
+      }
+    }
+    expect(
+      offences,
+      'The paid Charting Library is refused by ADR-0014. Lightweight Charts is the ' +
+        'chart component; a feature that genuinely needs the commercial product needs a ' +
+        'new ADR with its licence cost in it, not a dependency.',
+    ).toEqual([]);
+  });
+
+  it('no source file imports it, under any spelling', () => {
+    const offences: string[] = [];
+    for (const workspace of all) {
+      for (const file of sourceFiles(workspace)) {
+        const { resolved, computed } = specifiersOf(file, workspace);
+        for (const entry of resolved) {
+          const lowered = entry.specifier.toLowerCase();
+          if (FORBIDDEN.some((forbidden) => lowered.includes(forbidden))) {
+            offences.push(shown(file, entry));
+          }
+        }
+        for (const specifier of computed) {
+          if (FORBIDDEN.some((forbidden) => specifier.toLowerCase().includes(forbidden))) {
+            offences.push(`${path.relative(repoRoot, file)} computes ${specifier}`);
+          }
+        }
+      }
+    }
+    expect(offences, 'ADR-0014: the Charting Library is not part of this product.').toEqual([]);
+  });
+
+  it('the free library is Apache-2.0, and NOTICE carries its attribution', () => {
+    // Apache-2.0 asks for attribution and for the notice to travel with the
+    // work. The repository is all-rights-reserved (ADR-0014), which makes the
+    // dependency's own licence the only thing granting anyone the right to use
+    // that part — so the notice is not decoration.
+    const manifest = JSON.parse(
+      readFileSync(path.join(repoRoot, 'node_modules/lightweight-charts/package.json'), 'utf8'),
+    ) as { license?: string };
+    expect(manifest.license).toBe('Apache-2.0');
+    const notice = readFileSync(path.join(repoRoot, 'NOTICE'), 'utf8');
+    expect(notice).toContain('Lightweight Charts');
+    expect(notice).toContain('Apache License');
+    expect(readFileSync(path.join(repoRoot, 'LICENSE'), 'utf8')).toContain('All rights reserved');
+  });
+});

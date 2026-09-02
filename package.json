@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Continuous multi-asset synthetic OTC market engine for fixed-expiration binary-options trading",
-  "license": "UNLICENSED",
+  "license": "SEE LICENSE IN LICENSE",
   "engines": {
     "node": ">=24.0.0"
   },

@@ -133,5 +133,9 @@ needs Preview first — an operator who cannot see an asset has no way to judge
 one they just made. The pipeline they will drive already exists and refuses for
 named reasons (PH-17.1); what is missing is only the surface.
 
-Deployment and any TradingView Charting Library licence remain the Human
+Deployment remains the Human Owner's. The Charting Library question was settled
+on 2026-09-02: it is not used, ever, and `dependencies.test.ts` refuses it by
+name ([ADR-0014](../decisions/ADR-0014-chart-library-and-repository-licence.md)).
+The sentence this replaced read: deployment and any Charting Library licence
+remain the Human
 Owner's (`GOVERNANCE.md` §5.1).
