@@ -1,52 +1,65 @@
 /**
- * An event-loop watchdog for the statistical suite.
+ * Two instruments for the statistical suite, and the failure they exist for.
  *
- * ## The failure it exists to locate
+ * ## The failure
  *
  * `Error: [vitest-worker]: Timeout calling "onTaskUpdate"` — every test passing,
- * the run exiting 1. It has cost this project a phase gate (B-005), recurred in
- * PH-10.3, and as of PH-21 it is **reproducible on hosted CI**: two consecutive
- * runs, 238 tests passed, 36 files passed, one unhandled error, exit 1.
+ * the run exiting 1. It cost this project a phase gate (B-005), recurred in
+ * PH-10.3, and failed hosted CI on every push to `main` from the PH-18 merge to
+ * the PH-21.1 push: six pushes, five red, one cancelled (B-021).
  *
- * The cause is always the same shape and never the same place: a test body that
- * runs synchronously for long enough that its worker cannot answer the runner.
- * `CLAUDE.md` §5 records the convention that prevents it — make the callback
- * `async` and `await new Promise((r) => setImmediate(r))` every few hundred
- * thousand ticks — and the hazard is standing, because it returns with every new
- * long test.
+ * The out-of-band audit of 2026-09-02 (a1-01) reproduced it in a ten-line file
+ * and named the mechanism. Vitest's worker talks to the main thread over birpc;
+ * each request arms a sixty-second timer, and the reply is read from the IPC
+ * channel in the event loop's **poll** phase. Task updates are sent
+ * synchronously at every test boundary. If the next test then runs for sixty
+ * seconds without a full loop turn, the expired timer fires before the queued
+ * reply is read, the request rejects, and the file's run rejects with it — after
+ * every test in it has passed. Console output is an event with no timer and was
+ * never the cause; neither was file parallelism after `--no-file-parallelism`.
  *
- * Remembering a convention is not a guard. This measures the thing directly: a
- * timer that should fire every 250ms, and the gap between when it should have
- * fired and when it did. That gap **is** the block, whatever caused it.
+ * On `main` the file was `sampledCatalogue.stat.test.ts`: its last test built
+ * signatures for twenty-four assets in one macrotask-free stretch, 55 s locally
+ * and 92–94 s on the hosted runner.
  *
- * ## Why it reports rather than fails
+ * ## The instruments
  *
- * A CI runner is several times slower than a developer machine and shares a
- * host, so any threshold expressed in wall-clock seconds is a different
- * threshold in the two places. Reporting the worst block per file, with the file
- * named, turns an unattributable run-level failure into a line an operator can
- * act on — which is what was missing every previous time this happened.
+ * **The round-trip guard** wraps every call the worker makes to the main thread
+ * and measures how long the reply took to be *read*. That is the quantity that
+ * fails the run, so it is the quantity that fails the file: a request unanswered
+ * for `FAIL_ROUND_TRIP_ABOVE_MS` fails the file by name, with the request and
+ * the moment it was sent, at half the timeout the runner would have hit.
+ *
+ * **The lag watchdog** is diagnostic: a 250 ms timer and the gap between when
+ * it should have fired and when it did. It reports the worst gap per file, and
+ * it folds in the gap still pending when the file ends — the audit found the
+ * first version blind to a block in a file's tail, because `afterAll` is
+ * reached through microtasks and the timer never got another turn.
+ *
+ * Both write to stderr directly, so nothing here adds to the channel it measures.
+ *
+ * ## The convention this replaces
+ *
+ * `await new Promise((r) => setImmediate(r))` is not enough: a continuation
+ * scheduled from the poll phase runs in the check phase of the same iteration,
+ * without a poll in between (a1-01, reproduction R3). Use `yieldToLoop()` from
+ * `@otc/lab` — two chained immediates, which guarantee a full loop turn — and
+ * use it before any test's first thirty seconds of synchronous work, not merely
+ * "every few hundred thousand ticks".
  */
 import { afterAll, beforeAll } from 'vitest';
 
+/** Round trips below this are ordinary and not worth a line. */
+const REPORT_ABOVE_MS = 2_000;
+
 /**
- * ## The RPC probe
- *
- * The watchdog below answers "did this worker stay away from its loop for too
- * long". Hosted CI run 33607930939 — the first with the watchdog — answered
- * no: the worst block in the whole suite was 20.4 s, and the run still exited 1
- * with `Timeout calling "onTaskUpdate"`, an error that carried no file
- * attribution because it fired after the file had finished, while the worker
- * was waiting in `rpcDone()` for the main thread's reply.
- *
- * So the question moved to the other end of the channel, and this measures the
- * channel itself: every call the worker makes to the main thread is wrapped,
- * the moment it was sent and the file it was sent during are kept, and a reply
- * that arrives late or never is written to stderr with both. The wrapper
- * returns the original promise untouched, so a timeout still surfaces to Vitest
- * exactly as before — this names it, it does not hide it.
+ * A request the main thread's reply could not reach for this long fails the
+ * file. Vitest's birpc `DEFAULT_TIMEOUT` is 60 s; failing at half of it turns an
+ * anonymous run-level error into a named file with headroom to spare.
  */
-const RPC_REPORT_ABOVE_MS = 2_000;
+const FAIL_ROUND_TRIP_ABOVE_MS = 30_000;
+
+const INTERVAL_MS = 250;
 
 interface WorkerStateLike {
   rpc: Record<string, unknown>;
@@ -54,8 +67,38 @@ interface WorkerStateLike {
   otcRpcProbe?: boolean;
 }
 
+interface PendingRequest {
+  readonly method: string;
+  readonly sentAt: number;
+  readonly during: string;
+}
+
+interface RoundTrip {
+  readonly ms: number;
+  readonly method: string;
+  readonly during: string;
+  readonly sentAt: number;
+}
+
+const pending = new Set<PendingRequest>();
+let worstRoundTrip: RoundTrip | null = null;
+
+function stamp(at: number = Date.now()): string {
+  return new Date(at).toISOString();
+}
+
 function probeLog(line: string): void {
-  process.stderr.write(`[rpc-probe] ${new Date().toISOString()} ${line}\n`);
+  process.stderr.write(`[rpc-probe] ${stamp()} ${line}\n`);
+}
+
+function noteRoundTrip(trip: RoundTrip): void {
+  if (worstRoundTrip === null || trip.ms > worstRoundTrip.ms) worstRoundTrip = trip;
+  if (trip.ms >= REPORT_ABOVE_MS || process.env['OTC_RPC_PROBE_ALL'] === '1') {
+    probeLog(
+      `${trip.method} answered after ${(trip.ms / 1000).toFixed(1)}s ` +
+        `(sent ${stamp(trip.sentAt)} during ${trip.during})`,
+    );
+  }
 }
 
 function installRpcProbe(): void {
@@ -70,30 +113,30 @@ function installRpcProbe(): void {
       const method = property;
       const call = value as (...args: unknown[]) => unknown;
       const wrapped = (...args: unknown[]): unknown => {
-        const sentAt = Date.now();
-        const during = state.filepath ?? '(no file)';
+        const request: PendingRequest = {
+          method,
+          sentAt: Date.now(),
+          during: state.filepath ?? '(no file)',
+        };
         const result = call.apply(target, args);
         if (result instanceof Promise) {
-          // `.then(onFulfilled, onRejected)` on the ORIGINAL promise would mark it
-          // handled and Vitest would never see the timeout. The derived promise
+          pending.add(request);
+          // `.then(onFulfilled, onRejected)` on the ORIGINAL promise would mark
+          // it handled and Vitest would never see a timeout. The derived promise
           // this creates rejects with the same error and nothing handles it, so
-          // the failure reaches Vitest as it always did — with a name attached.
+          // the failure still reaches Vitest as it always did — named.
           result.then(
             () => {
-              const ms = Date.now() - sentAt;
-              // `OTC_RPC_PROBE_ALL=1` logs every answered call, which is how the
-              // probe itself is checked to be wrapping the channel at all.
-              if (ms >= RPC_REPORT_ABOVE_MS || process.env['OTC_RPC_PROBE_ALL'] === '1') {
-                probeLog(
-                  `${method} answered after ${(ms / 1000).toFixed(1)}s ` +
-                    `(sent ${new Date(sentAt).toISOString()} during ${during})`,
-                );
-              }
+              pending.delete(request);
+              noteRoundTrip({ ...request, ms: Date.now() - request.sentAt });
             },
             (error: unknown) => {
+              pending.delete(request);
+              const ms = Date.now() - request.sentAt;
+              noteRoundTrip({ ...request, ms });
               probeLog(
-                `${method} REJECTED after ${((Date.now() - sentAt) / 1000).toFixed(1)}s ` +
-                  `(sent ${new Date(sentAt).toISOString()} during ${during}; ` +
+                `${method} REJECTED after ${(ms / 1000).toFixed(1)}s ` +
+                  `(sent ${stamp(request.sentAt)} during ${request.during}; ` +
                   `current file ${state.filepath ?? '(no file)'}): ${String(error)}`,
               );
               throw error;
@@ -110,36 +153,19 @@ function installRpcProbe(): void {
 
 installRpcProbe();
 
-const INTERVAL_MS = 250;
-
-/** Blocks below this are ordinary scheduling and not worth a line. */
-const REPORT_ABOVE_MS = 2_000;
-
-/**
- * A block above this fails the file, and says which one.
- *
- * Sixty seconds is not a performance budget — it is the point past which a
- * worker is so far from its own event loop that the run's exit code stops
- * describing the tests. It has to survive a hosted runner several times slower
- * than a developer machine, so it is set well above the worst block a healthy
- * suite produces (3.4s locally, at the time of writing) rather than close to it.
- *
- * The first thing it caught was a test written in the same commit as this file:
- * 99.9 seconds of unbroken solving in `catalogueScale.stat.test.ts`.
- */
-const FAIL_ABOVE_MS = 60_000;
-
 let timer: NodeJS.Timeout | null = null;
 let expected = 0;
-let worst = 0;
+let worstLag = 0;
 
 beforeAll(() => {
+  pending.clear();
+  worstRoundTrip = null;
   expected = Date.now() + INTERVAL_MS;
-  worst = 0;
+  worstLag = 0;
   timer = setInterval(() => {
     const now = Date.now();
     const lag = now - expected;
-    if (lag > worst) worst = lag;
+    if (lag > worstLag) worstLag = lag;
     expected = now + INTERVAL_MS;
   }, INTERVAL_MS);
   // The watchdog must never be the reason a run stays alive.
@@ -148,22 +174,34 @@ beforeAll(() => {
 
 afterAll(() => {
   if (timer !== null) clearInterval(timer);
-  if (worst >= FAIL_ABOVE_MS) {
+  // The gap still pending when the file ends is a block the timer never got to
+  // measure (a1-02). It counts.
+  const now = Date.now();
+  worstLag = Math.max(worstLag, now - expected);
+
+  // A request still unanswered at the end of the file has been waiting for as
+  // long as its age; the round trip it will eventually record is at least that.
+  let offender: RoundTrip | null = worstRoundTrip;
+  for (const request of pending) {
+    const age = now - request.sentAt;
+    if (offender === null || age > offender.ms) offender = { ...request, ms: age };
+  }
+
+  if (offender !== null && offender.ms >= FAIL_ROUND_TRIP_ABOVE_MS) {
     throw new Error(
-      `event-loop watchdog: this file blocked its worker for ${(worst / 1000).toFixed(1)}s. ` +
-        `Make the long callback async and \`await new Promise((r) => setImmediate(r))\` ` +
-        `periodically (CLAUDE.md §5). A worker that cannot answer the runner fails the ` +
-        `whole run with every test passing, and that failure names no file.`,
+      `rpc probe: this file kept a "${offender.method}" request to the main thread ` +
+        `unanswered for ${(offender.ms / 1000).toFixed(1)}s (sent ${stamp(offender.sentAt)} ` +
+        `during ${offender.during}). Vitest gives up at 60s and fails the whole run with ` +
+        `every test passing. Yield with \`await yieldToLoop()\` from @otc/lab before any ` +
+        `test's first thirty seconds of synchronous work, and between long units of it ` +
+        `(CLAUDE.md §5).`,
     );
   }
-  if (worst >= REPORT_ABOVE_MS) {
-    // Straight to stdout, like the rest of this suite's evidence: the console
-    // interception that would have relayed it is off, precisely because that
-    // traffic is part of the same problem.
-    console.info(
-      `event-loop watchdog: worst block ${(worst / 1000).toFixed(1)}s in this file. ` +
-        `A worker that cannot answer the runner fails the whole run with every test ` +
-        `passing (CLAUDE.md §5).`,
+  if (worstLag >= REPORT_ABOVE_MS || (offender !== null && offender.ms >= REPORT_ABOVE_MS)) {
+    probeLog(
+      `worst block ${(worstLag / 1000).toFixed(1)}s, worst round trip ` +
+        `${offender === null ? '0.0' : (offender.ms / 1000).toFixed(1)}s` +
+        `${offender === null ? '' : ` (${offender.method})`} in this file.`,
     );
   }
 });

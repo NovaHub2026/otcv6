@@ -8,15 +8,21 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A push to main must never cancel the run of the commit before it: the run
+  # of `c736707` ("that was the gate failure") was cancelled 58 s later by a
+  # docs push and the fix has no hosted result at all (out-of-band audit,
+  # a7-24). Superseding is for branches, where the newest push is all that
+  # matters; on main every commit is trusted integrated state and each one
+  # gets its own verdict.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   quality-gate:
     name: Quality Gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -62,8 +68,8 @@ jobs:
     # was reinstated to fix (ADR-0009).
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm

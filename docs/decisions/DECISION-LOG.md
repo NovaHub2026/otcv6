@@ -232,3 +232,28 @@ wording. Guarded by three plants in PH-20.3.
 
 **Revisit when:** never in the direction of resuming a retired generator. A new
 registration is the honest way back.
+
+---
+
+## 2026-09-02 — A cause for the gate's RPC timeout is accepted only with a reproduction
+
+**Decided:** no change may be recorded as the cause of
+`Timeout calling "onTaskUpdate"` unless it comes with a reproduction that
+produces that exact error and a change that makes the same reproduction pass.
+
+**Why:** the out-of-band audit (a1-07) found four causes recorded for this one
+failure — file oversubscription (CA6-01), console and reporter traffic (CA6-02),
+`execFileSync` in the meta-audit (`c736707`), long loops without a yield
+(PH-21.1) — each written as settled, each followed by another red run, and none
+consistent with the mechanism: a worker-to-main request whose reply is read too
+late. The failure reproduces in a ten-line file in sixty-five seconds
+(`spin(65_000)` after a test boundary). Anything that cannot make that file
+fail and then pass has not explained it.
+
+**Alternative:** keep recording the most plausible mechanism per occurrence.
+Rejected: that is how the project spent a cycle fixing pressure on the channel
+without touching the request that timed out.
+
+**Revisit when:** the gate's instrument changes — `vitest.setup.statistical.ts`
+now fails a file by name when a request stays unanswered for thirty seconds, so
+the next occurrence should arrive with its own attribution.
