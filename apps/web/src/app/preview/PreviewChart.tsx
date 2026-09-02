@@ -11,6 +11,7 @@ import {
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import type { Tick } from '@otc/core/browser';
 import { fetchHistory, type CatalogueEntry } from '../../lib/api.js';
+import { priceFormatFor, toDisplayedPrice } from '../../lib/priceFormat.js';
 import {
   bucketStart,
   displayPrice,
@@ -109,7 +110,20 @@ export function PreviewChart({
       borderVisible: false,
       wickUpColor: '#3fb950',
       wickDownColor: '#f85149',
-      priceFormat: { type: 'price', precision: asset.displayPrecision, minMove: 1e-8 },
+      // Derived, never chosen. A hard-coded `minMove: 1e-8` against a precision
+      // of 7 printed `1.91146.5` on the axis — two decimal points, from the
+      // library left-padding a non-integer to seven characters and slicing
+      // through its own decimal point (`../../lib/priceFormat.ts`).
+      priceFormat: priceFormatFor(asset),
+      // One price on the axis, and it is the live one.
+      //
+      // The series drew its own last-value label as well: the close of the last
+      // *complete* candle, which stands still while the live line moves, because
+      // a bar is only updated for a bucket this client watched from its start.
+      // Both were correct and neither was labelled, which reads as a
+      // contradiction — reported as one on 2026-09-02.
+      lastValueVisible: false,
+      priceLineVisible: false,
     });
     return () => {
       created.remove();
@@ -208,7 +222,10 @@ export function PreviewChart({
       };
       opened.onmessage = (event: MessageEvent<string>): void => {
         const tick = JSON.parse(event.data) as Tick;
-        const price = displayPrice(tick.price, asset);
+        // Rounded to the digits this asset settles on: the conversion is a
+        // full-precision float, and a digit past `displayPrecision` is a
+        // movement no contract can settle against.
+        const price = toDisplayedPrice(displayPrice(tick.price, asset), asset.displayPrecision);
         setLast({ price, at: tick.instant });
         setStatus(liveStatus());
         armStall();
@@ -222,7 +239,7 @@ export function PreviewChart({
             lineWidth: 1,
             lineStyle: 2,
             axisLabelVisible: true,
-            title: 'last',
+            title: 'live',
           });
         } else {
           priceLine.applyOptions({ price });
