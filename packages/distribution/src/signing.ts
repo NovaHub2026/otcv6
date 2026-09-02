@@ -186,6 +186,19 @@ export function verifyCommitment(signed: SignedCommitment, publicKeyHexValue?: s
  * Returns the first problem, or `null`. Reported rather than thrown so a verifier
  * can show a counterparty exactly where a published history stops being
  * consistent, which is the question they actually have.
+ *
+ * ## What the chain attests, and what it does not (a5-12)
+ *
+ * The chain attests **content**: every root, every range, and that each link
+ * was signed by a key the venue had authorised at a point no later than the
+ * link. The epoch rule is non-decreasing *forwards* — a retired key cannot sign
+ * history that follows its rotation — and nothing forbids the reverse. A
+ * successor key can re-sign windows that precede its own rotation, and the
+ * chain verifies: the content is unchanged and the key was authorised, so
+ * nothing the chain promises is broken. What is not promised is **attribution
+ * of a window to the particular key that first signed it.** A verifier that
+ * needs to know which key signed a pre-rotation window must keep the signed
+ * commitments as originally published, not merely a chain that verifies.
  */
 export function verifySignedChain(
   chain: readonly SignedCommitment[],

@@ -172,6 +172,36 @@ export class InMemoryCandleHistory implements CandleHistory {
 }
 
 /**
+ * The sequence of the first tick any market publishes. Nothing precedes it, so a
+ * bucket whose first seen tick carries it is whole however far into the bucket
+ * that tick lands.
+ */
+export const FIRST_SEQUENCE = 1;
+
+/**
+ * Where a recorder joins the stream.
+ *
+ * A recorder cannot tell from the ticks alone whether the bucket it opens inside
+ * was quiet before its first tick or was already accumulating in a process that
+ * has since died. Instants cannot settle it — two ticks may share a millisecond
+ * — and the stored bar's `lastSequence` can: if the first tick seen is the one
+ * that immediately follows it, nothing was missed. So the recorder is told what
+ * the store already holds, and refuses to be started without being told.
+ */
+export interface HistoryRecorderStart {
+  /**
+   * `lastSequence` of the newest base bar already stored for this asset;
+   * `null` when nothing is stored; `'unknown'` when the caller cannot ask the
+   * store synchronously and will call {@link HistoryRecorder.continueAfter}
+   * before the first drain.
+   */
+  readonly continuesAfter: number | null | 'unknown';
+}
+
+/** How the first bucket a recorder opens is to be treated, once that is known. */
+type FirstBucketFate = 'undecided' | 'whole' | 'withheld';
+
+/**
  * Folds ticks into the base tier. Nothing else.
  *
  * The rollup tier used to be folded here too, from the base candles this
@@ -189,30 +219,177 @@ export class InMemoryCandleHistory implements CandleHistory {
  * So the rollup is no longer derived from anything a process remembers. It is
  * derived from the **stored** minute series by {@link refreshRollup}, which
  * makes the two tiers agree by construction rather than by lifetime.
+ *
+ * ## The first bucket (a5-01)
+ *
+ * The same defect survived one tier down. A recorder built mid-minute — at every
+ * restart, failover and backfill-to-live join — opened its first bucket wherever
+ * its first tick landed and closed it as a whole minute. Measured at a
+ * runtime-level handoff: minute 10:02 stored with 13 of its 15 ticks, its high
+ * 103 against a true 134; at a backfill join, the target's minute stored with 8
+ * of 18 ticks. The hourly tier then inherited the bar faithfully.
+ *
+ * A recorder therefore never stores a bucket it did not see from its start. The
+ * first bucket is whole only when the first tick seen is the one that
+ * immediately follows the newest stored bar — or {@link FIRST_SEQUENCE} when
+ * nothing is stored, because no tick precedes genesis. Otherwise the bucket is
+ * **withheld**: the minute tier shows a hole, which is visible (the bars either
+ * side of it are not contiguous in sequence) and honest, where a short bar
+ * labelled whole is neither.
  */
 export class HistoryRecorder {
   readonly #base = new CandleAggregator(timeframeById(HISTORY_BASE_TIMEFRAME));
   #closed: Candle[] = [];
+  /** `undefined` until the recorder has been told where it joins the stream. */
+  #continuesAfter: number | null | undefined;
+  #first: Tick | null = null;
+  #firstBucketStart: EpochMillis | null = null;
+  #firstFate: FirstBucketFate = 'undecided';
+  /** The first bucket, closed before its fate was known. */
+  #firstClosed: Candle | null = null;
+  #withheld: Candle | null = null;
+
+  constructor(start: HistoryRecorderStart) {
+    this.#continuesAfter = start.continuesAfter === 'unknown' ? undefined : start.continuesAfter;
+  }
+
+  /** Whether the recorder knows where it joined the stream. */
+  get started(): boolean {
+    return this.#continuesAfter !== undefined;
+  }
+
+  /**
+   * The first bucket, if it was withheld: seen from somewhere inside rather
+   * than from its start, and so never stored. Reported so a caller can say so.
+   */
+  get withheld(): Candle | null {
+    return this.#withheld;
+  }
+
+  /**
+   * Tell a recorder started as `'unknown'` what the store already holds.
+   *
+   * Ticks accepted before this call have been folded and are held; the call
+   * decides the first bucket and releases everything that has closed.
+   */
+  continueAfter(lastStored: number | null): void {
+    if (this.#continuesAfter !== undefined) {
+      throw new HistoryError('The recorder was told where it joins the stream twice.');
+    }
+    this.#continuesAfter = lastStored;
+    this.#decideFirst();
+  }
 
   /** Feed ticks in order. Closed candles accumulate until {@link drain}. */
   accept(ticks: Iterable<Tick>): void {
     for (const tick of ticks) {
+      if (this.#first === null) {
+        this.#first = tick;
+        this.#firstBucketStart = bucketStart(tick.instant, this.#base.timeframe);
+        this.#decideFirst();
+      }
       const closed = this.#base.accept(tick);
-      if (closed !== null) this.#closed.push(closed);
+      if (closed === null) continue;
+      if (closed.openInstant === this.#firstBucketStart) this.#closeFirst(closed);
+      else this.#closed.push(closed);
     }
   }
 
-  /** Every minute bar that has closed since the last drain. */
+  /**
+   * Every minute bar that has closed since the last drain.
+   *
+   * Refused until the recorder knows where it joined the stream: a drain that
+   * quietly returned nothing would look exactly like a quiet minute.
+   */
   drain(): readonly Candle[] {
+    if (this.#continuesAfter === undefined) {
+      throw new HistoryError(
+        'The recorder was drained before it was told what the store already holds, so it ' +
+          'cannot know whether its first bucket is whole.',
+      );
+    }
     const closed = this.#closed;
     this.#closed = [];
     return closed;
   }
 
-  /** The bar still accumulating. Never stored; useful for a live chart. */
+  /**
+   * The bar still accumulating. Never stored; useful for a live chart.
+   *
+   * Null while the open bucket is the first one and it is not known to be
+   * whole — a partial bar shown live is the same wrong shape as one stored.
+   */
   open(): Candle | null {
-    return this.#base.current();
+    const current = this.#base.current();
+    if (current === null) return null;
+    if (current.openInstant === this.#firstBucketStart && this.#firstFate !== 'whole') return null;
+    return current;
   }
+
+  /** Decide the first bucket once both the first tick and the stored head are known. */
+  #decideFirst(): void {
+    if (this.#continuesAfter === undefined || this.#first === null) return;
+    if (this.#firstFate !== 'undecided') return;
+    const first = this.#first;
+    if (this.#continuesAfter !== null && first.sequence <= this.#continuesAfter) {
+      throw new HistoryError(
+        `The stream restarted at sequence ${first.sequence}, behind the stored head at ` +
+          `${this.#continuesAfter}. That is not a replay of a stored bar; it is a different ` +
+          `stream under the same id, and folding it would splice two histories together.`,
+      );
+    }
+    const expected = (this.#continuesAfter ?? FIRST_SEQUENCE - 1) + 1;
+    this.#firstFate = first.sequence === expected ? 'whole' : 'withheld';
+    if (this.#firstClosed !== null) {
+      this.#closeFirst(this.#firstClosed);
+      this.#firstClosed = null;
+    }
+  }
+
+  #closeFirst(candle: Candle): void {
+    switch (this.#firstFate) {
+      case 'undecided':
+        this.#firstClosed = candle;
+        return;
+      case 'whole':
+        // Ahead of anything that closed while the fate was pending: the store
+        // is ordered, and this bucket precedes every other.
+        this.#closed.unshift(candle);
+        return;
+      case 'withheld':
+        this.#withheld = candle;
+        return;
+    }
+  }
+}
+
+/**
+ * The sequence the stored base series ends at, or null when nothing is stored.
+ *
+ * What a recorder joining a running asset needs to be told (a5-01): the store's
+ * head bar names the last tick it holds, and the recorder compares its first
+ * tick against it.
+ */
+export async function lastStoredSequence(
+  history: CandleHistory,
+  assetId: string,
+): Promise<number | null> {
+  const base = timeframeById(HISTORY_BASE_TIMEFRAME);
+  const head = await history.head(assetId, HISTORY_BASE_TIMEFRAME);
+  if (head === null) return null;
+  const bars = await history.read(
+    assetId,
+    HISTORY_BASE_TIMEFRAME,
+    head,
+    epochMillis(head + base.durationMs),
+  );
+  const bar = bars[bars.length - 1];
+  if (bar === undefined) {
+    throw new HistoryError(
+      `History reports a ${HISTORY_BASE_TIMEFRAME} head at ${head} for ${assetId} but holds no bar there.`,
+    );
+  }
+  return bar.lastSequence;
 }
 
 /**
@@ -245,10 +422,34 @@ export async function refreshRollup(history: CandleHistory, assetId: string): Pr
     epochMillis(openHourStart),
   );
   if (minutes.length === 0) return 0;
-  const hours = foldCandles(hour, minutes);
+  let hours = foldCandles(hour, minutes);
+  // **a5-04.** The first hour ever rolled up is whole only if the minute series
+  // covers it from its start: its first minute opens on the hour, or carries
+  // sequence 1 and so has nothing before it. Otherwise the history *begins*
+  // inside that hour, and the bar would be the shape the base tier now refuses
+  // to store (a5-01), one tier up — measured as an hour stored from 53 of its
+  // 60 minutes. Later hours are stored whatever they hold: a hole inside a
+  // series that precedes it is a hole, visible in the sequences either side.
+  if (rollupHead === null && hours.length > 0 && !beginsWhole(hours[0]!, minutes[0]!)) {
+    hours = hours.slice(1);
+  }
   if (hours.length === 0) return 0;
   await history.append(assetId, HISTORY_ROLLUP_TIMEFRAME, hours);
   return hours.length;
+}
+
+/**
+ * Whether a coarser bar that is the first of its series is whole at its start.
+ *
+ * `firstSource` is the earliest source bar inside it. The bucket is seen from
+ * its start if that bar opens exactly on the bucket, or if nothing precedes it
+ * at all — {@link FIRST_SEQUENCE} is the first tick there ever was, wherever
+ * in the bucket it lands.
+ */
+function beginsWhole(bar: Candle, firstSource: Candle): boolean {
+  return (
+    firstSource.openInstant === bar.openInstant || firstSource.firstSequence === FIRST_SEQUENCE
+  );
 }
 
 /**
@@ -268,11 +469,28 @@ export async function refreshRollup(history: CandleHistory, assetId: string): Pr
  * candles" rule exists to prevent, one step further out.
  *
  * So the window is snapped outward to the target's own grid, and a bar is
- * returned only when the stored series covers its whole bucket. At the leading
- * edge that is decided by looking one source bucket further back: if nothing is
- * stored there, the first bucket may begin inside the history and is dropped.
- * Conservative in the right direction — a bar that exists may be withheld, but
- * no partial bar is ever labelled whole.
+ * returned only when the stored series covers its whole bucket.
+ *
+ * ## The leading edge (a5-04)
+ *
+ * The first bar returned is whole only if the history did not *begin* inside
+ * it. That is decided from the stored series and from nothing else: the check
+ * used to run only when the first complete bar was the window's own first
+ * bucket, so the same 10:00 half-hour was a 69-tick bar labelled whole when
+ * asked from 09:00 and absent when asked from 10:00. Now, whatever the window,
+ * the first bucket is kept when its first source bar opens on the bucket, or
+ * carries {@link FIRST_SEQUENCE} (nothing precedes genesis, so a bucket genesis
+ * falls inside is whole by definition — and withholding it would start every
+ * provisioned asset's daily chart a day late), or when the source series holds
+ * anything in the target bucket before it, which means the history was already
+ * running. Otherwise it is dropped. Conservative in the right direction — a
+ * bar that exists may be withheld after a quiet source bucket, but no partial
+ * bar is ever labelled whole.
+ *
+ * And `[from, to)` means what `CandleHistory.read` says it means: the read
+ * snaps `to` outward so the bucket containing it can be folded, and the result
+ * is clipped so no bar opening at or after `to` is returned. A client paging by
+ * fixed windows received the boundary bar twice.
  */
 export async function readTimeframe(
   history: CandleHistory,
@@ -308,19 +526,24 @@ export async function readTimeframe(
   // The trailing bucket is whole only if the source has moved past its end.
   const head = await history.head(assetId, source.id);
   const covered = head === null ? -Infinity : head + source.durationMs;
-  let complete = folded.filter((bar) => bar.openInstant + wanted.durationMs <= covered);
+  let complete = folded.filter(
+    (bar) => bar.openInstant + wanted.durationMs <= covered && bar.openInstant < to,
+  );
   if (complete.length === 0) return [];
 
-  // The leading bucket is whole only if the source also covers what precedes it.
-  const first = complete[0]!.openInstant;
-  if (first < bucketStart(from, wanted) + wanted.durationMs) {
+  // The leading bucket is whole only if the history did not begin inside it.
+  // `complete[0]` is the bucket holding `stored[0]`: the trailing filter above
+  // removes a suffix, and the clip to `to` cannot remove the first bucket
+  // without removing every bucket.
+  const leading = complete[0]!;
+  if (!beginsWhole(leading, stored[0]!)) {
     const before = await history.read(
       assetId,
       source.id,
-      epochMillis(first - source.durationMs),
-      epochMillis(first),
+      epochMillis(leading.openInstant - wanted.durationMs),
+      epochMillis(leading.openInstant),
     );
-    if (before.length === 0 && stored[0]!.openInstant > first) complete = complete.slice(1);
+    if (before.length === 0) complete = complete.slice(1);
   }
   return complete;
 }

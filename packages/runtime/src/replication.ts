@@ -121,6 +121,34 @@ export interface ReplicationLog {
   seams(assetId: string): Promise<readonly SeamMarker[]>;
 }
 
+/**
+ * A batch that no single writer could have produced, or null.
+ *
+ * **a5-05 (B-019, SQL-3).** The two stores validated a batch against the
+ * record one tick at a time and disagreed about a batch that disagreed with
+ * itself: the reference refused `[n, n]`, SQLite deduplicated the second
+ * against the row the same batch had just inserted, and a differing `[n, n']`
+ * from one writer raised `RecordForkError` — the signature of two leaders —
+ * in SQLite alone. The rule both stores now share: a batch is one writer's
+ * ordered output, and one that repeats or reorders a sequence is refused
+ * whole rather than reconciled against itself. Checked before anything is
+ * compared with the record, so the refusal is the same on every store.
+ */
+export function malformedBatch(assetId: string, ticks: readonly Tick[]): RangeError | null {
+  for (let i = 1; i < ticks.length; i += 1) {
+    const previous = ticks[i - 1]!.sequence;
+    const current = ticks[i]!.sequence;
+    if (current <= previous) {
+      return new RangeError(
+        `Cannot append to ${assetId}: the batch is not strictly ordered (sequence ${current} ` +
+          `after ${previous}). One writer produces one ordered stream; a batch that repeats or ` +
+          `reorders a sequence is not its output and is refused whole. The record was not modified.`,
+      );
+    }
+  }
+  return null;
+}
+
 /** Whether two ticks are the same tick. */
 export function sameTick(a: Tick, b: Tick): boolean {
   return a.sequence === b.sequence && a.instant === b.instant && a.price === b.price;

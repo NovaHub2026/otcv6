@@ -11,8 +11,8 @@ import {
 import { ASSET_CATALOGUE, ENGINE_STREAM_PURPOSES } from '@otc/engine';
 import { StaleFenceError } from './fence.js';
 import { FollowerMarket } from './follower.js';
-import { LeaderSession, LeadershipLostError } from './failover.js';
-import { DEFAULT_LEASE_TERM_MS, MemoryCoordinatedStore } from './lease.js';
+import { LeaderSession, LeadershipLostError, MAX_CONSECUTIVE_APPEND_FAILURES } from './failover.js';
+import { DEFAULT_LEASE_TERM_MS, MemoryCoordinatedStore, type CoordinatedStore } from './lease.js';
 import type { MarketStateRecord } from './state.js';
 
 const GENESIS = epochMillis(1_776_000_000_000);
@@ -23,7 +23,7 @@ const ASSET = asset.definition.id;
 const TEST_CATCH_UP_MS = 86_400_000;
 const STEP_MS = 5_000;
 
-function base(store: MemoryCoordinatedStore, clock: SteppableClock, holder: string) {
+function base(store: CoordinatedStore, clock: SteppableClock, holder: string) {
   return {
     asset,
     keyring,
@@ -37,7 +37,7 @@ function base(store: MemoryCoordinatedStore, clock: SteppableClock, holder: stri
 }
 
 async function lead(
-  store: MemoryCoordinatedStore,
+  store: CoordinatedStore,
   clock: SteppableClock,
   holder: string,
 ): Promise<LeaderSession> {
@@ -361,3 +361,172 @@ describe('the record refuses a seam that does not continue it', () => {
 function countAfter(follower: FollowerMarket, sequence: number): number {
   return follower.retained.filter((tick) => tick.sequence >= sequence).length - 1;
 }
+
+/**
+ * A store whose `appendTicks` fails on demand.
+ *
+ * The shape of a lock timeout on a shared SQLite file: `acquire()` under a held
+ * write lock was measured refusing with "database is locked" after 5,019ms
+ * (a5-06). Everything else is the in-memory reference, so what is under test is
+ * the session's response and nothing about the store.
+ */
+class FailingAppendStore implements CoordinatedStore {
+  failNext = 0;
+  appendCalls = 0;
+
+  constructor(private readonly inner: MemoryCoordinatedStore) {}
+
+  get termMs(): number {
+    return this.inner.termMs;
+  }
+
+  acquire(assetId: string, holder: string) {
+    return this.inner.acquire(assetId, holder);
+  }
+  renew(grant: Parameters<CoordinatedStore['renew']>[0]) {
+    return this.inner.renew(grant);
+  }
+  release(grant: Parameters<CoordinatedStore['release']>[0]) {
+    return this.inner.release(grant);
+  }
+  inspect(assetId: string) {
+    return this.inner.inspect(assetId);
+  }
+  saveFenced(record: MarketStateRecord, token: number) {
+    return this.inner.saveFenced(record, token);
+  }
+  save(record: MarketStateRecord) {
+    return this.inner.save(record);
+  }
+  load(assetId: string) {
+    return this.inner.load(assetId);
+  }
+  list() {
+    return this.inner.list();
+  }
+  appendTicks(assetId: string, token: number, ticks: readonly Tick[]) {
+    this.appendCalls += 1;
+    if (this.failNext > 0) {
+      this.failNext -= 1;
+      return Promise.reject(new Error('SQLITE_BUSY: database is locked (simulated)'));
+    }
+    return this.inner.appendTicks(assetId, token, ticks);
+  }
+  recordSeam(assetId: string, token: number, seam: Parameters<CoordinatedStore['recordSeam']>[2]) {
+    return this.inner.recordSeam(assetId, token, seam);
+  }
+  readRecord(assetId: string, fromSequence: number, limit: number) {
+    return this.inner.readRecord(assetId, fromSequence, limit);
+  }
+  recordHead(assetId: string) {
+    return this.inner.recordHead(assetId);
+  }
+  seams(assetId: string) {
+    return this.inner.seams(assetId);
+  }
+}
+
+/** Advance until the market publishes something, so an append is attempted. */
+async function advanceUntilTicks(session: LeaderSession, clock: SteppableClock) {
+  for (let step = 0; step < 100; step += 1) {
+    clock.advance(durationMillis(STEP_MS));
+    const advance = await session.advance(clock.now());
+    if (advance.ticks.length > 0) return advance;
+  }
+  throw new Error('the market published nothing in a hundred steps');
+}
+
+describe('a transient store failure does not wedge the leader (a5-03)', () => {
+  it('keeps the unappended ticks and retries them first, so the record catches up', async () => {
+    // Before this test: one failing append left the market advanced and the
+    // record behind for ever. Every later advance appended only the new ticks,
+    // which the store correctly refused as a gap — measured as a record head of
+    // 1 against a market at sequence 8, five append calls, no seam recorded and
+    // the lease never lost. A leader publishing to its observers and writing
+    // none of it, indefinitely.
+    const clock = new SteppableClock(GENESIS);
+    const store = new FailingAppendStore(new MemoryCoordinatedStore(clock));
+    const session = await lead(store, clock, 'api-1#aa');
+    await advanceUntilTicks(session, clock);
+
+    store.failNext = 1;
+    const failed = await advanceUntilTicks(session, clock);
+    expect(failed.unrecorded).toBe(failed.ticks.length);
+    expect(failed.recordError?.message).toMatch(/SQLITE_BUSY/);
+    // The record is behind the market, and the session knows it.
+    expect(await store.recordHead(ASSET)).toBeLessThan(session.market.lastPublishedSequence!);
+    expect(session.lost).toBe(false);
+
+    const recovered = await advanceUntilTicks(session, clock);
+    expect(recovered.unrecorded).toBe(0);
+    expect(recovered.recordError).toBeNull();
+    expect(await store.recordHead(ASSET)).toBe(session.market.lastPublishedSequence);
+    // Gapless, and no seam: nothing was discontinuous, the store was merely
+    // busy for one call.
+    const entries = await store.readRecord(ASSET, 1, 100_000);
+    const sequences = entries.map((entry) => (entry.kind === 'tick' ? entry.tick.sequence : -1));
+    expect(sequences).toEqual(Array.from({ length: sequences.length }, (_, i) => i + 1));
+    expect(await store.seams(ASSET)).toEqual([]);
+  });
+
+  it('never writes a checkpoint the record has not caught up with', async () => {
+    // A successor resumes from the checkpoint and appends from its
+    // `lastPublished` onward. A checkpoint ahead of the record would make that
+    // first append a gap, refused for ever — the same wedge, handed to the next
+    // leader. So while ticks are unrecorded the checkpoint waits, on the
+    // cadence and on demand alike.
+    const clock = new SteppableClock(GENESIS);
+    const store = new FailingAppendStore(new MemoryCoordinatedStore(clock));
+    const session = await LeaderSession.takeOver({
+      ...base(store, clock, 'api-1#aa'),
+      checkpointIntervalMs: 1,
+    });
+    if (session.kind !== 'led') throw new Error('expected to lead');
+    await advanceUntilTicks(session.session, clock);
+    const before = await store.load(ASSET);
+
+    store.failNext = 2;
+    const failed = await advanceUntilTicks(session.session, clock);
+    expect(failed.checkpointed).toBe(false);
+    expect(await store.load(ASSET)).toEqual(before);
+    await expect(session.session.checkpoint(clock.now())).rejects.toThrow(/SQLITE_BUSY/);
+    expect(await store.load(ASSET)).toEqual(before);
+
+    // Once the record has caught up, the checkpoint follows it.
+    const recovered = await advanceUntilTicks(session.session, clock);
+    expect(recovered.unrecorded).toBe(0);
+    expect(recovered.checkpointed).toBe(true);
+    expect((await store.load(ASSET))?.lastPublished?.sequence).toBe(await store.recordHead(ASSET));
+  });
+
+  it('gives leadership up after repeated failures, so a successor takes over rather than nobody noticing', async () => {
+    const clock = new SteppableClock(GENESIS);
+    const store = new FailingAppendStore(new MemoryCoordinatedStore(clock));
+    const session = await lead(store, clock, 'api-1#aa');
+    await advanceUntilTicks(session, clock);
+
+    store.failNext = MAX_CONSECUTIVE_APPEND_FAILURES;
+    let failures = 0;
+    let lost: unknown = null;
+    for (let step = 0; step < 100 && lost === null; step += 1) {
+      clock.advance(durationMillis(STEP_MS));
+      try {
+        const advance = await session.advance(clock.now());
+        if (advance.recordError !== null) failures += 1;
+      } catch (error) {
+        lost = error;
+      }
+    }
+    expect(lost).toBeInstanceOf(LeadershipLostError);
+    expect((lost as Error).cause).toBeInstanceOf(Error);
+    expect(failures).toBe(MAX_CONSECUTIVE_APPEND_FAILURES - 1);
+    expect(session.lost).toBe(true);
+    // Released, not merely lost: a successor need not wait out the term, and
+    // it resumes from a checkpoint the record is not behind.
+    expect(await store.inspect(ASSET)).toBeNull();
+    const successor = await lead(store, clock, 'api-2#bb');
+    expect(successor.recovery.kind).toBe('resumed');
+    await advanceUntilTicks(successor, clock);
+    expect(await store.recordHead(ASSET)).toBe(successor.market.lastPublishedSequence);
+  });
+});

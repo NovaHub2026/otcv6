@@ -97,6 +97,19 @@ export interface BackfillResult {
   /** The tail of the tick record, within `tickRetentionMs` of the target. */
   readonly retainedTicks: readonly Tick[];
   /**
+   * The recorder that folded every tick of the backfill, still holding the
+   * minute containing the target open.
+   *
+   * Handed on for the same reason the market is (a5-01). The caller that
+   * carries this market forward must carry *this* recorder forward too: a fresh
+   * one started at the join opens the target's minute wherever the first live
+   * tick lands and stores it as whole. Measured at a join thirty seconds into a
+   * minute: that minute stored with 8 of its 18 ticks, its open 713 against a
+   * true 672 and its high 743 missing — in the permanent base tier, from which
+   * the hourly tier is then faithfully derived.
+   */
+  readonly recorder: HistoryRecorder;
+  /**
    * The market itself, at the target instant.
    *
    * Returned because the checkpoint is not the only way to hand it on, and the
@@ -188,7 +201,10 @@ export async function backfillMarket(options: BackfillOptions): Promise<Backfill
     clock,
   });
 
-  const recorder = new HistoryRecorder();
+  // Nothing is stored — the guard above established it — and the first tick
+  // the market produces is the first tick there is, so the recorder's first
+  // bucket is whole from its start.
+  const recorder = new HistoryRecorder({ continuesAfter: null });
   const retained: Tick[] = [];
   const retentionFrom = options.targetInstant - retentionMs;
   let ticksGenerated = 0;
@@ -244,5 +260,6 @@ export async function backfillMarket(options: BackfillOptions): Promise<Backfill
     rollupCandles,
     retainedTicks: retained,
     market,
+    recorder,
   };
 }

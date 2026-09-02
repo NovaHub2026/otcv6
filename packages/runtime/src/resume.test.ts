@@ -182,6 +182,29 @@ describe('an unusable record takes the seam, and says so', () => {
   });
 
   it('seams when the record is structurally wrong', async () => {
+    // An *older* record version: the shape this code knows how to seam past.
+    // A newer one is refused outright — see below.
+    const store = new MemoryStateStore();
+    const clock = new SteppableClock(GENESIS);
+    const first = await resumeMarket(base(store, clock));
+    clock.advance(durationMillis(120_000));
+    first.market.advance();
+    const record = checkpointMarket(first.market, asset.definition.id, clock.now());
+    await store.save({ ...record, version: STATE_RECORD_VERSION - 1 });
+
+    const second = await resumeMarket(base(store, new SteppableClock(clock.now())));
+    expect(second.outcome.kind).toBe('seam');
+    if (second.outcome.kind === 'seam') {
+      expect(second.outcome.reason).toMatch(/version/);
+    }
+  });
+
+  it('refuses to start on a record newer than this code understands (a5-11)', async () => {
+    // A downgrade or a mixed-version rollout. The record was written by code
+    // that knows more than this does, so nothing it says about leases or
+    // cursors can be read with confidence — which is `CorruptRecordError`'s
+    // definition, not a seam's. Seaming here discontinued every market's
+    // latent state silently-but-logged on every rollback.
     const store = new MemoryStateStore();
     const clock = new SteppableClock(GENESIS);
     const first = await resumeMarket(base(store, clock));
@@ -190,11 +213,12 @@ describe('an unusable record takes the seam, and says so', () => {
     const record = checkpointMarket(first.market, asset.definition.id, clock.now());
     await store.save({ ...record, version: STATE_RECORD_VERSION + 1 });
 
-    const second = await resumeMarket(base(store, new SteppableClock(clock.now())));
-    expect(second.outcome.kind).toBe('seam');
-    if (second.outcome.kind === 'seam') {
-      expect(second.outcome.reason).toMatch(/version/);
-    }
+    await expect(resumeMarket(base(store, new SteppableClock(clock.now())))).rejects.toThrow(
+      CorruptRecordError,
+    );
+    await expect(resumeMarket(base(store, new SteppableClock(clock.now())))).rejects.toThrow(
+      new RegExp(`version ${STATE_RECORD_VERSION + 1}.*${STATE_RECORD_VERSION}`),
+    );
   });
 
   it('never spends a keystream position twice across a seam', async () => {
@@ -204,7 +228,7 @@ describe('an unusable record takes the seam, and says so', () => {
     clock.advance(durationMillis(120_000));
     first.market.advance();
     const record = checkpointMarket(first.market, asset.definition.id, clock.now());
-    await store.save({ ...record, version: STATE_RECORD_VERSION + 1 });
+    await store.save({ ...record, version: STATE_RECORD_VERSION - 1 });
 
     const second = await resumeMarket(base(store, new SteppableClock(clock.now())));
     const resumedSnapshot = second.market.snapshotEngine();
@@ -223,7 +247,7 @@ describe('an unusable record takes the seam, and says so', () => {
     const before = first.market.advance();
     const lastPrice = before[before.length - 1]!.price;
     const record = checkpointMarket(first.market, asset.definition.id, clock.now());
-    await store.save({ ...record, version: STATE_RECORD_VERSION + 1 });
+    await store.save({ ...record, version: STATE_RECORD_VERSION - 1 });
 
     const laterClock = new SteppableClock(epochMillis(clock.now() + 60_000));
     const second = await resumeMarket(base(store, laterClock));
@@ -344,7 +368,7 @@ describe('the seam never starts inside spent keystream', () => {
     const record = await seedRecord(store, clock);
     const damaged = {
       ...record,
-      version: STATE_RECORD_VERSION + 1,
+      version: STATE_RECORD_VERSION - 1,
       leasedBlocks: { ...record.leasedBlocks },
     };
     delete (damaged.leasedBlocks as Record<string, string>).sign;
@@ -384,7 +408,7 @@ describe('the seam never starts inside spent keystream', () => {
     const record = await seedRecord(store, clock);
     const stripped = {
       ...record,
-      version: STATE_RECORD_VERSION + 1,
+      version: STATE_RECORD_VERSION - 1,
       leasedBlocks: { sign: record.leasedBlocks.sign! },
       snapshot: { ...record.snapshot, cursors: { sign: record.snapshot.cursors.sign! } },
     };
@@ -436,7 +460,7 @@ describe('a seam moves forward, never back', () => {
     const observed = first.market.advance();
     const lastObserved = observed[observed.length - 1]!;
 
-    await store.save({ ...record, version: STATE_RECORD_VERSION + 1 });
+    await store.save({ ...record, version: STATE_RECORD_VERSION - 1 });
     const resumeClock = new SteppableClock(clock.now());
     const second = await resumeMarket(base(store, resumeClock));
     return { second, resumeClock, lastObserved, record };
