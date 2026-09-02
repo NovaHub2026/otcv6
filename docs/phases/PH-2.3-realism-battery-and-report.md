@@ -191,3 +191,9 @@ which pushed the 30-second detection floor from 0.224pp back to 0.293pp — so t
 calibration run was enlarged from four million ticks to seven, restoring it to
 0.222pp. Sensitivity is part of the answer, and it was not going to be traded
 away to keep a test convenient.
+
+> **Note, 2026-09-02 (out-of-band audit, a4-07).** Three of the fifteen ratios are
+> now evaluated only when their guard quantity clears its own band; on a memoryless
+> walk they read "not evaluated" and count as failed by precondition, so the walk
+> fails eight metrics rather than exactly seven, and the count is seed-dependent.
+> The gate's verdict — never plausible — is unchanged.

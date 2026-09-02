@@ -1,19 +1,17 @@
 // Invariant evidence: INV-001 (economic independence), INV-005 (expiration independence).
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { listSourceFiles, readRepositoryFile } from './repository.js';
 import {
   AMBIENT_RULES,
   ECONOMIC_BLINDNESS_RULES,
+  moduleSpecifiers,
   PORTABILITY_RULES,
+  scanOptionsFor,
   scanSource,
+  SOURCE_EXTENSIONS,
   stripCommentsAndStrings,
   type Violation,
 } from './sourceScan.js';
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(here, '../../../..');
 
 /**
  * Packages whose code generates, carries or transforms market data.
@@ -81,6 +79,24 @@ const REPLAYABLE_ROOTS = [
 ];
 
 /**
+ * The evidence generators.
+ *
+ * **Out-of-band audit 7, a2-04.** `tools/sim` produces the numbers every claim
+ * in this project cites, and it was in neither enforcement layer: not in these
+ * roots, and outside the ESLint block's `packages/*` glob. A `Date.now()` in
+ * `runner.ts` was caught by nothing. B-018 recorded the reason the roots were
+ * not widened — `horizonEvidence.ts` times wall-clock work legitimately — and
+ * that is an argument for an allowlist, not for no scan. So the tooling is
+ * bound by the replayability rules with the four timers named below, and by
+ * portability outright: a non-portable `Math.exp` in an evidence generator
+ * makes a "reproducible" result reproducible on one Node build.
+ *
+ * It is not bound by the economic vocabulary. The simulation computes
+ * economics; that is its job.
+ */
+const TOOLING_ROOTS = ['tools/sim/src'];
+
+/**
  * `publishingKeyFromEnvironment` is the sanctioned reader of ambient state.
  *
  * A publishing key has to come from somewhere outside the process, and reading
@@ -103,57 +119,57 @@ const AMBIENT_STATE_ALLOWLIST = [
   'apps/api/src/app.module.ts',
   'apps/api/src/main.ts',
   'apps/api/src/publication.service.ts',
+  /**
+   * The tooling's entry points read `process.argv` and `process.env` to learn
+   * what to run. They are commands, not modules anything imports; every module
+   * they drive is scanned without exemption.
+   */
+  'tools/sim/src/catalogueScale.ts',
+  'tools/sim/src/cli.ts',
+  'tools/sim/src/dispersionEvidence.ts',
+  'tools/sim/src/horizonEvidence.ts',
+  'tools/sim/src/venueScale.ts',
 ];
 
 /**
- * `SystemClock` is the single sanctioned reader of ambient time: something must
- * eventually ask the operating system what time it is, and confining that to one
- * named class is what makes every other module replayable.
+ * `SystemClock` is the single sanctioned reader of ambient time in anything
+ * that ships: something must eventually ask the operating system what time it
+ * is, and confining that to one named class is what makes every other module
+ * replayable.
+ *
+ * The four tooling files time wall-clock work — how long a hundred-asset
+ * registration or a horizon-evidence run took — and report it as evidence.
+ * That is a measurement of the run, not an input to it: none of them passes
+ * what it reads to anything that generates. Each is asserted below to still
+ * read time, so the list cannot outlive the reason for an entry.
  */
-const AMBIENT_TIME_ALLOWLIST = ['packages/core/src/time/clock.ts'];
+const AMBIENT_TIME_ALLOWLIST = [
+  'packages/core/src/time/clock.ts',
+  'tools/sim/src/catalogueScale.ts',
+  'tools/sim/src/horizonEvidence.ts',
+  'tools/sim/src/runner.ts',
+  'tools/sim/src/venueScale.ts',
+];
 
-function listSourceFiles(root: string): string[] {
-  const absolute = path.join(repoRoot, root);
-  const out: string[] = [];
-  const walk = (dir: string): void => {
-    let entries: string[];
-    try {
-      entries = readdirSync(dir);
-    } catch {
-      return; // a package that does not exist yet
-    }
-    for (const entry of entries) {
-      const full = path.join(dir, entry);
-      if (statSync(full).isDirectory()) {
-        walk(full);
-      } else if (entry.endsWith('.ts') && !entry.endsWith('.d.ts')) {
-        out.push(path.relative(repoRoot, full));
-      }
-    }
-  };
-  walk(absolute);
-  return out.sort();
+interface Source {
+  readonly file: string;
+  readonly source: string;
 }
 
-function isTestFile(file: string): boolean {
-  return file.endsWith('.test.ts');
-}
-
-function sourcesUnder(roots: readonly string[]): { file: string; source: string }[] {
+function sourcesUnder(roots: readonly string[]): Source[] {
   return roots
-    .flatMap(listSourceFiles)
-    .filter((f) => !isTestFile(f))
-    .map((file) => ({ file, source: readFileSync(path.join(repoRoot, file), 'utf8') }));
+    .flatMap((root) => listSourceFiles(root, { includeTests: false }))
+    .map((file) => ({ file, source: readRepositoryFile(file) }));
 }
 
 /** The price path: bound by every rule, including economic blindness. */
-function generationSources(): { file: string; source: string }[] {
+function generationSources(): Source[] {
   return sourcesUnder(GENERATION_ROOTS);
 }
 
-/** Everything that must stay reproducible, price path or not. */
-function replayableSources(): { file: string; source: string }[] {
-  return sourcesUnder(REPLAYABLE_ROOTS);
+/** Everything that must stay reproducible: the price path, what hosts it, and what measures it. */
+function replayableSources(): Source[] {
+  return sourcesUnder([...REPLAYABLE_ROOTS, ...TOOLING_ROOTS]);
 }
 
 function describeViolations(violations: Violation[]): string {
@@ -169,14 +185,119 @@ describe('guardrail scanner', () => {
     expect(found[0]!.rule).toBe('no-ambient-time');
   });
 
+  it('finds every spelling of ambient time the audit planted (a2-05)', () => {
+    for (const source of [
+      'const p08 = Date();', // G1-08
+      'const p09 = new Intl.DateTimeFormat().format();', // G1-09
+      'const p11 = process.uptime();', // G1-11
+      'const p12 = performance.timeOrigin;', // G1-12
+      'const p = performance.now();',
+      'const p = process.hrtime.bigint();',
+      'const d = new Date(0);',
+    ]) {
+      const found = scanSource('x.ts', source, AMBIENT_RULES).filter(
+        (v) => v.rule === 'no-ambient-time',
+      );
+      expect(found, source).toHaveLength(1);
+    }
+  });
+
   it('finds ambient mutable state', () => {
     expect(scanSource('x.ts', 'const x = globalThis.leak;', AMBIENT_RULES)).toHaveLength(1);
     expect(scanSource('x.ts', 'const e = process.env.MODE;', AMBIENT_RULES)).toHaveLength(1);
+    // The path members are what a module legitimately reads from import.meta.
+    expect(
+      scanSource(
+        'x.ts',
+        'const here = path.dirname(fileURLToPath(import.meta.url));',
+        AMBIENT_RULES,
+      ),
+    ).toHaveLength(0);
+    for (const source of [
+      'const p22 = (global as Record<string, unknown>).__exposure;', // G1-22
+      'const p25 = process.argv;', // G1-25
+      'const p24 = import.meta.env;', // G1-24
+      'const p24b = (import.meta as Record<string, unknown>).env;', // G1-24, as planted
+      'const p13 = process.getBuiltinModule;', // W-13
+    ]) {
+      const found = scanSource('x.ts', source, AMBIENT_RULES).filter(
+        (v) => v.rule === 'no-ambient-state',
+      );
+      expect(found, source).toHaveLength(1);
+    }
   });
 
   it('finds ambient randomness', () => {
     expect(scanSource('x.ts', 'const r = Math.random();', AMBIENT_RULES)).toHaveLength(1);
     expect(scanSource('x.ts', 'const r = randomBytes(32);', AMBIENT_RULES)).toHaveLength(1);
+    expect(scanSource('x.ts', 'const r = randomFill(buffer);', AMBIENT_RULES)).toHaveLength(1);
+    expect(scanSource('x.ts', 'const k = generateKeySync("hmac");', AMBIENT_RULES)).toHaveLength(1);
+  });
+
+  it('finds bracket access on a global, which names the member in a string (a2-05)', () => {
+    for (const source of [
+      'const p07 = Date["now"]();', // G1-07
+      'const p14 = Math["random"]();', // G1-14
+      'const p29 = Math["exp"](0.1);', // G1-29
+      'const p23 = process["env"];', // G1-23
+      'const p = performance[key];',
+      'const p = Reflect["get"];',
+    ]) {
+      const found = scanSource('x.ts', source, AMBIENT_RULES).filter(
+        (v) => v.rule === 'no-computed-global-access',
+      );
+      expect(found, source).toHaveLength(1);
+    }
+  });
+
+  it('finds dynamic evaluation (a2-05)', () => {
+    for (const source of [
+      'const p16 = (Reflect.get(Math, "random") as () => number)();', // G1-16
+      'const p10 = Reflect.construct(Date, []);', // G1-10
+      'const p20 = new Function("return Math.random()")();', // G1-20
+      'const p21 = eval("Math.random()");', // G1-21
+      'const f = Function("return 1");',
+    ]) {
+      const found = scanSource('x.ts', source, AMBIENT_RULES).filter(
+        (v) => v.rule === 'no-dynamic-evaluation',
+      );
+      expect(found, source).toHaveLength(1);
+    }
+    // A function of one's own that happens to end in the word is not the constructor.
+    expect(
+      scanSource('x.ts', 'const v = myFunction(1) + obj.eval(2);', AMBIENT_RULES).filter(
+        (v) => v.rule === 'no-dynamic-evaluation',
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('finds a global taken as a value, which hides the member access (a2-05)', () => {
+    for (const source of [
+      'const M17 = Math;', // G1-17
+      'const { exp: exp30 } = Math;', // G1-30
+      'const f = use(Date);',
+      'const p = [performance];',
+    ]) {
+      const found = scanSource('x.ts', source, AMBIENT_RULES).filter(
+        (v) => v.rule === 'no-global-aliasing',
+      );
+      expect(found, source).toHaveLength(1);
+    }
+    // The ordinary member access is not aliasing.
+    expect(
+      scanSource('x.ts', 'const v = Math.floor(x) + Math.sqrt(y);', AMBIENT_RULES).filter(
+        (v) => v.rule === 'no-global-aliasing',
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('finds a mutable module-level export (a2-05, B-007)', () => {
+    const found = scanSource('x.ts', 'export let p26 = 0;', AMBIENT_RULES);
+    expect(found).toHaveLength(1);
+    expect(found[0]!.rule).toBe('no-mutable-module-state');
+    expect(scanSource('x.ts', 'export const p = 0;\nlet local = 0;', AMBIENT_RULES)).toHaveLength(
+      0,
+    );
   });
 
   it('finds non-portable maths', () => {
@@ -247,32 +368,40 @@ describe('guardrail scanner', () => {
     const stripped = stripCommentsAndStrings('a\n/* x\ny */\nb');
     expect(stripped.split('\n')).toHaveLength(4);
   });
+
+  it('reads every source spelling, not only .ts (a2-03)', () => {
+    // The vocabulary the walker uses. A `.mts` or `.tsx` under a scanned root
+    // is scanned; the meta-audit plants one to prove it.
+    expect(SOURCE_EXTENSIONS).toEqual(['.ts', '.tsx', '.mts', '.cts']);
+    expect(scanOptionsFor('component.tsx')).toEqual({ jsx: true });
+    expect(scanOptionsFor('module.mts')).toEqual({ jsx: false });
+  });
 });
 
 describe('generation code is replayable', () => {
   // The replayability rules apply to everything that must reproduce, which is
   // wider than the price path: `runtime` schedules and persists markets,
-  // `trading` settles against the published record.
+  // `trading` settles against the published record, `tools/sim` measures it.
   const sources = replayableSources();
+  const byRule = (rule: string): Violation[] =>
+    sources.flatMap(({ file, source }) =>
+      scanSource(file, source, AMBIENT_RULES).filter((v) => v.rule === rule),
+    );
 
-  it('scans a non-empty set of files', () => {
+  it('scans a non-empty set of files, including the tooling', () => {
     expect(sources.length).toBeGreaterThan(5);
+    expect(sources.some(({ file }) => file.startsWith('tools/sim/src/'))).toBe(true);
   });
 
-  it('never reads ambient time outside the sanctioned clock', () => {
-    const violations = sources
-      .filter(({ file }) => !AMBIENT_TIME_ALLOWLIST.includes(file))
-      .flatMap(({ file, source }) =>
-        scanSource(file, source, AMBIENT_RULES).filter((v) => v.rule === 'no-ambient-time'),
-      );
+  it('never reads ambient time outside the sanctioned clock and the evidence timers', () => {
+    const violations = byRule('no-ambient-time').filter(
+      (v) => !AMBIENT_TIME_ALLOWLIST.includes(v.file),
+    );
     expect(describeViolations(violations)).toBe('');
   });
 
   it('never reads ambient randomness', () => {
-    const violations = sources.flatMap(({ file, source }) =>
-      scanSource(file, source, AMBIENT_RULES).filter((v) => v.rule === 'no-ambient-randomness'),
-    );
-    expect(describeViolations(violations)).toBe('');
+    expect(describeViolations(byRule('no-ambient-randomness'))).toBe('');
   });
 
   it('never reads ambient mutable state', () => {
@@ -280,27 +409,48 @@ describe('generation code is replayable', () => {
     // through `globalThis`, armed by `process.env`, and watched every
     // import-based and vocabulary-based guardrail pass it. Ambient state is a
     // channel into the price path that names nothing and imports nothing.
-    const violations = sources
-      .filter(({ file }) => !AMBIENT_STATE_ALLOWLIST.includes(file))
-      .flatMap(({ file, source }) =>
-        scanSource(file, source, AMBIENT_RULES).filter((v) => v.rule === 'no-ambient-state'),
-      );
+    const violations = byRule('no-ambient-state').filter(
+      (v) => !AMBIENT_STATE_ALLOWLIST.includes(v.file),
+    );
     expect(describeViolations(violations)).toBe('');
   });
 
-  it('confines ambient time to exactly one file', () => {
-    const readers = sources
-      .filter(({ file, source }) =>
-        scanSource(file, source, AMBIENT_RULES).some((v) => v.rule === 'no-ambient-time'),
-      )
-      .map(({ file }) => file);
-    expect(readers).toEqual(AMBIENT_TIME_ALLOWLIST);
+  it('never reaches a global by a computed name, dynamic evaluation or an alias', () => {
+    // a2-05: the three constructs that hide a name from a name-based scan.
+    // No allowlist: nothing replayable has a use for any of them.
+    const violations = [
+      ...byRule('no-computed-global-access'),
+      ...byRule('no-dynamic-evaluation'),
+      ...byRule('no-global-aliasing'),
+      ...byRule('no-mutable-module-state'),
+    ];
+    expect(describeViolations(violations)).toBe('');
+  });
+
+  it('confines ambient time to exactly the allowlisted files', () => {
+    // Equality, so an allowlisted file that stops reading time fails too: an
+    // exemption that outlives its reason is a hole with a docstring.
+    const readers = [...new Set(byRule('no-ambient-time').map((v) => v.file))].sort();
+    expect(readers).toEqual([...AMBIENT_TIME_ALLOWLIST].sort());
+  });
+
+  it('keeps no ambient-state exemption that is no longer needed', () => {
+    const readers = new Set(byRule('no-ambient-state').map((v) => v.file));
+    const stale = AMBIENT_STATE_ALLOWLIST.filter((file) => !readers.has(file));
+    expect(stale, 'allowlisted files that no longer read ambient state').toEqual([]);
   });
 });
 
 describe('generation code is portable', () => {
   it('uses no implementation-approximated floating-point operation', () => {
     const violations = generationSources().flatMap(({ file, source }) =>
+      scanSource(file, source, PORTABILITY_RULES),
+    );
+    expect(describeViolations(violations)).toBe('');
+  });
+
+  it('nor does the tooling that produces the evidence (a2-04)', () => {
+    const violations = sourcesUnder(TOOLING_ROOTS).flatMap(({ file, source }) =>
       scanSource(file, source, PORTABILITY_RULES),
     );
     expect(describeViolations(violations)).toBe('');
@@ -317,28 +467,22 @@ describe('generation code is economically blind', () => {
 });
 
 describe('dependency direction', () => {
-  const IMPORT_PATTERN = /(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g;
-
-  // Import specifiers live inside string literals, which `stripCommentsAndStrings`
-  // erases — so strings must be kept and only comments removed. Without that,
-  // prose in another guardrail describing `import('@otc/engine')` counted as a
-  // real dependency of @otc/core.
-  function stripCommentsOnly(source: string): string {
-    return source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
-  }
-
-  function workspaceImports(source: string): string[] {
-    return [...stripCommentsOnly(source).matchAll(IMPORT_PATTERN)]
-      .map((m) => m[1]!)
-      .filter((s) => s.startsWith('@otc/'));
+  // The manifest-level policy lives in `dependencies.test.ts`. These three are
+  // the rules that policy cannot express: they are about *which files* may
+  // import, not which packages may declare.
+  //
+  // **PH-19.1 / a2-01.** This block carried a private two-regex comment
+  // stripper — the CA5-05 form, left behind when the shared scanner was fixed.
+  // It reads specifiers through the shared lexer now.
+  function workspaceImports(file: string): string[] {
+    return moduleSpecifiers(readRepositoryFile(file), scanOptionsFor(file)).filter((s) =>
+      s.startsWith('@otc/'),
+    );
   }
 
   it('keeps @otc/core free of workspace dependencies', () => {
     const offenders = listSourceFiles('packages/core/src')
-      .map((file) => ({
-        file,
-        imports: workspaceImports(readFileSync(path.join(repoRoot, file), 'utf8')),
-      }))
+      .map((file) => ({ file, imports: workspaceImports(file) }))
       .filter(({ imports }) => imports.length > 0);
     expect(offenders).toEqual([]);
   });
@@ -348,11 +492,10 @@ describe('dependency direction', () => {
     // produced it. A battery that can reach the generator is not an observer.
     // Its tests may import the fixture corpus — that is where calibration
     // happens — but nothing that ships may.
-    const offenders = listSourceFiles('packages/lab/src')
-      .filter((file) => !isTestFile(file))
+    const offenders = listSourceFiles('packages/lab/src', { includeTests: false })
       .map((file) => ({
         file,
-        imports: workspaceImports(readFileSync(path.join(repoRoot, file), 'utf8')).filter(
+        imports: workspaceImports(file).filter(
           (s) => s !== '@otc/core' && !s.startsWith('@otc/core/'),
         ),
       }))
@@ -364,7 +507,7 @@ describe('dependency direction', () => {
     const offenders = listSourceFiles('packages/engine/src')
       .map((file) => ({
         file,
-        imports: workspaceImports(readFileSync(path.join(repoRoot, file), 'utf8')).filter(
+        imports: workspaceImports(file).filter(
           (s) => s !== '@otc/core' && !s.startsWith('@otc/core/'),
         ),
       }))

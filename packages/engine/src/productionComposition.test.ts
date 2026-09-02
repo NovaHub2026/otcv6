@@ -54,6 +54,22 @@ function productionKeyring(): MasterKeyring {
   return MasterKeyring.fromSecret('audit-production', randomBytes(32));
 }
 
+/**
+ * Where the interior index is drawn from, per asset.
+ *
+ * The production keyring above is a fresh random secret every run, which is the
+ * point of it; the reflection point is a *test* parameter and is drawn from a
+ * fixed test seed instead, so the sequence of `N` across the catalogue is the
+ * same on every run and a failure names a reproducible index.
+ */
+const INTERIOR = { min: 2_000, max: 8_000 } as const;
+const interior = MasterKeyring.forTesting('production-composition-interior').derive({
+  env: 'test',
+  asset: 'composition',
+  purpose: 'interior',
+  keyEpoch: 0,
+});
+
 describe('the shipped composition is sign-blind in production', () => {
   it.each(ASSET_CATALOGUE.map((a, i) => [a.definition.id, i] as const))(
     '%s mirrors exactly under environment: production',
@@ -79,11 +95,13 @@ describe('the shipped composition is sign-blind in production', () => {
         });
 
       const result = runMirrorTest(build, signSource, {
-        burnInTicks: 8_000,
+        burnInTicks: INTERIOR,
         compareTicks: 2_000,
+        interior,
       });
-      expect(result.divergences).toEqual([]);
+      expect(result.divergences, `snapshot at ${result.snapshotAt}`).toEqual([]);
       expect(result.mirrored).toBe(true);
+      expect(result.snapshotAt).toBeGreaterThanOrEqual(INTERIOR.min);
     },
   );
 

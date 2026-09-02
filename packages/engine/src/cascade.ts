@@ -60,10 +60,43 @@ export const DEFAULT_CASCADE: CascadeConfig = {
   lowMultiplier: 0.78,
 };
 
+/**
+ * The mechanism's own ceiling on components.
+ *
+ * Six above `TRAIT_BOUNDS.cascadeDepth.max`, deliberately: the personality
+ * fence is the region assets are authored in, and this is the point past which
+ * a cascade is a configuration error rather than a market — at the narrowest
+ * spacing a personality may use, twenty-four rungs already span more than the
+ * longest volatility memory any asset is allowed. A hand-written config past it
+ * has mistaken the field for something else.
+ */
+export const MAX_CASCADE_COMPONENTS = 24;
+
+/**
+ * Validate a cascade configuration.
+ *
+ * `lowMultiplier` may be exactly 1. **Cycle Audit 7, a3-03.**
+ * `TRAIT_BOUNDS.clustering.min` is 0, which expands to `lowMultiplier: 1` — a
+ * two-point multiplier on `{1, 1}`, the constant cascade, with an inflation of
+ * exactly 1. The trait fence admitted it and this refused it, so a personality
+ * `assertPersonalityTraits` called legal could not be built, and a registration
+ * starting there was refused at `safety` with a cascade message about a trait
+ * the caller had set inside its bounds.
+ *
+ * Admitted as the degenerate case rather than raising the fence. A strictly
+ * positive floor would re-normalise every trait distance in
+ * `differentiation.ts` and move the basis of a measured threshold; the constant
+ * cascade, by contrast, runs, snapshots and restores like any other, and still
+ * draws from its stream on every switch so cursors advance identically.
+ */
 export function assertCascadeConfig(config: CascadeConfig): void {
-  if (!Number.isInteger(config.components) || config.components < 1 || config.components > 24) {
+  if (
+    !Number.isInteger(config.components) ||
+    config.components < 1 ||
+    config.components > MAX_CASCADE_COMPONENTS
+  ) {
     throw new RangeError(
-      `Cascade components must be an integer in [1, 24], received ${config.components}.`,
+      `Cascade components must be an integer in [1, ${MAX_CASCADE_COMPONENTS}], received ${config.components}.`,
     );
   }
   if (!(config.slowestHazardPerMs > 0) || !Number.isFinite(config.slowestHazardPerMs)) {
@@ -76,8 +109,8 @@ export function assertCascadeConfig(config: CascadeConfig): void {
       `hazardRatio must be finite and greater than 1, received ${config.hazardRatio}.`,
     );
   }
-  if (!(config.lowMultiplier > 0 && config.lowMultiplier < 1)) {
-    throw new RangeError(`lowMultiplier must lie in (0, 1), received ${config.lowMultiplier}.`);
+  if (!(config.lowMultiplier > 0 && config.lowMultiplier <= 1)) {
+    throw new RangeError(`lowMultiplier must lie in (0, 1], received ${config.lowMultiplier}.`);
   }
 }
 

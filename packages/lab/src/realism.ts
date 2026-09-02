@@ -12,8 +12,18 @@ import type { ObserverDataset } from './observer.js';
  * The two batteries are opposing constraints. Only together do they say anything.
  *
  * Target ranges come from the stylized facts of real markets and from the
- * anti-goals, and are fixed here — before any candidate market exists — so that
- * they cannot be tuned to whatever PH-3 happens to produce.
+ * anti-goals. They have not moved since the commit that introduced them —
+ * `906e398`, 2026-08-31, which is also the commit that introduced
+ * `packages/engine` — so what the record supports is that no band has been
+ * tuned to the engine *since*, not that the bands were set before a candidate
+ * market existed. An earlier version of this comment claimed the latter; the
+ * out-of-band audit (a4-06) found the repository unable to show it.
+ *
+ * Two of the bands are not realism at all. `return-autocorrelation-lag1` and
+ * `mean-run-length` are ADR-0003 integrity requirements at tick scale: real
+ * tick data carries bid-ask bounce, which ADR-0003 §4 bans because it is
+ * tradeable, and a future reader must not "fix" those bands toward the market
+ * they describe (a4-08). Their rationales say so.
  */
 
 export interface RealismMetric {
@@ -25,6 +35,13 @@ export interface RealismMetric {
   readonly targetMin: number;
   readonly targetMax: number;
   readonly pass: boolean;
+  /**
+   * Why the metric was not evaluated, when it was not. The value is then NaN
+   * and the metric fails — a ratio whose denominator has not cleared its own
+   * band is a ratio of noise, and reporting a number for it is worse than
+   * reporting none (a4-07).
+   */
+  readonly notEvaluated?: string;
 }
 
 export interface RealismReport {
@@ -60,6 +77,38 @@ function metric(
     targetMax,
     pass: Number.isFinite(value) && value >= targetMin && value <= targetMax,
   };
+}
+
+/**
+ * A ratio metric, evaluated only when the quantity it is a ratio *of* is itself
+ * inside its own band.
+ *
+ * **Out-of-band audit, a4-07.** Forty seeds of a memoryless walk: the ratio of
+ * absolute-return autocorrelation at lag 50 to lag 1 read 1240.1, −3571.0 and
+ * −1242.3, and passed its band on 9 of 40 — because the ratio of two noise
+ * terms is Cauchy, and P(Cauchy ∈ [0.15, 1.2]) is 0.23. The overall verdict was
+ * never affected (0 of 40 plausible), but the metric values were meaningless
+ * and "fails exactly seven metrics" was a property of one seed.
+ */
+function ratioMetric(
+  name: string,
+  description: string,
+  rationale: string,
+  numerator: number,
+  denominator: number,
+  guard: { readonly name: string; readonly value: number; readonly floor: number },
+  targetMin: number,
+  targetMax: number,
+): RealismMetric {
+  if (!(guard.value >= guard.floor)) {
+    return {
+      ...metric(name, description, rationale, Number.NaN, targetMin, targetMax),
+      notEvaluated:
+        `${guard.name} is ${guard.value.toFixed(4)}, below the ${guard.floor} its own band ` +
+        'requires, so this ratio would be noise over noise',
+    };
+  }
+  return metric(name, description, rationale, numerator / denominator, targetMin, targetMax);
 }
 
 function autocorrelation(values: Float64Array, lag: number): number {
@@ -127,8 +176,9 @@ export function assessRealism(
     metric(
       'return-autocorrelation-lag1',
       'Autocorrelation of tick returns at lag 1.',
-      'Real returns are close to serially uncorrelated, and any deviation is directly ' +
-        'tradeable. Near zero is both a realism fact and a hard integrity requirement.',
+      'ADR-0003 integrity requirement at tick scale, not a description of real markets: ' +
+        'real tick returns carry bid-ask bounce (ACF(1) of -0.1 to -0.3), which ADR-0003 §4 ' +
+        'bans because it is directly tradeable. Do not widen this band toward realism.',
       Math.abs(autocorrelation(returns, 1)),
       0,
       0.02,
@@ -172,37 +222,49 @@ export function assessRealism(
       0.95,
     ),
   );
+  // Both ratios are ratios *of* the lag-1 clustering, so neither means anything
+  // unless that clustering has cleared its own band first.
+  const clusteringGuard = {
+    name: 'absolute-return autocorrelation at lag 1',
+    value: absAcf1,
+    floor: 0.05,
+  };
   metrics.push(
-    metric(
+    ratioMetric(
       'volatility-clustering-dominance',
       'Ratio of absolute-return autocorrelation to return autocorrelation, at lag 1.',
       'The defining asymmetry of a real market: strong dependence in the second moment, ' +
         'none in the first. A single number that a white-noise walk cannot fake.',
-      absAcf1 / Math.max(1e-6, Math.abs(autocorrelation(returns, 1))),
+      absAcf1,
+      Math.max(1e-6, Math.abs(autocorrelation(returns, 1))),
+      clusteringGuard,
       5,
       Number.POSITIVE_INFINITY,
     ),
   );
   metrics.push(
-    metric(
+    ratioMetric(
       'absolute-return-decay-is-slow',
       'Ratio of absolute-return autocorrelation at lag 50 to lag 1.',
       'Exponential decay would collapse this ratio toward zero. Real markets retain a ' +
         'substantial fraction of the dependence fifty steps out.',
-      absAcf50 / Math.max(1e-6, absAcf1),
+      absAcf50,
+      absAcf1,
+      clusteringGuard,
       0.15,
       1.2,
     ),
   );
 
   // --- Tails ------------------------------------------------------------------
+  const tickKurtosis = excessKurtosis(returns);
   metrics.push(
     metric(
       'excess-kurtosis',
       'Excess kurtosis of tick returns.',
       'Real high-frequency returns are strongly leptokurtic. A Gaussian walk sits at 0; ' +
         'the acceptable band is wide because it varies enormously by asset and sampling rate.',
-      excessKurtosis(returns),
+      tickKurtosis,
       1.5,
       200,
     ),
@@ -218,12 +280,14 @@ export function assessRealism(
     aggregated[b] = sum;
   }
   metrics.push(
-    metric(
+    ratioMetric(
       'aggregational-gaussianity',
       'Ratio of aggregated excess kurtosis to tick excess kurtosis.',
       'Summing returns pulls the distribution toward normal. A model whose tails do not ' +
         'thin under aggregation is producing them by a mechanism real markets do not have.',
-      excessKurtosis(aggregated) / Math.max(0.1, excessKurtosis(returns)),
+      excessKurtosis(aggregated),
+      tickKurtosis,
+      { name: 'tick excess kurtosis', value: tickKurtosis, floor: 1.5 },
       0,
       0.85,
     ),
@@ -286,8 +350,10 @@ export function assessRealism(
     metric(
       'mean-run-length',
       'Mean length of same-signed tick runs.',
-      'A fair-coin sign process gives exactly 2. Real returns are close to it, and a ' +
-        'value far from 2 means the sign carries exploitable persistence or alternation.',
+      'ADR-0003 integrity requirement at tick scale, not a description of real markets: a ' +
+        'fair-coin sign process gives exactly 2, real tick data runs well under it because of ' +
+        'bid-ask bounce, and a value away from 2 here means the sign carries exploitable ' +
+        'persistence or alternation. Do not widen this band toward realism.',
       signedTicks / Math.max(1, runs),
       1.85,
       2.15,
@@ -385,8 +451,10 @@ export function formatRealismReport(report: RealismReport): string {
       m.targetMax === Number.POSITIVE_INFINITY
         ? `>= ${m.targetMin}`
         : `${m.targetMin} .. ${m.targetMax}`;
+    const value = Number.isFinite(m.value) ? m.value.toFixed(4) : 'n/a';
     lines.push(
-      `  ${m.pass ? 'ok  ' : 'FAIL'} ${m.name.padEnd(38)} ${m.value.toFixed(4).padStart(12)}  target ${range}`,
+      `  ${m.pass ? 'ok  ' : 'FAIL'} ${m.name.padEnd(38)} ${value.padStart(12)}  target ${range}` +
+        (m.notEvaluated === undefined ? '' : `  not evaluated: ${m.notEvaluated}`),
     );
   }
   return lines.join('\n');

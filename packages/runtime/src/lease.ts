@@ -4,6 +4,7 @@ import { StaleFenceError, type FenceToken } from './fence.js';
 import {
   entrySequence,
   lowerBound,
+  malformedBatch,
   RecordForkError,
   sameTick,
   SeamError,
@@ -291,6 +292,8 @@ export class MemoryCoordinatedStore implements CoordinatedStore {
     const refusal = this.#fenceRefusal(assetId, token);
     if (refusal !== null) return Promise.reject(refusal);
     if (ticks.length === 0) return Promise.resolve();
+    const malformed = malformedBatch(assetId, ticks);
+    if (malformed !== null) return Promise.reject(malformed);
 
     const state = this.#recordFor(assetId);
     // Validate the whole batch before mutating anything. A partial append would

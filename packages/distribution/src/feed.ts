@@ -91,6 +91,15 @@ export interface TickFeedOptions {
 export const DEFAULT_RETAIN_TICKS = 50_000;
 
 /**
+ * The sequence of the first tick any market publishes.
+ *
+ * The only sequence an asset with no history can legitimately be asked for:
+ * "send me what comes next" when nothing has come yet. Every other request of
+ * an empty feed claims ticks that were never published (a5-09).
+ */
+export const FIRST_SEQUENCE = 1;
+
+/**
  * Ordered, gapless, resumable distribution of one market to many observers.
  *
  * The design decision worth stating is what happens to a client that cannot keep
@@ -157,7 +166,17 @@ export class TickFeed {
   /** Retained ticks from `fromSequence` onwards, inclusive. */
   since(assetId: string, fromSequence: number): readonly Tick[] {
     const history = this.#history.get(assetId) ?? [];
-    if (history.length === 0) return [];
+    if (history.length === 0) {
+      // **a5-09.** The empty case returned [] for any sequence, so the
+      // Cycle Audit 3 refusal below did not apply "symmetrically" as the error
+      // type claims: a client asking for 600 of an asset that had published
+      // nothing was accepted silently and told it was current. With nothing
+      // published, the newest sequence is the one before the first.
+      if (fromSequence !== FIRST_SEQUENCE) {
+        throw new UnknownSequenceError(assetId, fromSequence, FIRST_SEQUENCE - 1);
+      }
+      return [];
+    }
     const oldest = history[0]!.sequence;
     if (fromSequence < oldest) {
       throw new EvictedError(assetId, fromSequence, oldest);

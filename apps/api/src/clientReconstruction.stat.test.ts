@@ -1,5 +1,6 @@
 // Invariant evidence: INV-002 (shared market), INV-004 (timeframe observer independence).
 import { spawn, type ChildProcess } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -61,8 +62,17 @@ async function boot(basePort: number): Promise<number> {
 async function bootOn(port: number): Promise<void> {
   const stateDir = await mkdtemp(path.join(tmpdir(), 'otc-join-'));
   directories.push(stateDir);
+  // A nonce `/health` echoes, so a foreign engine on this port is not mistaken
+  // for the child (a6-14).
+  const nonce = randomUUID();
   const child = spawn(process.execPath, [entry], {
-    env: { ...process.env, OTC_STATE_DIR: stateDir, OTC_MASTER_SECRET: SECRET, PORT: String(port) },
+    env: {
+      ...process.env,
+      OTC_STATE_DIR: stateDir,
+      OTC_MASTER_SECRET: SECRET,
+      OTC_BOOT_NONCE: nonce,
+      PORT: String(port),
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   started.push(child);
@@ -78,7 +88,11 @@ async function bootOn(port: number): Promise<void> {
       throw new Error(`service exited (${child.exitCode}):\n${output.slice(-2_000)}`);
     }
     try {
-      if ((await fetch(`http://127.0.0.1:${port}/health`)).ok) return;
+      const response = await fetch(`http://127.0.0.1:${port}/health`);
+      if (response.ok) {
+        const health = (await response.json()) as { bootNonce: string | null };
+        if (health.bootNonce === nonce) return;
+      }
     } catch {
       /* not up yet */
     }

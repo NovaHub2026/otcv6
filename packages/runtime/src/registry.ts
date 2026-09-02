@@ -1,7 +1,8 @@
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { assertValidInstrument, type Clock } from '@otc/core';
 import type { RegisteredAsset } from '@otc/engine';
+import { createFileExclusively, replaceFileAtomically } from './atomicFile.js';
 
 /**
  * Every asset this deployment has registered, durably.
@@ -87,8 +88,31 @@ export interface AssetRegistry {
   add(asset: RegisteredAsset): Promise<void>;
 }
 
-/** A registry backed by one JSON file per asset, written atomically. */
+/**
+ * A registry backed by one JSON file per asset, written atomically.
+ *
+ * ## What a5-07 found here
+ *
+ * Three things `FileStateStore` had already learned and this file had not. The
+ * temporary name was per process, so two overlay edits in one second lost one
+ * or both. The id inside a file was trusted over its name, so a backup copy
+ * `eurusd.bak.json` was read as a second registration of `eurusd` and the venue
+ * refused to boot on the duplicate. And `JSON.parse` sat outside any `try`, so
+ * one half-written file made `list()` throw a bare `SyntaxError` for the whole
+ * catalogue. Each is now the opposite: per-call names through `atomicFile.ts`,
+ * a file is refused unless it is named `${id}.json`, and every parse failure is
+ * a `CorruptRegistrationError` naming the file.
+ */
 export class FileAssetRegistry implements AssetRegistry {
+  /**
+   * Overlay edits, one after another.
+   *
+   * `putOverlay` is a read-modify-write of one file, and two of them
+   * interleaved is a lost update whatever the temporary names are. The venue
+   * has one operator and one panel, but a double-click is two requests.
+   */
+  #overlayEdits: Promise<void> = Promise.resolve();
+
   /**
    * The clock is injected for the reason every clock in `packages/` is: a module
    * that reads ambient time cannot be replayed. Here it stamps registration
@@ -122,7 +146,7 @@ export class FileAssetRegistry implements AssetRegistry {
       // registration — which is what it did on its first test run.
       if (!name.endsWith('.json')) continue;
       if (!/^[a-z0-9][a-z0-9._-]{0,63}\.json$/.test(name)) continue;
-      const raw = JSON.parse(await readFile(path.join(this.directory, name), 'utf8')) as unknown;
+      const raw = parseRegistration(name, await readFile(path.join(this.directory, name), 'utf8'));
       stored.push(asStored(name, raw));
     }
     // Registration order, not filename order: the differentiation check compares
@@ -153,7 +177,7 @@ export class FileAssetRegistry implements AssetRegistry {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return new Map();
       throw error;
     }
-    const parsed = JSON.parse(text) as unknown;
+    const parsed = parseRegistration('_overlays.json', text);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
       throw new CorruptRegistrationError('_overlays.json', 'did not parse to an object');
     }
@@ -164,33 +188,54 @@ export class FileAssetRegistry implements AssetRegistry {
     return out;
   }
 
-  async putOverlay(assetId: string, patch: AssetOverlay): Promise<void> {
+  putOverlay(assetId: string, patch: AssetOverlay): Promise<void> {
     assertOverlay(patch);
     if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(assetId)) {
-      throw new RangeError(`Unsafe asset id: ${assetId}.`);
+      return Promise.reject(new RangeError(`Unsafe asset id: ${assetId}.`));
     }
+    // Queued behind every edit before it, and the queue never breaks: a
+    // rejected edit is the caller's to see, not the next edit's to inherit.
+    const edit = this.#overlayEdits.then(() => this.#writeOverlay(assetId, patch));
+    this.#overlayEdits = edit.then(
+      () => undefined,
+      () => undefined,
+    );
+    return edit;
+  }
+
+  async #writeOverlay(assetId: string, patch: AssetOverlay): Promise<void> {
     await mkdir(this.directory, { recursive: true });
     const current = new Map(await this.overlays());
     current.set(assetId, { ...current.get(assetId), ...patch });
-    const target = this.#overlayPath();
-    const temporary = `${target}.${process.pid}.tmp`;
-    await writeFile(temporary, JSON.stringify(Object.fromEntries(current), null, 2));
-    await rename(temporary, target);
+    await replaceFileAtomically(
+      this.#overlayPath(),
+      JSON.stringify(Object.fromEntries(current), null, 2),
+    );
   }
 
   async add(asset: RegisteredAsset): Promise<void> {
     const target = this.#pathFor(asset.definition.id);
     await mkdir(this.directory, { recursive: true });
-    try {
-      await readFile(target, 'utf8');
-      throw new AlreadyRegisteredError(asset.definition.id);
-    } catch (error) {
-      if (error instanceof AlreadyRegisteredError) throw error;
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    }
-    const temporary = `${target}.${process.pid}.tmp`;
-    await writeFile(temporary, JSON.stringify({ registeredAt: this.clock.now(), asset }, null, 2));
-    await rename(temporary, target);
+    // Exclusive as well as atomic. A read-then-write let ten concurrent
+    // registrations of one id all pass the read; the filesystem decides now,
+    // and it admits exactly one.
+    const created = await createFileExclusively(
+      target,
+      JSON.stringify({ registeredAt: this.clock.now(), asset }, null, 2),
+    );
+    if (!created) throw new AlreadyRegisteredError(asset.definition.id);
+  }
+}
+
+/** Parse a stored file, naming it in the refusal rather than surfacing a bare `SyntaxError`. */
+function parseRegistration(file: string, text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch (error) {
+    throw new CorruptRegistrationError(
+      file,
+      `does not parse as JSON (${(error as Error).message})`,
+    );
   }
 }
 
@@ -301,6 +346,15 @@ function asStored(file: string, raw: unknown): { asset: RegisteredAsset; at: num
     throw new CorruptRegistrationError(
       file,
       `instrument id ${candidate.instrument.id} does not match definition id ${candidate.definition.id}`,
+    );
+  }
+  // The name is the id. A file that registers `eurusd` under any other name is
+  // a copy — a backup, a rename — and hosting it would host `eurusd` twice.
+  if (file !== `${candidate.definition.id}.json`) {
+    throw new CorruptRegistrationError(
+      file,
+      `it registers ${candidate.definition.id}, whose registration is ${candidate.definition.id}.json. ` +
+        `A copy under another name would be hosted as a second ${candidate.definition.id}`,
     );
   }
   const at = typeof record.registeredAt === 'number' ? record.registeredAt : 0;

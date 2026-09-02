@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, type OnApplicationShutdown } from '@nestjs/common';
 import {
   epochMillis,
   type Candle,
@@ -14,6 +14,7 @@ import {
   checkpointMarket,
   DEFAULT_MAX_CATCH_UP_MS,
   HistoryRecorder,
+  lastStoredSequence,
   readTimeframe,
   refreshRollup,
   type CandleHistory,
@@ -48,10 +49,12 @@ import {
  * for a hundred-asset catalogue.
  */
 @Injectable()
-export class HistoryService {
+export class HistoryService implements OnApplicationShutdown {
   private readonly logger = new Logger(HistoryService.name);
   private readonly recorders = new Map<string, HistoryRecorder>();
   private readonly provisioned = new Map<string, { from: EpochMillis; to: EpochMillis }>();
+  /** Assets whose withheld first minute has been logged, so it is logged once. */
+  private readonly reportedWithheld = new Set<string>();
 
   readonly #assets: RegisteredAsset[];
 
@@ -108,6 +111,11 @@ export class HistoryService {
         history: this.history,
       });
       this.provisioned.set(id, { from: genesisInstant, to: targetInstant });
+      // The backfill's own recorder, not a fresh one (a5-01). It has folded
+      // every tick so far and holds the target's minute open; a recorder
+      // started at the join would open that minute wherever the first live
+      // tick landed and store it as whole — measured at 8 of 18 ticks.
+      this.recorders.set(id, result.recorder);
       built.push({ id, market: result.market, cursor: targetInstant });
       done.push(id);
       this.logger.log(
@@ -173,12 +181,22 @@ export class HistoryService {
     );
   }
 
-  /** Fold published ticks into candles. Never called before publication. */
+  /**
+   * Fold published ticks into candles. Never called before publication.
+   *
+   * A recorder created here does not yet know where it joins the stream. On a
+   * restart the minute the checkpoint fell in was open in the process that
+   * died, and this process sees only the rest of it; the recorder must not
+   * store that minute as whole (a5-01), and whether it is whole is a question
+   * for the store, which is asynchronous. So the recorder starts as `'unknown'`
+   * and {@link HistoryService.flush} tells it what is stored before anything is
+   * drained. Until then it folds and holds.
+   */
   observe(assetId: string, ticks: readonly Tick[]): void {
     if (ticks.length === 0) return;
     let recorder = this.recorders.get(assetId);
     if (recorder === undefined) {
-      recorder = new HistoryRecorder();
+      recorder = new HistoryRecorder({ continuesAfter: 'unknown' });
       this.recorders.set(assetId, recorder);
     }
     recorder.accept(ticks);
@@ -195,8 +213,22 @@ export class HistoryService {
    */
   async flush(): Promise<void> {
     for (const [assetId, recorder] of this.recorders) {
+      if (!recorder.started) {
+        recorder.continueAfter(await lastStoredSequence(this.history, assetId));
+      }
       const closed = recorder.drain();
       if (closed.length > 0) await this.history.append(assetId, closed[0]!.timeframe, closed);
+      const withheld = recorder.withheld;
+      if (withheld !== null && !this.reportedWithheld.has(assetId)) {
+        this.reportedWithheld.add(assetId);
+        // Once, and as a fact about the record: the minute is a hole, not a bar.
+        this.logger.warn(
+          `${assetId}: the minute at ${withheld.openInstant} was not stored — this process ` +
+            `started inside it and saw ${withheld.tickCount} of its ticks from sequence ` +
+            `${withheld.firstSequence}. A bar that began before the recorder did cannot be ` +
+            `stored as whole (a5-01).`,
+        );
+      }
       // The hourly tier is derived from what is *stored*, never from what this
       // process remembers. Cycle Audit 6 (F2) measured the alternative: a fresh
       // recorder on every start wrote the hour it began inside from only the
@@ -219,4 +251,30 @@ export class HistoryService {
   provisionedSpan(assetId: string): { from: EpochMillis; to: EpochMillis } | null {
     return this.provisioned.get(assetId) ?? null;
   }
+
+  /**
+   * Close the store, last (a6-09).
+   *
+   * `onApplicationShutdown` rather than `onModuleDestroy`, and the difference
+   * is the whole point: Nest runs every `onModuleDestroy` in a module
+   * concurrently (`Promise.all`), so a close there would race the venue's own
+   * `onModuleDestroy` — its final checkpoint and the flush that writes the last
+   * closed bars *through this store*. This hook runs after every destroy hook
+   * has resolved and after the listener is closed, so nothing can be reading or
+   * writing. Before this existed the SQLite history was never closed at all: a
+   * 3.6 MB WAL was left beside a 4 KB database at every shutdown.
+   *
+   * The interface is store-agnostic and the in-memory store has nothing to
+   * close, so the method is looked for rather than required.
+   */
+  onApplicationShutdown(): void {
+    if (isClosable(this.history)) {
+      this.history.close();
+      this.logger.log('candle history closed');
+    }
+  }
+}
+
+function isClosable(value: object): value is { close(): void } {
+  return 'close' in value && typeof value.close === 'function';
 }

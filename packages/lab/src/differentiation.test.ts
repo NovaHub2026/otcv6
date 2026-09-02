@@ -120,6 +120,27 @@ describe('the differentiation metric', () => {
     ).toThrow(/same number of windows/);
   });
 
+  it('does not count an exact tie as a correct classification', () => {
+    // **Out-of-band audit, a4-11.** Two assets with identical signatures: every
+    // held-out window is equidistant from both centroids. Ties resolved to the
+    // first candidate, so asset `a` was reported "never confused with any
+    // other" while being identical to `b` — accuracy 0.5, `perfectlySeparated`
+    // `['a']`. Unreachable on measured signatures (no exact tie among 384
+    // distances), and wrong as a definition: a window the classifier cannot
+    // place is a confused window, not a correct one.
+    const labelled = ['a', 'b'].map((asset) => ({
+      asset,
+      signatures: Array.from({ length: 3 }, () => signature({})),
+    }));
+    const result = measureDifferentiation(labelled);
+    expect(result.accuracy).toBe(0);
+    expect(result.perfectlySeparated).toEqual([]);
+    expect(result.confusion).toEqual([
+      [0, 3],
+      [3, 0],
+    ]);
+  });
+
   it('reports a confusion matrix that accounts for every window', () => {
     const labelled = ['a', 'b', 'c'].map((asset, index) => ({
       asset,

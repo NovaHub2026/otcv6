@@ -12,12 +12,19 @@ import {
 } from './lease.js';
 import {
   entrySequence,
+  malformedBatch,
   RecordForkError,
   sameTick,
   SeamError,
   type RecordEntry,
   type SeamMarker,
 } from './replication.js';
+import {
+  assertSchemaNotNewer,
+  DEFAULT_BUSY_TIMEOUT_MS,
+  enableWriteAheadLog,
+  stampSchemaVersion,
+} from './sqlite.js';
 import { CorruptRecordError, type MarketStateRecord } from './state.js';
 
 /**
@@ -45,9 +52,22 @@ export class SqliteCoordinatedStore implements CoordinatedStore {
   readonly termMs: number;
   readonly #statements: Statements;
 
-  constructor(location: string, clock: Clock, termMs: number = DEFAULT_LEASE_TERM_MS) {
+  /**
+   * `busyTimeoutMs` is how long a contended write waits before the store
+   * refuses it (`sqlite.ts` explains the default, and that the wait is
+   * synchronous). Tests shorten it; a deployment has no reason to.
+   */
+  constructor(
+    location: string,
+    clock: Clock,
+    termMs: number = DEFAULT_LEASE_TERM_MS,
+    busyTimeoutMs: number = DEFAULT_BUSY_TIMEOUT_MS,
+  ) {
     if (!Number.isFinite(termMs) || termMs <= 0) {
       throw new RangeError(`Lease term must be a positive number of milliseconds: ${termMs}.`);
+    }
+    if (!Number.isInteger(busyTimeoutMs) || busyTimeoutMs < 0) {
+      throw new RangeError(`Busy timeout must be a non-negative integer: ${busyTimeoutMs}.`);
     }
     this.#clock = clock;
     this.termMs = termMs;
@@ -62,63 +82,24 @@ export class SqliteCoordinatedStore implements CoordinatedStore {
     //
     // It is set *before* the schema because opening is itself contended:
     // `journal_mode = WAL` and `CREATE TABLE` both take a lock, and eight
-    // processes opening the same new database at once had six of them die with
+    // processes opening the same new database at once had seven of them die with
     // "database is locked" during construction. The store was concurrency-safe
     // in every method and not in its constructor, which no single-process test
     // could have shown.
-    this.#db.exec('PRAGMA busy_timeout = 5000');
+    this.#db.exec(`PRAGMA busy_timeout = ${busyTimeoutMs}`);
     // An in-memory database has no file, no journal and no second process, so
     // there is nothing for WAL to protect and SQLite will not enter it — the
     // mode stays `memory` however often it is asked. Requiring WAL here broke
     // the whole conformance battery, which runs in memory, and the tie-ordering
     // test written minutes later was what surfaced it.
-    if (location !== ':memory:') this.#enableWriteAheadLog();
+    if (location !== ':memory:') enableWriteAheadLog(this.#db);
+    // Before any statement touches the schema (a5-11): a file written by newer
+    // code is refused, not extended.
+    assertSchemaNotNewer(this.#db, STORE_SCHEMA_VERSION, 'venue');
     this.#db.exec('PRAGMA foreign_keys = ON');
     this.#db.exec(SCHEMA);
+    stampSchemaVersion(this.#db, STORE_SCHEMA_VERSION);
     this.#statements = prepareAll(this.#db);
-  }
-
-  /**
-   * Put the database in WAL mode, tolerating another process doing it first.
-   *
-   * `busy_timeout` does not cover this. The journal-mode change needs an
-   * exclusive lock and SQLite refuses immediately rather than invoking the busy
-   * handler, so eight processes opening the same new database at once had seven
-   * of them die with "database is locked" — in the constructor, before any
-   * method this store's tests exercise. The mode is a property of the file, so
-   * losing the race is not a failure: whoever wins sets it for everyone.
-   *
-   * What is checked is the outcome, not the attempt. If the mode is not WAL
-   * after the retries, that is a real refusal and it is raised: a store running
-   * on the rollback journal would let a reader observe a half-written
-   * transaction, which is the one thing this pragma is for.
-   */
-  #enableWriteAheadLog(): void {
-    for (let attempt = 0; attempt < WAL_ATTEMPTS; attempt += 1) {
-      // Read before writing. Once any process has set the mode it is a
-      // property of the file, so every later open takes this branch and never
-      // contends at all — the race exists only while the database is new.
-      const row = this.#db.prepare('PRAGMA journal_mode').get();
-      if (row !== undefined && String(row['journal_mode']).toLowerCase() === 'wal') return;
-      try {
-        this.#db.exec('PRAGMA journal_mode = WAL');
-      } catch (error) {
-        void error;
-        // Wait for the process that holds the lock rather than spinning
-        // against it. An empty immediate transaction blocks under
-        // `busy_timeout`, which the journal-mode change itself does not
-        // honour — that asymmetry is the whole reason this loop exists.
-        try {
-          this.#db.exec('BEGIN IMMEDIATE; COMMIT;');
-        } catch (waited) {
-          void waited;
-        }
-      }
-    }
-    throw new Error(
-      `Could not put the database into WAL mode after ${WAL_ATTEMPTS} attempts. Without it a ` +
-        `reader can observe a half-written transaction, so the store refuses to run.`,
-    );
   }
 
   close(): void {
@@ -127,10 +108,17 @@ export class SqliteCoordinatedStore implements CoordinatedStore {
 
   // ---------------------------------------------------------------- leases
 
+  // The clock is read *inside* every transaction below, never before it
+  // (a5-05, B-019 SQL-1). `BEGIN IMMEDIATE` blocks for up to the busy timeout,
+  // and a reading taken before the wait judged expiry against a moment that had
+  // passed by the time the compare ran — granting or renewing a lease that had
+  // expired while the caller waited. `sqliteStore.test.ts` holds a clock that
+  // can tell whether the lock is held when it is asked the time.
+
   acquire(assetId: string, holder: string): Promise<AcquireOutcome> {
     if (!isUsableHolder(holder)) return Promise.reject(new LeaseHolderError(holder));
-    const now = this.#clock.now();
     return this.#inTransaction(() => {
+      const now = this.#clock.now();
       const held = this.#liveGrant(assetId, now);
       if (held !== null) return { kind: 'held', by: held } as const;
 
@@ -156,8 +144,8 @@ export class SqliteCoordinatedStore implements CoordinatedStore {
   }
 
   renew(grant: LeaseGrant): Promise<RenewOutcome> {
-    const now = this.#clock.now();
     return this.#inTransaction(() => {
+      const now = this.#clock.now();
       const held = this.#liveGrant(grant.assetId, now);
       if (held === null || held.token !== grant.token || held.holder !== grant.holder) {
         return { kind: 'lost', current: held } as const;
@@ -174,9 +162,8 @@ export class SqliteCoordinatedStore implements CoordinatedStore {
   }
 
   release(grant: LeaseGrant): Promise<void> {
-    const now = this.#clock.now();
     return this.#inTransaction(() => {
-      const held = this.#liveGrant(grant.assetId, now);
+      const held = this.#liveGrant(grant.assetId, this.#clock.now());
       if (held !== null && held.token === grant.token && held.holder === grant.holder) {
         this.#statements.clearLease.run(grant.assetId);
       }
@@ -184,8 +171,7 @@ export class SqliteCoordinatedStore implements CoordinatedStore {
   }
 
   inspect(assetId: string): Promise<LeaseGrant | null> {
-    const now = this.#clock.now();
-    return this.#inTransaction(() => this.#liveGrant(assetId, now));
+    return this.#inTransaction(() => this.#liveGrant(assetId, this.#clock.now()));
   }
 
   // ------------------------------------------------------------ the record
@@ -195,6 +181,11 @@ export class SqliteCoordinatedStore implements CoordinatedStore {
       const refusal = this.#fenceRefusal(assetId, token);
       if (refusal !== null) throw refusal;
       if (ticks.length === 0) return;
+      // The rule both stores share (a5-05): a batch that disagrees with itself
+      // is refused before it is compared with the record. Without this the
+      // loop below deduplicated `[n, n]` against the row it had just inserted.
+      const malformed = malformedBatch(assetId, ticks);
+      if (malformed !== null) throw malformed;
 
       const meta = this.#meta(assetId);
       let head = meta.head;
@@ -379,18 +370,36 @@ export class SqliteCoordinatedStore implements CoordinatedStore {
    *
    * A throw rolls back, which is what makes "a rejected write leaves the
    * database untouched" structural rather than careful.
+   *
+   * **One error contract (a5-06).** `BEGIN IMMEDIATE` and `COMMIT` sat outside
+   * the `try`, so on `SQLITE_BUSY` a method whose type says `Promise` threw
+   * synchronously — after blocking for the busy timeout — and a caller using
+   * `.catch()` never saw it. Every failure is a rejection now; and any throw
+   * once a transaction may be open is followed by a rollback, so a failed
+   * `COMMIT` cannot leave the connection inside a transaction that makes every
+   * later `BEGIN` fail. The wait itself is the binding's, and is documented at
+   * `DEFAULT_BUSY_TIMEOUT_MS`.
    */
   #inTransaction<T>(body: () => T): Promise<T> {
-    this.#db.exec('BEGIN IMMEDIATE');
-    let result: T;
     try {
-      result = body();
+      this.#db.exec('BEGIN IMMEDIATE');
     } catch (error) {
-      this.#db.exec('ROLLBACK');
-      return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+      return Promise.reject(asError(error));
     }
-    this.#db.exec('COMMIT');
-    return Promise.resolve(result);
+    try {
+      const result = body();
+      this.#db.exec('COMMIT');
+      return Promise.resolve(result);
+    } catch (error) {
+      this.#rollBack();
+      return Promise.reject(asError(error));
+    }
+  }
+
+  /** Roll back if a transaction is open; a failed `BEGIN` or `COMMIT` may have left none. */
+  #rollBack(): void {
+    if (!this.#db.isTransaction) return;
+    this.#db.exec('ROLLBACK');
   }
 
   /**
@@ -464,8 +473,12 @@ export class SqliteCoordinatedStore implements CoordinatedStore {
  * are sparse after a seam and cannot index the table. A separate index on
  * `(asset_id, sequence)` serves lookup.
  */
-/** How many times to try the journal-mode change before giving up. */
-const WAL_ATTEMPTS = 100;
+/**
+ * Schema version stamped into a coordinated-store database (`PRAGMA user_version`).
+ *
+ * Bump when `SCHEMA` changes shape, and add the migration `sqlite.ts` asks for.
+ */
+export const STORE_SCHEMA_VERSION = 1;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS lease (
@@ -586,6 +599,10 @@ function prepareAll(db: DatabaseSync): Statements {
 }
 
 type Row = Record<string, unknown>;
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
 
 function asNumber(value: unknown): number {
   if (typeof value === 'number') return value;

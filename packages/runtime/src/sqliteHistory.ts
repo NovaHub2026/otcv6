@@ -3,6 +3,20 @@ import path from 'node:path';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import { epochMillis, logPrice, type Candle, type EpochMillis, type TimeframeId } from '@otc/core';
 import { HistoryError, HISTORY_TIMEFRAMES, type CandleHistory } from './history.js';
+import {
+  assertSchemaNotNewer,
+  DEFAULT_BUSY_TIMEOUT_MS,
+  enableWriteAheadLog,
+  stampSchemaVersion,
+} from './sqlite.js';
+
+/**
+ * Schema version stamped into a candle history database (`PRAGMA user_version`).
+ *
+ * Bump when the `candle` table changes shape, and add the migration
+ * `sqlite.ts` asks for.
+ */
+export const HISTORY_SCHEMA_VERSION = 1;
 
 /**
  * Candle history on disk.
@@ -10,7 +24,18 @@ import { HistoryError, HISTORY_TIMEFRAMES, type CandleHistory } from './history.
  * The same engine and the same settings as `SqliteCoordinatedStore`, and for the
  * same reasons: WAL so a reader never sees a half-written transaction, and a
  * busy timeout because contention between the writer and a chart request is the
- * ordinary case rather than an error.
+ * ordinary case rather than an error. The same *code*, too, since a5-10: the
+ * retried journal-mode change and the schema-version check live in
+ * `sqlite.ts`, because this file ran the unretried form the store had already
+ * measured killing seven of eight processes that opened one new file together.
+ *
+ * `synchronous = FULL`, not `NORMAL`. In WAL mode `NORMAL` lets a power loss
+ * discard the last committed transactions — safely, without corruption — and
+ * for most databases that is the right trade. Not for this one: the ticks a
+ * minute bar was folded from are deleted by retention after the dispute window,
+ * so a bar lost from the last WAL frames is, once the ticks are gone, a hole in
+ * the permanent record that nothing can refill. One `fsync` per flush, on the
+ * checkpoint cadence, is the whole cost (a5-10).
  *
  * **Deliberately a separate database from the state store.** They have opposite
  * shapes — one holds a handful of rows rewritten constantly, the other holds
@@ -43,9 +68,10 @@ export class SqliteCandleHistory implements CandleHistory {
       mkdirSync(path.dirname(path.resolve(location)), { recursive: true });
     }
     this.#db = new DatabaseSync(location);
-    this.#db.exec('PRAGMA busy_timeout = 5000');
-    this.#db.exec('PRAGMA journal_mode = WAL');
-    this.#db.exec('PRAGMA synchronous = NORMAL');
+    this.#db.exec(`PRAGMA busy_timeout = ${DEFAULT_BUSY_TIMEOUT_MS}`);
+    if (location !== ':memory:') enableWriteAheadLog(this.#db);
+    this.#db.exec('PRAGMA synchronous = FULL');
+    assertSchemaNotNewer(this.#db, HISTORY_SCHEMA_VERSION, 'candle history');
     this.#db.exec(`
       CREATE TABLE IF NOT EXISTS candle (
         asset_id TEXT NOT NULL,
@@ -61,6 +87,7 @@ export class SqliteCandleHistory implements CandleHistory {
         PRIMARY KEY (asset_id, timeframe, open_instant)
       ) WITHOUT ROWID
     `);
+    stampSchemaVersion(this.#db, HISTORY_SCHEMA_VERSION);
     this.#insert = this.#db.prepare(`
       INSERT INTO candle (
         asset_id, timeframe, open_instant, open, high, low, close,

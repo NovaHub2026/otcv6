@@ -44,10 +44,11 @@ describe('the dispute window is the input, not the storage', () => {
     expect(journalIsPruneable(window(89), NOW)).toBe(false);
   });
 
-  it('keeps a journal exactly on the boundary', () => {
+  it('keeps a journal on the last day of the window', () => {
     // The last day of a dispute window is a day on which a dispute may be
     // raised. Rounding the other way means answering it with "we deleted that
-    // yesterday".
+    // yesterday". Not the boundary: the reach is the window plus the longest
+    // horizon, and the boundary itself is tested below (a5-02).
     expect(journalIsPruneable(window(90), NOW)).toBe(false);
   });
 
@@ -146,6 +147,30 @@ describe('Cycle Audit 5: contracts reach backwards, and so must retention', () =
       newestInstant: NOW - (90 * DAY + 16 * MINUTE),
     };
     expect(journalIsPruneable(wellPast, NOW)).toBe(true);
+  });
+
+  it('keeps a journal exactly at the reach, and prunes it one millisecond later (a5-02)', () => {
+    // The boundary the docstring states, at the millisecond. Before this test a
+    // `>=` in place of `>` — pruning *on* the boundary — passed all twenty-four
+    // retention tests, because the nearest cases sat five and sixteen minutes
+    // away from it. The only deleting rule in the repository had a documented
+    // edge and no guard on it.
+    const reach = 90 * DAY + LONGEST_HORIZON_MS;
+    const atReach: JournalWindow = {
+      assetId: 'eurusd',
+      fromSequence: 1,
+      toSequence: 100,
+      newestInstant: NOW - reach,
+    };
+    expect(journalIsPruneable(atReach, NOW)).toBe(false);
+    expect(journalIsPruneable({ ...atReach, newestInstant: NOW - reach - 1 }, NOW)).toBe(true);
+    // And through the partition, which is what a cleanup task actually calls.
+    const { pruneable, retained } = partitionForRetention(
+      [atReach, { ...atReach, newestInstant: NOW - reach - 1 }],
+      NOW,
+    );
+    expect(retained).toEqual([atReach]);
+    expect(pruneable).toHaveLength(1);
   });
 
   it('states the horizon it reaches back by', () => {

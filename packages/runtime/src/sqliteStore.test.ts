@@ -4,12 +4,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterAll, describe, expect, it } from 'vitest';
-import { epochMillis, logPrice, SteppableClock, type Tick } from '@otc/core';
+import { epochMillis, logPrice, SteppableClock, type Clock, type Tick } from '@otc/core';
 import { StaleFenceError } from './fence.js';
-import { DEFAULT_LEASE_TERM_MS } from './lease.js';
+import { DEFAULT_LEASE_TERM_MS, type AcquireOutcome } from './lease.js';
 import { describeCoordinatedStore, stubRecord } from './leaseConformance.test.js';
 import { RecordForkError, SeamError, type SeamMarker } from './replication.js';
-import { SqliteCoordinatedStore } from './sqliteStore.js';
+import { HISTORY_SCHEMA_VERSION, SqliteCandleHistory } from './sqliteHistory.js';
+import { SqliteCoordinatedStore, STORE_SCHEMA_VERSION } from './sqliteStore.js';
 
 const GENESIS = epochMillis(1_776_000_000_000);
 const ASSET = 'eurusd';
@@ -351,5 +352,125 @@ describe('a file-backed database is configured for concurrent readers', () => {
     // Requiring WAL unconditionally broke the entire conformance battery, which
     // runs in memory.
     expect(() => openStore(':memory:', new SteppableClock(GENESIS)).close()).not.toThrow();
+  });
+});
+
+describe('the clock is read under the write lock (a5-05, B-019 SQL-1)', () => {
+  it('does not consult the clock before the transaction holds the lock', async () => {
+    // `acquire`, `renew`, `release` and `inspect` read `now` and *then* took
+    // the lock. `BEGIN IMMEDIATE` blocks under the busy timeout, so the
+    // comparison inside the transaction could run against a reading up to
+    // five seconds stale — granting or renewing a lease that had expired while
+    // the caller waited. Observed here with a clock that, whenever it is asked
+    // the time, tries to take the write lock through a second connection with
+    // no busy timeout: if it succeeds, the store was not holding the lock when
+    // it read the clock.
+    const file = path.join(await scratch(), 'venue.db');
+    let readsOutsideLock = 0;
+    let reads = 0;
+    let probe: DatabaseSync | null = null;
+    const clock: Clock = {
+      now: () => {
+        reads += 1;
+        if (probe !== null) {
+          try {
+            probe.exec('BEGIN IMMEDIATE');
+            probe.exec('ROLLBACK');
+            readsOutsideLock += 1;
+          } catch {
+            // Locked: the store holds it, which is the property.
+          }
+        }
+        return GENESIS;
+      },
+    };
+    const store = new SqliteCoordinatedStore(file, clock);
+    probe = new DatabaseSync(file);
+    probe.exec('PRAGMA busy_timeout = 0');
+
+    const outcome = await store.acquire(ASSET, 'api-1#aa');
+    if (outcome.kind !== 'granted') throw new Error('expected a grant');
+    await store.renew(outcome.grant);
+    await store.inspect(ASSET);
+    await store.release(outcome.grant);
+
+    expect(reads).toBeGreaterThanOrEqual(4);
+    expect(readsOutsideLock, 'clock readings taken before the lock was held').toBe(0);
+    probe.close();
+    store.close();
+  });
+});
+
+describe('a busy database rejects rather than throwing (a5-06)', () => {
+  it('turns SQLITE_BUSY into a rejection, and is not left inside a transaction', async () => {
+    // `BEGIN IMMEDIATE` sat outside the `try`, so a method whose type says
+    // `Promise` threw synchronously when the lock was held: `await` inside
+    // `try` caught it and `.catch()` did not — two error contracts, which
+    // `lease.ts` explains is one too many. Measured: a synchronous throw after
+    // 5,019ms under a held write lock.
+    //
+    // The wait itself is inherent: `node:sqlite` is synchronous, so the event
+    // loop stalls for the busy timeout. What this asserts is the contract at
+    // the end of it.
+    const file = path.join(await scratch(), 'venue.db');
+    const clock = new SteppableClock(GENESIS);
+    const store = new SqliteCoordinatedStore(file, clock, DEFAULT_LEASE_TERM_MS, 50);
+    const holder = new DatabaseSync(file);
+    holder.exec('BEGIN IMMEDIATE');
+
+    let outcome: Promise<AcquireOutcome> | null = null;
+    expect(() => {
+      outcome = store.acquire(ASSET, 'api-1#aa');
+    }).not.toThrow();
+    await expect(outcome).rejects.toThrow(/locked/);
+
+    holder.exec('COMMIT');
+    holder.close();
+    // No transaction was left open by the failure: the next write goes through.
+    expect(await store.acquire(ASSET, 'api-1#aa')).toMatchObject({ kind: 'granted' });
+    store.close();
+  });
+});
+
+describe('the schema is versioned (a5-11)', () => {
+  it('stamps a new database with the schema version it created', async () => {
+    const file = path.join(await scratch(), 'venue.db');
+    openStore(file, new SteppableClock(GENESIS)).close();
+    const inspector = new DatabaseSync(file);
+    expect(inspector.prepare('PRAGMA user_version').get()?.['user_version']).toBe(
+      STORE_SCHEMA_VERSION,
+    );
+    inspector.close();
+  });
+
+  it('refuses a database whose schema is newer than this code, naming both versions', async () => {
+    // A downgrade, or a mixed-version rollout. An older schema already fails
+    // closed at `prepare` with a message about a missing column; a newer one
+    // opened cleanly and would have been written to in a shape the newer code
+    // does not expect.
+    const file = path.join(await scratch(), 'venue.db');
+    openStore(file, new SteppableClock(GENESIS)).close();
+    const future = new DatabaseSync(file);
+    future.exec(`PRAGMA user_version = ${STORE_SCHEMA_VERSION + 41}`);
+    future.close();
+    expect(() => openStore(file, new SteppableClock(GENESIS))).toThrow(
+      new RegExp(
+        `${STORE_SCHEMA_VERSION + 41}.*${STORE_SCHEMA_VERSION}|${STORE_SCHEMA_VERSION}.*${STORE_SCHEMA_VERSION + 41}`,
+      ),
+    );
+  });
+
+  it('versions the candle history the same way', async () => {
+    const file = path.join(await scratch(), 'history.db');
+    new SqliteCandleHistory(file).close();
+    const inspector = new DatabaseSync(file);
+    expect(inspector.prepare('PRAGMA user_version').get()?.['user_version']).toBe(
+      HISTORY_SCHEMA_VERSION,
+    );
+    inspector.exec(`PRAGMA user_version = ${HISTORY_SCHEMA_VERSION + 41}`);
+    inspector.close();
+    expect(() => new SqliteCandleHistory(file)).toThrow(
+      new RegExp(`${HISTORY_SCHEMA_VERSION + 41}.*${HISTORY_SCHEMA_VERSION}`),
+    );
   });
 });

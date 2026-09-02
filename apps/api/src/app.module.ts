@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { MasterKeyring, SystemClock } from '@otc/core';
 import { ASSET_CATALOGUE } from '@otc/engine';
 import {
@@ -10,9 +11,10 @@ import {
   type StateStore,
 } from '@otc/runtime';
 import type { RegisteredAsset } from '@otc/engine';
+import { ADMIN_TOKEN, AdminWriteGuard, MIN_ADMIN_TOKEN_LENGTH } from './adminAuth.guard.js';
 import { RegistrationService } from './registration.service.js';
 import { HistoryService } from './history.service.js';
-import { MarketController } from './market.controller.js';
+import { BOOT_NONCE, MarketController } from './market.controller.js';
 import { PublicationService } from './publication.service.js';
 import { VenueService } from './venue.service.js';
 
@@ -23,6 +25,11 @@ import { VenueService } from './venue.service.js';
  * `MasterKeyring` redacts itself in JSON, string and inspect forms — a defect
  * PH-1 found the hard way, when a `private` field that was compile-time only
  * serialised the entire 32-byte secret.
+ *
+ * This file and `main.ts` are the only modules under `apps/api/src` allowed to
+ * read `process.env` (the guardrail scan's ambient-state allowlist). Everything
+ * the environment decides — the state directory, the secret, the backfill, the
+ * admin token, the boot nonce — is read here once and handed down as a value.
  */
 @Module({
   controllers: [MarketController],
@@ -54,6 +61,32 @@ import { VenueService } from './venue.service.js';
             `${process.env.OTC_STATE_DIR ?? './.otc-state'}/assets`,
           new SystemClock(),
         ),
+    },
+    {
+      /**
+       * The operator's write credential, or null when none was given (a6-01).
+       *
+       * Null does not stop the boot: the guard refuses every write with a
+       * message naming the variable, and reads carry on. A token that is set
+       * but too short to be one *does* stop the boot, the way a malformed
+       * master secret does.
+       */
+      provide: ADMIN_TOKEN,
+      useFactory: (): string | null => adminTokenFromEnvironment(),
+    },
+    {
+      /**
+       * A value a test that spawns this service passes in and reads back from
+       * `/health`, so it knows the service answering is the one it started
+       * (a6-14). Null in every other deployment.
+       */
+      provide: BOOT_NONCE,
+      useFactory: (): string | null => bootNonceFromEnvironment(),
+    },
+    {
+      // Global, so no write route can be added without the credential check.
+      provide: APP_GUARD,
+      useClass: AdminWriteGuard,
     },
     {
       // The catalogue this process hosts: the five compiled assets plus every
@@ -116,6 +149,17 @@ import { VenueService } from './venue.service.js';
 export class AppModule {}
 
 /**
+ * The most days a backfill may be asked for in one boot.
+ *
+ * Ninety is what the product promises and what the evidence was measured at
+ * (`CYCLE-6-BACKFILL-SCALE.md`); a year is four times that and already tens of
+ * minutes of generation for a hundred assets. Above it the request is far more
+ * likely a typo than an intent — and a backfill is genesis, which cannot be
+ * taken back.
+ */
+export const MAX_BACKFILL_DAYS = 365;
+
+/**
  * Days of history a brand-new asset is given, from `OTC_BACKFILL_DAYS`.
  *
  * Zero by default, and that is a decision rather than an oversight: a backfill
@@ -123,18 +167,56 @@ export class AppModule {}
  * irreversible act the default behaviour of a process start would let booting
  * the service in the wrong directory permanently decide what a market's past is.
  *
- * `main.ts` reads this and asks {@link HistoryService.provision} before the
- * venue starts, because the checkpoint a backfill leaves is what the venue then
- * resumes from.
+ * `VenueService.start` reads this and asks {@link HistoryService.provision}
+ * before any market is resumed, because the checkpoint a backfill leaves is what
+ * the venue then resumes from.
+ *
+ * **a6-15.** `Number(raw)` accepted `1e3`: a thousand-day, irreversible genesis
+ * from a typo. The value is whole days written as digits, with a ceiling, and
+ * anything else is refused by name before a market exists.
  */
-export function backfillDaysFromEnvironment(): number {
-  const raw = process.env.OTC_BACKFILL_DAYS;
+export function backfillDaysFromEnvironment(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.OTC_BACKFILL_DAYS;
   if (raw === undefined || raw.trim().length === 0) return 0;
-  const days = Number(raw);
-  if (!Number.isFinite(days) || days < 0) {
-    throw new Error(`OTC_BACKFILL_DAYS must be a non-negative number of days, got ${raw}.`);
+  if (!/^\d+$/.test(raw.trim())) {
+    throw new Error(
+      `OTC_BACKFILL_DAYS must be a whole number of days written as digits, got ${raw}. ` +
+        'A backfill is genesis and cannot be undone, so it is not inferred from an ' +
+        'exponent, a sign or a fraction.',
+    );
+  }
+  const days = Number(raw.trim());
+  if (days > MAX_BACKFILL_DAYS) {
+    throw new Error(
+      `OTC_BACKFILL_DAYS is ${days}; the most one boot may provision is ${MAX_BACKFILL_DAYS}.`,
+    );
   }
   return days;
+}
+
+/**
+ * The write credential, or null when the operator did not set one (a6-01).
+ *
+ * Unset is allowed and closes the write surface. Set-but-short is refused at
+ * boot: a token that can be guessed is not one, and a service that booted with
+ * it would be advertising an authorisation it does not have.
+ */
+export function adminTokenFromEnvironment(env: NodeJS.ProcessEnv = process.env): string | null {
+  const raw = env.OTC_ADMIN_TOKEN;
+  if (raw === undefined || raw.length === 0) return null;
+  if (raw.length < MIN_ADMIN_TOKEN_LENGTH) {
+    throw new Error(
+      `OTC_ADMIN_TOKEN is ${raw.length} characters; it must be at least ` +
+        `${MIN_ADMIN_TOKEN_LENGTH}. Leave it unset to run with writes refused.`,
+    );
+  }
+  return raw;
+}
+
+/** The boot nonce a spawning test hands in, or null (a6-14). */
+export function bootNonceFromEnvironment(env: NodeJS.ProcessEnv = process.env): string | null {
+  const raw = env.OTC_BOOT_NONCE;
+  return raw === undefined || raw.length === 0 ? null : raw;
 }
 
 function keyringFromEnvironment(): MasterKeyring {

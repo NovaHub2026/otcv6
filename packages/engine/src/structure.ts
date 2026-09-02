@@ -139,6 +139,19 @@ export interface StructureSnapshot {
 /** Time constant of the running path-rate average, in milliseconds. */
 const PATH_RATE_HALFLIFE_MS = 30 * 60_000;
 
+/**
+ * Ceiling on the compression term's input: a phase covering more than three
+ * times the running-average path per unit time counts as three.
+ *
+ * The term is `exp(sensitivity · (1 − tightness))`, so tightness *lowers* the
+ * hazard of a hot phase ending. A young phase whose first few ticks happen to
+ * be large reads as very loose relative to its own average, and without a cap
+ * that would drive its hazard toward zero and make the phase near-immortal.
+ * Three is where the effect saturates; it is a clamp on an input, not on the
+ * hazard, and it is reflection-invariant like everything else here.
+ */
+const MAX_TIGHTNESS = 3;
+
 export class StructurePhaseModulator implements Modulator {
   #phase: StructurePhase;
   #ageMs = 0;
@@ -197,7 +210,9 @@ export class StructurePhaseModulator implements Modulator {
     const phaseRate = this.#pathLength / age;
     const reference = this.#averagePathRate > 0 ? this.#averagePathRate : phaseRate;
     const tightness = reference > 0 ? phaseRate / reference : 1;
-    const compressionTerm = exp(spec.compressionSensitivity * (1 - Math.min(3, tightness)));
+    const compressionTerm = exp(
+      spec.compressionSensitivity * (1 - Math.min(MAX_TIGHTNESS, tightness)),
+    );
 
     const hazard = spec.baseHazardPerMs * ageTerm * compressionTerm;
     const transitionProbability = 1 - exp(-Math.max(0, hazard) * interval);

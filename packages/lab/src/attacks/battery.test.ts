@@ -9,7 +9,14 @@ import { auditLookAhead } from './audit.js';
 import { defaultFamilies, formatVerdict, runBattery } from './battery.js';
 import { buildFeatureFrame, type FeatureFrame } from './frame.js';
 import { LogisticAttackFamily } from './learned.js';
-import { ATTACK_FAMILIES, familiesOfKind, familyByName, SWEPT_CELL_WIDTHS } from './registry.js';
+import {
+  ATTACK_FAMILIES,
+  familiesOfKind,
+  familyByName,
+  SWEPT_CELL_WIDTHS,
+  UNCONDITIONAL_FAMILY,
+} from './registry.js';
+import { normalQuantile } from '../statistics.js';
 import { FEATURE_KINDS, SKIP_BUCKET, type AttackFamily } from './types.js';
 
 const instrument: InstrumentSpec = {
@@ -64,7 +71,8 @@ describe('registry coverage', () => {
       expect(family.name.length).toBeGreaterThan(3);
       expect(family.description.length).toBeGreaterThan(20);
       expect(family.conditioning.length).toBeGreaterThan(10);
-      expect(family.buckets).toBeGreaterThanOrEqual(2);
+      // One bucket is the unconditional family (a4-01); everything else splits.
+      expect(family.buckets).toBeGreaterThanOrEqual(family.name === 'unconditional' ? 1 : 2);
     }
   });
 
@@ -141,9 +149,11 @@ describe('the verdict', () => {
     const verdict = runBattery(dataset, FAST_OPTIONS);
     expect(verdict.clean).toBe(true);
     expect(verdict.exploitable).toEqual([]);
-    // Three families over two horizons, less the buckets that miss the
-    // occupancy floor.
-    expect(verdict.coverage.hypothesesTested).toBeGreaterThanOrEqual(8);
+    // Two two-bucket families over two horizons, less any bucket that misses
+    // the occupancy floor. `second-of-minute` no longer reaches it here: the
+    // sweeping stride (a4-02) spreads its entries over all six sixths, which on
+    // twenty-two hours of history is under two hundred each.
+    expect(verdict.coverage.hypothesesTested).toBeGreaterThanOrEqual(6);
   });
 
   it('reports sensitivity per horizon, computed from the sample count', () => {
@@ -195,6 +205,91 @@ describe('the verdict', () => {
     expect(verdict.coverage.hypothesesTested).toBe(0);
     expect(verdict.coverage.bucketsSkippedForOccupancy).toBeGreaterThan(0);
     expect(verdict.notes.join(' ')).toContain('were not tested');
+  });
+
+  it('tests the whole decided sample as one hypothesis per horizon, through the unconditional family', () => {
+    // **Out-of-band audit, a4-01.** The quoted floor is computed from the whole
+    // sample; until this family existed no hypothesis was tested at that n, so
+    // a uniform edge — the smallest leak — was only ever seen through halves.
+    const verdict = runBattery(dataset, {
+      ...FAST_OPTIONS,
+      families: [UNCONDITIONAL_FAMILY, ...HARNESS_FAMILIES],
+    });
+    for (const s of verdict.sensitivity) {
+      const whole = verdict.findings.filter(
+        (f) => f.family === 'unconditional' && f.horizon === s.horizon,
+      );
+      expect(whole, s.horizon).toHaveLength(1);
+      expect(whole[0]!.bucket).toBe(0);
+      expect(whole[0]!.samples).toBe(s.samples);
+      expect(s.largestBucketSamples).toBe(s.samples);
+      expect(s.largestBucketConfirmationSamples).toBe(whole[0]!.confirmationSamples);
+    }
+  });
+
+  it('reports the gate sensitivity beside the single-test one, and derives it honestly', () => {
+    // The gate MDE is the edge at which the largest tested bucket reaches both
+    // the first Benjamini-Hochberg rejection over the whole surface and the
+    // confirmation threshold, at 50% power. It is re-derived here from the
+    // verdict's own counts (a4-01). It is not asserted above the single-test
+    // figure: that one is at 80% power, and on a surface this small (a dozen
+    // hypotheses, z_BH about 2.8) the two cross — on the calibration surface,
+    // where z_BH is about 4, `gateSensitivity.stat.test.ts` measures the gap.
+    const verdict = runBattery(dataset, {
+      ...FAST_OPTIONS,
+      families: [UNCONDITIONAL_FAMILY, ...HARNESS_FAMILIES],
+    });
+    const m = verdict.coverage.hypothesesTested;
+    const zGate = normalQuantile(1 - 0.05 / (2 * m));
+    expect(zGate).toBeGreaterThan(1.96);
+    for (const s of verdict.sensitivity) {
+      expect(s.largestBucketSamples).toBe(s.samples);
+      const derived =
+        Math.max(
+          zGate * Math.sqrt(0.25 / s.largestBucketSamples),
+          1.96 * Math.sqrt(0.25 / s.largestBucketConfirmationSamples),
+        ) * 100;
+      expect(s.gateMinimumDetectableEffectPoints).toBeCloseTo(derived, 10);
+      expect(s.gateSufficientForPayout).toBe(s.gateMinimumDetectableEffectPoints < 0.2513);
+    }
+    expect(formatVerdict(verdict)).toContain('gate MDE=');
+  });
+
+  it('separates a bucket that was never visited from one that was under-occupied', () => {
+    // **Out-of-band audit, a4-02.** Clock entries at `t0 + k*H` gave
+    // `second-of-minute` one phase in six at every horizon of a minute or
+    // more, and the verdict reported the other five as "held fewer than 500
+    // decided outcomes" — a grid gap described as sample scarcity.
+    const lopsided: AttackFamily = {
+      name: 'lopsided',
+      featureKind: 'translation-invariant',
+      conditioning: 'a third bucket it never produces',
+      description:
+        'Declares three buckets and only ever returns the first two, to exercise the split.',
+      buckets: 3,
+      bucket: (_frame: FeatureFrame, entryIndex: number) => entryIndex % 2,
+    };
+    const verdict = runBattery(dataset, { ...FAST_OPTIONS, families: [lopsided] });
+    expect(verdict.coverage.bucketsNeverVisited).toBe(FAST_OPTIONS.horizons.length);
+    expect(verdict.coverage.bucketsSkippedForOccupancy).toBe(0);
+    expect(verdict.notes.join(' ')).toContain('received no entry at all');
+    expect(verdict.notes.join(' ')).not.toContain('held fewer than');
+
+    // And the sweeping default stride visits every sixth of the minute at one
+    // minute, where the horizon-as-stride default left five of six empty.
+    const swept = runBattery(dataset, {
+      ...FAST_OPTIONS,
+      families: [familyByName('second-of-minute')],
+      horizons: [horizonByLabel('1m')],
+    });
+    expect(swept.coverage.bucketsNeverVisited).toBe(0);
+    const aliased = runBattery(dataset, {
+      ...FAST_OPTIONS,
+      families: [familyByName('second-of-minute')],
+      horizons: [horizonByLabel('1m')],
+      sampling: { strideMs: 60_000 },
+    });
+    expect(aliased.coverage.bucketsNeverVisited).toBe(5);
   });
 
   it('rejects an invalid training fraction', () => {

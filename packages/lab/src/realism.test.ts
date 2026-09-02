@@ -94,6 +94,54 @@ describe('the memoryless walk is unexploitable and implausible', () => {
   });
 });
 
+describe('a ratio of noise is not a number (a4-07)', () => {
+  const white = assessRealism(toDataset(whiteNoiseWalk(120_000)));
+  const metric = (name: string) => white.metrics.find((m) => m.name === name)!;
+
+  it('does not evaluate the clustering ratios when there is no clustering to take a ratio of', () => {
+    // On a memoryless walk the lag-1 clustering is noise around zero, and the
+    // ratio of two noise terms is Cauchy: nine of forty seeds passed
+    // `absolute-return-decay-is-slow` by landing in its band by accident.
+    for (const name of ['volatility-clustering-dominance', 'absolute-return-decay-is-slow']) {
+      expect(metric(name).value, name).toBeNaN();
+      expect(metric(name).pass, name).toBe(false);
+      expect(metric(name).notEvaluated, name).toContain('below the 0.05');
+    }
+  });
+
+  it('does not evaluate aggregational gaussianity when the tick kurtosis fails its own band', () => {
+    expect(metric('excess-kurtosis').pass).toBe(false);
+    expect(metric('aggregational-gaussianity').value).toBeNaN();
+    expect(metric('aggregational-gaussianity').notEvaluated).toContain('below the 1.5');
+  });
+
+  it('evaluates them on a market that has the clustering and the tails', () => {
+    const clustered = assessRealism(toDataset(clusteredWalk(120_000)));
+    const value = (name: string) => clustered.metrics.find((m) => m.name === name)!;
+    expect(value('absolute-return-autocorrelation-lag1').pass).toBe(true);
+    expect(value('volatility-clustering-dominance').notEvaluated).toBeUndefined();
+    expect(Number.isFinite(value('volatility-clustering-dominance').value)).toBe(true);
+    expect(value('absolute-return-decay-is-slow').notEvaluated).toBeUndefined();
+    expect(Number.isFinite(value('absolute-return-decay-is-slow').value)).toBe(true);
+  });
+
+  it('prints a metric it did not evaluate as such, rather than as NaN', () => {
+    const text = formatRealismReport(white);
+    expect(text).toContain('not evaluated:');
+    expect(text).not.toContain('NaN');
+  });
+
+  it('labels the tick-scale integrity bands as ADR-0003 requirements, not realism (a4-08)', () => {
+    // Real tick data would fail both: bid-ask bounce gives ACF(1) of -0.1 to
+    // -0.3 and same-sign runs well under 2. The bands are right for this
+    // product and wrong as a description of markets, and must say so.
+    for (const name of ['return-autocorrelation-lag1', 'mean-run-length']) {
+      expect(metric(name).rationale, name).toContain('ADR-0003');
+      expect(metric(name).rationale, name).toContain('Do not widen');
+    }
+  });
+});
+
 describe('a clustered walk is plausible where the memoryless one is not', () => {
   const clustered = assessRealism(toDataset(clusteredWalk(120_000)));
   const white = assessRealism(toDataset(whiteNoiseWalk(120_000)));

@@ -1,5 +1,6 @@
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
+import { replaceFileAtomically } from './atomicFile.js';
 import { CorruptRecordError, type MarketStateRecord, type StateStore } from './state.js';
 
 /**
@@ -8,7 +9,9 @@ import { CorruptRecordError, type MarketStateRecord, type StateStore } from './s
  * Writes are atomic by `rename`, which is the property that matters: a crash
  * during a save must leave either the previous record or the new one, never a
  * half-written file. A torn record would be indistinguishable from a corrupt one
- * and would push every restart down the seam path.
+ * and would push every restart down the seam path. And they are `fsync`ed —
+ * file, then directory — because `rename` is atomic against a crash and not
+ * against a power loss (a5-10); `atomicFile.ts` explains both.
  *
  * This is deliberately not a database. PH-5 has no load profile to design
  * against; PH-7 chooses a hosted engine when distribution semantics exist to
@@ -68,8 +71,6 @@ export class FileStateStore implements StateStore {
   }
 
   /**
-   * Sequence number for temporary file names, unique within this process.
-   *
    * **Cycle Audit 6, minor.** The temporary path was `${target}.${pid}.tmp` —
    * unique per *process*, not per call. Two concurrent saves of one asset raced:
    * the first `rename` moved the file the second was still writing, and the
@@ -78,16 +79,13 @@ export class FileStateStore implements StateStore {
    * `VenueService.stop()` clears the timer without awaiting an in-flight
    * `tick()` whose `checkpoint()` is running. The rejection then aborts the
    * checkpoint loop, so the remaining markets get no final checkpoint either.
+   *
+   * The per-call name now lives in `atomicFile.ts`, where the registry shares
+   * it rather than repeating the defect (a5-07).
    */
-  #saveSequence = 0;
-
   async save(record: MarketStateRecord): Promise<void> {
     await mkdir(this.directory, { recursive: true });
-    const target = this.#pathFor(record.assetId);
-    this.#saveSequence += 1;
-    const temporary = `${target}.${process.pid}.${this.#saveSequence}.tmp`;
-    await writeFile(temporary, JSON.stringify(record), 'utf8');
-    await rename(temporary, target);
+    await replaceFileAtomically(this.#pathFor(record.assetId), JSON.stringify(record));
   }
 
   async list(): Promise<readonly string[]> {

@@ -128,6 +128,18 @@ export function assertUsableRecord(record: MarketStateRecord, expectedAssetId: s
   const reject = (detail: string): never => {
     throw new UnusableRecordError(expectedAssetId, detail);
   };
+  if (record.version > STATE_RECORD_VERSION) {
+    // Not a seam (a5-11). A record written by code that knows more than this
+    // does — a downgrade, a mixed-version rollout — may keep its leases and
+    // cursors in a shape this code cannot read, which is the definition of
+    // "refuse to start". Seaming on it discontinued every market's latent
+    // state on every rollback, logged and otherwise silent.
+    throw new CorruptRecordError(
+      expectedAssetId,
+      `record version ${record.version} is newer than the ${STATE_RECORD_VERSION} this code ` +
+        `writes, so its lease marks may be in a shape this code cannot read`,
+    );
+  }
   if (record.version !== STATE_RECORD_VERSION) {
     reject(`version ${record.version}, expected ${STATE_RECORD_VERSION}`);
   }

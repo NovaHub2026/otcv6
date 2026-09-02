@@ -1,8 +1,8 @@
-import { readFileSync, existsSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { stripCommentsKeepingStrings } from './sourceScan.js';
+import { repoRoot } from './repository.js';
+import { moduleSpecifiers, stripCommentsKeepingStrings } from './sourceScan.js';
 
 /**
  * Generation is single-writer, and a follower must be *unable* to generate.
@@ -25,9 +25,11 @@ import { stripCommentsKeepingStrings } from './sourceScan.js';
  * receives key material cannot leak it.
  */
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(here, '../../../..');
 const runtimeSrc = path.join(repoRoot, 'packages/runtime/src');
+
+function isFile(candidate: string): boolean {
+  return existsSync(candidate) && statSync(candidate).isFile();
+}
 
 /** The follower entry point, and everything it can reach without leaving the package. */
 const FOLLOWER_ENTRY = 'follower.ts';
@@ -38,8 +40,18 @@ const FOLLOWER_ENTRY = 'follower.ts';
  * Type-only imports are refused too. A `import type { MasterKeyring }` does
  * nothing at runtime, which is exactly why it would be waved through — and it
  * turns "add an engine here" from a design change into a one-word edit.
+ *
+ * **a2-06, W-06 and W-07.** `node:vm` and `node:worker_threads` evaluate
+ * source a follower could assemble; `node:child_process` runs anything at all;
+ * `node:module` hands out `createRequire`. None has a use in a module whose
+ * whole job is to replay a record it was handed.
  */
-const FORBIDDEN_MODULES = [/^@otc\/engine/, /^@otc\/fixtures/, /^@otc\/lab/];
+const FORBIDDEN_MODULES = [
+  /^@otc\/engine/,
+  /^@otc\/fixtures/,
+  /^@otc\/lab/,
+  /^(?:node:)?(?:vm|worker_threads|child_process|module)$/,
+];
 
 /**
  * Identifiers that mean the module has touched generation or key material.
@@ -77,18 +89,32 @@ const FORBIDDEN_IDENTIFIERS = [
  * with an assembled specifier. Adding each name to a list would have caught none
  * of them.
  *
- * So the rule is about the construct. A module that must be *provably* unable to
- * reach the engine may not contain a dynamic escape hatch at all — there is no
+ * So the rule is about the construct. A module that must be *provably* unable
+ * to reach the engine may not contain a dynamic escape hatch at all — there is no
  * legitimate reason for one in a module whose entire job is to replay a record
  * it was handed.
+ *
+ * **a2-05 / a2-06.** Widened to the forms the out-of-band audit planted:
+ * Node's `global` (W-08), the `Function` constructor reached through
+ * `.constructor` (W-09), indirect `eval` as a value (W-10), `Reflect`, and
+ * `process.getBuiltinModule` (W-13).
  */
 const FORBIDDEN_CONSTRUCTS: readonly { readonly pattern: RegExp; readonly why: string }[] = [
   { pattern: /\bimport\s*\(/, why: 'a dynamic import can name anything at run time' },
   { pattern: /\brequire\s*\(/, why: 'so can require' },
   { pattern: /\bcreateRequire\b/, why: 'and so can a require built from createRequire' },
-  { pattern: /\bFunction\s*\(/, why: 'the Function constructor evaluates arbitrary source' },
-  { pattern: /\beval\s*\(/, why: 'eval evaluates arbitrary source' },
-  { pattern: /\bglobalThis\b/, why: 'a global is a channel no import graph shows' },
+  { pattern: /(?<![\w$.])Function\b/, why: 'the Function constructor evaluates arbitrary source' },
+  { pattern: /\.constructor\b/, why: 'and so does the constructor of any function' },
+  {
+    pattern: /(?<![\w$.])eval\b/,
+    why: 'eval evaluates arbitrary source, called directly or indirectly',
+  },
+  { pattern: /\bglobalThis\b|\bglobal\b/, why: 'a global is a channel no import graph shows' },
+  { pattern: /\bReflect\b/, why: 'Reflect reaches any property by a name assembled at run time' },
+  {
+    pattern: /\bgetBuiltinModule\b/,
+    why: 'process.getBuiltinModule loads any built-in without an import',
+  },
 ];
 
 /**
@@ -97,18 +123,13 @@ const FORBIDDEN_CONSTRUCTS: readonly { readonly pattern: RegExp; readonly why: s
  * it made a plain static engine import read as the inside of a comment. The
  * guard stayed green while an auditor gave a follower a real engine and measured
  * INV-002 broken at 120 of 120 sampled instants.
+ *
+ * **a2-01, W-17 and W-19.** The character scanner that replaced it read a regex
+ * after `return` as a division, and the same import vanished again behind
+ * `return /[/*]/`. Specifiers are read by the shared lexer now, and the lexer's
+ * corpus (`sourceScan.test.ts`) holds every construct that has hidden one.
  */
 const stripComments = stripCommentsKeepingStrings;
-
-function specifiers(source: string): string[] {
-  const found: string[] = [];
-  for (const match of stripComments(source).matchAll(
-    /(?:from|import|require)\s*\(?\s*['"]([^'"]+)['"]/g,
-  )) {
-    found.push(match[1]!);
-  }
-  return found;
-}
 
 /**
  * Every runtime module reachable from the follower, including itself.
@@ -124,18 +145,21 @@ function reachableFromFollower(): Map<string, string> {
     const relative = queue.pop()!;
     if (reached.has(relative)) continue;
     const absolute = path.join(runtimeSrc, relative);
-    if (!existsSync(absolute)) {
+    if (!isFile(absolute)) {
       throw new Error(`Follower reachability walked to a file that does not exist: ${relative}`);
     }
     const source = readFileSync(absolute, 'utf8');
     reached.set(relative, source);
-    for (const specifier of specifiers(source)) {
+    for (const specifier of moduleSpecifiers(source)) {
       if (!specifier.startsWith('.')) continue;
-      // Emitted specifiers end in `.js`; the sources are `.ts`.
-      const resolved = path
-        .relative(runtimeSrc, path.resolve(path.dirname(absolute), specifier))
-        .replace(/\.js$/, '.ts');
-      queue.push(resolved);
+      // Emitted specifiers end in `.js`; the sources are `.ts`. A directory
+      // import names its index.
+      const target = path.resolve(path.dirname(absolute), specifier);
+      const candidates = [target.replace(/\.js$/, '.ts'), path.join(target, 'index.ts')];
+      // A file, not a directory: `./fill` names `fill/index.ts`, and a walk that
+      // reads the directory crashes the guard instead of failing it (W-16).
+      const found = candidates.find(isFile) ?? candidates[0]!;
+      queue.push(path.relative(runtimeSrc, found));
     }
   }
   return reached;
@@ -149,10 +173,10 @@ describe('a follower cannot generate', () => {
     expect(reachable.size).toBeGreaterThanOrEqual(2);
   });
 
-  it('imports no engine, fixture corpus or laboratory, at any depth', () => {
+  it('imports no engine, fixture corpus, laboratory or evaluator, at any depth', () => {
     const offenders: string[] = [];
     for (const [file, source] of reachable) {
-      for (const specifier of specifiers(source)) {
+      for (const specifier of moduleSpecifiers(source)) {
         if (FORBIDDEN_MODULES.some((pattern) => pattern.test(specifier))) {
           offenders.push(`${file} imports ${specifier}`);
         }
@@ -194,26 +218,36 @@ describe('a follower cannot generate', () => {
     ).toEqual([]);
   });
 
-  it('sees an import hidden behind string literals that look like comment markers', () => {
-    // The exact evasion, as a unit test on the stripper rather than a plant.
-    const hidden = [
+  it('sees an import hidden behind string literals or a regex that look like comment markers', () => {
+    // The exact evasions, as unit tests on the reader rather than plants.
+    const behindStrings = [
       "const OPEN = '/*';",
       "import * as engineModule from '@otc/engine';",
       "const CLOSE = '*' + '/';",
     ].join('\n');
-    expect(stripComments(hidden)).toContain('@otc/engine');
+    expect(moduleSpecifiers(behindStrings)).toContain('@otc/engine');
+    expect(stripComments(behindStrings)).toContain('@otc/engine');
+    const behindKeywordRegex = [
+      'export function sep17(s: string): boolean {',
+      '  return /[/*]/.test(s);',
+      '}',
+      "import * as gen17 from '@otc/engine';",
+      "export const close17 = '*/';",
+    ].join('\n');
+    expect(moduleSpecifiers(behindKeywordRegex)).toContain('@otc/engine');
+    expect(stripComments(behindKeywordRegex)).toContain('gen17');
     // And a genuine comment is still removed.
     expect(stripComments('/* import x from "@otc/engine" */ const a = 1;')).not.toContain(
       '@otc/engine',
     );
+    expect(moduleSpecifiers('/* import x from "@otc/engine" */ const a = 1;')).toEqual([]);
   });
 
   it('the rule would notice: the leader path it is contrasted with does import an engine', () => {
     // A negative control. If `resume.ts` also came back clean, the check would
     // be measuring nothing — the runtime would simply have no engine anywhere.
-    const leaderPath = path.join(runtimeSrc, 'resume.ts');
-    const leaderSource = readFileSync(leaderPath, 'utf8');
-    const leaderImports = specifiers(leaderSource);
+    const leaderSource = readFileSync(path.join(runtimeSrc, 'resume.ts'), 'utf8');
+    const leaderImports = moduleSpecifiers(leaderSource);
     expect(leaderImports.some((s) => FORBIDDEN_MODULES.some((p) => p.test(s)))).toBe(true);
     expect(reachable.has('resume.ts')).toBe(false);
   });

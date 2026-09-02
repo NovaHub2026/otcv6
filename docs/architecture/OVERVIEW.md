@@ -70,18 +70,26 @@ the graph. Review vigilance is not the enforcement mechanism; the graph is.
 Several invariants are properties that code either has or silently loses. A
 single `Math.random()`, `Date.now()` or `Math.exp()` violates one, and none of
 those lines look wrong in review. `packages/core/src/guardrails/` turns each into
-a build failure, enforced two ways:
+a build failure over `packages/*/src`, `apps/api/src` and `tools/sim/src` — the
+lexer every scan shares is tested against every construct that has ever hidden
+code from it (`sourceScan.test.ts`, out-of-band audit a2-01) — enforced two
+ways:
 
-| Guardrail                                                              | Protects                                 |
-| ---------------------------------------------------------------------- | ---------------------------------------- |
-| no ambient time outside `SystemClock`                                  | replay (INV-009)                         |
-| no ambient randomness                                                  | replay, isolation (INV-009, INV-010)     |
-| no implementation-approximated maths (`Math.exp`, `Math.log`, `**`, …) | cross-platform reproducibility (INV-009) |
-| no economic vocabulary in generation code                              | economic blindness (INV-001)             |
-| dependency direction                                                   | economic blindness (INV-001)             |
+| Guardrail                                                                                             | Protects                                        |
+| ----------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| no ambient time outside `SystemClock`                                                                 | replay (INV-009)                                |
+| no ambient randomness                                                                                 | replay, isolation (INV-009, INV-010)            |
+| no implementation-approximated maths (`Math.exp`, `Math.log`, `**`, …)                                | cross-platform reproducibility (INV-009)        |
+| no economic vocabulary in generation code                                                             | economic blindness (INV-001)                    |
+| dependency direction                                                                                  | economic blindness (INV-001)                    |
+| no computed access to, dynamic evaluation of, or aliasing of a global; no mutable module-level export | replay, economic blindness (INV-001, INV-009)   |
+| a follower cannot reach the engine, key material or an evaluator                                      | shared market, private state (INV-002, INV-010) |
+| the signing path cannot derive the market, transitively                                               | private state (INV-010)                         |
+| every module is reachable through barrels or declared internal                                        | surface completeness                            |
 
 ESLint reports them in the editor; the guardrail test suite is the authority and
-runs in CI. Both were verified by planting a deliberate violation and observing
+runs in CI. ESLint's market-model rules cover `packages/*/src` only; under
+`apps/api` and `tools/sim` the guardrail suite is the only layer (a2-04). Both were verified by planting a deliberate violation and observing
 five distinct failures, then removing it and observing green.
 
 ## Determinism model

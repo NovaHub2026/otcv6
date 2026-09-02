@@ -2,53 +2,137 @@ import { reduceToColumns, type Column, type TickWindow } from '@otc/chart';
 import type { Tick } from '@otc/core/browser';
 
 /**
- * Connect a `TickWindow` to the PH-7 stream, resuming exactly on reconnection.
+ * Connect a `TickWindow` to the PH-7 stream, resuming exactly when it can and
+ * starting over honestly when it cannot.
  *
- * The only interesting decision here is what to do when the connection drops.
+ * The only interesting decisions here are what to do when the connection drops.
  * The tempting answer — reopen the stream and carry on — silently loses whatever
  * arrived while disconnected, and the chart then draws a line across the hole.
- * So reconnection always asks for `window.resumeFrom`, and a batch that does not
+ * So a reconnection asks for `window.resumeFrom`, and a batch that does not
  * continue the window is refused by the window itself rather than absorbed.
+ *
+ * ## When the server will not resume (a6-11)
+ *
+ * The replay window is finite: ~4.6 hours of `btcusd`, ~46 of `spx`, a laptop
+ * closed overnight. A resume point older than that is answered with a 400, and
+ * the first version of this module asked for the same evicted sequence every
+ * second for ever — a browser's `EventSource` cannot see a status code, only
+ * that the connection failed. It *can* see whether the connection ever opened:
+ * a refusal fails before `onopen`, a drop fails after it. So a resume that is
+ * refused is not retried. The window is replaced with an empty one, the caller
+ * is told there was a gap, and the stream reopens from now. What the old window
+ * held is gone rather than joined across a hole, because the client cannot know
+ * what it missed (INV-002).
+ *
+ * Every retry backs off: the first after one second, then two, four, up to
+ * thirty, reset by a successful open. One request a second against an engine
+ * that is down is a client contributing to the outage.
  */
 export interface StreamHandle {
   close(): void;
 }
 
+/** What the stream tells its caller about itself, beside the ticks. */
+export type StreamNotice =
+  | { readonly kind: 'live'; readonly afterGap: boolean }
+  | {
+      readonly kind: 'reconnecting';
+      readonly attempt: number;
+      readonly inMs: number;
+      readonly resuming: boolean;
+    }
+  | { readonly kind: 'gap'; readonly reason: string };
+
+export interface StreamOptions {
+  /** Delay before the first reconnect; doubles per consecutive failure. */
+  readonly backoffMs?: number;
+  /** The longest delay between attempts. */
+  readonly maxBackoffMs?: number;
+  /** The `EventSource` implementation, injectable so the policy can be tested in Node. */
+  readonly eventSource?: typeof EventSource;
+}
+
+export const DEFAULT_RECONNECT_BACKOFF_MS = 1_000;
+export const MAX_RECONNECT_BACKOFF_MS = 30_000;
+
 export function streamMarket(
   apiBase: string,
   assetId: string,
-  window: TickWindow,
+  createWindow: () => TickWindow,
   onUpdate: (window: TickWindow) => void,
+  onNotice: (notice: StreamNotice) => void = () => undefined,
+  options: StreamOptions = {},
 ): StreamHandle {
+  const backoffMs = options.backoffMs ?? DEFAULT_RECONNECT_BACKOFF_MS;
+  const maxBackoffMs = options.maxBackoffMs ?? MAX_RECONNECT_BACKOFF_MS;
+  const Source = options.eventSource ?? EventSource;
+
+  let window = createWindow();
   let closed = false;
   let source: EventSource | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  /** Consecutive failed attempts; the backoff exponent. Reset by an open. */
+  let failures = 0;
+  /** Whether the current window began after a refused resume. */
+  let afterGap = false;
 
-  const connect = (): void => {
+  const connect = (resume: boolean): void => {
     if (closed) return;
-    const from = window.resumeFrom;
+    const from = resume ? window.resumeFrom : undefined;
     const query = from === undefined ? '' : `?from=${String(from)}`;
-    source = new EventSource(`${apiBase}/markets/${assetId}/stream${query}`);
+    let opened = false;
+    const current = new Source(`${apiBase}/markets/${assetId}/stream${query}`);
+    source = current;
 
-    source.onmessage = (event: MessageEvent<string>): void => {
+    current.onopen = (): void => {
+      opened = true;
+      failures = 0;
+      onNotice({ kind: 'live', afterGap });
+    };
+
+    current.onmessage = (event: MessageEvent<string>): void => {
       const tick = JSON.parse(event.data) as Tick;
       // Appended one at a time so a contiguity failure names the exact tick.
       window.append([tick]);
       onUpdate(window);
     };
 
-    source.onerror = (): void => {
-      source?.close();
-      if (closed) return;
-      // Reconnect asking for exactly what we are missing. Never "from now".
-      setTimeout(connect, 1_000);
+    current.onerror = (): void => {
+      current.close();
+      if (closed || source !== current) return;
+      source = null;
+      failures += 1;
+      let nextResume = true;
+      if (!opened && from !== undefined) {
+        // Refused before it opened, with a resume point: evicted, unknown, or
+        // an engine that no longer has this market. Asking again would be the
+        // loop this exists to end. Start over and say so.
+        window = createWindow();
+        afterGap = true;
+        nextResume = false;
+        onNotice({ kind: 'gap', reason: `the engine refused to resume from sequence ${from}` });
+      }
+      const inMs = Math.min(backoffMs * 2 ** (failures - 1), maxBackoffMs);
+      onNotice({
+        kind: 'reconnecting',
+        attempt: failures,
+        inMs,
+        resuming: nextResume && window.resumeFrom !== undefined,
+      });
+      timer = setTimeout(() => {
+        timer = null;
+        connect(nextResume);
+      }, inMs);
     };
   };
 
-  connect();
+  connect(true);
   return {
     close(): void {
       closed = true;
+      if (timer !== null) clearTimeout(timer);
       source?.close();
+      source = null;
     },
   };
 }

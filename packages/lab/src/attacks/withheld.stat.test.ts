@@ -171,12 +171,15 @@ describe('the withheld families are calibrated, not decorative', () => {
     const refInstants = new Float64Array(reference.map((t) => t.instant));
     const refPrices = Int32Array.from(reference.map((t) => t.price));
 
+    // The follower's instants are monotonic, so the reference index only ever
+    // advances. This was a linear scan from zero per tick — quadratic, and the
+    // longest synchronous stretch left in the suite after the out-of-band audit
+    // (18 s locally, with a task update in flight; the gate fails a file at a
+    // 30 s round trip and a hosted runner is slower).
+    let cursor = 0;
     const referenceMoveAt = (instant: number): number => {
-      let hi = -1;
-      for (let i = 0; i < refInstants.length; i += 1) {
-        if (refInstants[i]! <= instant) hi = i;
-        else break;
-      }
+      while (cursor < refInstants.length && refInstants[cursor]! <= instant) cursor += 1;
+      const hi = cursor - 1;
       if (hi < 20) return 0;
       return refPrices[hi]! - refPrices[hi - 20]!;
     };

@@ -27,9 +27,20 @@ import { runMirrorTest, SignInvertingStream } from './mirror.js';
  *
  * ADR-0003 guarantees P(up) = P(down) exactly, on one precondition: the
  * magnitude and timing engine never observes a sign. The mirror test checks that
- * precondition directly — negate the sign source and every latent variable must
- * continue bit-identically while every increment is exactly negated.
+ * precondition directly — negate the sign source from an interior snapshot and
+ * every latent variable must continue bit-identically while every increment is
+ * exactly negated.
  */
+
+/**
+ * Where the interior index is drawn from, in ticks.
+ *
+ * ADR-0003 §6 step 5: randomise `N` per run. The draw comes from this file's
+ * own keyring, so a failing `N` is reproducible and reported. The floor is past
+ * the first few regime and structure transitions, so the latent state is
+ * genuinely asymmetric; the ceiling keeps the origin run inside the unit budget.
+ */
+const INTERIOR = { min: 1_000, max: 30_000 } as const;
 
 const instrument: InstrumentSpec = {
   id: 'mirror-otc',
@@ -65,11 +76,30 @@ describe('the mirror test passes on the real engine', () => {
     const result = runMirrorTest(
       (sign) => buildEngine(sign),
       () => derive('sign'),
-      { burnInTicks: 20_000, compareTicks: 5_000 },
+      { burnInTicks: INTERIOR, compareTicks: 5_000, interior: derive('interior') },
     );
-    expect(result.divergences).toEqual([]);
+    expect(result.divergences, `snapshot at ${result.snapshotAt}`).toEqual([]);
     expect(result.mirrored).toBe(true);
     expect(result.steps).toBe(5_000);
+    expect(result.snapshotAt).toBeGreaterThanOrEqual(INTERIOR.min);
+    expect(result.snapshotAt).toBeLessThanOrEqual(INTERIOR.max);
+  });
+
+  it('reflects through the interior price, not through the origin', () => {
+    // The property Cycle Audit 7 (a3-01) found missing. The snapshot the two
+    // continuations start from must carry an asymmetric price: a harness that
+    // inverts the sign from tick 1 compares `p(t)` against `-p(t)`, and any
+    // level dependence symmetric about zero is invisible to it.
+    const origin = buildEngine(derive('sign'));
+    for (let i = 0; i < 2_000; i += 1) origin.next();
+    expect(origin.price).not.toBe(0);
+    const result = runMirrorTest(
+      (sign) => buildEngine(sign),
+      () => derive('sign'),
+      { burnInTicks: 2_000, compareTicks: 100 },
+    );
+    expect(result.snapshotAt).toBe(2_000);
+    expect(result.mirrored).toBe(true);
   });
 
   it('holds from many different interior points', () => {
@@ -95,6 +125,35 @@ describe('the mirror test passes on the real engine', () => {
     expect(() => runMirrorTest(build, source, { burnInTicks: 10, compareTicks: 0 })).toThrow(
       RangeError,
     );
+    // A range with nothing to draw it from would need ambient randomness, and
+    // a failing N that cannot be reproduced is not evidence.
+    expect(() =>
+      runMirrorTest(build, source, { burnInTicks: { min: 10, max: 20 }, compareTicks: 10 }),
+    ).toThrow(/interior/);
+    expect(() =>
+      runMirrorTest(build, source, {
+        burnInTicks: { min: 20, max: 10 },
+        compareTicks: 10,
+        interior: derive('interior'),
+      }),
+    ).toThrow(RangeError);
+  });
+
+  it('draws the interior index from the stream it is given, deterministically', () => {
+    const draw = () =>
+      runMirrorTest(
+        (sign) => buildEngine(sign),
+        () => derive('sign'),
+        {
+          burnInTicks: { min: 100, max: 400 },
+          compareTicks: 10,
+          interior: derive('interior-fixed'),
+        },
+      ).snapshotAt;
+    const first = draw();
+    expect(first).toBeGreaterThanOrEqual(100);
+    expect(first).toBeLessThanOrEqual(400);
+    expect(draw()).toBe(first);
   });
 });
 
@@ -130,10 +189,11 @@ describe('the mirror test passes with every layer active', () => {
     // The structure layer's transition hazard depends on path length per unit
     // time. That is a reflection-invariant quantity, and this is what proves it.
     const result = runMirrorTest(layeredEngine, () => derive('sign'), {
-      burnInTicks: 30_000,
+      burnInTicks: INTERIOR,
       compareTicks: 5_000,
+      interior: derive('interior'),
     });
-    expect(result.divergences).toEqual([]);
+    expect(result.divergences, `snapshot at ${result.snapshotAt}`).toEqual([]);
     expect(result.mirrored).toBe(true);
   });
 
@@ -182,10 +242,11 @@ describe('the mirror test passes with the complete stack', () => {
     // excitation driven by the sign would be a timing analogue of the leverage
     // effect, and this is what proves it is not one.
     const result = runMirrorTest(fullEngine, () => derive('sign'), {
-      burnInTicks: 30_000,
+      burnInTicks: INTERIOR,
       compareTicks: 5_000,
+      interior: derive('interior'),
     });
-    expect(result.divergences).toEqual([]);
+    expect(result.divergences, `snapshot at ${result.snapshotAt}`).toEqual([]);
     expect(result.mirrored).toBe(true);
   });
 
@@ -278,7 +339,18 @@ describe('the mirror test catches sign-reading mechanisms', () => {
 
   it('catches a magnitude model that reads the price level', () => {
     // The other class of defect, and the one PH-2 showed a conventional attack
-    // battery cannot see: volatility keyed to the absolute price.
+    // battery cannot see: volatility keyed to the absolute price. This is
+    // round-number support and resistance — volatility halves at every
+    // multiple of 1,000 lattice steps and peaks halfway between — the mechanism
+    // ADR-0003 §4 bans by name, and Cycle Audit 7's plant 20: planted in
+    // `engine.ts` it passed 19 of 19 shipped tests under the from-the-origin
+    // harness, because the field is symmetric about zero.
+    //
+    // **Cycle Audit 7, a3-02.** The previous version of this plant stored the
+    // price in its own snapshot, so the harness saw `p` against `-p` as a
+    // latent-state difference and the test passed without ever observing a
+    // mis-negated increment. The plant now persists only what a real layer
+    // would, and the assertion is on the increment.
     class LevelAnchoredModel implements MagnitudeModel {
       #price = 0;
 
@@ -289,18 +361,17 @@ describe('the mirror test catches sign-reading mechanisms', () => {
       }
 
       advance(context: MagnitudeContext): number {
-        const phase = (((this.#price % 4_000) + 4_000) % 4_000) / 4_000;
-        return this.inner.advance(context) * (1 + 0.8 * (1 - 2 * Math.abs(2 * phase - 1)));
+        const distanceToRound = Math.abs((((this.#price % 1_000) + 1_000) % 1_000) - 500);
+        return this.inner.advance(context) * (1.5 - distanceToRound / 500);
       }
 
       snapshot(): unknown {
-        return { inner: this.inner.snapshot(), price: this.#price };
+        return { inner: this.inner.snapshot() };
       }
 
       restore(state: unknown): void {
-        const typed = state as { inner: unknown; price: number };
+        const typed = state as { inner: unknown };
         this.inner.restore(typed.inner);
-        this.#price = typed.price;
       }
     }
 
@@ -325,6 +396,10 @@ describe('the mirror test catches sign-reading mechanisms', () => {
       { burnInTicks: 2_000, compareTicks: 500 },
     );
     expect(result.mirrored).toBe(false);
+    // Detected as what it is. A latent-state divergence here would mean the
+    // plant's bookkeeping was caught rather than its mechanism.
+    expect(result.divergences[0]?.kind).toBe('increment');
+    expect(result.divergences.some((d) => d.kind === 'increment')).toBe(true);
   });
 });
 

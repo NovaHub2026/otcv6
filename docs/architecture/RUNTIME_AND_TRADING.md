@@ -70,7 +70,20 @@ Recovery has two branches:
   published twice under one asset id.
 
 A record that exists but cannot be read is neither: the market refuses to start,
-because the information needed to seam safely is exactly what was lost.
+because the information needed to seam safely is exactly what was lost. So does
+a record whose `version` is newer than this code's (a5-11); only an _older_
+version is seamed past.
+
+Checkpoint and registration files are written to a per-call temporary name,
+`fsync`ed — file, then directory — and renamed into place (`atomicFile.ts`,
+a5-10); before 2026-09-02 nothing in the repository called `fsync`, so a power
+loss could leave an empty or stale checkpoint. Both SQLite databases carry a
+schema version (`PRAGMA user_version`) and refuse a file written by newer code
+before any statement runs. A leader keeps every tick the store refused and
+appends it before anything newer; no checkpoint is written while ticks are
+unrecorded, and after three consecutive refusals it releases the lease (a5-03).
+The multi-node design is described in
+[`MULTI_NODE_AND_OPERATIONS.md`](MULTI_NODE_AND_OPERATIONS.md).
 
 ## Settlement reads the record, never the engine
 

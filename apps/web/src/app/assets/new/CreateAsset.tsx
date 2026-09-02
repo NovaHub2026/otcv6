@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import {
+  ApiError,
   createAsset,
   fetchArchetypes,
   fetchRegistration,
@@ -32,6 +33,22 @@ import {
  * also a product decision rather than a convenience: twenty hand-authored
  * near-identical markets are one market with twenty names, and INV-007 says
  * assets have genuinely distinct statistical personalities.
+ *
+ * ## What the stage list is, and is not (a6-06)
+ *
+ * It is a report of the outcome, not a progress bar. The engine reports no
+ * stage while a job runs — `registerAsset` has no progress callback — so a
+ * running job shows six pending stages, and a refusal marks the one that
+ * refused. An earlier version of this comment promised that "a second-resolution
+ * poll shows them" going by; it never could, and the poll is for the terminal
+ * state.
+ *
+ * ## When the engine forgets the job (a6-10)
+ *
+ * Jobs live in the engine's memory. A poll answered 404 means the engine
+ * restarted, and polling on would disable this form for ever: the poll stops,
+ * the outcome is reported as unknown, and the operator is sent to the Assets
+ * screen, where the asset is listed if the registration finished first.
  */
 const STAGES = [
   'identity',
@@ -82,30 +99,63 @@ export function CreateAsset({ apiBase }: { apiBase: string }): ReactElement {
 
   const submit = async (): Promise<void> => {
     setError(null);
+    // Refused here, in the operator's own words, before anything is sent
+    // (a6-07). `Number('0,25')` is `NaN`, `JSON.stringify` turns `NaN` into
+    // `null`, and the engine used to read `null` as "not supplied": an operator
+    // who typed a budget got the family's default and no error.
+    const price = numberField('Reference price', referencePrice);
+    if (price.error !== null) {
+      setError(price.error);
+      return;
+    }
+    const budget =
+      dispersion.trim() === '' ? null : numberField('Quarterly dispersion', dispersion);
+    if (budget !== null && budget.error !== null) {
+      setError(budget.error);
+      return;
+    }
     setSubmitting(true);
     try {
       const started = await createAsset(apiBase, {
         id: id.trim(),
         archetypeId,
         displayName: displayName.trim(),
-        referencePrice: Number(referencePrice),
-        ...(dispersion.trim() === '' ? {} : { dispersion: Number(dispersion) }),
+        referencePrice: price.value,
+        ...(budget === null ? {} : { dispersion: budget.value }),
       });
-      // Poll rather than stream: a registration reports six discrete stages over
-      // seconds to tens of seconds, and a second-resolution poll shows them. An
-      // event stream would be a second transport for one screen's benefit.
+      // Poll rather than stream: the job reports its terminal state and, on a
+      // refusal, the stage that refused; the engine reports nothing while a job
+      // runs (a6-06), so a second-resolution poll loses nothing. An event
+      // stream would be a second transport for one screen's benefit.
       if (polling.current !== null) clearInterval(polling.current);
+      const stop = (): void => {
+        if (polling.current !== null) clearInterval(polling.current);
+        polling.current = null;
+      };
       polling.current = setInterval(() => {
         fetchRegistration(apiBase, started.job)
           .then((view) => {
             setJob(view);
-            if (view.state !== 'queued' && view.state !== 'running' && polling.current !== null) {
-              clearInterval(polling.current);
-              polling.current = null;
-            }
+            if (view.state !== 'queued' && view.state !== 'running') stop();
           })
-          .catch(() => {
-            /* a poll that fails is retried by the next one */
+          .catch((cause: unknown) => {
+            if (cause instanceof ApiError && cause.status === 404) {
+              // The engine restarted and forgot the job (a6-10). Polling on
+              // would keep this form disabled for ever.
+              stop();
+              setJob((current) =>
+                current === null
+                  ? null
+                  : { ...current, state: 'failed', stage: null, reason: null },
+              );
+              setError(
+                `The engine no longer knows job ${started.job}: it restarted, and jobs live in ` +
+                  'its memory. Check the Assets screen — if the asset is listed there, the ' +
+                  'registration finished before the restart; if not, register it again.',
+              );
+              return;
+            }
+            /* any other failed poll is retried by the next one */
           });
       }, 1_000);
     } catch (cause) {
@@ -250,6 +300,11 @@ function JobReport({ job }: { job: RegistrationJobView }): ReactElement {
         {job.state}
         {job.assetId === null ? '' : ` — ${job.assetId}`}
       </div>
+      {(job.state === 'queued' || job.state === 'running') && (
+        <div style={{ color: '#8b93a7', marginBottom: 8, fontSize: 12 }}>
+          the engine reports each stage as it enters it; a refusal names the one that refused
+        </div>
+      )}
       <ol style={{ margin: 0, padding: 0, listStyle: 'none', lineHeight: 1.9 }}>
         {STAGES.map((stage) => {
           const refused =
@@ -282,6 +337,27 @@ function JobReport({ job }: { job: RegistrationJobView }): ReactElement {
       )}
     </div>
   );
+}
+
+/**
+ * A typed number, or the reason it is not one.
+ *
+ * `Number('')` is 0 and `Number('0,25')` is `NaN`; neither is what an operator
+ * meant, and both used to travel to the engine.
+ */
+function numberField(
+  label: string,
+  raw: string,
+): { value: number; error: null } | { value: null; error: string } {
+  const text = raw.trim();
+  const value = Number(text);
+  if (text === '' || !Number.isFinite(value) || value <= 0) {
+    return {
+      value: null,
+      error: `${label} must be a positive number written with a decimal point, got "${raw}".`,
+    };
+  }
+  return { value, error: null };
 }
 
 const INPUT: React.CSSProperties = {

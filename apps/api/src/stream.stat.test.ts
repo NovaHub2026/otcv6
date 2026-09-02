@@ -1,5 +1,6 @@
 // Invariant evidence: INV-002 (shared market).
 import { spawn, type ChildProcess } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -31,11 +32,16 @@ afterAll(async () => {
 async function boot(port: number): Promise<ChildProcess> {
   const stateDir = await mkdtemp(path.join(tmpdir(), 'otc-stream-'));
   directories.push(stateDir);
+  // A nonce `/health` echoes, so a foreign engine on this fixed port is not
+  // mistaken for the child (a6-14): the child then exits with EADDRINUSE and
+  // the test fails by name instead of testing somebody else's market.
+  const nonce = randomUUID();
   const child = spawn(process.execPath, [entry], {
     env: {
       ...process.env,
       OTC_STATE_DIR: stateDir,
       OTC_MASTER_SECRET: SECRET,
+      OTC_BOOT_NONCE: nonce,
       PORT: String(port),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -46,7 +52,11 @@ async function boot(port: number): Promise<ChildProcess> {
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`service exited (${child.exitCode})`);
     try {
-      if ((await fetch(`http://127.0.0.1:${port}/health`)).ok) return child;
+      const response = await fetch(`http://127.0.0.1:${port}/health`);
+      if (response.ok) {
+        const health = (await response.json()) as { bootNonce: string | null };
+        if (health.bootNonce === nonce) return child;
+      }
     } catch {
       // not up yet
     }
@@ -147,6 +157,12 @@ describe('the stream gives every client the same market', () => {
     const response = await fetch(`http://127.0.0.1:${port}/markets/btcusd/stream?from=-5`);
     expect(response.status).toBe(400);
     await response.body?.cancel();
+
+    // A sequence in the future is a refusal too, in the feed's own words — it
+    // was a 500 (a6-04), which a browser's `EventSource` treats as final.
+    const future = await fetch(`http://127.0.0.1:${port}/markets/btcusd/stream?from=99999999999`);
+    expect(future.status).toBe(400);
+    expect(await future.text()).toMatch(/never been published/);
 
     const unknown = await fetch(`http://127.0.0.1:${port}/markets/nope/stream`);
     expect(unknown.status).toBe(404);

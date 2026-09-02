@@ -6,133 +6,116 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                    |
-| ------------------ | -------------------------------------------------------- |
-| Last clean session | 2026-09-02                                               |
-| Branch             | `feature/ph-21-catalogue-at-scale`                       |
-| Remote             | `origin` → NovaHub2026/otcv6 — public, hosted CI **red** |
-| Active cycle       | Cycle 7, **2 of 3** phases approved                      |
-| Active phase       | PH-21 — the catalogue at scale (ACTIVE)                  |
-| Active subphase    | PH-21.1 — a hundred assets (ACTIVE)                      |
-| Cycle Audit        | **006 closed** — 40 of 46 findings closed in PH-19       |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)       |
+| Field              | Value                                                                                                                                                                                                                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Last clean session | 2026-09-02                                                                                                                                                                                                                                                                                 |
+| Branch             | `main` — `feature/out-of-band-audit` merged 2026-09-02                                                                                                                                                                                                                                     |
+| HEAD               | the merge commit of `feature/out-of-band-audit` (code tree `023f694`)                                                                                                                                                                                                                      |
+| Remote             | `origin` → NovaHub2026/otcv6 — public; branch pushed; hosted CI `run 33671271767 — **success**, Quality Gate and Statistical Gate, 19:06–19:53 UTC; statistical 40 files, 271 tests (the six browser tests ran on the runner), worst RPC round trip 9.4 s, no orphaned process at cleanup` |
+| Active cycle       | Cycle 7, **2 of 3** phases approved                                                                                                                                                                                                                                                        |
+| Active phase       | PH-21 — the catalogue at scale (ACTIVE)                                                                                                                                                                                                                                                    |
+| Active subphase    | PH-21.1 — a hundred assets (ACTIVE)                                                                                                                                                                                                                                                        |
+| Cycle Audit        | **006 closed**; out-of-band audit 001 recorded 2026-09-02                                                                                                                                                                                                                                  |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                                                                                                                                                                                                                                         |
 
 ## Continuation point
 
 Read `CURRENT_STATE.md` for the authoritative position; this is the short form.
 
-**An out-of-band full audit is in progress**, requested by the Human Owner on
-2026-09-02 with authority to fix everything it finds (`GOVERNANCE.md` §29, §33).
-Independent agents, one worktree each. Its record goes under `docs/audits/`.
+**Continue PH-21 from PH-21.2 on a branch rebased onto `main`, which carries
+the out-of-band audit and its fixes since 2026-09-02.**
 
-**Hosted CI is red on `main`** — three runs, 238 statistical tests passing, one
-`Timeout calling "onTaskUpdate"`, exit 1. PH-20 was approved without that
-corroboration (CA6-02 repeated). The event-loop watchdog in
-`vitest.setup.statistical.ts` exists to name the file; the local statistical run
-with it is the first measurement to read.
+The Human Owner asked on 2026-09-02 for a complete audit with authority to fix
+everything found. Seven independent auditors, one worktree each, at `36bbf89`;
+83 findings, 6 critical; every material finding fixed on this branch and
+watched failing first; the record is
+[`docs/audits/OUT-OF-BAND-AUDIT-001.md`](docs/audits/OUT-OF-BAND-AUDIT-001.md).
+Fourteen GitHub Issues carry what remains, two for the Human Owner (#13 the
+licence, #14 the `GOVERNANCE.md` contradictions). `docs/BACKLOG.md` is an
+archive now.
 
-**PH-21.1 is ACTIVE**: the hundred-asset runner, the brief's tail-weight retreat
-and the guard test are in the tree and the evidence is recorded; the gate on
-this tree and the CI run that corroborates it are still owed.
+### Two sessions worked on this repository today
 
-Then PH-21.2 and PH-21.3, then **Cycle Audit 7**, automatically and without
-asking. One worktree per auditor (B-020), and plants against every guard this
-cycle added.
+Another Claude session held the main working tree for PH-21.2 and PH-21.3 while
+this one audited on a separate branch; the split was agreed in writing. Its
+branch `feature/ph-21-catalogue-at-scale` is local only and carries PH-21.1
+under a second hash (`36bbf89`, the same tree as `main`'s `3a5f0a5`) plus
+PH-21.3 (`aefe1ee`) ahead of PH-21.2, with an uncommitted edit to the PH-21
+document. Whoever continues PH-21: rebase that branch onto `main` after the
+audit branch merges (the duplicate drops out), create PH-21.2's document, run
+`venueScale.ts` on a quiet machine, and re-run `catalogueScale.ts` — the
+recorded hundred-asset run predates the `alt-crypto` depth change (a3-05).
 
-### The thing worth knowing before touching the panel
+### What this branch changed, in one paragraph each
 
-PH-20.2 found that PH-20.1's browser suite **was not testing the engine it
-booted**. `next.config.mjs` carried `env: { OTC_API_BASE }`, which Next inlines
-at _build_ time, so the panel proxied to the baked-in default — a stale, stalled
-engine on port 3000 that answered the catalogue and the history from stored
-state and published no ticks. The suite was green on a lie for part of its life,
-and the test that was supposed to guard the proxy read the config file rather
-than exercising the behaviour.
-
-The general form of that, which the audit should look for everywhere: **a test
-of a configuration value is not a test of the behaviour that value was chosen
-for.**
-
-### Open, carried forward
-
-**B-029** (`xauusd`'s realised spread exceeds its calibrated one by 20–33%,
-cause unknown), **B-030** (one unit run in seven failed seven files, one test per
-file, not reproduced in six further attempts including one under load),
-**CA6-07**, **CA6-17** (partly closed), **B-018**.
-
-The audit's own standard, for whoever continues: falsify rather than confirm,
-re-execute rather than read, and plant a defect against every guard. Six of the
-things Cycle Audit 6 found were things a previous phase had recorded as fixed.
-
-## What Cycle 7 has established so far
-
-- **PH-19 APPROVED** — closed 40 of Cycle Audit 6's 46 findings, starting with
-  the instrument: `vitest.config.ts` was in no TypeScript program and two options
-  that do not exist had been silently ignored for a cycle.
-- **PH-20 APPROVED** — the operator panel. Three subphases: the panel under a
-  real browser against a real engine (PH-20.1), creating an asset as a job that
-  reports each of its six stages (PH-20.2), and editing and retiring with the
-  editable surface reduced to one field (PH-20.3).
-
-  Two measurements from it worth carrying: a registration costs **0.5s to 19.3s**
-  across the eight archetypes, not the "order of a minute" the documents claimed;
-  and a Next **rewrite to an external destination does not stream**, which is why
-  the engine is proxied by a route handler that hands the upstream body to the
-  response unread.
-
-Earlier phases and audits are summarised in `docs/phases/ROADMAP.md` and the
-records under `docs/audits/`. This document is not the place for them.
+- **The gate.** Hosted CI was red on every push to `main` since the PH-18 merge
+  with every test passing: one test ran 92 s of synchronous work while a task
+  update was in flight, and Vitest's reply was read after its 60 s timer fired.
+  Four causes had been recorded before this one. The test yields
+  (`yieldToLoop()` from `@otc/core`, two chained immediates — one is not a full
+  loop turn), and `vitest.setup.statistical.ts` now fails a file by name at a
+  30 s round trip, watched failing on a planted 35 s block. Use
+  `npm run test:stat`, never the bare vitest command.
+- **The engine.** The mirror test reflected through the origin and passed a
+  round-number support/resistance field; it reflects through an interior
+  snapshot now (ADR-0003 §6 as written). Ids of 52–64 characters, refusals at
+  the wrong stage, `alt-crypto` drawing below its band, and the retreat
+  retrying what it cannot fix are all closed; a registration reports each
+  stage as it enters it.
+- **The guardrails.** One tokenizer, a corpus of every construct that has ever
+  hidden code from the scanners, new bans, `tools/sim` scanned, the
+  publishing-key refusal checked structurally, a loop detector that sees every
+  shape, an exact status vocabulary, 33 meta-audit mutations over all ten guard
+  files.
+- **The laboratory.** The battery states two sensitivities per horizon —
+  single-test 0.221pp and the gate's own 0.315pp at 30 s — and says which the
+  0.2513pp claim refers to; the clock grid sweeps every phase; the standing
+  verdict runs the learned family; the founding look-ahead bug has a unit guard.
+- **The runtime.** No partial minute bar is ever stored (a restart leaves a
+  visible hole); a leader retries unrecorded ticks and loses the lease after
+  three failures; `fsync`; schema versions; the registry's race and id trust.
+- **The surface.** Every write needs `OTC_ADMIN_TOKEN` as a bearer with a JSON
+  body; the service binds `127.0.0.1` unless `OTC_BIND` says otherwise; a
+  browserless host reports the panel suite as skipped, not passed; one
+  shutdown path that exits 0; honest reconnection and `/health` in the panel.
+- **The record.** PH-19's approval claimed a hosted CI result it did not have
+  and is corrected in place; "40 of 46" has a 46-row closure table; the
+  multi-node and operations architecture document exists (B-023, two cycles
+  late) and says the service composes none of it (Issue #9); the roadmap,
+  `PROJECT_CONTEXT.md`, `CLAUDE.md`'s commands and timings, ADR-0008 and the
+  decision log are brought to the present.
 
 ## Last executed verification
 
-`npm run gate` on the PH-20 tree, 2026-09-02: **exit 0**, with
-`OTC_REQUIRE_BROWSER=1` — a missing Chromium is a failure in that run, not a
-skip. Unit 1,866 tests; the statistical suite includes the browser layer
-(`apps/web/src/panel.stat.test.ts`, six tests) and the end-to-end registration
-acceptance (`apps/api/src/registration.stat.test.ts`, four tests).
-
-Format, build and lint all exit 0, in that order — build before lint, because the
-type-aware rules resolve workspace types through emitted declarations.
-
-**B-030 is open against this suite**: one unit run in seven failed seven files,
-one test per file, and has not reproduced in six further attempts. On the next
-occurrence, capture the whole output to a file before anything else.
+`npm run gate` on `feature/out-of-band-audit` at `023f694`, 2026-09-02:
+**exit 0** in 32 minutes (19:06–19:38 UTC) — unit 88 files, 2,165 tests; statistical 40 files, 265 tests, 6 browser tests skipped on this host; no unhandled errors; worst RPC round trip 6.6 s against the 30 s guard. Format,
+build, both typechecks and lint exit 0, in that order — build before lint. The
+browser suite reports `skipped` on this host (no Chromium libraries); hosted CI
+requires it. Hosted CI on the same tree: `run 33671271767 — **success**, Quality Gate and Statistical Gate, 19:06–19:53 UTC; statistical 40 files, 271 tests (the six browser tests ran on the runner), worst RPC round trip 9.4 s, no orphaned process at cleanup`.
 
 ## Process, in force
 
-Governance changed on 2026-08-31
-([ADR-0008](docs/decisions/ADR-0008-full-delegation.md)) and again on 2026-09-01
-([ADR-0011](docs/decisions/ADR-0011-subagent-authority.md)):
-
-- **There is no three-phase Human gate.** Cycle Audits run automatically. Stop
-  normal development at the boundary, run the audit, continue. Never wait for
-  `EJECUTA` and never report a cycle as blocked pending it.
-- **Every code and product decision is yours** — purpose, business model, payout
-  and settlement rules, architecture, roadmap, what does not get built. Decide,
-  then record it: an ADR for something durable,
-  [`DECISION-LOG.md`](docs/decisions/DECISION-LOG.md) for everything else.
-- **Two things are still the Human Owner's**: amendments to Governance itself,
-  and commitments that bind them outside the repository (legal, contractual,
-  real-money, custody, paid services).
-- **Subagents are an engineering decision**, and a Cycle Audit must use
-  independent ones.
-- **Hosted CI runs.** The repository is public, so Actions is free, and
-  `.github/workflows/ci.yml` runs the quality gate and the statistical gate on
-  every push to `main` (ADR-0009). It corroborates `npm run gate`; it does not
-  replace it. A red CI on a green local gate is a finding about the gate.
+Governance changed on 2026-08-31 (ADR-0008) and 2026-09-01 (ADR-0011): no
+three-phase Human gate, Cycle Audits automatic, every code and product decision
+the Development Agent's and recorded (ADR or `DECISION-LOG.md`), subagents an
+engineering decision and a Cycle Audit must use independent ones, hosted CI a
+required corroborating layer (ADR-0009). Two things stay the Human Owner's:
+amendments to Governance, and commitments that bind them outside the repository.
 
 ## Standing rules, all learned the hard way
 
 - **A guard is not finished until it has been watched failing.** Every material
-  finding in Cycle Audit 2 was a guard that existed, was documented as
-  sufficient, and had never been tested against the thing it guarded against.
-  PH-14 found two more of these in its own new tests.
-- **A claim is only as true as the run behind it.** Never write PASSED from a
-  command whose exit code you did not see — `| tail -1` discards it.
-- **A recorded number that nothing reads is a comment.**
-- **Never `git add -A` while subagents are running**, and keep audit plants in an
-  isolated clone.
-- **A long test body must yield to the event loop** (`CLAUDE.md` §5). The gate
-  otherwise exits 1 with every test reported as passing. It has happened twice.
+  finding of this audit was a guard that existed and had never been planted
+  against — the mirror test, the lexer, the watchdog, the retention boundary.
+- **A claim is only as true as the run behind it.** PH-19's "hosted CI green on
+  the same tree" was written about a different tree. Record the run id.
+- **A cause for the gate's RPC timeout is accepted only with a reproduction**
+  (`DECISION-LOG.md`, 2026-09-02). Four were recorded without one.
+- **Check for a peer session before committing or running anything heavy**
+  (`ListAgents`); uncommitted changes may be another live session's work.
+- **Never `git add -A` while subagents are running**; plants live in worktrees.
+- **A statistical test must never run thirty seconds of synchronous work with a
+  request in flight** — and one is in flight at the start of every test
+  (`CLAUDE.md` §5).
 
 Before changing anything in the engine, read the last section of `CLAUDE.md`.

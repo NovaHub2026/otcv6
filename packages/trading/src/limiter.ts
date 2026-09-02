@@ -24,7 +24,7 @@ import { eventKey, exposureByEvent, type EntryResolver, type EventExposure } fro
  *
  * So the guarantee here is the one PH-6 established and PH-7 extended: **a venue
  * enforcing limits produces a bit-identical tick stream to one that is not.**
- * `limiter.stat.test.ts` is that demonstration.
+ * `tools/sim/src/limiterBlindness.stat.test.ts` is that demonstration.
  *
  * ## Ordering is the safety argument
  *

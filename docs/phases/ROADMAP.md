@@ -4,7 +4,7 @@ Type: SUPPORTING DOCUMENTATION (living)
 Status: Dynamic — phases may be split, merged, reordered or replaced as
 implementation reveals information (`GOVERNANCE.md` §13). Approved phases are
 never rewritten as though they had not happened.
-Last revised: 2026-08-31
+Last revised: 2026-09-02 (out-of-band audit, a7-10)
 
 ---
 
@@ -21,7 +21,8 @@ NestJS, persistence, API and React written before that question is settled is
 capital at risk.
 
 Cycle 1 therefore exists to settle that question and nothing else, so that the
-first Cycle Audit — the project's first and most valuable Human gate — lands
+first Cycle Audit — at the time the project's first Human gate; the gate was
+removed on 2026-08-31 by ADR-0008 and audits now run automatically — lands
 precisely on _"is the core hypothesis proven?"_.
 
 ### Why the falsifier is built before the model
@@ -185,21 +186,47 @@ resetting or redrawing a keystream position it has already spent.
 Later subphases are provisional: sealed persistence and the recovery policy, then
 the NestJS service and a real process-boundary restart.
 
-### PH-9 — Continuous Integrity Assurance and Independent Red-Team Hardening
+### PH-6 — Trading Boundary: Contracts, Settlement and Verified Economic Blindness
 
-Every family in the battery was available while PH-3 tuned the engine, so a clean
-verdict from them is no longer independent evidence — they are the families the
-engine was shaped to survive. PH-9 attacks it with families withheld from all
-prior tuning.
+People can trade the market, and the market is shown not to know it. INV-001 was
+the only invariant still established structurally rather than empirically.
 
-| Subphase | Title                                  | State    |
-| -------- | -------------------------------------- | -------- |
-| PH-9.1   | The withheld red-team families         | APPROVED |
-| PH-9.2   | The guardrail meta-audit               | APPROVED |
-| PH-9.3   | Assurance a counterparty can recompute | APPROVED |
+| Subphase | Title                                                | State    |
+| -------- | ---------------------------------------------------- | -------- |
+| PH-6.1   | Contract model and deterministic settlement          | APPROVED |
+| PH-6.2   | The trading boundary and verified economic blindness | APPROVED |
 
-Later subphases are provisional: the guardrail meta-audit, then re-derivable
-assurance and phase integration.
+PH-5 is where NestJS is first scaffolded, and the engine core stays framework-free
+and I/O-free so the batteries can keep driving it directly. PH-6 closes with the
+empirical demonstration that economic state cannot influence price generation.
+
+## Cycle 3 — Distribute, present, and make the guarantee standing
+
+| Phase | Title                                                             | State                                                 |
+| ----- | ----------------------------------------------------------------- | ----------------------------------------------------- |
+| PH-7  | Public market distribution and multi-user consistency             | **APPROVED**                                          |
+| PH-8  | Observer frontend and trading chart experience                    | **APPROVED**                                          |
+| PH-9  | Continuous integrity assurance and independent red-team hardening | **APPROVED**                                          |
+| —     | **Cycle Audit 3** — three-phase audit                             | **APPROVED** — [record](../audits/CYCLE-AUDIT-003.md) |
+
+PH-8 is where Next.js and React are first scaffolded. PH-9 converts a one-time
+proof into a standing guarantee, including a red-team round using attack families
+deliberately withheld from all prior tuning.
+
+### PH-7 — Public Market Distribution and Multi-User Consistency
+
+INV-002 has been true so far for an uninteresting reason: one observer, one
+process, one array. This is the first phase where it can fail — in the delivery
+path, where breaking it looks like performance work.
+
+| Subphase | Title                                                        | State    |
+| -------- | ------------------------------------------------------------ | -------- |
+| PH-7.1   | The tick feed: ordering, resumption, backpressure            | APPROVED |
+| PH-7.2   | Multi-observer consistency and blindness across the boundary | APPROVED |
+| PH-7.3   | The transport, and the consistency contract written down     | APPROVED |
+
+Later subphases are provisional: multi-observer consistency and the blindness
+demonstration across the boundary, then service integration.
 
 ### PH-8 — Observer Frontend and Trading Chart Experience
 
@@ -217,47 +244,21 @@ asserts a trade that did not happen.
 Later subphases are provisional: Next.js scaffolding and the streaming client,
 then the chart and phase integration.
 
-### PH-7 — Public Market Distribution and Multi-User Consistency
+### PH-9 — Continuous Integrity Assurance and Independent Red-Team Hardening
 
-INV-002 has been true so far for an uninteresting reason: one observer, one
-process, one array. This is the first phase where it can fail — in the delivery
-path, where breaking it looks like performance work.
+Every family in the battery was available while PH-3 tuned the engine, so a clean
+verdict from them is no longer independent evidence — they are the families the
+engine was shaped to survive. PH-9 attacks it with families withheld from all
+prior tuning.
 
-| Subphase | Title                                                        | State    |
-| -------- | ------------------------------------------------------------ | -------- |
-| PH-7.1   | The tick feed: ordering, resumption, backpressure            | APPROVED |
-| PH-7.2   | Multi-observer consistency and blindness across the boundary | APPROVED |
-| PH-7.3   | The transport, and the consistency contract written down     | APPROVED |
+| Subphase | Title                                  | State    |
+| -------- | -------------------------------------- | -------- |
+| PH-9.1   | The withheld red-team families         | APPROVED |
+| PH-9.2   | The guardrail meta-audit               | APPROVED |
+| PH-9.3   | Assurance a counterparty can recompute | APPROVED |
 
-Later subphases are provisional: multi-observer consistency and the blindness
-demonstration across the boundary, then service integration.
-
-### PH-6 — Trading Boundary: Contracts, Settlement and Verified Economic Blindness
-
-People can trade the market, and the market is shown not to know it. INV-001 was
-the only invariant still established structurally rather than empirically.
-
-| Subphase | Title                                                | State    |
-| -------- | ---------------------------------------------------- | -------- |
-| PH-6.1   | Contract model and deterministic settlement          | APPROVED |
-| PH-6.2   | The trading boundary and verified economic blindness | APPROVED |
-
-PH-5 is where NestJS is first scaffolded, and the engine core stays framework-free
-and I/O-free so the batteries can keep driving it directly. PH-6 closes with the
-empirical demonstration that economic state cannot influence price generation.
-
-## Cycle 3 — Distribute, present, and make the guarantee standing
-
-| Phase | Title                                                             |
-| ----- | ----------------------------------------------------------------- |
-| PH-7  | Public market distribution and multi-user consistency             | **APPROVED**                                          |
-| PH-8  | Observer frontend and trading chart experience                    | **APPROVED**                                          |
-| PH-9  | Continuous integrity assurance and independent red-team hardening | **APPROVED**                                          |
-| —     | **Cycle Audit 3** — three-phase audit                             | **APPROVED** — [record](../audits/CYCLE-AUDIT-003.md) |
-
-PH-8 is where Next.js and React are first scaffolded. PH-9 converts a one-time
-proof into a standing guarantee, including a red-team round using attack families
-deliberately withheld from all prior tuning.
+Later subphases are provisional: the guardrail meta-audit, then re-derivable
+assurance and phase integration.
 
 ## Cycle 4 — Close the gaps the first three cycles named
 
@@ -443,8 +444,10 @@ assets with the same broken promise.
 
 The catalogue is a compiled constant, so creating an asset means editing
 TypeScript. The panel cannot exist until it is data, and asset creation is not an
-insert: it is a calibration job of order a minute — safety gate, personality
-solve, lattice calibration, tie-rate measurement, INV-007 differentiation.
+insert: it is a calibration job — measured at 0.6 s to 20.5 s per asset depending
+on the family ([CYCLE-7-CATALOGUE-SCALE.md](../evidence/CYCLE-7-CATALOGUE-SCALE.md))
+— safety gate, personality solve, lattice calibration, tie-rate measurement,
+INV-007 differentiation.
 
 | Subphase | Title                                                   | State    |
 | -------- | ------------------------------------------------------- | -------- |
@@ -550,7 +553,15 @@ PH-1 substrate
    │                          └──> PH-5 runtime  ──> PH-6 trading
    │                                                    └──> PH-7 distribution ──> PH-8 frontend
    └────────────────────────────────────────────────────────────> PH-9 standing assurance
+                                                                       │
+        PH-10 rhythm ──> PH-11 detection power ──> PH-12 publication ──┘──> PH-13 operator risk
+                                                                             └──> PH-14 multi-node ──> PH-15 operations
+                                                                                                          └──> PH-16 (audit fixes)
+        PH-17 assets as data ──> PH-18 preview ──> PH-19 (audit fixes) ──> PH-20 panel ──> PH-21 catalogue at scale
 ```
+
+Every phase from PH-10 on depends on the whole of Cycle 1 through PH-9; the arrows
+above show only the direct product dependencies.
 
 ## Known uncertainties
 
@@ -562,17 +573,19 @@ PH-1 substrate
 | Restart-seam detectability                                                                                                                                                                                                                                                   | PH-5 targeted seam tests                                                                 |
 | Quote granularity per asset family: the published quantum must be fine enough relative to the _lowest percentile_ of 30-second volatility, not the average                                                                                                                   | PH-1.3 sets the representation; PH-4 fixes per-asset values with simulation evidence     |
 
-## Protected Human decisions on the horizon
+## Decisions once listed here as pending
 
-Recorded so they are not discovered late. Neither blocks current work.
+Two protected decisions were recorded here in Cycle 1 so they would not be
+discovered late. Both are settled and the record lives elsewhere:
 
-1. **At-the-money settlement policy** — whether a contract expiring exactly at the
-   entry price is refunded or lost. A settlement rule with material business
-   consequence (`GOVERNANCE.md` §5). Needed by PH-6. Recommendation will be
-   _void and refund_, which is both the industry norm and the only policy that
-   keeps the contract exactly fair.
-2. **Fairness-proof mechanism** — whether the product commits to publishing
-   verifiable settlement proofs, and in what form. Relevant to PH-6/PH-9. The
-   engineering recommendation is Merkle roots of the tick journal with inclusion
-   proofs on demand, **never** disclosure of generator keys: revealing a key
-   hands an observer a latent-state snapshot with hours of forward validity.
+1. **At-the-money settlement policy** — decided by the Human Owner before
+   delegation: a contract expiring exactly at the entry price is refunded
+   ([ADR-0007](../decisions/ADR-0007-at-the-money-settlement.md)).
+2. **Fairness-proof mechanism** — built in PH-12: signed Merkle commitments over
+   the published record with inclusion proofs on demand, never disclosure of
+   generator keys ([PUBLICATION.md](../architecture/PUBLICATION.md)).
+
+Nothing protected is pending. Since 2026-08-31 every code and product decision is
+the Development Agent's (ADR-0008); only Governance amendments and commitments
+that bind the Human Owner outside the repository are escalated
+(`GOVERNANCE.md` §5.1).

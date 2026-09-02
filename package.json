@@ -23,17 +23,17 @@
     "test": "npm run test:unit && npm run test:stat",
     "test:watch": "vitest",
     "test:cov": "OTC_COVERAGE=1 vitest run --coverage --no-file-parallelism",
-    "test:stat": "vitest run --project statistical --no-file-parallelism",
+    "test:stat": "NODE_OPTIONS=--max-old-space-size=6144 vitest run --project statistical --no-file-parallelism",
     "evidence:horizons": "npm run build && node tools/sim/dist/horizonEvidence.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "gate": "npm run format:check && npm run build && npm run typecheck:web && npm run typecheck:config && npm run lint && npm run test && echo 'GATE COMPLETE: unit and statistical suites both ran'",
-    "test:unit": "vitest run --project unit"
+    "test:unit": "vitest run --project unit --reporter=default --reporter=json --outputFile=artifacts/unit-results.json"
   },
   "devDependencies": {
-    "@types/node": "^22.15.3",
+    "@types/node": "^24.13.3",
     "@vitest/coverage-v8": "^3.1.2",
     "eslint": "^9.25.1",
     "eslint-config-prettier": "^10.1.2",

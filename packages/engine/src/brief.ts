@@ -1,8 +1,8 @@
 import type { MasterKeyring, RandomSource } from '@otc/core';
 import { archetypeById, sampleArchetype, type ArchetypeSample } from './families.js';
 import { registrationKeyLabel } from './catalogue.js';
-import { authorPersonality } from './personality.js';
-import type { RegistrationRequest } from './registration.js';
+import { authorPersonality, TailWeightUnreachableError } from './personality.js';
+import { checkAssetId, type RegistrationRequest } from './registration.js';
 
 /**
  * How far a drawn tail-weight target retreats when the solve cannot reach it.
@@ -88,6 +88,12 @@ export function requestFromBrief(
   readonly retreats: number;
 } {
   const archetype = archetypeById(brief.archetypeId);
+  // The id becomes the key label below. **Cycle Audit 7, a3-04.** An id the
+  // pattern admitted but the label could not hold threw from inside the
+  // keyring, and the operator saw a stream-label error where `registerAsset`
+  // would have said "too long" at `identity`. Same check, same words, first.
+  const identity = checkAssetId(brief.id);
+  if (identity !== null) throw new RangeError(identity);
   const stream = options.keyring.derive({
     env: options.environment,
     asset: registrationKeyLabel(brief.id),
@@ -127,7 +133,15 @@ export function requestFromBrief(
       referencePrice: brief.referencePrice,
       ...(brief.displayPrecision === undefined ? {} : { displayPrecision: brief.displayPrecision }),
       traits: { ...sample.traits, volatility: sample.traits.volatility * scale },
-      targets: { excessKurtosis, tickRms: sample.tickRms * scale },
+      // What the family asked for travels with what the solve was given, so
+      // the registered record can say whether the two differ (a3-05).
+      targets: {
+        excessKurtosis,
+        tickRms: sample.tickRms * scale,
+        drawnExcessKurtosis: sample.excessKurtosis,
+        retreats,
+        ...(sample.clampedFrom === undefined ? {} : { clampedFrom: sample.clampedFrom }),
+      },
       dispersion,
     },
   };
@@ -150,7 +164,14 @@ function reachableTarget(
     try {
       authorPersonality(sample.traits, { excessKurtosis: target, tickRms: sample.tickRms }, derive);
       return { target, retreats };
-    } catch {
+    } catch (error) {
+      // Only the refusal a lower target can fix is retried. **Cycle Audit 7,
+      // a3-12.** The solve also refuses when the regime and structure layers
+      // alone exceed the target — which a retreat makes worse — and when the
+      // solved volatility leaves its bounds, which a retreat cannot touch;
+      // retrying those cost six structure simulations before an honest
+      // refusal that then arrived with the wrong words.
+      if (!(error instanceof TailWeightUnreachableError)) throw error;
       target *= AUTHORING_RETREAT;
     }
   }

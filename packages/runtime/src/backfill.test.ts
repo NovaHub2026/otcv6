@@ -1,6 +1,15 @@
 // Invariant evidence: INV-002 (shared market), INV-003 (single underlying stream), INV-008 (continuous market state).
 import { describe, expect, it } from 'vitest';
-import { epochMillis, logPrice, MasterKeyring, SteppableClock, type Tick } from '@otc/core';
+import {
+  bucketStart,
+  epochMillis,
+  foldTicks,
+  logPrice,
+  MasterKeyring,
+  SteppableClock,
+  timeframe as timeframeById,
+  type Tick,
+} from '@otc/core';
 import { assetById, configFor, createMarketEngine } from '@otc/engine';
 import { backfillMarket, BackfillError } from './backfill.js';
 import { HostedMarket, DEFAULT_MAX_CATCH_UP_MS } from './hosted.js';
@@ -232,4 +241,46 @@ describe('a backfill is genesis, and refuses to be anything else', () => {
   ])('refuses %s', async (_label, over) => {
     await expect(backfillMarket(options(over))).rejects.toThrow(BackfillError);
   });
+});
+
+describe('the minute containing the target is stored whole (a5-01)', () => {
+  it('hands the live path a recorder that has seen the open minute, so the join minute is not short', async () => {
+    // A target thirty seconds into a minute, which is where every real target
+    // falls. The backfill's own recorder holds that minute open; the process
+    // then carries the market forward through the same runtime and the minute
+    // closes on the live side of the join. Measured before the fix, with a
+    // fresh recorder started at the join as `HistoryService.#catchUp` did: the
+    // join minute stored with 8 of 18 ticks, its open 713 against a true 672
+    // and its high 743 missing.
+    const target = epochMillis(TARGET + 30_000);
+    const history = new InMemoryCandleHistory();
+    const result = await backfillMarket(options({ history, targetInstant: target }));
+
+    const until = target + 90_000;
+    let now: number = target;
+    while (now < until) {
+      now = Math.min(now + DEFAULT_MAX_CATCH_UP_MS, until);
+      result.recorder.accept(result.market.advanceTo(epochMillis(now)));
+    }
+    const closed = result.recorder.drain();
+    await history.append('spx', HISTORY_BASE_TIMEFRAME, closed);
+
+    const joinMinute = bucketStart(target, timeframeById(HISTORY_BASE_TIMEFRAME));
+    const [stored] = await history.read(
+      'spx',
+      HISTORY_BASE_TIMEFRAME,
+      joinMinute,
+      epochMillis(joinMinute + 60_000),
+    );
+    const live = liveThrough(until);
+    const whole = foldTicks(timeframeById(HISTORY_BASE_TIMEFRAME), live.ticks).find(
+      (bar) => bar.openInstant === joinMinute,
+    );
+    expect(whole).toBeDefined();
+    expect(whole!.firstSequence).toBeLessThan(
+      result.retainedTicks[result.retainedTicks.length - 1]!.sequence,
+    );
+    expect(stored).toEqual(whole);
+    expect(result.recorder.withheld).toBeNull();
+  }, 60_000);
 });

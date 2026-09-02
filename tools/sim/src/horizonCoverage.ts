@@ -8,6 +8,7 @@ import {
   minimumDetectableEffectUnderDependence,
   profitabilityThresholdPoints,
   twoSidedPValue,
+  yieldToLoop,
   type HorizonOutcome,
 } from '@otc/lab';
 
@@ -139,7 +140,6 @@ export interface HorizonCoverageOptions {
 
 const GENESIS = 1_776_000_000_000;
 const YIELD_TICKS = 250_000;
-const breathe = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
 
 export async function measureHorizonCoverage(
   options: HorizonCoverageOptions,
@@ -180,11 +180,11 @@ export async function measureHorizonCoverage(
       instant = tick.instant;
       ticks += 1;
       // B-010: a synchronous block this long starves the worker's RPC channel.
-      if (ticks % YIELD_TICKS === 0) await breathe();
+      if (ticks % YIELD_TICKS === 0) await yieldToLoop();
     }
     perSegmentOutcomes.push(accumulator.outcomes());
     options.onProgress?.(segment + 1);
-    await breathe();
+    await yieldToLoop();
   }
 
   const payoutThresholdPoints = profitabilityThresholdPoints(options.payout ?? 0.99);
