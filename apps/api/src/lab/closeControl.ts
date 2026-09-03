@@ -55,9 +55,14 @@ export function resolveTarget(spec: InstrumentSpec, priceText: string): TargetRe
     return { kind: 'level', level, display };
   }
   // The nearest level did not render back to the request: it sits between two.
-  const exact = Math.log(requested / spec.referencePrice) / spec.logQuantum;
-  const lower = logPrice(Math.floor(exact));
-  const upper = logPrice(Math.ceil(exact));
+  // Which two is decided from the nearest level and the side the request lies
+  // on — no logarithm here. `Math.log` is not portable across engines
+  // (CA7-14; the kernel uses its own `ln`), and the first version of this used
+  // it; the guardrail caught it in the gate. The nearest level came from the
+  // kernel's portable conversion, so everything below is integer arithmetic.
+  const nearest = toDisplayPrice(spec, level);
+  const lower = requested > nearest ? level : logPrice(level - 1);
+  const upper = requested > nearest ? logPrice(level + 1) : level;
   return {
     kind: 'between',
     requested: requested.toFixed(spec.displayPrecision),

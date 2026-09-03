@@ -411,7 +411,11 @@ export class LabController {
       },
     });
     if (result.armed) {
-      this.applied.set(id, { instant: result.plan.instant, target: result.plan.target });
+      this.applied.set(id, {
+        instant: result.plan.instant,
+        target: result.plan.target,
+        fromSequence: before.sequence,
+      });
     }
     return { ...result.plan, environment: LAB, armed: result.armed };
   }
@@ -472,27 +476,73 @@ export class LabController {
    * instant (ADR-0017) — and compared with the target. "Applied" is a claim
    * about the future; this is the sentence that checks it.
    */
-  private readonly applied = new Map<string, { instant: number; target: number }>();
+  private readonly applied = new Map<
+    string,
+    { instant: number; target: number; fromSequence: number }
+  >();
 
   private outcomeFor(id: string): {
     instant: number;
     target: number;
+    targetPrice: string;
     closed: number | null;
+    closedPrice: string | null;
     exact: boolean | null;
+    unreadable?: string;
   } | null {
     const last = this.applied.get(id);
     if (last === undefined) return null;
-    if (this.venue.now() <= last.instant) return { ...last, closed: null, exact: null };
+    // Both the level and the price, named for what each is (PH-23.5 §6): the
+    // operator typed a price, and a line reading `target -12518` under the
+    // word target is a lattice index dressed as one.
+    const asset = this.venue.assetFor(id)!;
+    const render = (level: number): string =>
+      displayPrice(level, {
+        logQuantum: asset.instrument.logQuantum,
+        referencePrice: asset.instrument.referencePrice,
+        displayPrecision: asset.instrument.displayPrecision,
+      }).toFixed(asset.instrument.displayPrecision);
+    if (this.venue.now() <= last.instant) {
+      return {
+        instant: last.instant,
+        target: last.target,
+        targetPrice: render(last.target),
+        closed: null,
+        closedPrice: null,
+        exact: null,
+      };
+    }
+    // Read from the sequence the market stood at when the close was armed, not
+    // from 1: the feed retains 50,000 ticks (CA7-33), so on a Lab that has run
+    // for hours `since(id, 1)` throws Evicted, and the first version of this
+    // caught that and reported "pending" for ever. Found from the screen, which
+    // said pending three minutes after the candle had ended. A window is at
+    // most fifteen minutes; retention is hours.
     let closed: number | null = null;
     try {
-      for (const tick of this.venue.feed.since(id, 1)) {
+      for (const tick of this.venue.feed.since(id, Math.max(1, last.fromSequence))) {
         if (tick.instant <= last.instant) closed = tick.price;
         else break;
       }
-    } catch {
-      closed = null;
+    } catch (error) {
+      return {
+        instant: last.instant,
+        target: last.target,
+        targetPrice: render(last.target),
+        closed: null,
+        closedPrice: null,
+        exact: null,
+        unreadable: (error as Error).message,
+      };
     }
-    return { ...last, closed, exact: closed === null ? null : closed === last.target };
+    return {
+      instant: last.instant,
+      target: last.target,
+      targetPrice: render(last.target),
+      closed,
+      closedPrice: closed === null ? null : render(closed),
+      exact: closed === null ? null : closed === last.target,
+    };
   }
 
   private wrapperFor(id: string): SelectableSigns {

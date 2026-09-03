@@ -76,7 +76,9 @@ interface Control {
   readonly lastApplied: {
     readonly instant: number;
     readonly target: number;
+    readonly targetPrice: string;
     readonly closed: number | null;
+    readonly closedPrice: string | null;
     readonly exact: boolean | null;
   } | null;
 }
@@ -132,7 +134,11 @@ async function labGet<T>(path: string): Promise<T | Unavailable> {
 
 /** The Lab's acts — apply, release — as POSTs carrying only the query. */
 async function labPost<T>(path: string): Promise<T | Unavailable> {
-  const response = await fetch(`/lab/${path}`, { method: 'POST' });
+  const response = await fetch(`/lab/${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  });
   return (await response.json()) as T | Unavailable;
 }
 
@@ -590,11 +596,11 @@ function CloseControl({
           <Row
             label="last applied"
             value={
-              control.lastApplied.closed === null
-                ? `target ${String(control.lastApplied.target)} at ${when(control.lastApplied.instant)} — pending`
-                : `target ${String(control.lastApplied.target)} · closed at ${String(
-                    control.lastApplied.closed,
-                  )} ${control.lastApplied.exact ? '— EXACT' : '— MISSED'}`
+              control.lastApplied.closedPrice === null
+                ? `target ${control.lastApplied.targetPrice} at ${when(control.lastApplied.instant)} — pending`
+                : `target ${control.lastApplied.targetPrice} · closed at ${control.lastApplied.closedPrice} ${
+                    control.lastApplied.exact ? '— EXACT' : '— MISSED'
+                  }`
             }
           />
         )}

@@ -106,6 +106,40 @@ describe('the Lab is marked wherever it appears', () => {
     expect(code('lab/page.tsx'), 'the page hands the screen an engine URL').not.toMatch(/apiBase/);
   });
 
+  it('gives the close control its acts and their consequences (PH-24.2)', () => {
+    const source = code('lab/Lab.tsx');
+    // Preview, apply and release — and release is disabled while nothing is
+    // armed, because an operator releasing a keystream releases nothing.
+    for (const handle of ['lab-close-preview', 'lab-close-apply', 'lab-close-release']) {
+      expect(source, `${handle} missing`).toMatch(new RegExp(`data-testid="${handle}"`));
+    }
+    expect(source, 'release is not gated on armed').toMatch(
+      /disabled=\{busy !== null \|\| !armed\}/,
+    );
+    // A price between two lattice levels is answered with both, as buttons
+    // that set the field — never a silent rounding.
+    expect(source).toMatch(/lab-close-notice/);
+    expect(source).toMatch(/\[notice\.below, notice\.above\]\.map/);
+    // The outcome of the last applied close is shown, and says EXACT or MISSED:
+    // "applied" is a claim about the future, and this is the line that checks it.
+    expect(source).toMatch(/lastApplied/);
+    expect(source).toMatch(/EXACT/);
+    expect(source).toMatch(/MISSED/);
+    // In prices, not lattice levels (PH-23.5 §6): the first version printed
+    // `target -12518 · closed at -12518` under a control whose operator had
+    // typed 1.0812698.
+    expect(source).toMatch(/lastApplied\.targetPrice/);
+    expect(source).toMatch(/lastApplied\.closedPrice/);
+    expect(source, 'the outcome line prints a lattice level').not.toMatch(
+      /String\(control\.lastApplied\.(target|closed)\)/,
+    );
+    // The two timelines are rendered apart and named for what they are (§72–§73).
+    expect(source).toMatch(/lab-session-engine/);
+    expect(source).toMatch(/lab-session-lab/);
+    // The proxy forwards the acts.
+    expect(code('lab/[...path]/route.ts')).toMatch(/export async function POST/);
+  });
+
   it('says the Lab is absent rather than hiding that it can be', () => {
     // The Lab is a separate process by design (ADR-0015 §3). A screen that hid
     // the entry until one existed would make the boundary look like a bug.

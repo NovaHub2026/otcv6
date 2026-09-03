@@ -6,16 +6,16 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                                      |
-| ------------------ | -------------------------------------------------------------------------- |
-| Last clean session | 2026-09-03                                                                 |
-| Branch             | `feature/ph-24-the-labs-controls` — off `main` at `8f62e4b` (PH-23 merged) |
-| Remote             | `origin` → NovaHub2026/otcv6, public                                       |
-| Active cycle       | Cycle 8, **2 of 3** phases approved (PH-22, PH-23)                         |
-| Active phase       | PH-24 — The Lab's controls: applying a selection                           |
-| Active subphase    | PH-24.2 — Candle Close Control on a real candle                            |
-| Cycle Audit        | **007 closed** 2026-09-03; the next is due after three approved phases     |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                         |
+| Field              | Value                                                                       |
+| ------------------ | --------------------------------------------------------------------------- |
+| Last clean session | 2026-09-03                                                                  |
+| Branch             | `feature/ph-24-the-labs-controls` — off `main` at `8f62e4b` (PH-23 merged)  |
+| Remote             | `origin` → NovaHub2026/otcv6, public                                        |
+| Active cycle       | Cycle 8, **2 of 3** phases approved (PH-22, PH-23)                          |
+| Active phase       | PH-24 — The Lab's controls: applying a selection                            |
+| Active subphase    | PH-24.3 — Presets and simulated positions, settled against the Lab's record |
+| Cycle Audit        | **007 closed** 2026-09-03; the next is due after three approved phases      |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                          |
 
 ---
 
@@ -34,16 +34,18 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-24.1 is approved; PH-24.2 is active**
-([PH-24.2](docs/phases/PH-24.2-candle-close-control-on-a-real-candle.md)).
-Built so far: `closeControl.ts` (a typed price is a lattice level or its two
-neighbours; the window is inclusive at the candle's end per ADR-0017 and starts
-at the engine's current price, the pending tick's), `VenueService.betweenAdvances`
-and `labFork`, and five routes — preview, apply, release, control, session —
-with `closeRoutes.test.ts` closing the current and the next candle exactly on a
-real Lab-composed venue. **Not yet built: the screen** (PH-24.2 §5) — the
-control in `Lab.tsx` and a browser assertion of an applied close. Cycle 8 stands
-at 2 of 3 approved phases; PH-24's approval opens Cycle Audit 8.
+**PH-24.2 is approved; PH-24.3 is active**
+([PH-24.3](docs/phases/PH-24.3-presets-and-simulated-positions.md)). Candle
+Close Control works from the panel on a real candle — `lab.stat.test.ts` drives
+it in Chromium against a Lab process booted from `lab.main.js` — and building
+the screen found four last-mile defects the route tests could not (PH-24.2
+§10). PH-24.3 adds simulated positions (`packages/trading`'s `Contract`,
+settled by the production `settle` against the Lab's record) and the §41
+presets as closes at a position's expiry; drafts of `positions.ts`, its test,
+the routes and the screen section are in this session's scratchpad and are
+being moved into the tree. Hosted CI on `main` at `8f62e4b` was green on both
+gates. Cycle 8 stands at 2 of 3 approved phases; PH-24's approval opens Cycle
+Audit 8.
 
 **The next phase is the decision LA-03 names.** The Lab specification audit
 ([LAB-SPECIFICATION-AUDIT-001](docs/audits/LAB-SPECIFICATION-AUDIT-001.md))
