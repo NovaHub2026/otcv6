@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { minMoveFor, priceFormatFor, toDisplayedPrice } from './priceFormat.js';
+import {
+  minMoveFor,
+  priceFormatFor,
+  renderablePrecision,
+  toDisplayedPrice,
+} from './priceFormat.js';
 
 /**
  * The label the Human Owner saw, reproduced.
@@ -78,6 +83,52 @@ describe('the price format the chart is given', () => {
       const rounded = toDisplayedPrice(1.0791146512345, precision);
       const decimals = (rounded.toString().split('.')[1] ?? '').length;
       expect(decimals, `precision ${precision}`).toBeLessThanOrEqual(precision);
+    }
+  });
+});
+
+describe('a price is not shown to more digits than it has (CA7-29)', () => {
+  // An auditor registered `{referencePrice: 1e15, displayPrecision: 18}` — both
+  // values inside their own bounds, the product inside neither — and the panel
+  // printed `1000000000000099.864691128455135200`: 34 digits, roughly sixteen
+  // of which are a price and the rest the binary residue of the double.
+  it('caps the precision by the magnitude of the price', () => {
+    expect(renderablePrecision(18, 1e15)).toBe(0);
+    expect(renderablePrecision(18, 1e14)).toBe(1);
+    expect(renderablePrecision(18, 100)).toBe(13);
+    // Small prices keep every decimal they asked for: this is why the cap is
+    // not a registration rule. Eighteen decimals is honest near 1e-15.
+    expect(renderablePrecision(18, 1e-15)).toBe(18);
+    expect(renderablePrecision(7, 1.08)).toBe(7);
+    expect(renderablePrecision(2, 64_000)).toBe(2);
+  });
+
+  it('leaves an asset with no reference price exactly as it was', () => {
+    expect(renderablePrecision(7, undefined)).toBe(7);
+    expect(renderablePrecision(7, Number.NaN)).toBe(7);
+    expect(renderablePrecision(7, 0)).toBe(7);
+  });
+
+  it('never renders more significant digits than a double carries', () => {
+    for (const referencePrice of [1e15, 1e14, 1e9, 1_000, 100, 1, 0.01, 1e-9, 1e-15]) {
+      const { precision } = priceFormatFor({ displayPrecision: 18, referencePrice });
+      // Significant digits used = decimals shown + decimal exponent + 1. This
+      // is the measure, not the integer-digit count: at 1e-15 an eighteen-decimal
+      // display is four significant digits, and honest.
+      const used = precision + Math.floor(Math.log10(referencePrice)) + 1;
+      expect(used, `at ${referencePrice}`).toBeLessThanOrEqual(16);
+    }
+  });
+
+  it('and the five catalogue assets are untouched by the cap', () => {
+    // The cap must not quietly coarsen a real asset.
+    for (const [referencePrice, displayPrecision] of [
+      [1.08, 7],
+      [64_000, 2],
+      [2_409, 2],
+      [195.5, 3],
+    ] as const) {
+      expect(priceFormatFor({ displayPrecision, referencePrice }).precision).toBe(displayPrecision);
     }
   });
 });

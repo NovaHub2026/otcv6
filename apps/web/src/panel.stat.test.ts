@@ -178,7 +178,14 @@ async function bootPanel(port: number, enginePort: number): Promise<void> {
   // `next` itself, not `npx next`: a shell in between is a process the group
   // kill would otherwise have to know about.
   const next = createRequire(import.meta.url).resolve('next/dist/bin/next');
-  const child = spawn(process.execPath, [next, 'start', '-p', String(port)], {
+  // `-H 127.0.0.1`, as the shipped `start` script does. **Cycle Audit 7,
+  // CA7-06**: `next start` binds every interface by default, and the panel
+  // proxies to the engine with the operator's bearer token attached — so the
+  // a6-01 fix that took the *engine* off the LAN moved the exposure one hop
+  // rather than closing it. An unauthenticated LAN POST to the panel retired a
+  // market. The suite boots the panel the way an operator does, so it binds
+  // the way an operator's does.
+  const child = spawn(process.execPath, [next, 'start', '-p', String(port), '-H', '127.0.0.1'], {
     cwd: path.join(repoRoot, 'apps/web'),
     env: {
       ...process.env,

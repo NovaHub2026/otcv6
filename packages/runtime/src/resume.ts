@@ -156,8 +156,27 @@ export async function resumeMarket(options: ResumeOptions): Promise<ResumeResult
   // refused and the record shows a gap. That rule belonged here as well as in
   // `advance`, and applying it turns a permanent wedge into the visible
   // discontinuity the failover actually is.
+  // **Cycle Audit 7, CA7-07 and CA7-09.** This measured the age of the last
+  // *tick*, and called it the checkpoint's age. Two consequences, in opposite
+  // directions, from the same line:
+  //
+  // - A healthy market took a spurious seam. Markets tick irregularly by
+  //   design — `spx` averages 3.4 seconds between ticks and its quiet stretches
+  //   run far longer — so a checkpoint written one second ago, on a market that
+  //   had been advanced every second for a minute and refused nothing, reported
+  //   itself "18s old" and seamed. The message was false about its own subject.
+  // - A market that had never published was declared perfectly fresh —
+  //   `lastPublished === null ? 0` — however old its snapshot. `HostedMarket`
+  //   then floored on that stale snapshot and refused every advance, checkpoint
+  //   re-saved the same null, and the next boot repeated it. Measured: five
+  //   consecutive restarts, all reporting `resumed`, all refusing, lag growing.
+  //   A wedge no restart could clear.
+  //
+  // The record carries `savedAt`, which is the quantity the comment above
+  // always described: when this checkpoint was written. Every record has one,
+  // published or not, so both cases collapse into the same honest question.
   const maxCatchUpMs = options.maxCatchUpMs ?? DEFAULT_MAX_CATCH_UP_MS;
-  const staleness = record.lastPublished === null ? 0 : clock.now() - record.lastPublished.instant;
+  const staleness = clock.now() - record.savedAt;
   if (staleness > maxCatchUpMs) {
     return seamFrom(
       options,
@@ -257,7 +276,20 @@ function seamFrom(
   const now = options.clock.now();
   const start =
     record.lastPublished === null
-      ? { instant: options.genesisInstant, price: logPrice(0) }
+      ? {
+          // **Cycle Audit 7, CA7-07.** This opened at genesis, which contradicts
+          // the paragraph immediately above it: the seam opens at the clock
+          // precisely so the gap stays a gap. A record that had never published
+          // — the process died before its first tick — was seamed back to
+          // genesis and was therefore instantly behind by the entire elapsed
+          // time, so `HostedMarket` refused its first advance and every one
+          // after it. Nothing moved the floor, the checkpoint re-saved the same
+          // null, and the next boot repeated it. A wedge no restart could clear.
+          //
+          // Forward only, here as everywhere else on this path.
+          instant: epochMillis(Math.max(options.genesisInstant, now)),
+          price: logPrice(0),
+        }
       : {
           instant: epochMillis(Math.max(record.lastPublished.instant, now)),
           price: record.lastPublished.price,

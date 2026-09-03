@@ -6,52 +6,57 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                                      |
-| ------------------ | -------------------------------------------------------------------------- |
-| Last clean session | 2026-09-02                                                                 |
-| Branch             | `main` — PH-21 merged at its close                                         |
-| Remote             | `origin` → NovaHub2026/otcv6, public                                       |
-| Active cycle       | Cycle 7, **3 of 3** phases approved (PH-19, PH-20, PH-21)                  |
-| Active phase       | none                                                                       |
-| Active subphase    | none                                                                       |
-| Cycle Audit        | **006 closed**; out-of-band audit 001 recorded 2026-09-02; **007 is next** |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                         |
+| Field              | Value                                                                   |
+| ------------------ | ----------------------------------------------------------------------- |
+| Last clean session | 2026-09-02                                                              |
+| Branch             | `main` — PH-21 merged at its close                                      |
+| Remote             | `origin` → NovaHub2026/otcv6, public                                    |
+| Active cycle       | Cycle 8, **0 of 3** phases approved                                     |
+| Active phase       | PH-22 — distribution under thousands of observers (ACTIVE)              |
+| Active subphase    | PH-22.1 — an instrument that can hold thousands of connections (ACTIVE) |
+| Cycle Audit        | **007 closed** 2026-09-03; the next is due after three approved phases  |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                      |
 
 ---
 
 ## Continuation point
 
-**Run Cycle Audit 7, then PH-22.** Three approved phases is the boundary
-`GOVERNANCE.md` §28 stops normal development at. It runs automatically: nothing
-is requested and nothing is waited for. `CURRENT_STATE.md` is authoritative for
-where the project stands; this file is only what a fresh session needs first.
+**PH-22 is open**, and its phase document states the five things nobody knows
+([PH-22](docs/phases/PH-22-distribution-under-thousands-of-observers.md)).
+Cycle Audit 7 is recorded and closed, so §28's boundary is behind us.
 
-Two things should shape its depth (§67):
+The next legal action is **PH-22.1 — an instrument that can hold thousands of
+connections**, and it is an instrument, so it owes a planted defect of its own:
+a harness that cannot detect a server refusing connections is not a harness. `CURRENT_STATE.md` is
+authoritative for where the project stands; this file is only what a fresh
+session needs first.
 
-- The **out-of-band audit of 2026-09-02** already swept most of this cycle —
-  seven auditors, 83 findings, recorded in
-  [`OUT-OF-BAND-AUDIT-001.md`](docs/audits/OUT-OF-BAND-AUDIT-001.md). It did not
-  see anything PH-21 added after it.
-- The **PH-21 closure audit** is the standard to match. Seven readers, one per
-  claim area, each told to falsify; every finding put to an adversarial refuter
-  before it counted. Twenty survived, and three were live defects in code
-  written that day — a latch that survived a reconnect, a guard comparing a
-  field nothing updated, and two clock reads with an await between them. Every
-  one was found by **executing a sequence**, none by reading a guard.
+Cycle Audit 7 hands PH-22 two measurements it did not ask for, and they are the
+best starting point in the repository:
 
-Then **PH-22 — distribution under thousands of observers**, prioritised by the
-Human Owner ahead of everything else. `docs/phases/ROADMAP.md` carries what is
-already known: fan-out re-serialises every tick per subscriber (Issue #15), and
-several charts per client hit HTTP/1.1's six-connection limit (Issue #16).
+- **CA7-04.** Replay ignored backpressure entirely, and a resume is the largest
+  write this service makes: 50,000 frames and 3.46 MiB accumulated for a single
+  client full from its first byte. Bounded at 1 MB now — a number that wants
+  measuring against real reconnect fan-out, not defending.
+- **CA7-33.** The feed retains 5.01 MB per asset, measured rather than
+  estimated. A hundred assets is 501 MB of one heap; about 446 assets exhausts
+  the default. Nothing configures a heap for the service anywhere.
 
-### What PH-21 leaves behind
+Then Issues [#15](https://github.com/NovaHub2026/otcv6/issues/15) (every
+subscriber re-serialises the same tick), [#16](https://github.com/NovaHub2026/otcv6/issues/16)
+(six connections per origin) and [#22](https://github.com/NovaHub2026/otcv6/issues/22)
+(the one audit finding carried, and it belongs inside the multiplexing work).
 
-- **Issue #17** — `CYCLE-7-CATALOGUE-SCALE.md` predates a parameter change.
-- **Issue #18** — the 400-brief probe behind "one brief in 400" was never
-  written up as evidence.
-- **Issues #3 and #14** are the Human Owner's, and only theirs.
-- The panel is not virtualised, by decision; a hundred markets have been
-  scheduled but never hosted continuously.
+### What the audit says about how to audit
+
+Read [`CYCLE-AUDIT-007.md`](docs/audits/CYCLE-AUDIT-007.md) §5 before the next
+one. The pattern in what survived forty plants is sharper than any individual
+finding: **guards written against a constant rather than against a behaviour
+are the ones that fail.** `MINIMUM_TRAIT_DISTANCE` could be weakened a
+hundredfold because every assertion referenced the constant itself; the seam
+tests asserted `toBeDefined()`; three branches of the record check had no test.
+In every case the code was right and nothing would have noticed it becoming
+wrong.
 
 ### Running it locally
 
@@ -59,10 +64,8 @@ several charts per client hit HTTP/1.1's six-connection limit (Issue #16).
 bash ~/.otc-local/start.sh
 ```
 
-Panel on 7301, engine on 7300. It serves `~/Projects/otcv6` and prints the tree,
-branch and commit it served. That line exists because it once served a different
-worktree, and two rounds of "the chart is still broken" were about a program
-that had never contained the fix (PH-21.3 §5.1).
+Panel on 7301, engine on 7300, both loopback-only (CA7-06). It serves
+`~/Projects/otcv6` and prints the tree, branch and commit it served.
 
 ## Last executed verification
 

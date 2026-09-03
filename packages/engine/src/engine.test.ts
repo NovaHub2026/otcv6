@@ -188,6 +188,58 @@ describe('snapshot and replay', () => {
     expect(snapshot.sequence).toBe(1_000);
   });
 
+  it('carries nothing a client could use to reconstruct a future price (CA7-02)', () => {
+    // **Cycle Audit 7.** `INVARIANTS.md`'s INV-010 row cited this file for "a
+    // snapshot carries no key material", and no such assertion existed —
+    // `grep` for material, key, secret or leak returned only the invariant tag
+    // on line 1. An auditor put the next forty sign draws into the snapshot as
+    // a boolean array and 1,772 tests passed.
+    //
+    // The check is on the shape rather than on a blocklist of words: a snapshot
+    // is a fixed set of named fields, and anything *else* in it is by
+    // definition state nobody decided to publish. INV-010 is about what leaves
+    // the process, and the snapshot is the largest thing that does.
+    const engine = build();
+    drain(engine, 500);
+    const snapshot = engine.snapshot();
+
+    expect(Object.keys(snapshot).sort()).toEqual([
+      'arrivalState',
+      'cursors',
+      'instant',
+      'magnitudeState',
+      'previousIntervalMs',
+      'previousMagnitude',
+      'price',
+      'sequence',
+    ]);
+
+    // And no value anywhere inside it is long enough, or arrayed enough, to be
+    // a run of draws. A cursor is a short string; the latent states are small
+    // numeric records. Forty booleans, or a block of hex, would fail here.
+    const walk = (value: unknown, path: string): void => {
+      if (typeof value === 'string') {
+        expect(value.length, `${path} is a long string inside a snapshot`).toBeLessThan(64);
+        return;
+      }
+      if (Array.isArray(value)) {
+        expect(value.length, `${path} is a long array inside a snapshot`).toBeLessThan(16);
+        value.forEach((entry, index) => {
+          walk(entry, `${path}[${String(index)}]`);
+        });
+        return;
+      }
+      if (typeof value === 'object' && value !== null) {
+        for (const [key, entry] of Object.entries(value)) walk(entry, `${path}.${key}`);
+      }
+    };
+    walk(snapshot, 'snapshot');
+
+    // The keyring's secret must not appear in any serialisation of it.
+    const serialised = JSON.stringify(snapshot);
+    expect(serialised).not.toMatch(/[0-9a-f]{32,}/i);
+  });
+
   it('reproduces a continuation exactly, from a fresh engine', () => {
     const reference = build();
     drain(reference, 3_000);

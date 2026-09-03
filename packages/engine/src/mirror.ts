@@ -16,7 +16,23 @@ import type { MarketEngine } from './engine.js';
  *
  * Any mechanism that reaches a sign, directly or through the price or through a
  * level derived from either, breaks that identity immediately and
- * unambiguously.
+ * unambiguously — **within the window the caller runs**.
+ *
+ * ## The window is a precondition (Cycle Audit 7, CA7-01)
+ *
+ * This function compares a bounded run, and every caller in the repository
+ * bounds it between 10,000 and 120,000 ticks. At btcusd's recorded mean
+ * interval that is under an hour at the low end and about eleven hours at the
+ * high end, against markets that run for months with a monotonic sequence.
+ *
+ * An auditor planted the leverage effect behind `#sequence > 200_000` and every
+ * mirror test in this repository passed, while the statistical battery returned
+ * `EXPLOITABLE` at +0.473pp. The two gates are complementary and the
+ * documentation described only one direction of that; the resolution note below
+ * already states the *magnitude* bound, and this is the same kind of bound on
+ * the other axis. Nothing here is vacuous: an unconditional sign-reading
+ * mechanism diverges at step one, which is what makes this test worth running
+ * before every engine change.
  *
  * This is the gate a statistical battery cannot replace. PH-2 measured why: a
  * conventional attack battery returns *clean* on an engine whose volatility is

@@ -4,7 +4,7 @@ Type: SUPPORTING DOCUMENTATION (living)
 Status: Dynamic — phases may be split, merged, reordered or replaced as
 implementation reveals information (`GOVERNANCE.md` §13). Approved phases are
 never rewritten as though they had not happened.
-Last revised: 2026-09-02 (PH-22 chosen; out-of-band audit, a7-10)
+Last revised: 2026-09-03 (Cycle Audit 7 closed; PH-22 is the next phase)
 
 ---
 
@@ -494,12 +494,12 @@ comment saying it did.
 So Cycle 7 starts where Cycle 6 did — with the instrument — because every other
 finding is verified through it.
 
-| Phase | Title                                               | State        |
-| ----- | --------------------------------------------------- | ------------ |
-| PH-19 | Close what Cycle Audit 6 falsified                  | **APPROVED** |
-| PH-20 | The operator panel: trusted, and able to administer | **APPROVED** |
-| PH-21 | The catalogue at scale                              | **APPROVED** |
-| —     | **Cycle Audit 7**                                   | **next**     |
+| Phase | Title                                               | State                                                 |
+| ----- | --------------------------------------------------- | ----------------------------------------------------- |
+| PH-19 | Close what Cycle Audit 6 falsified                  | **APPROVED**                                          |
+| PH-20 | The operator panel: trusted, and able to administer | **APPROVED**                                          |
+| PH-21 | The catalogue at scale                              | **APPROVED**                                          |
+| —     | **Cycle Audit 7**                                   | **APPROVED** — [record](../audits/CYCLE-AUDIT-007.md) |
 
 ### PH-19 — Close What Cycle Audit 6 Falsified
 
@@ -555,11 +555,18 @@ a 76-byte event, which at the venue's own rate is 24 bytes per second per
 viewer — and looking at the delivery path found something an order of magnitude
 larger.
 
-| Phase | Title                                     | State       |
-| ----- | ----------------------------------------- | ----------- |
-| PH-22 | Distribution under thousands of observers | not started |
+| Phase | Title                                     | State      |
+| ----- | ----------------------------------------- | ---------- |
+| PH-22 | Distribution under thousands of observers | **ACTIVE** |
 
 ### PH-22 — Distribution Under Thousands Of Observers
+
+| Subphase | Title                                                    | State   |
+| -------- | -------------------------------------------------------- | ------- |
+| PH-22.1  | An instrument that can hold thousands of connections     | ACTIVE  |
+| PH-22.2  | One tick, serialised once                                | PLANNED |
+| PH-22.3  | Many assets, one connection, the same resume contract    | PLANNED |
+| PH-22.4  | What happens when ten thousand clients come back at once | PLANNED |
 
 Nobody has ever opened two simultaneous clients against this engine. Everything
 below is therefore a hypothesis with a number attached, and the phase exists to
@@ -593,14 +600,19 @@ resumption and an explicit refusal when the sequence has been evicted, and a gap
 served in silence is indistinguishable from the market (INV-002). Any transport
 that replaces it has to bring that property with it, tested, before it ships.
 
-**Cycle Audit 7 comes first**, and PH-21 closed on 2026-09-02, so it is next.
-PH-19, PH-20 and PH-21 are three approved phases, and `GOVERNANCE.md` §28 stops
-normal development at that boundary. The audit is
-not optional and does not become optional because a phase is wanted; PH-22 is
-the first phase after it. §67 lets the audit's _depth_ be chosen by risk, and
-the out-of-band audit of 2026-09-02 covered most of this cycle's surface — so
-Cycle Audit 7 aims at what that audit could not see: the fixes it produced, and
-PH-21, which did not exist in its current form when the auditors read the tree.
+**Cycle Audit 7 is done**, closed 2026-09-03: eight independent auditors, one
+worktree each, 35 findings surviving adversarial refutation, 34 closed in the
+audit itself. It hands this phase two measurements it did not ask for — replay
+ignored backpressure entirely (CA7-04) and the feed costs a measured 5.01 MB per
+asset, 501 MB at a hundred (CA7-33) — which are the best starting point in the
+repository for what follows.
+
+Its depth was chosen by risk (§67): the out-of-band audit of 2026-09-02 had
+already swept most of PH-19 and PH-20, so the auditors were told to check that
+**those fixes hold** rather than re-derive them, and were pointed at what no
+audit had opened — PH-21, the stream work of 2026-09-02, the engine, and the
+statistical layers. That aim is what produced CA7-01: a planted directional edge
+that every mirror test in the repository passed.
 
 ## Major dependencies
 

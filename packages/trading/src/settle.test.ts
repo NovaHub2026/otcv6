@@ -296,12 +296,48 @@ describe('Cycle Audit 5: settlement refuses a window that touches a seam', () =>
     );
   });
 
-  it('settles a contract entirely on one side of the gap', () => {
-    expect(settle(spanning(0, 2_000), { instants, prices, seams }).outcome).toBeDefined();
-    expect(settle(spanning(95_000, 1_000), { instants, prices, seams }).outcome).toBeDefined();
+  it('settles a contract entirely on one side of the gap, on its merits', () => {
+    // **Cycle Audit 7, CA7-13.** This asserted `toBeDefined()` on both, which
+    // an engine that refunded *every* contract on a seamed record satisfies —
+    // and an auditor made exactly that change and watched all 2,203 unit tests
+    // pass. Three of this block's four tests assert only that something threw;
+    // the fourth asserted only that something came back. Between them they
+    // pinned the refusal and nothing about the answer.
+    //
+    // A seam decides whether a window is settleable. It must not decide what
+    // the outcome *is*, so the outcomes are compared against the identical
+    // contract on a record with no seam at all.
+    for (const window of [spanning(0, 2_000), spanning(95_000, 1_000)] as const) {
+      const withSeam = settle(window, { instants, prices, seams });
+      const without = settle(window, { instants, prices });
+      expect(withSeam.outcome, 'a seam elsewhere in the record changed the outcome').toBe(
+        without.outcome,
+      );
+      expect(withSeam.entryPrice).toBe(without.entryPrice);
+      expect(withSeam.expiryPrice).toBe(without.expiryPrice);
+    }
+    // And each outcome is the one the prices imply, so an engine returning a
+    // constant cannot satisfy this either.
+    for (const window of [spanning(0, 2_000), spanning(95_000, 1_000)] as const) {
+      const settled = settle(window, { instants, prices, seams });
+      expect(settled.outcome, `${settled.entryPrice} -> ${settled.expiryPrice}`).toBe(
+        settled.expiryPrice > settled.entryPrice
+          ? 'win'
+          : settled.expiryPrice < settled.entryPrice
+            ? 'loss'
+            : 'refund',
+      );
+    }
   });
 
   it('a record with no seams behaves exactly as before', () => {
-    expect(settle(spanning(1_000, 30_000), { instants, prices }).outcome).toBeDefined();
+    const settled = settle(spanning(1_000, 30_000), { instants, prices });
+    expect(settled.outcome).toBe(
+      settled.expiryPrice > settled.entryPrice
+        ? 'win'
+        : settled.expiryPrice < settled.entryPrice
+          ? 'loss'
+          : 'refund',
+    );
   });
 });

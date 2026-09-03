@@ -110,6 +110,42 @@ describe('the roadmap tracks every phase document', () => {
       .filter((id) => !roadmap.includes(id));
     expect(missing).toEqual([]);
   });
+
+  it('and every identifier the roadmap tracks has a document (CA7-12)', () => {
+    // **Cycle Audit 7.** The check above runs one way only: it enumerates the
+    // *files* and asks whether the roadmap knows them. Delete an approved
+    // subphase's Technical Document and there is simply one case fewer — the
+    // gate stays green and the test count drops from 2,203 to 2,202, which
+    // nothing reads. An approved subphase whose document is gone is exactly
+    // what `GOVERNANCE.md` §71 says a fresh agent must be able to reconstruct.
+    //
+    // Rows are read from the roadmap's own tables, so a phase that is planned
+    // but not yet documented has to be written as prose rather than as a row.
+    const present = new Set(
+      phaseDocuments.map((name) => /^(PH-\d+(?:\.\d+)?)/.exec(name)?.[1] ?? name),
+    );
+    const rows = [
+      ...roadmap.matchAll(/^\|\s*(PH-\d+(?:\.\d+)?)\s*\|[^|]*\|\s*([^|]*?)\s*\|/gm),
+    ].map((match) => ({
+      id: match[1]!,
+      state: match[2]!.replaceAll('*', '').trim().toLowerCase(),
+    }));
+    expect(rows.length, 'no roadmap rows were parsed; the tables changed shape').toBeGreaterThan(
+      20,
+    );
+
+    // A phase that has been started owes a document. One that is only planned
+    // does not — PH-22 is a row and a paragraph of intent, and that is correct.
+    // Vocabulary from `stateConsistency.test.ts`: NOT STARTED and PLANNED both
+    // mean "no work has begun", and neither owes a Technical Document yet.
+    const NOT_YET = new Set(['not started', 'planned', 'next']);
+    const started = rows.filter((row) => !NOT_YET.has(row.state));
+    expect(started.length, 'no started rows were parsed').toBeGreaterThan(20);
+    const undocumented = [...new Set(started.map((row) => row.id))].filter(
+      (id) => !present.has(id),
+    );
+    expect(undocumented, 'the roadmap tracks these as started, and no document exists').toEqual([]);
+  });
 });
 
 describe('phase states agree between documents and the roadmap', () => {
@@ -174,6 +210,87 @@ describe('phase states agree between documents and the roadmap', () => {
   );
 });
 
+describe('the cycle-audit boundary is a fact, not a label (CA7-11)', () => {
+  /**
+   * **Cycle Audit 7.** The state guards checked every phase and subphase row
+   * and nothing about the two fields that decide whether an audit is *due*:
+   * `Cycle Audit state` was asserted only to be present, never to have a value,
+   * and the "exact next legal action" only to be longer than sixty characters.
+   * Nothing read `docs/audits/` — although this same file already enumerates it
+   * for the index check — and nothing related the next action to the
+   * approved-phase count this file already computes from the roadmap.
+   *
+   * `GOVERNANCE.md` §28 makes three approved phases a hard boundary: development
+   * stops and the audit runs. A record that can drift on exactly that is a
+   * record that can hide the one rule the project cannot postpone.
+   */
+  const state = read('CURRENT_STATE.md');
+
+  /** Audit records that exist, by number. */
+  const recorded = listMarkdown('docs/audits')
+    .map((name) => /^CYCLE-AUDIT-(\d+)\.md$/.exec(name)?.[1])
+    .filter((number): number is string => number !== undefined)
+    .map((number) => Number.parseInt(number, 10))
+    .sort((a, b) => a - b);
+
+  it('has audit records to check', () => {
+    expect(recorded.length).toBeGreaterThan(0);
+  });
+
+  it('names the last closed audit as the highest record that exists', () => {
+    const claimed = /Cycle Audit state\s*\|\s*\*\*(\d+) closed\*\*/.exec(state)?.[1];
+    expect(claimed, 'CURRENT_STATE does not state a closed cycle-audit number').toBeDefined();
+    expect(Number.parseInt(claimed!, 10), 'the highest audit record on disk').toBe(
+      recorded[recorded.length - 1],
+    );
+  });
+
+  it('counts the approved phases of the current cycle the way the roadmap does', () => {
+    const claimed = /Approved phases in current cycle\s*\|\s*\*\*(\d+) of (\d+)\*\*/.exec(state);
+    expect(claimed, 'CURRENT_STATE does not state an approved-phase count').not.toBeNull();
+    const cycle = /Active development cycle\s*\|\s*Cycle (\d+)/.exec(state)?.[1];
+    expect(cycle, 'CURRENT_STATE does not state a cycle number').toBeDefined();
+
+    // The roadmap's section for that cycle, up to the next `## ` heading.
+    // Read line by line rather than with a multiline regex: the heading and the
+    // rows are both anchored, and a regex that quietly matched nothing is how
+    // this check would fail open.
+    const lines = read('docs/phases/ROADMAP.md').split('\n');
+    const from = lines.findIndex((line) => line.startsWith(`## Cycle ${cycle!}`));
+    expect(from, `the roadmap has no section for Cycle ${cycle!}`).toBeGreaterThanOrEqual(0);
+    const rest = lines.slice(from + 1);
+    const to = rest.findIndex((line) => line.startsWith('## '));
+    const section = (to === -1 ? rest : rest.slice(0, to)).join('\n');
+
+    const rows = section.split('\n').filter((line) => /^\|\s*PH-\d+\s*\|/.test(line));
+    // Rows, not approvals: a cycle that has just opened has zero of the second
+    // and must still be checkable. The first version asserted `approved > 0`
+    // and failed the moment Cycle 8 opened with PH-22 — a guard that only works
+    // in the middle of a cycle is a guard that is off at both boundaries, and
+    // the boundary is the whole subject.
+    expect(rows.length, `no phase rows parsed for Cycle ${cycle!}`).toBeGreaterThan(0);
+    const approved = rows.filter((line) => line.includes('APPROVED')).length;
+    expect(Number.parseInt(claimed![1]!, 10), 'CURRENT_STATE vs the roadmap').toBe(approved);
+  });
+
+  it('names the audit as the next action when the cycle is full and unaudited', () => {
+    const claimed = /Approved phases in current cycle\s*\|\s*\*\*(\d+) of (\d+)\*\*/.exec(state);
+    const done = Number.parseInt(claimed![1]!, 10);
+    const needed = Number.parseInt(claimed![2]!, 10);
+    const cycle = Number.parseInt(
+      /Active development cycle\s*\|\s*Cycle (\d+)/.exec(state)![1]!,
+      10,
+    );
+    if (done < needed || recorded.includes(cycle)) return;
+    // Three approved phases, and no record for this cycle: §28 says development
+    // stops here, so the document a fresh agent reads has to say so.
+    const action = /## EXACT NEXT LEGAL ACTION\n([\s\S]*)$/.exec(state)?.[1] ?? '';
+    expect(action, 'the cycle is full and unaudited; the next action must be the audit').toMatch(
+      /Cycle Audit/i,
+    );
+  });
+});
+
 describe('every repo-relative link resolves', () => {
   const documents = [
     'DOCS_INDEX.md',
@@ -181,10 +298,19 @@ describe('every repo-relative link resolves', () => {
     'PROJECT_CONTEXT.md',
     'CURRENT_STATE.md',
     'SESSION_HANDOFF.md',
+    // **Cycle Audit 7, CA7-30.** Three of the places a fresh agent is sent
+    // were not checked: `GOVERNANCE.md` — the first document CLAUDE.md tells
+    // it to read — and the whole of `docs/audits/` and `docs/evidence/`, which
+    // are where every finding and every measured number live. Four planted
+    // broken links in those files were invisible to the gate.
+    'GOVERNANCE.md',
+    'PROJECT_INTRODUCTION.md',
     'docs/phases/ROADMAP.md',
     ...listMarkdown('docs/decisions').map((name) => `docs/decisions/${name}`),
     ...listMarkdown('docs/architecture').map((name) => `docs/architecture/${name}`),
     ...listMarkdown('docs/phases').map((name) => `docs/phases/${name}`),
+    ...listMarkdown('docs/audits').map((name) => `docs/audits/${name}`),
+    ...listMarkdown('docs/evidence').map((name) => `docs/evidence/${name}`),
   ];
 
   it.each(documents)('%s', (document) => {

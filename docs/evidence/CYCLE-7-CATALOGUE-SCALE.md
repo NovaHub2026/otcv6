@@ -61,9 +61,28 @@ it is dominated by twelve `major-crypto` assets.
 | 5,460 | `btcusd` / `scale-major-crypto-8` | **0.0282** | 0.0468 | 0.0918 | 0.2561 |
 
 On a scale where 1 is the whole trait space and the floor is 0.01. **The closest
-pair sits at 2.8× the minimum**, so INV-007 holds at a hundred assets with
-headroom rather than by a hair — and the closest pair is exactly where one would
-expect it, between a registered `major-crypto` and the hand-authored `btcusd`.
+pair sits at 2.8× the minimum**, and the closest pair is exactly where one would
+expect it: between a registered `major-crypto` and the hand-authored `btcusd`.
+
+**What that is evidence of, precisely.** This is the _proximity_ check, and
+`differentiation.ts`'s own docstring is blunt about its standing: it "compares
+parameters, not behaviour", it is "necessary and not sufficient", "two
+personalities can differ in parameters and still produce statistically
+indistinguishable markets — the project has measured exactly that", and a guard
+that "reads as a proof of the invariant, and is a proximity check on a parameter
+vector, is worse than no guard because it invites reliance".
+
+The first version of this section wrote exactly that reliance — "INV-007 holds
+at a hundred assets" — and Cycle Audit 7 named it (CA7-05). What this table
+establishes is that **no two of a hundred registered assets are near-copies in
+parameter space, with headroom**. That is the registration guard doing its job.
+
+The sufficient check is behavioural and it exists —
+`tools/sim/src/sampledCatalogue.stat.test.ts` measures shape differentiation
+over `SHAPE_FEATURES` — but it runs at 24 assets, not a hundred. **Nothing in
+this repository has measured behavioural differentiation at a hundred assets**,
+and until something does, INV-007 at that scale is supported by a necessary
+condition and an argument, not by a measurement.
 
 That is a measurement of _this_ draw. It is not a proof that the 5,461st asset
 will clear the floor: the closest-pair distance falls as the catalogue grows,

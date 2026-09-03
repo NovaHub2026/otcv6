@@ -597,8 +597,14 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
   });
 
   /** A response that records what was written, and the status it was given. */
-  function recording(): { res: Response; status: () => number; body: () => string } {
+  function recording(clientIsFull = false): {
+    res: Response;
+    status: () => number;
+    body: () => string;
+    ended: () => boolean;
+  } {
     let status = 0;
+    let ended = false;
     const chunks: string[] = [];
     const res = {
       writeHead: (code: number) => {
@@ -607,13 +613,19 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
       },
       write: (chunk: string) => {
         chunks.push(chunk);
-        return true;
+        // A socket that is full from its first byte: the case the replay path
+        // ignored entirely (CA7-04).
+        return !clientIsFull;
       },
-      end: () => undefined,
+      end: () => {
+        ended = true;
+      },
       on: () => undefined,
-      writableNeedDrain: false,
+      get writableNeedDrain() {
+        return clientIsFull && chunks.length > 0;
+      },
     } as unknown as Response;
-    return { res, status: () => status, body: () => chunks.join('') };
+    return { res, status: () => status, body: () => chunks.join(''), ended: () => ended };
   }
 
   it('tells a client about the gap instead of refusing it, when asked to (onGap=live)', () => {
@@ -656,6 +668,45 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     expect(() => controller.stream('eurusd', untouched(), request(), '1', 'lives')).toThrow(
       /onGap must be 'live'/,
     );
+  });
+
+  it('refuses a from that is not a whole number, by name (CA6 fix, CA7-18 guard)', () => {
+    // The Cycle Audit 6 fix — `!/^\d+$/.test(from)` — had no test anywhere.
+    // Reverting it left 2,203 tests green, and `1e3` in particular parses to 1
+    // and asks for a sequence long since evicted, which used to produce a
+    // silent empty stream.
+    const { controller } = streaming();
+    for (const bad of ['1.9', '12abc', '1e3', '0x2', ' 3', '+3', '-1', '']) {
+      expect(() => controller.stream('eurusd', untouched(), request(), bad), bad).toThrow(
+        /from must be a non-negative integer/,
+      );
+    }
+    // And the honest forms still pass through.
+    const served = recording();
+    controller.stream('eurusd', served.res, request(), '10');
+    expect(served.status()).toBe(200);
+  });
+
+  it('stops replaying at a client that cannot keep up, and says so (CA7-04)', () => {
+    // Measured by an auditor against a socket full from its first byte: 50,000
+    // frames and 3.46 MiB accumulated in this process's heap, the handler
+    // blocked 143 ms, and the subscription was neither cancelled nor ended.
+    // `deliver` returned `!headersSent || ...`, so during replay — the single
+    // largest write this endpoint ever makes — backpressure was ignored.
+    const feed = new TickFeed({ retainTicks: 100_000 });
+    feed.publish('eurusd', ticks(40_000));
+    const venue = { ...venueStub(['eurusd']), feed } as unknown as VenueService;
+    const controller = new MarketController(venue);
+
+    const full = recording(true);
+    controller.stream('eurusd', full.res, request(), '1');
+
+    expect(full.status()).toBe(200);
+    // Far short of the 40,000 the window holds, and short of the byte bound.
+    expect(full.body().length).toBeLessThan(2_000_000);
+    expect(full.body()).toMatch(/event: close/);
+    expect(full.body()).toMatch(/fell behind during replay/);
+    expect(full.ended()).toBe(true);
   });
 
   it('leaves a resume the feed can serve exactly alone, gap policy or not', () => {

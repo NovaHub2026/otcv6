@@ -92,6 +92,34 @@ describe('the registration guard refuses a personality already present', () => {
     ).not.toBeNull();
   });
 
+  it('holds the floor at the value INV-007 was reasoned to, not at whatever it says (CA7-22)', () => {
+    // **Cycle Audit 7.** Every assertion about the floor in this repository was
+    // written against `MINIMUM_TRAIT_DISTANCE` itself, so all of them
+    // self-adjust. An auditor lowered it from 0.01 to 1e-4 — a hundredfold
+    // weakening of the registration enforcement of INV-007 — and the whole unit
+    // suite passed, and so did the statistical guard that keeps 200
+    // personalities apart. The guarded window was roughly (9e-5, 0.016]; inside
+    // it, nothing in the gate had an opinion.
+    //
+    // A constant that a docstring reasons about at length, and that decides
+    // whether an invariant is enforced, is pinned to its number.
+    expect(MINIMUM_TRAIT_DISTANCE).toBe(0.01);
+
+    // And the refusal is checked at an absolute distance rather than a relative
+    // one, so the check cannot follow the constant down.
+    const near = {
+      ...eurusd.definition.traits,
+      regimeTempo: eurusd.definition.traits.regimeTempo * 1.02,
+    };
+    const distance = traitDistance(eurusd.definition.traits, near);
+    expect(distance, 'the fixture must sit inside the floor to test it').toBeLessThan(0.01);
+    expect(distance, 'and above the noise, so it is a real near-copy').toBeGreaterThan(1e-4);
+    expect(
+      check(candidate(eurusd, near, eurusd.evidence.logVariancePerMs * 16), [eurusd]),
+      'a pair 0.0001-close was admitted: the floor is not being enforced at 0.01',
+    ).not.toBeNull();
+  });
+
   it('admits every asset already in the catalogue against the others', () => {
     for (const asset of ASSET_CATALOGUE) {
       const others = ASSET_CATALOGUE.filter((other) => other !== asset);

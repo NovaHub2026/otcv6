@@ -88,7 +88,27 @@ export interface TickFeedOptions {
   readonly retainTicks?: number;
 }
 
+/**
+ * Ticks retained per asset, and what that costs.
+ *
+ * **Cycle Audit 7, CA7-33.** Measured rather than estimated: 50,000 ticks of a
+ * real feed is **5.01 MB per asset** (105.1 bytes retained per tick), so
+ * PH-21's hundred-asset catalogue holds **501 MB** in this map alone — 22% of
+ * the 2,240 MB heap Node defaults to on the machine that measured it — and
+ * roughly 446 assets exhausts the heap before any market state, history
+ * recorder, publication buffer or framework overhead. Nothing configures a
+ * heap for the service anywhere in the repository.
+ *
+ * The number is not changed here. It is the resume window every reconnecting
+ * client depends on, and shrinking it silently trades a memory problem for a
+ * correctness one. What changes is that it is now written down with its cost,
+ * pinned by a test, and named in `MULTI_NODE_AND_OPERATIONS.md` as the first
+ * thing PH-22 has to size deliberately rather than inherit.
+ */
 export const DEFAULT_RETAIN_TICKS = 50_000;
+
+/** Measured bytes retained per tick, at the default window. */
+export const MEASURED_BYTES_PER_TICK = 105;
 
 /**
  * The sequence of the first tick any market publishes.
@@ -143,6 +163,15 @@ export class TickFeed {
     if (ticks.length === 0) return;
     const history = this.#history.get(assetId) ?? [];
     let previous = history.length > 0 ? history[history.length - 1]!.sequence : null;
+    // **Checked whole, then applied whole (Cycle Audit 7, CA7-32).** The first
+    // version validated and appended in one pass, and `history` is the stored
+    // array itself — so a batch that gapped halfway left the ticks before the
+    // gap *retained but never delivered*: the throw skipped the fan-out, and no
+    // current subscriber ever saw them again. Every observer of that asset was
+    // then permanently behind the record by however many ticks preceded the
+    // gap, silently, which is the exact shape INV-002 forbids.
+    //
+    // A refusal must leave the feed as it found it.
     for (const tick of ticks) {
       if (previous !== null && tick.sequence !== previous + 1) {
         throw new RangeError(
@@ -151,8 +180,8 @@ export class TickFeed {
         );
       }
       previous = tick.sequence;
-      history.push(tick);
     }
+    for (const tick of ticks) history.push(tick);
     if (history.length > this.#retainTicks) {
       history.splice(0, history.length - this.#retainTicks);
     }
@@ -163,8 +192,38 @@ export class TickFeed {
     }
   }
 
+  /**
+   * Stop carrying an asset: drop its retained ticks and close its subscribers.
+   *
+   * **Cycle Audit 7, CA7-35.** There was no way to do this, so a retired market
+   * kept its full 50,000-tick window — 5 MB — for the life of the process, and
+   * its subscribers were left holding a stream that would never produce another
+   * tick. A venue that retires and registers over a long run leaked both.
+   */
+  forget(assetId: string, reason = 'asset retired'): void {
+    for (const subscription of [...(this.#subscriptions.get(assetId) ?? [])]) {
+      subscription.cancel(reason);
+    }
+    this.#subscriptions.delete(assetId);
+    this.#history.delete(assetId);
+  }
+
   /** Retained ticks from `fromSequence` onwards, inclusive. */
   since(assetId: string, fromSequence: number): readonly Tick[] {
+    // **Cycle Audit 7, CA7-20.** Neither bound below compares true against
+    // `NaN`, so a `NaN` fell through both and reached `history.slice(Math.max(0,
+    // NaN))` — and `slice(NaN)` is `slice(0)`. A client resuming with a corrupt
+    // sequence was handed **the entire retained window** as though it were a
+    // continuation, rather than the refusal the whole resume contract is built
+    // on. A fractional sequence was quietly floored, replaying a tick the
+    // client already had.
+    //
+    // The HTTP edge has validated `?from=` strictly since CA6 — but `since` and
+    // `subscribe` are this package's public surface, and the follower and every
+    // in-process caller reach them without passing that edge.
+    if (!Number.isSafeInteger(fromSequence) || fromSequence < 0) {
+      throw new UnknownSequenceError(assetId, fromSequence, FIRST_SEQUENCE - 1);
+    }
     const history = this.#history.get(assetId) ?? [];
     if (history.length === 0) {
       // **a5-09.** The empty case returned [] for any sequence, so the

@@ -37,3 +37,7 @@ Thumbs.db
 # logs
 *.log
 npm-debug.log*
+
+# agent worktrees and session scratch (Cycle Audit 7: eight audit trees appeared
+# as untracked files inside the repository, one `git add -A` from being committed)
+.claude/

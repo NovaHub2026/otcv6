@@ -128,6 +128,7 @@ const AMBIENT_STATE_ALLOWLIST = [
   'tools/sim/src/cli.ts',
   'tools/sim/src/dispersionEvidence.ts',
   'tools/sim/src/horizonEvidence.ts',
+  'tools/sim/src/observerLoadRun.ts',
   'tools/sim/src/venueScale.ts',
 ];
 
@@ -149,6 +150,22 @@ const AMBIENT_TIME_ALLOWLIST = [
   'tools/sim/src/horizonEvidence.ts',
   'tools/sim/src/runner.ts',
   'tools/sim/src/venueScale.ts',
+  /**
+   * The observer load harness (PH-22.1).
+   *
+   * It measures delivery latency as `receivedAt − tick.instant`, so reading the
+   * wall clock is the measurement rather than an accident of implementation —
+   * and it times how long a connection has waited for its first byte, which is
+   * how a refusal is told from a slow start. Neither can be taken from an
+   * injected clock without the harness measuring the clock instead of the
+   * server.
+   *
+   * It is a deliberate act, not a generation path: nothing imports it, it
+   * produces no record, and every number it emits is labelled with the process
+   * it was taken from.
+   */
+  'tools/sim/src/observerLoad.ts',
+  'tools/sim/src/observerLoadRun.ts',
 ];
 
 interface Source {
@@ -451,6 +468,29 @@ describe('generation code is portable', () => {
 
   it('nor does the tooling that produces the evidence (a2-04)', () => {
     const violations = sourcesUnder(TOOLING_ROOTS).flatMap(({ file, source }) =>
+      scanSource(file, source, PORTABILITY_RULES),
+    );
+    expect(describeViolations(violations)).toBe('');
+  });
+
+  it('nor does anything else that has to stay replayable (CA7-14)', () => {
+    // **Cycle Audit 7.** This guard scanned `GENERATION_ROOTS` and the tooling
+    // and stopped there, while {@link REPLAYABLE_ROOTS}'s own docstring says
+    // `runtime` and `trading` are "still bound by the rules that make a record
+    // reproducible: no ambient clock, no ambient mutable state, **no
+    // non-portable numerics**". Two of those three were enforced.
+    //
+    // It was not hypothetical. `apps/api/src/market.controller.ts` shipped a
+    // second implementation of `displayPrice` built on `Math.exp`, serving the
+    // price the panel shows — in the one directory neither this scan nor the
+    // type-aware ESLint block (`files: ['packages/*/src/**/*.ts']`) opened. An
+    // auditor planted `Math.log` and `Math.pow` into `settle.ts` and
+    // `publication.service.ts` and all 458 guardrail tests passed.
+    //
+    // The asymmetry is the tell: the *ambient time* rule already scanned these
+    // roots and caught a planted `Date.now()` in the same file on the same run.
+    // One rule reached the directory and its neighbour did not.
+    const violations = sourcesUnder(REPLAYABLE_ROOTS).flatMap(({ file, source }) =>
       scanSource(file, source, PORTABILITY_RULES),
     );
     expect(describeViolations(violations)).toBe('');
