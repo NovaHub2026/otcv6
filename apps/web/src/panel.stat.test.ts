@@ -61,7 +61,29 @@ const SECRET = 'e'.repeat(64);
 const TOKEN = 'panel-test-token-'.padEnd(32, 'p');
 const BACKFILL_DAYS = 2;
 /** The one command that makes the browser launch on a Debian-family host. */
-const BROWSER_LIBRARIES = 'sudo apt-get install -y libnss3 libnspr4 libasound2t64';
+/**
+ * What Chromium links against, and the two ways to supply it.
+ *
+ * The second exists because a host without root is not a host without a
+ * browser, and this suite spent PH-20 and most of PH-21 being skipped on one.
+ * `apt-get download` needs no privileges, and neither does unpacking a `.deb`
+ * into a directory the loader is pointed at:
+ *
+ * ```
+ * apt-get download libnss3 libnspr4 libasound2t64
+ * for d in *.deb; do dpkg-deb -x "$d" prefix; done
+ * export LD_LIBRARY_PATH="$PWD/prefix/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"
+ * ```
+ *
+ * That prefix is a local artefact, not a repository one: it is nobody's build
+ * output and it does not survive being cleaned up. It is written here rather
+ * than in a phase document so that whoever next reads `SKIPPED` gets the
+ * option, on the host where they are reading it.
+ */
+const BROWSER_LIBRARIES =
+  'sudo apt-get install -y libnss3 libnspr4 libasound2t64 — or, without root, ' +
+  'apt-get download those three, `dpkg-deb -x` each into a prefix, and point ' +
+  'LD_LIBRARY_PATH at <prefix>/usr/lib/x86_64-linux-gnu';
 
 const started: ChildProcess[] = [];
 const directories: string[] = [];
@@ -188,6 +210,22 @@ async function freePort(): Promise<number> {
   });
 }
 
+/**
+ * A stream that is live, in either of the two honest ways.
+ *
+ * Plain `live` means the stream resumed exactly where the record stops. The
+ * other spelling means the engine could not replay that far — the feed keeps a
+ * bounded window and a restart empties it — and said so, so the forming candle
+ * is drawn from the record and re-read as it fills. Both are live; neither is
+ * `loading`, `reconnecting`, or an error, which is what this assertion is for.
+ *
+ * Pinning the exact string pinned the wrong thing: a CI engine is always
+ * freshly started, so its feed can never reach back to the stored candle it is
+ * asked to resume from, and the suite failed on correct behaviour (run
+ * 33689094040). The behaviour behind each spelling has its own test below.
+ */
+const LIVE = /^live\b/;
+
 interface Observed {
   readonly consoleErrors: string[];
   readonly failedRequests: string[];
@@ -213,7 +251,12 @@ function watch(page: Page): Observed {
     // would make this assertion fire on correct behaviour, which is worse than
     // not making it at all.
     const reason = request.failure()?.errorText ?? '';
-    if (reason.includes('ERR_ABORTED') && request.url().endsWith('/stream')) return;
+    // By **path**, not by the whole URL. The stream carries a query now
+    // (`?from=…&onGap=live`), and matching the URL's tail made every normally
+    // ended stream look like a failure the moment that query appeared.
+    if (reason.includes('ERR_ABORTED') && new URL(request.url()).pathname.endsWith('/stream')) {
+      return;
+    }
     failedRequests.push(`${request.method()} ${request.url()} — ${reason}`);
   });
   page.on('response', (response) => {
@@ -311,13 +354,61 @@ describe('the panel, in a browser', () => {
     }
   }, 300_000);
 
+  it('draws the bucket now forming, however the stream had to reach it', async (ctx) => {
+    // The defect this exists for, in the Human Owner's words: "la línea de
+    // precio se mueve pero la vela está totalmente quieta". Twice on
+    // 2026-09-02, and nothing in this suite could see it — a candle is painted
+    // on a canvas, so no DOM assertion reads its close.
+    //
+    // What separates the defect from correct behaviour is not a price: it is
+    // *which bucket has a live bar*. Frozen means the newest bar is the last
+    // one history flushed, an hour old on the panel's default chart, while the
+    // price line runs away from it. So the panel publishes the bucket it is
+    // drawing live, and this asserts that bucket is the one now in progress.
+    //
+    // Which of the two routes it took getting there is deliberately not
+    // asserted. A CI engine is always freshly started, so its feed can never
+    // replay from the stored candle the client resumes at, and the panel draws
+    // the bucket from the record instead — the case that used to cost an hour
+    // of frozen candle. A long-running engine takes the exact-join route. Both
+    // must end with the forming bucket drawn.
+    const page = await requireBrowser(ctx).newPage({ viewport: { width: 1440, height: 900 } });
+    const observed = watch(page);
+    try {
+      await page.goto(`http://127.0.0.1:${webPort}/preview`, { waitUntil: 'networkidle' });
+      await expect
+        .poll(async () => page.getByTestId('stream-status').textContent(), { timeout: 60_000 })
+        .toMatch(LIVE);
+      await expect
+        .poll(async () => page.getByTestId('forming-bucket').textContent(), { timeout: 90_000 })
+        .toMatch(/^live bar \d+$/);
+
+      const label = (await page.getByTestId('forming-bucket').textContent()) ?? '';
+      const drawnAt = Number(/^live bar (\d+)$/.exec(label)![1]);
+      const HOUR_SECONDS = 3_600;
+      // The panel opens on a one-hour chart, so a live bar sits on an hour
+      // boundary, and the bucket in progress began less than an hour ago.
+      expect(drawnAt % HOUR_SECONDS, `${label} is not an hour boundary`).toBe(0);
+      const age = Math.floor(Date.now() / 1000) - drawnAt;
+      expect(age, `${label} is ${String(age)}s old — a bucket that is over`).toBeLessThan(
+        HOUR_SECONDS,
+      );
+      expect(age, `${label} is in the future`).toBeGreaterThanOrEqual(0);
+
+      expect(observed.consoleErrors, 'console errors').toEqual([]);
+      expect(observed.failedRequests, 'failed requests').toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
   it('shows a price that moves', async (ctx) => {
     const page = await requireBrowser(ctx).newPage({ viewport: { width: 1440, height: 900 } });
     try {
       await page.goto(`http://127.0.0.1:${webPort}/preview`, { waitUntil: 'networkidle' });
       await expect
         .poll(async () => page.getByTestId('stream-status').textContent(), { timeout: 60_000 })
-        .toBe('live');
+        .toMatch(LIVE);
 
       // The candles of a bucket already in progress belong to the record, so at
       // an hourly timeframe nothing new is drawn for up to an hour. What moves
@@ -366,7 +457,7 @@ describe('the panel, in a browser', () => {
         await page.getByTestId(`asset-${id}`).click();
         await expect
           .poll(async () => page.getByTestId('stream-status').textContent(), { timeout: 60_000 })
-          .toBe('live');
+          .toMatch(LIVE);
 
         const after = observed.requested.slice(before);
         expect(
@@ -455,7 +546,7 @@ describe('the panel, in a browser', () => {
       await page.getByTestId('asset-panelmetal').click();
       await expect
         .poll(async () => page.getByTestId('stream-status').textContent(), { timeout: 60_000 })
-        .toBe('live');
+        .toMatch(LIVE);
       const price = Number(await page.getByTestId('last-price').textContent());
       expect(price).toBeGreaterThan(950);
       expect(price).toBeLessThan(2_850);
@@ -500,7 +591,7 @@ describe('the panel, in a browser', () => {
       await page.getByTestId('asset-gbpjpy').click();
       await expect
         .poll(async () => page.getByTestId('stream-status').textContent(), { timeout: 60_000 })
-        .toBe('live');
+        .toMatch(LIVE);
       await page.getByTestId('asset-xauusd').click();
       await expect
         .poll(async () => page.getByTestId('stream-status').textContent(), { timeout: 30_000 })

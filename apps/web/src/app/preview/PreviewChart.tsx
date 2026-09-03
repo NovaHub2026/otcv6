@@ -78,6 +78,9 @@ export const STALL_MULTIPLE = 3;
 /** One minute, the record's permanent base tier. */
 const MINUTE_MS = 60_000;
 
+/** How often the record is re-read for a bucket the stream could not join. */
+const RESEED_INTERVAL_MS = 15_000;
+
 const RECONNECT_BACKOFF_MS = 1_000;
 const MAX_RECONNECT_BACKOFF_MS = 30_000;
 
@@ -96,6 +99,21 @@ export function PreviewChart({
   const [status, setStatus] = useState<string>('loading');
   const [bars, setBars] = useState<number>(0);
   const [last, setLast] = useState<{ price: number; at: number } | null>(null);
+  /**
+   * The bucket the chart is currently drawing live, if any.
+   *
+   * This is a test seam before it is an operator's convenience, and it exists
+   * because the defect it guards is invisible to every other one. A candle is
+   * painted on a canvas: no DOM assertion can read its open, its close, or
+   * whether it moved. So "the price line moves and the newest candle stands
+   * still" — reported twice by the Human Owner on 2026-09-02 — could be
+   * reproduced by hand and by nothing else.
+   *
+   * What it publishes is the one fact that separates the defect from correct
+   * behaviour: **which bucket has a live bar**. When the panel is drawing the
+   * bucket now forming, the defect is absent by construction.
+   */
+  const [forming, setForming] = useState<{ time: number; close: number } | null>(null);
 
   useEffect(() => {
     const element = container.current;
@@ -147,7 +165,6 @@ export function PreviewChart({
     const controller = new AbortController();
     let stream: EventSource | null = null;
     let priceLine: IPriceLine | null = null;
-    let resumeRefused = false;
     let cancelled = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let stallTimer: ReturnType<typeof setTimeout> | null = null;
@@ -156,7 +173,37 @@ export function PreviewChart({
     /** Whether this view has been through a reconnect. */
     let afterGap = false;
 
-    const liveStatus = (): string => (afterGap ? 'live — reconnected after a gap' : 'live');
+    /**
+     * What this **connection** learned about its own join, and nothing more.
+     *
+     * It is an object replaced by each attempt rather than a boolean reset by
+     * each attempt, and that is the whole point. As a boolean it was a latch:
+     * `run()` is re-entered by {@link retryLater} on every stream error, each
+     * attempt builds a fresh `LiveBarBuilder` that assumes an exact join, and
+     * the gap handler's own `if (!joinExact) return` guard then suppressed the
+     * correction on the second gap. The panel went on folding post-hole ticks
+     * onto a record seed — the one thing CA6-30 forbids — while the status bar
+     * said the candle was coming from the record. Reachable on the path the
+     * decision log itself describes: the engine restarts, the stream drops, the
+     * feed still cannot replay.
+     *
+     * A fresh object per attempt cannot inherit a previous attempt's verdict,
+     * so there is no state to forget to reset. Found by the PH-21 closure audit
+     * before this reached `main`.
+     */
+    let connection: { joinExact: boolean } = { joinExact: true };
+    let reseedTimer: ReturnType<typeof setInterval> | null = null;
+    const stopReseeding = (): void => {
+      if (reseedTimer !== null) clearInterval(reseedTimer);
+      reseedTimer = null;
+    };
+
+    const liveStatus = (): string => {
+      if (!connection.joinExact) {
+        return 'live — the forming candle is the record, re-read each minute';
+      }
+      return afterGap ? 'live — reconnected after a gap' : 'live';
+    };
 
     const armStall = (): void => {
       if (stallTimer !== null) clearTimeout(stallTimer);
@@ -185,6 +232,11 @@ export function PreviewChart({
     };
 
     const run = async (): Promise<void> => {
+      // A new attempt, and therefore a new join to establish. The previous
+      // attempt's interval belongs to a builder this one is about to replace.
+      const self = { joinExact: true };
+      connection = self;
+      stopReseeding();
       setStatus(afterGap ? 'reloading history after a gap' : 'loading history');
       const to = Date.now();
       const from = to - frame.defaultSpanMs;
@@ -198,6 +250,7 @@ export function PreviewChart({
       );
       if (cancelled) return;
 
+      setForming(null);
       const drawn = toBars(history.candles, asset);
       target.setData(drawn.map((bar) => ({ ...bar, time: bar.time as UTCTimestamp })));
       setBars(drawn.length);
@@ -213,11 +266,13 @@ export function PreviewChart({
       // two correct rules producing a wrong screen: CA6-30 forbids rebuilding a
       // bucket from a partial view, and a resumed stream is not partial.
       //
-      // `resumeRefused` is set when a previous attempt asked for a sequence the
-      // feed had already evicted. An `EventSource` cannot read a status code,
-      // so the refusal is observed as an error before `onopen`; the next
-      // attempt goes without a resume point and the builder falls back to the
-      // conservative rule.
+      // There is no longer a "refused resume" state to carry between attempts.
+      // There used to be: an `EventSource` cannot read a status code, so a 400
+      // arrived as an error before `onopen`, and the next attempt dropped the
+      // resume point and fell back to the conservative rule — which is what
+      // froze the candle for a whole bucket. The client asks the engine to tell
+      // it about a gap rather than refuse it (`onGap=live`), so the case is
+      // answered on the connection that met it instead of on the one after.
       const newest = history.candles[history.candles.length - 1];
 
       // What this client can prove it holds of the bucket now forming.
@@ -234,46 +289,68 @@ export function PreviewChart({
       // after the last of them supplies the rest exactly — so the feed need
       // only remember one minute rather than one hour, which is what makes
       // this survive an engine restart.
-      let seed: readonly HistoryCandle[] = [];
-      let resumeFrom: number | null = null;
-      if (!resumeRefused) {
-        if (frame.durationMs > MINUTE_MS) {
-          const bucketNow = bucketStart(Date.now(), frame.durationMs);
-          const minutes = await fetchHistory(
-            apiBase,
-            asset.id,
-            '1m',
-            bucketNow,
-            Date.now(),
-            controller.signal,
-          );
-          if (cancelled) return;
-          seed = minutes.candles.filter(
-            (bar) => bucketStart(bar.openInstant, frame.durationMs) === bucketNow,
-          );
-          const lastMinute = seed[seed.length - 1];
-          if (lastMinute !== undefined) resumeFrom = lastMinute.lastSequence + 1;
-        }
-        // A one-minute chart needs no seed: the bucket after the newest history
-        // bar begins at the tick the resume starts from.
-        if (resumeFrom === null && newest !== undefined) resumeFrom = newest.lastSequence + 1;
-      }
+      // One clock read, used for both the bucket being seeded and the instant
+      // the builder treats as "when this client connected".
+      //
+      // They were two reads separated by an awaited network round trip. A
+      // bucket boundary landing inside that window put them in different
+      // buckets, and then neither could draw: the re-seed loop exited at once
+      // because the bucket had rolled, while the builder refused the new
+      // bucket because it had begun at or before `openedAt`. One live bar lost
+      // to a race — the very defect this code exists to prevent, in its
+      // narrowest form. Found by the PH-21 closure audit.
+      const openedAt = Date.now();
+      const bucketNow = bucketStart(openedAt, frame.durationMs);
+      const readSeed = async (): Promise<readonly HistoryCandle[]> => {
+        if (frame.durationMs <= MINUTE_MS) return [];
+        const minutes = await fetchHistory(
+          apiBase,
+          asset.id,
+          '1m',
+          bucketNow,
+          Date.now(),
+          controller.signal,
+        );
+        return minutes.candles.filter(
+          (bar) => bucketStart(bar.openInstant, frame.durationMs) === bucketNow,
+        );
+      };
 
+      // Read whether or not the stream can resume. The seed is the record
+      // either way, and when the replay window cannot reach back to where the
+      // record stops it is the *only* honest account of the bucket now forming.
+      let seed = await readSeed();
+      if (cancelled) return;
+
+      let resumeFrom: number | null = null;
+      const lastMinute = seed[seed.length - 1];
+      if (lastMinute !== undefined) resumeFrom = lastMinute.lastSequence + 1;
+      // A one-minute chart needs no seed: the bucket after the newest history
+      // bar begins at the tick the resume starts from.
+      if (resumeFrom === null && newest !== undefined) resumeFrom = newest.lastSequence + 1;
+
+      const historyThrough =
+        newest === undefined ? null : bucketStart(newest.openInstant, frame.durationMs);
       const builder = new LiveBarBuilder(
         frame.durationMs,
         asset,
-        newest === undefined ? null : bucketStart(newest.openInstant, frame.durationMs),
-        Date.now(),
-        resumeFrom !== null,
+        historyThrough,
+        openedAt,
+        resumeFrom,
       );
-      const lastSeeded = seed[seed.length - 1];
-      if (lastSeeded !== undefined) {
-        builder.seedFrom(seed, lastSeeded.lastSequence);
-        const forming = builder.current();
-        if (forming !== null) {
-          target.update({ ...forming, time: forming.time as UTCTimestamp });
-        }
-      }
+      const draw = (): void => {
+        const bar = builder.current();
+        if (bar === null) return;
+        target.update({ ...bar, time: bar.time as UTCTimestamp });
+        setForming({ time: bar.time, close: bar.close });
+      };
+      const applySeed = (): void => {
+        const through = seed[seed.length - 1];
+        if (through === undefined) return;
+        builder.seedFrom(seed, through.lastSequence);
+        draw();
+      };
+      applySeed();
 
       if (!asset.live) {
         setStatus('history only — this market is not hosted');
@@ -282,16 +359,68 @@ export function PreviewChart({
 
       // A new stream from now, never a resume: the history was just refetched,
       // so the record is current and the builder's join is this connection's.
+      //
+      // `onGap=live` is what stops a refused resume from costing a whole
+      // bucket. The feed keeps a bounded window of ticks, and a restart empties
+      // it while the candle record keeps everything — so the sequence after the
+      // newest stored minute is routinely *older* than anything the feed still
+      // has. Refused, the client fell back to drawing no live bar at all: the
+      // price line moved and the newest candle stood still for up to an hour.
+      // Reported on 2026-09-02, and reproduced by hosted CI as five `400`s on
+      // `?from=` (run 33689094040). Asking to be told instead yields the live
+      // edge plus an explicit `gap` event, which the handler below answers by
+      // drawing the bucket from the record rather than from a hole.
       const opened = new EventSource(
         resumeFrom === null
           ? `${apiBase}/markets/${asset.id}/stream`
-          : `${apiBase}/markets/${asset.id}/stream?from=${resumeFrom}`,
+          : `${apiBase}/markets/${asset.id}/stream?from=${resumeFrom}&onGap=live`,
       );
       stream = opened;
-      let everOpened = false;
+      // The engine could not replay from where the record stops, and said so.
+      // The bucket now forming is then the record's alone: this client's ticks
+      // begin after a hole, so folding them onto the seed would draw one bar
+      // out of two pieces. Instead the seed is re-read while the bucket lasts —
+      // every completed minute widens it — and the price line carries the live
+      // edge, which is exactly what it carries when the resume succeeds.
+      //
+      // Note what this does *not* do: it does not decide whether the bar may
+      // absorb ticks. `LiveBarBuilder` was given the sequence this connection
+      // asked for and checks the answer itself, so a gap nobody noticed is
+      // still refused. This handler is the earlier of the two signals — it
+      // arrives before any tick — and it drives what the viewer is told and
+      // when the record starts being re-read.
+      const recordOnly = (): void => {
+        if (cancelled || !self.joinExact) return;
+        self.joinExact = false;
+        setStatus(liveStatus());
+        applySeed();
+        // One interval per connection. A reconnect that gapped again used to
+        // leave the previous attempt's interval running against the previous
+        // attempt's builder, redrawing a bar nothing owned any more.
+        stopReseeding();
+        reseedTimer = setInterval(() => {
+          if (cancelled) return;
+          // Once the bucket has rolled, this client holds the new one from its
+          // first tick and `accept` builds it. Re-seeding then would overwrite
+          // a bar it owns with the record's partial view of it.
+          if (bucketStart(Date.now(), frame.durationMs) !== bucketNow) {
+            stopReseeding();
+            return;
+          }
+          void readSeed()
+            .then((fresh) => {
+              if (cancelled || fresh.length === 0) return;
+              seed = fresh;
+              applySeed();
+            })
+            .catch(() => {
+              // A failed refresh leaves the last good bar drawn. The stall
+              // watchdog already speaks for a market that has gone quiet.
+            });
+        }, RESEED_INTERVAL_MS);
+      };
+      opened.addEventListener('gap', recordOnly);
       opened.onopen = (): void => {
-        everOpened = true;
-        resumeRefused = false;
         failures = 0;
         setStatus(liveStatus());
         armStall();
@@ -323,7 +452,15 @@ export function PreviewChart({
 
         // And a candle only for a bucket this client watched from its start.
         const bar = builder.accept(tick);
-        if (bar !== null) target.update({ ...bar, time: bar.time as UTCTimestamp });
+        if (bar !== null) {
+          target.update({ ...bar, time: bar.time as UTCTimestamp });
+          setForming({ time: bar.time, close: bar.close });
+        }
+        // The second signal, and the one that does not depend on being told.
+        // The builder compares the sequence it asked to resume at against the
+        // first tick it actually received; if they differ the stream did not
+        // continue the record, whether or not a `gap` event said so.
+        if (builder.joinBroken()) recordOnly();
       };
       opened.onerror = (): void => {
         // Ours to handle, not the browser's: its own retry would carry a
@@ -331,9 +468,6 @@ export function PreviewChart({
         opened.close();
         if (stream !== opened) return;
         stream = null;
-        // Never opened, and we had asked to resume: the engine refused the
-        // sequence. Ask for the live edge next time.
-        if (!everOpened && resumeFrom !== null) resumeRefused = true;
         if (stallTimer !== null) clearTimeout(stallTimer);
         retryLater('stream interrupted');
       };
@@ -350,7 +484,14 @@ export function PreviewChart({
       stream?.close();
       if (reconnectTimer !== null) clearTimeout(reconnectTimer);
       if (stallTimer !== null) clearTimeout(stallTimer);
-      if (priceLine !== null) target.removePriceLine(priceLine);
+      stopReseeding();
+      // **Disposed by the time this runs.** React cleans effects up in the
+      // order they were declared, so the effect that owns the chart has already
+      // called `remove()` when the asset changes — and every method on a
+      // removed series throws `Object is disposed`, which surfaced as a console
+      // error on every switch. The price line dies with the chart; there is
+      // nothing to release.
+      if (priceLine !== null && chart.current !== null) target.removePriceLine(priceLine);
     };
   }, [apiBase, asset, timeframeId]);
 
@@ -400,6 +541,9 @@ export function PreviewChart({
           </span>
         )}
         <span data-testid="bar-count">{bars.toLocaleString()} bars</span>
+        <span data-testid="forming-bucket" style={{ color: '#5b6377' }}>
+          {forming === null ? 'no live bar' : `live bar ${String(forming.time)}`}
+        </span>
         <span>quantum {asset.logQuantum.toExponential(3)}</span>
         <span>tie rate {(100 * asset.tieRate).toFixed(2)}%</span>
         <span>quarterly spread {(100 * asset.dispersion.quarterlyPercent).toFixed(1)}%</span>

@@ -498,8 +498,8 @@ finding is verified through it.
 | ----- | --------------------------------------------------- | ------------ |
 | PH-19 | Close what Cycle Audit 6 falsified                  | **APPROVED** |
 | PH-20 | The operator panel: trusted, and able to administer | **APPROVED** |
-| PH-21 | The catalogue at scale                              | **ACTIVE**   |
-| —     | **Cycle Audit 7**                                   | not started  |
+| PH-21 | The catalogue at scale                              | **APPROVED** |
+| —     | **Cycle Audit 7**                                   | **next**     |
 
 ### PH-19 — Close What Cycle Audit 6 Falsified
 
@@ -543,7 +543,7 @@ storage, in scheduling and in differentiation headroom is still unmeasured.
 | -------- | ------------------------------------------------- | -------- |
 | PH-21.1  | A hundred assets, and what registering them costs | APPROVED |
 | PH-21.2  | The venue and the store under a full catalogue    | APPROVED |
-| PH-21.3  | A panel that can hold a hundred assets            | ACTIVE   |
+| PH-21.3  | A panel that can hold a hundred assets            | APPROVED |
 
 ## Cycle 8 — Distribution under thousands of observers
 
@@ -593,8 +593,9 @@ resumption and an explicit refusal when the sequence has been evicted, and a gap
 served in silence is indistinguishable from the market (INV-002). Any transport
 that replaces it has to bring that property with it, tested, before it ships.
 
-**Cycle Audit 7 comes first.** PH-19, PH-20 and PH-21 are three approved phases,
-and `GOVERNANCE.md` §28 stops normal development at that boundary. The audit is
+**Cycle Audit 7 comes first**, and PH-21 closed on 2026-09-02, so it is next.
+PH-19, PH-20 and PH-21 are three approved phases, and `GOVERNANCE.md` §28 stops
+normal development at that boundary. The audit is
 not optional and does not become optional because a phase is wanted; PH-22 is
 the first phase after it. §67 lets the audit's _depth_ be chosen by risk, and
 the out-of-band audit of 2026-09-02 covered most of this cycle's surface — so

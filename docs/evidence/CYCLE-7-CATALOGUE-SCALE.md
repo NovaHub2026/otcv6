@@ -73,7 +73,20 @@ clear the floor is refused at `differentiation` and never registered.
 ## What it found
 
 **One brief in 400 was still unauthorable**, after the clamp Cycle Audit 6 added
-for exactly this (CA6-24). All of them `alt-crypto`, all at the clamped ceiling:
+for exactly this (CA6-24).
+
+This did **not** come from the hundred-asset run above, which registered 100 of
+100 and refused none. It came from a separate 400-brief probe taken during
+PH-21.1 — 8 archetypes × 50 draws, ids `guard-<archetype>-<n>` — run to ask a
+question the hundred-asset run is too small to answer: not "does this build
+succeed" but "how often would one fail". Reporting it under this run's "what it
+found" conflated the two, which the PH-21 closure audit caught. The probe itself
+is not recorded as a separate evidence document, and should have been; what
+stands in the gate is the 200-brief version in
+`tools/sim/src/catalogueScale.stat.test.ts`, which asserts that no brief
+exhausts its retreats.
+
+All the failures were `alt-crypto`, all at the clamped ceiling:
 
 ```
 guard-alt-crypto-20 authoring: An excess kurtosis of 141.19 needs more cascade

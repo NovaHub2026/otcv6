@@ -595,6 +595,77 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
       BadRequestException,
     );
   });
+
+  /** A response that records what was written, and the status it was given. */
+  function recording(): { res: Response; status: () => number; body: () => string } {
+    let status = 0;
+    const chunks: string[] = [];
+    const res = {
+      writeHead: (code: number) => {
+        status = code;
+        return res;
+      },
+      write: (chunk: string) => {
+        chunks.push(chunk);
+        return true;
+      },
+      end: () => undefined,
+      on: () => undefined,
+      writableNeedDrain: false,
+    } as unknown as Response;
+    return { res, status: () => status, body: () => chunks.join('') };
+  }
+
+  it('tells a client about the gap instead of refusing it, when asked to (onGap=live)', () => {
+    // A refused resume used to cost the panel a whole bucket: the client fell
+    // back to drawing no live bar, so the price line moved while the newest
+    // candle stood still — for up to an hour on the default one-hour chart.
+    // Reported 2026-09-02 and reproduced by hosted CI as five 400s on `?from=`.
+    //
+    // The refusal was right and the fallback was not. The feed keeps a bounded
+    // window and a restart empties it, so the sequence after the newest *stored*
+    // candle is routinely older than anything the feed still has — through no
+    // fault of the client. `onGap=live` gets the live edge **and an explicit
+    // `gap` event**, which is what separates this from a silent jump forward:
+    // a gap a client is told about is not one it mistakes for the market.
+    const { controller, feed } = streaming();
+    const evicted = recording();
+    controller.stream('eurusd', evicted.res, request(), '1', 'live');
+    expect(evicted.status()).toBe(200);
+    expect(evicted.body()).toMatch(/^event: gap\ndata: /);
+    expect(JSON.parse(/^event: gap\ndata: (.*)\n\n/.exec(evicted.body())![1]!)).toMatchObject({
+      requested: 1,
+    });
+    // And it is a live subscription, not a consolation prize.
+    feed.publish('eurusd', [
+      { sequence: 11, instant: epochMillis(ORIGIN + 66_000), price: logPrice(1_003) },
+    ]);
+    expect(evicted.body()).toMatch(/\nid: 11\ndata: /);
+
+    // A sequence that was never published is the same kind of unanswerable.
+    const future = recording();
+    controller.stream('eurusd', future.res, request(), '99999', 'live');
+    expect(future.status()).toBe(200);
+    expect(future.body()).toMatch(/event: gap/);
+  });
+
+  it('refuses a gap policy it does not have, by name', () => {
+    // A mistyped policy that fell through to "refuse" would be a client
+    // believing it had asked to be told, and finding out as a dead stream.
+    const { controller } = streaming();
+    expect(() => controller.stream('eurusd', untouched(), request(), '1', 'lives')).toThrow(
+      /onGap must be 'live'/,
+    );
+  });
+
+  it('leaves a resume the feed can serve exactly alone, gap policy or not', () => {
+    const { controller } = streaming();
+    const served = recording();
+    controller.stream('eurusd', served.res, request(), '10', 'live');
+    expect(served.status()).toBe(200);
+    expect(served.body()).not.toMatch(/event: gap/);
+    expect(served.body()).toMatch(/^id: 10\ndata: /);
+  });
 });
 
 describe('what the brief parser refuses by name (a6-07, a6-08)', () => {

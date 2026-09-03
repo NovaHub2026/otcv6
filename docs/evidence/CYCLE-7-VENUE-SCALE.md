@@ -35,12 +35,21 @@ itself uses (ADR-0010).
 | 50      | 1,723,904       | 4.2          | 57.9                  | 413,723 |
 | 100     | 3,311,069       | 8.0          | 55.7                  | 413,177 |
 
-**The cost is linear in markets, and the constant is small.** Twenty times the
-markets cost twenty times the wall clock to within the noise; throughput falls
-7% from five markets to a hundred, which is cache behaviour rather than
-structure. The per-market-advance figure doubles from 5 to 25 markets and then
-stops moving — at five markets the fixed cost of an advance is amortised over
-too few of them to be visible.
+**The cost is linear in ticks, and the constant is small.** Twenty times the
+markets cost forty times the wall clock — 0.2 s to 8.0 s — and forty times the
+_ticks_: 85,751 to 3,311,069. Throughput is flat to within 7% across the whole
+range, and that is the linearity this table establishes. Scheduling cost tracks
+ticks published, not markets hosted.
+
+The per-market-advance column is therefore not a cost curve, and reading it as
+one was the first mistake made here. It doubles from 5 to 25 markets and then
+stops, because **the sizes are not samples of the same catalogue**: the runner
+assigns archetypes in rotation, so the 5-market slice is `major-fx`, `cross-fx`,
+`blue-chip-index`, `sector-etf` and `metal` — and excludes `energy`,
+`major-crypto` and `alt-crypto`, which are the three fastest tempo boxes. The
+small venue is slower per market because it is made of slower markets, not
+because a fixed cost is being amortised. Found by the PH-21 closure audit,
+which recomputed the ratio from the table's own columns.
 
 What that means for the product: at a hundred markets the venue spends **8
 seconds of CPU per six simulated hours**, so a real-time venue of a hundred
