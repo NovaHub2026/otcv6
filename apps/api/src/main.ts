@@ -5,6 +5,7 @@ import type { AssetRegistry } from '@otc/runtime';
 import { ADMIN_TOKEN } from './adminAuth.guard.js';
 import { AppModule } from './app.module.js';
 import { VenueService } from './venue.service.js';
+import { bindAddressFromEnvironment, isExposedBind } from './bind.js';
 
 /**
  * Boot the venue, then serve.
@@ -75,22 +76,18 @@ async function bootstrap(): Promise<void> {
   // which on a LAN meant anyone who could reach the port could create, rename
   // and retire assets. An operator who means to expose it says so:
   // `OTC_BIND=0.0.0.0` — and sets `OTC_ADMIN_TOKEN` first.
-  const host = bindAddressFromEnvironment();
+  const host = bindAddressFromEnvironment(process.env);
   const port = Number.parseInt(process.env.PORT ?? '3000', 10);
   await app.listen(port, host);
   const writes =
     app.get<string | null>(ADMIN_TOKEN) === null
       ? 'writes refused (OTC_ADMIN_TOKEN is not set)'
       : 'writes need the bearer token';
-  logger.log(`hosting ${venue.assetIds.length} markets on ${host}:${port}; ${writes}`);
-}
-
-/** The default bind address: this machine only. */
-const DEFAULT_BIND_ADDRESS = '127.0.0.1';
-
-function bindAddressFromEnvironment(): string {
-  const raw = process.env.OTC_BIND?.trim();
-  return raw === undefined || raw.length === 0 ? DEFAULT_BIND_ADDRESS : raw;
+  // The boot line says plainly when the service is reachable from outside this
+  // machine. It printed the address and left the reader to work out what it
+  // meant, which is not the same thing (CA7-28).
+  const reach = isExposedBind(host) ? 'REACHABLE FROM OTHER MACHINES' : 'this machine only';
+  logger.log(`hosting ${venue.assetIds.length} markets on ${host}:${port} (${reach}); ${writes}`);
 }
 
 void bootstrap().catch((error: unknown) => {

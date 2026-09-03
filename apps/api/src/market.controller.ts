@@ -34,6 +34,7 @@ import {
   OVERLAY_FIELDS,
   type AssetRegistry,
 } from '@otc/runtime';
+import { displayPrice } from '@otc/chart';
 import { HistoryService } from './history.service.js';
 import { RegistrationService } from './registration.service.js';
 import { VenueService } from './venue.service.js';
@@ -545,7 +546,7 @@ export class MarketController implements BeforeApplicationShutdown {
       displayPrice:
         tick === null || asset === undefined
           ? null
-          : displayPrice(
+          : renderPrice(
               tick.price,
               asset.instrument.logQuantum,
               asset.instrument.referencePrice,
@@ -558,13 +559,33 @@ export class MarketController implements BeforeApplicationShutdown {
   }
 }
 
-function displayPrice(
+/**
+ * A canonical integer, rendered for a screen.
+ *
+ * **Cycle Audit 7, CA7-34.** This was a second, independent implementation of
+ * `@otc/chart`'s `displayPrice`, and it used `Math.exp` where the portable
+ * kernel exists precisely because ECMAScript does not specify that function
+ * exactly — two engines may disagree on the last bits, and a display price that
+ * differed between a viewer's browser and an operator's would be two answers to
+ * one question about one market (INV-002).
+ *
+ * Measured across 20,475 sampled prices on all five catalogue assets, the two
+ * agreed bit for bit on this V8 build. That is what a latent divergence looks
+ * like before it happens: the agreement was a property of one engine version,
+ * nothing tested it, and the copy lived in the one directory the portability
+ * scan did not open (CA7-14, fixed alongside this).
+ *
+ * There is one conversion now, and it is the portable one.
+ */
+function renderPrice(
   price: number,
   logQuantum: number,
   referencePrice: number,
   precision: number,
 ): string {
-  return (referencePrice * Math.exp(price * logQuantum)).toFixed(precision);
+  return displayPrice(price, { logQuantum, referencePrice, displayPrecision: precision }).toFixed(
+    precision,
+  );
 }
 
 /**

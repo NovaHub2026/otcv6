@@ -455,6 +455,29 @@ describe('generation code is portable', () => {
     );
     expect(describeViolations(violations)).toBe('');
   });
+
+  it('nor does anything else that has to stay replayable (CA7-14)', () => {
+    // **Cycle Audit 7.** This guard scanned `GENERATION_ROOTS` and the tooling
+    // and stopped there, while {@link REPLAYABLE_ROOTS}'s own docstring says
+    // `runtime` and `trading` are "still bound by the rules that make a record
+    // reproducible: no ambient clock, no ambient mutable state, **no
+    // non-portable numerics**". Two of those three were enforced.
+    //
+    // It was not hypothetical. `apps/api/src/market.controller.ts` shipped a
+    // second implementation of `displayPrice` built on `Math.exp`, serving the
+    // price the panel shows — in the one directory neither this scan nor the
+    // type-aware ESLint block (`files: ['packages/*/src/**/*.ts']`) opened. An
+    // auditor planted `Math.log` and `Math.pow` into `settle.ts` and
+    // `publication.service.ts` and all 458 guardrail tests passed.
+    //
+    // The asymmetry is the tell: the *ambient time* rule already scanned these
+    // roots and caught a planted `Date.now()` in the same file on the same run.
+    // One rule reached the directory and its neighbour did not.
+    const violations = sourcesUnder(REPLAYABLE_ROOTS).flatMap(({ file, source }) =>
+      scanSource(file, source, PORTABILITY_RULES),
+    );
+    expect(describeViolations(violations)).toBe('');
+  });
 });
 
 describe('generation code is economically blind', () => {
