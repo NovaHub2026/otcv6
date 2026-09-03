@@ -538,6 +538,71 @@ export class LabController {
     };
   }
 
+  /**
+   * Every hosted market's state at once (PH-24.9): what is armed where, what
+   * landed, what is open — so a session across markets reads as one thing and
+   * the asset list can carry a badge without a request per market.
+   */
+  @Get('control')
+  controlAll(): unknown {
+    return {
+      environment: LAB,
+      markets: this.venue.assetIds.map((id) => {
+        const asset = this.venue.assetFor(id)!;
+        const snapshot = this.venue.hostedMarket(id)?.snapshotEngine();
+        const modulators =
+          (snapshot?.magnitudeState as { modulators?: ({ regime?: string } | null)[] } | undefined)
+            ?.modulators ?? [];
+        return {
+          id,
+          displayName: asset.definition.displayName,
+          price:
+            snapshot === undefined
+              ? null
+              : displayPrice(snapshot.price, {
+                  logQuantum: asset.instrument.logQuantum,
+                  referencePrice: asset.instrument.referencePrice,
+                  displayPrecision: asset.instrument.displayPrecision,
+                }).toFixed(asset.instrument.displayPrecision),
+          regime: modulators.find((mm) => mm !== null && 'regime' in mm)?.regime ?? null,
+          openPositions: this.positions.list(id).filter((p) => this.venue.now() <= p.expiryInstant)
+            .length,
+          ...this.controlState(id),
+        };
+      }),
+    };
+  }
+
+  /**
+   * Every armed market back to its keystream, one recorded action per market
+   * released. The one act safe to batch: it only ever returns markets to
+   * themselves.
+   */
+  @Post('release-all')
+  releaseAll(): unknown {
+    const released: { id: string; discarded: number; pendingTick: number | null }[] = [];
+    for (const id of this.venue.assetIds) {
+      const wrapper = this.signs.for(id);
+      if (wrapper === null || !wrapper.armed) continue;
+      const before = this.controlState(id);
+      const pendingTick = this.venue.hostedMarket(id)?.pending?.sequence ?? null;
+      const discarded = wrapper.release();
+      this.session.recordAction({
+        at: this.venue.now(),
+        asset: id,
+        engineVersion: ENGINE_VERSION,
+        action: 'release',
+        parameters: { all: true },
+        initialState: before,
+        resultingState: this.controlState(id),
+        succeeded: true,
+        diagnostics: { discarded, pendingTick },
+      });
+      released.push({ id, discarded, pendingTick });
+    }
+    return { environment: LAB, released };
+  }
+
   /** Whether a script is being played into this market, and how much remains. */
   @Get('markets/:id/control')
   control(@Param('id') id: string): unknown {

@@ -13,7 +13,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Remote             | `origin` → NovaHub2026/otcv6, public                                       |
 | Active cycle       | Cycle 8, **2 of 3** phases approved (PH-22, PH-23)                         |
 | Active phase       | PH-24 — The Lab's controls: applying a selection                           |
-| Active subphase    | PH-24.9 — Varios activos a la vez                                          |
+| Active subphase    | PH-24.10 — Reproducir y el espejo                                          |
 | Cycle Audit        | **007 closed** 2026-09-03; the next is due after three approved phases     |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                         |
 
@@ -34,15 +34,13 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-24.8 is approved; PH-24.9 is active**
-([PH-24.9](docs/phases/PH-24.9-varios-activos-a-la-vez.md)). The session
-survives the process (`<state dir>/lab/session.jsonl`, restored at boot,
-exported with a header that says what it is), positions have their own §70
-reading, a settlement tick on the boundary is named on the outcome line, and
-Mercado shows net displacement as what trend strength is. PH-24.9 puts every
-market's state in the asset list and a Tablero tab, and adds release-all.
-**The merge, hosted CI and Cycle Audit 8 wait until the Lab is complete**
-(`DECISION-LOG.md`, 2026-09-03). Run the browser suites under
+**PH-24.9 is approved; PH-24.10 is active**
+([PH-24.10](docs/phases/PH-24.10-reproducir-y-el-espejo.md)). Every market's
+state is on the asset list and the Tablero, and release-all is the one batched
+act. PH-24.10 gives §74–§77 a screen: kept snapshots, a replay checked against
+the record, and the mirror — two forks from one state, signs flipped, only the
+signs differ. **The merge, hosted CI and Cycle Audit 8 wait until the Lab is
+complete** (`DECISION-LOG.md`, 2026-09-03). Run the browser suites under
 `LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu`.
 
 **The next phase is the decision LA-03 names.** The Lab specification audit

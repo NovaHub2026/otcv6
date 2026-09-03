@@ -237,6 +237,21 @@ describe('the Lab is marked wherever it appears', () => {
     expect(read('../lib/es.ts')).toMatch(/no tiene un mecanismo de tendencia/);
   });
 
+  it('shows every market at once, and batches only release (PH-24.9)', () => {
+    const tablero = code('lab/Tablero.tsx');
+    expect(tablero).toMatch(/data-testid="lab-board"/);
+    expect(tablero).toMatch(/lab-board-state-/);
+    expect(tablero).toMatch(/(data-testid|testId)="lab-release-all"/);
+    // Release-all is disabled when nothing is armed: releasing keystreams releases nothing.
+    expect(tablero).toMatch(/disabled=\{busy !== null \|\| armed === 0\}/);
+    // The board never arms: the only act on it is release.
+    expect(tablero, 'the board arms something').not.toMatch(/\/close|\/scenario|preset/);
+    const lab = code('lab/Lab.tsx');
+    expect(lab).toMatch(/labGet<ControlAll>\('control'\)/);
+    expect(lab).toMatch(/lab-asset-badge-/);
+    expect(lab).toMatch(/labPost<\{ released: unknown\[\] \}>\('release-all'\)/);
+  });
+
   it('says the Lab is absent rather than hiding that it can be', () => {
     expect(lab()).toMatch(/lab-not-running/);
     expect(code('lab/[...path]/route.ts')).toMatch(/OTC_LAB_BASE/);

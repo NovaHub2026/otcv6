@@ -525,4 +525,55 @@ describe('Candle Close Control, from the panel', () => {
     expect(errors).toEqual([]);
     await page.close();
   }, 300_000);
+
+  it('PH-24.9: two markets armed read as two rows on the board, and one act releases both', async (ctx) => {
+    const page = await requireBrowser(ctx).newPage({ viewport: { width: 1280, height: 1600 } });
+    const { errors, dump } = instrument(page);
+    try {
+      await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
+      await page.waitForSelector('[data-testid="lab-control"]', { timeout: 30_000 });
+      for (const asset of ['eurusd', 'gbpjpy']) {
+        await page.click(`[data-testid="lab-asset-${asset}"]`);
+        await page.waitForTimeout(1_500);
+        await page.selectOption('[data-testid="lab-close-bucket"]', 'next');
+        await page.click('[data-testid="lab-close-delta-+1"]');
+        await page.waitForSelector('[data-testid="lab-close-plan"]', { timeout: 30_000 });
+        if (!/SÍ/.test(await text(page, 'lab-close-plan'))) {
+          await page.locator('[data-testid="lab-close-neighbour"]').last().click();
+        }
+        await page.waitForFunction(
+          (id) =>
+            /ARMADO/.test(
+              document.querySelector(`[data-testid="lab-asset-badge-${id}"]`)?.textContent ?? '',
+            ),
+          asset,
+          { timeout: 30_000 },
+        );
+      }
+      await page.click('[data-testid="tab-board"]');
+      await page.waitForSelector('[data-testid="lab-board"]', { timeout: 30_000 });
+      expect(await text(page, 'lab-board-state-eurusd')).toMatch(/ARMADO/);
+      expect(await text(page, 'lab-board-state-gbpjpy')).toMatch(/ARMADO/);
+      await page.click('[data-testid="lab-release-all"]');
+      await page.waitForFunction(
+        () =>
+          /keystream/.test(
+            document.querySelector('[data-testid="lab-board-state-eurusd"]')?.textContent ?? '',
+          ) &&
+          /keystream/.test(
+            document.querySelector('[data-testid="lab-board-state-gbpjpy"]')?.textContent ?? '',
+          ),
+        null,
+        { timeout: 30_000 },
+      );
+      await page.click('[data-testid="tab-session"]');
+      const session = await text(page, 'lab-session-lab');
+      expect((session.match(/liberado ✓/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    } catch (error) {
+      console.error(await dump());
+      throw error;
+    }
+    expect(errors).toEqual([]);
+    await page.close();
+  }, 300_000);
 });

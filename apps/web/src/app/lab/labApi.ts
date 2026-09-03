@@ -95,6 +95,18 @@ export interface Control {
   } | null;
 }
 
+export interface MarketControl extends Control {
+  readonly id: string;
+  readonly displayName: string;
+  readonly price: string | null;
+  readonly regime: string | null;
+  readonly openPositions: number;
+}
+
+export interface ControlAll {
+  readonly markets: readonly MarketControl[];
+}
+
 export interface Session {
   readonly engine: readonly { at: number; asset: string; kind: string; detail: string }[];
   readonly lab: readonly {

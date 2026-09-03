@@ -479,6 +479,80 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     await venue.stop();
   }, 60_000);
 
+  it('PH-24.9: reports every market at once and releases them all, one action per market', async () => {
+    const two = ASSET_CATALOGUE.slice(0, 2);
+    const clock = new SteppableClock(GENESIS);
+    const selector = new SignSelector();
+    const venue = new VenueService(
+      new MemoryStateStore(),
+      keyring(),
+      clock,
+      [...two],
+      5_000,
+      new PublicationService([...two]),
+      null,
+      null,
+      0,
+      (keystream, assetId) => selector.wrap(keystream, assetId),
+    );
+    await venue.start();
+    const controller = new LabController(venue, selector, new LabSession());
+    await advance(venue, clock, 20_000);
+    const ids = two.map((a) => a.definition.id);
+    for (const assetId of ids) {
+      const plus1 = controller.closePreview(
+        assetId,
+        undefined,
+        'next',
+        '1m',
+        undefined,
+        undefined,
+        '1',
+      ) as Applied & { impossible: string | null };
+      const reachable = plus1.impossible === null ? '1' : '2';
+      const applied = (await controller.applyClose(
+        assetId,
+        undefined,
+        'next',
+        '1m',
+        undefined,
+        undefined,
+        reachable,
+      )) as Applied;
+      expect(applied.armed).toBe(true);
+    }
+    const all = controller.controlAll() as {
+      markets: {
+        id: string;
+        armed: boolean;
+        price: string | null;
+        regime: string | null;
+        openPositions: number;
+      }[];
+    };
+    expect(all.markets.map((m) => m.id).sort()).toEqual([...ids].sort());
+    for (const market of all.markets) {
+      expect(market.armed).toBe(true);
+      expect(market.price).toMatch(/^[0-9]+\.[0-9]+$/);
+      expect(market.regime).not.toBeNull();
+      expect(market.openPositions).toBe(0);
+    }
+    const released = controller.releaseAll() as { released: { id: string; discarded: number }[] };
+    expect(released.released.map((r) => r.id).sort()).toEqual([...ids].sort());
+    for (const r of released.released) expect(r.discarded).toBeGreaterThan(0);
+    const after = controller.controlAll() as { markets: { armed: boolean }[] };
+    expect(after.markets.every((m) => !m.armed)).toBe(true);
+    const timelines = controller.sessionTimelines() as {
+      lab: { action: string; asset: string; parameters: Record<string, unknown> }[];
+    };
+    const releases = timelines.lab.filter((a) => a.action === 'release');
+    expect(releases.map((a) => a.asset).sort()).toEqual([...ids].sort());
+    expect(releases.every((a) => a.parameters['all'] === true)).toBe(true);
+    // A second release-all releases nothing and records nothing.
+    expect((controller.releaseAll() as { released: unknown[] }).released).toEqual([]);
+    await venue.stop();
+  }, 60_000);
+
   it('answers 409 when the process was not composed as a Lab', async () => {
     const { venue, clock, controller } = await labVenue(false);
     await advance(venue, clock, 5_000);

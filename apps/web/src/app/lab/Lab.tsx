@@ -13,7 +13,9 @@ import {
   type ClosesView,
   type CloseTimeframe,
   type Control,
+  type ControlAll,
   type LabMarket,
+  type MarketControl,
   type LabPositionView,
   type LabState,
   type PositionsView,
@@ -28,6 +30,7 @@ import { Posiciones } from './Posiciones.js';
 import { Escenarios } from './Escenarios.js';
 import { QualityPanel } from './Calidad.js';
 import { Sesion } from './Sesion.js';
+import { Tablero } from './Tablero.js';
 
 /**
  * El OTC Lab, en el panel (PH-23.5), rediseñado en PH-24.6.
@@ -53,7 +56,7 @@ import { Sesion } from './Sesion.js';
  * El Lab es un proceso aparte y esto apunta a él solo si `OTC_LAB_BASE` lo
  * nombra. Sin Lab la pantalla lo dice, y dice cómo arrancar uno (ADR-0015 §3).
  */
-type Tab = 'market' | 'close' | 'positions' | 'scenarios' | 'quality' | 'session';
+type Tab = 'board' | 'market' | 'close' | 'positions' | 'scenarios' | 'quality' | 'session';
 
 export function Lab(): ReactElement {
   const [assets, setAssets] = useState<LabMarket[]>([]);
@@ -74,6 +77,7 @@ export function Lab(): ReactElement {
   const [session, setSession] = useState<Session | null>(null);
   const [closes, setCloses] = useState<ClosesView | null>(null);
   const [positionsView, setPositionsView] = useState<PositionsView | null>(null);
+  const [all, setAll] = useState<ControlAll | null>(null);
   const [positions, setPositions] = useState<LabPositionView[]>([]);
   const [positionNotice, setPositionNotice] = useState<string | null>(null);
   const [scenarios, setScenarios] = useState<ScenarioView[]>([]);
@@ -108,14 +112,16 @@ export function Lab(): ReactElement {
     }
     setUnavailable(null);
     setState(body);
-    const [ctl, timelines, open, diagnostic, settled] = await Promise.all([
+    const [ctl, timelines, open, diagnostic, settled, everyMarket] = await Promise.all([
       labGet<Control>(`markets/${asset}/control`),
       labGet<Session>('session'),
       labGet<{ positions: LabPositionView[] }>(`markets/${asset}/positions`),
       labGet<ClosesView>('session/closes'),
       labGet<PositionsView>('session/positions'),
+      labGet<ControlAll>('control'),
     ]);
     if (!isUnavailable(settled)) setPositionsView(settled);
+    if (!isUnavailable(everyMarket)) setAll(everyMarket);
     if (!isUnavailable(ctl)) setControl(ctl);
     if (!isUnavailable(timelines)) setSession(timelines);
     if (!isUnavailable(open)) setPositions(open.positions);
@@ -230,6 +236,18 @@ export function Lab(): ReactElement {
     if (apply) void refreshState(selected);
   };
 
+  const releaseAll = async (): Promise<void> => {
+    setBusy('release-all');
+    const body = await labPost<{ released: unknown[] }>('release-all');
+    setBusy(null);
+    if (isUnavailable(body)) {
+      setUnavailable(body.reason);
+      return;
+    }
+    setPlan(null);
+    if (selected !== null) void refreshState(selected);
+  };
+
   const releaseMarket = async (): Promise<void> => {
     if (selected === null) return;
     setBusy('release');
@@ -326,12 +344,13 @@ export function Lab(): ReactElement {
       <Banner />
       {unavailable !== null && <NotRunning reason={unavailable} />}
       <div style={{ display: 'flex', gap: 0, flex: 1, minHeight: 0 }}>
-        <AssetList assets={assets} selected={selected} onSelect={setSelected} />
+        <AssetList assets={assets} selected={selected} onSelect={setSelected} all={all} />
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
           <HeaderStrip state={state} regime={regime} control={control} />
           <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: '0 16px 16px' }}>
             <Tabs<Tab>
               tabs={[
+                { key: 'board', label: es.lab.tabs.board },
                 { key: 'market', label: es.lab.tabs.market },
                 { key: 'close', label: es.lab.tabs.close },
                 { key: 'positions', label: es.lab.tabs.positions },
@@ -342,6 +361,17 @@ export function Lab(): ReactElement {
               active={tab}
               onChange={setTab}
             />
+            <div hidden={tab !== 'board'}>
+              <Tablero
+                all={all}
+                busy={busy}
+                onReleaseAll={releaseAll}
+                onSelect={(id) => {
+                  setSelected(id);
+                  setTab('close');
+                }}
+              />
+            </div>
             <div hidden={tab !== 'market'}>
               <Mercado state={state} />
             </div>
@@ -446,10 +476,12 @@ function AssetList({
   assets,
   selected,
   onSelect,
+  all,
 }: {
   assets: readonly LabMarket[];
   selected: string | null;
   onSelect: (id: string) => void;
+  all: ControlAll | null;
 }): ReactElement {
   return (
     <aside
@@ -485,6 +517,7 @@ function AssetList({
           <div style={{ fontSize: 10, color: T.faint }}>
             {asset.id} · {asset.family}
           </div>
+          <MarketBadge market={all?.markets.find((m) => m.id === asset.id) ?? null} />
         </button>
       ))}
     </aside>
@@ -537,5 +570,24 @@ function HeaderStrip({
         </span>
       )}
     </div>
+  );
+}
+
+/** A market's state in one word on the asset list (PH-24.9): armed, or how its last close ended. */
+function MarketBadge({ market }: { market: MarketControl | null }): ReactElement | null {
+  if (market === null) return null;
+  if (market.armed) {
+    return (
+      <Badge tone="lab" testId={`lab-asset-badge-${market.id}`}>
+        {`${es.lab.header.armed} · ${String(market.remaining)}`}
+      </Badge>
+    );
+  }
+  const last = market.lastApplied;
+  if (last === null || last.closedPrice === null) return null;
+  return (
+    <Badge tone={last.exact === true ? 'ok' : 'bad'} testId={`lab-asset-badge-${market.id}`}>
+      {last.exact === true ? 'EXACTO' : 'FALLÓ'}
+    </Badge>
   );
 }
