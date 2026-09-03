@@ -309,3 +309,77 @@ patch applied by a test, a rename. Rejected as laundering.
 
 **Revisit when:** the Human Owner applies the proposal or grants the permission.
 Issue #14 stays open until then.
+
+---
+
+## 2026-09-02 — Distribution at scale is the next phase, and the transport is not the lever
+
+**Decided:** PH-22 is distribution under thousands of observers, prioritised by
+the Human Owner ahead of everything else after PH-21 and Cycle Audit 7. The
+transport stays SSE until a measurement says otherwise.
+
+**Why:** the question was whether thousands of clients with several charts each
+argue for WebSocket. Measured on the running engine: a WebSocket frame costs 2
+bytes against SSE's 18, on a 58-byte payload — 21% of the traffic, which at the
+venue's own measured rate is 24 bytes per second per viewer. Latency is
+identical; both are one TCP connection already open, and SSE starts marginally
+sooner because there is no upgrade handshake.
+
+Reading the delivery path found the thing that does matter: the SSE frame is
+built inside the per-subscriber callback, so one tick is serialised once per
+subscriber — ~120,000 times a second at the scale being planned (Issue #15).
+That is one to two cores, it is a hundred times the framing difference, and
+switching transport does not touch it.
+
+**What WebSocket would genuinely buy** is binary framing: a tick is three
+numbers and fits in 16 bytes against 58 as JSON, and SSE is text-only so binary
+costs a base64 tax. That is a real argument, worth 9.1 MB/s against 2.2 MB/s at
+ten thousand clients — and it is an argument to make _after_ serialising once,
+multiplexing assets onto one connection (Issue #16) and putting HTTP/2 in front,
+because those three are free of protocol risk and one of them is larger than the
+protocol.
+
+**What it would cost.** `Last-Event-ID` is part of SSE: exact resumption, and an
+explicit refusal when the sequence has been evicted. On WebSocket that is code
+to write, test and audit, and a silently served gap is INV-002 broken.
+
+**Revisit when:** PH-22 has measured a thousand, five thousand and ten thousand
+concurrent subscribers with the fan-out fixed. If bandwidth or CPU still bind,
+the binary tick and its transport get their own ADR.
+
+## 2026-09-02 — A refused resume may ask to be told instead (`onGap=live`)
+
+**Decision.** `GET /markets/:id/stream` takes an optional `onGap=live`. Without
+it, a sequence the feed cannot serve is a `400`, exactly as before. With it, the
+client gets the live edge and an explicit `gap` event carrying the sequence it
+asked for and the feed's own reason.
+
+**Why not simply keep refusing.** The refusal is right and the panel's fallback
+to it was ruinous. The panel resumes from where the _record_ stops rather than
+from where it was last delivered — it has just loaded history — and the feed's
+tick window is bounded and is emptied by a restart, so that sequence is
+routinely older than anything the feed holds. Refused, the panel drew no live
+bar and the newest candle stood still for up to an hour while the price line
+moved. Reported twice by the Human Owner and reproduced by hosted CI (run
+33689094040, five failed panel tests) against a green local gate.
+
+**Why not make it the default.** A silent jump forward is what CA6-31 and
+CA6-32 exist to prevent, and a client that did not ask to be told would be
+handed one. Opt-in leaves every existing client's contract exactly where it was;
+the `gap` event is what makes the opt-in honest, because a gap a client is told
+about is not a gap it mistakes for the market (INV-002).
+
+**Why not an ADR.** It adds a parameter and preserves the default. The
+architecture it belongs to is written down in `CATALOGUE_AND_PANEL.md` §5.2.
+
+## 2026-09-02 — The local launcher serves the working tree
+
+**Decision.** `~/.otc-local/start.sh` defaults `OTC_TREE` to `$HOME/Projects/otcv6`
+and prints the tree, branch and commit it served.
+
+**Why.** It pointed at `~/.otc-audit7/fix`, the out-of-band audit's worktree,
+parked on `main`. Two rounds of "the chart is still broken" were about a program
+that had never contained the fix. Both reports were accurate; they were about a
+different build. The third instance of this project's most expensive mistake —
+testing the wrong thing and believing the answer — so the launcher now says what
+it ran (see PH-21.3 §5.1).

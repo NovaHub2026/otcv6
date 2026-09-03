@@ -25,7 +25,7 @@ import {
   dispersionPercent,
   type AssetBrief,
 } from '@otc/engine';
-import { epochMillis, isTimeframeId, timeframe as timeframeById } from '@otc/core';
+import { epochMillis, isTimeframeId, timeframe as timeframeById, type Tick } from '@otc/core';
 import {
   assertOverlay,
   HistoryError,
@@ -409,10 +409,17 @@ export class MarketController implements BeforeApplicationShutdown {
     @Res() res: Response,
     @Req() request: Request,
     @Query('from') from?: string,
+    @Query('onGap') onGap?: string,
   ): void {
     if (!this.venue.assetIds.includes(id)) {
       throw new NotFoundException(`Unknown asset ${id}.`);
     }
+    // Only one value, and it must be spelled: a mistyped policy that silently
+    // meant "refuse" would be a client believing it had asked to be told.
+    if (onGap !== undefined && onGap !== 'live') {
+      throw new BadRequestException(`onGap must be 'live' if present, received ${onGap}.`);
+    }
+    const liveOnGap = onGap === 'live';
     let fromSequence: number | undefined;
     if (from !== undefined) {
       fromSequence = Number.parseInt(from, 10);
@@ -451,33 +458,44 @@ export class MarketController implements BeforeApplicationShutdown {
       else buffered.push(chunk);
     };
 
+    const sink = {
+      deliver: (_assetId: string, ticks: readonly Tick[]): boolean => {
+        for (const tick of ticks) {
+          // One event per tick, carrying the sequence as the SSE id so a
+          // reconnecting client knows exactly where it stopped.
+          write(`id: ${tick.sequence}\ndata: ${JSON.stringify(tick)}\n\n`);
+        }
+        // False once the socket buffer is full: the feed then disconnects
+        // rather than degrading this client's view.
+        return !headersSent || !res.writableNeedDrain;
+      },
+      close: (reason: string): void => {
+        write(`event: close\ndata: ${JSON.stringify({ reason })}\n\n`);
+        if (headersSent) res.end();
+      },
+    };
+
     let subscription: { cancel: (reason?: string) => void } | null = null;
     try {
-      subscription = this.venue.feed.subscribe(
-        id,
-        {
-          deliver: (_assetId, ticks): boolean => {
-            for (const tick of ticks) {
-              // One event per tick, carrying the sequence as the SSE id so a
-              // reconnecting client knows exactly where it stopped.
-              write(`id: ${tick.sequence}\ndata: ${JSON.stringify(tick)}\n\n`);
-            }
-            // False once the socket buffer is full: the feed then disconnects
-            // rather than degrading this client's view.
-            return !headersSent || !res.writableNeedDrain;
-          },
-          close: (reason): void => {
-            write(`event: close\ndata: ${JSON.stringify({ reason })}\n\n`);
-            if (headersSent) res.end();
-          },
-        },
-        fromSequence,
-      );
+      subscription = this.venue.feed.subscribe(id, sink, fromSequence);
     } catch (error) {
       if (error instanceof EvictedError || error instanceof UnknownSequenceError) {
-        throw new BadRequestException(error.message);
+        if (!liveOnGap) throw new BadRequestException(error.message);
+        // Asked to be told rather than refused. The client gets the live edge
+        // **and an explicit `gap` event naming what it will not receive**,
+        // which is the whole difference between this and a silent jump
+        // forward: a gap a client is told about is not a gap it mistakes for
+        // the market (INV-002).
+        subscription = this.venue.feed.subscribe(id, sink);
+        write(
+          `event: gap\ndata: ${JSON.stringify({
+            requested: fromSequence,
+            reason: error.message,
+          })}\n\n`,
+        );
+      } else {
+        throw error;
       }
-      throw error;
     }
 
     res.writeHead(200, {

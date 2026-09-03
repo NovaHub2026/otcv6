@@ -150,11 +150,32 @@ async function main(): Promise<void> {
     });
     candles += result.baseCandles;
   }
-  const bytes = (await stat(dbPath)).size;
+  // **The measurement this runner got wrong on its first execution.** SQLite is
+  // in WAL mode, so a `stat` of `history.db` immediately after the writes reads
+  // a nearly empty file — everything is still in `history.db-wal` until a
+  // checkpoint. The first run of this runner duly reported 23,032 minute bars
+  // occupying 0.0 MB, and a storage budget of 0.00 GB for a hundred assets,
+  // which is the shape of a recorded number that is simply false.
+  //
+  // Closing the database checkpoints the WAL into the main file, and the sum is
+  // taken across all three files anyway, so neither a checkpoint that has not
+  // happened nor one that has can move the total.
+  history.close();
+  const bytes = (
+    await Promise.all(
+      ['', '-wal', '-shm'].map(async (suffix) => {
+        try {
+          return (await stat(`${dbPath}${suffix}`)).size;
+        } catch {
+          return 0;
+        }
+      }),
+    )
+  ).reduce((total, size) => total + size, 0);
   const perAssetDay = bytes / sample.length / STORAGE_DAYS;
   console.info(
     `${sample.length} assets x ${STORAGE_DAYS} days = ${candles.toLocaleString()} minute bars, ` +
-      `${(bytes / 1e6).toFixed(1)} MB on disk.\n`,
+      `${(bytes / 1e6).toFixed(1)} MB on disk (${(bytes / candles).toFixed(0)} bytes per bar).\n`,
   );
   console.info(`| per asset-day | per asset-quarter | 100 assets, one quarter |`);
   console.info(`| --- | --- | --- |`);

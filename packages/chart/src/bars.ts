@@ -130,6 +130,12 @@ export function bucketStart(instant: number, durationMs: number): number {
 export class LiveBarBuilder {
   #open: { time: number; open: number; high: number; low: number; close: number } | null = null;
   #lastSequence: number | null = null;
+  /** Bucket start most recently seeded from the record; a re-seed may not precede it. */
+  #seeded: number | null = null;
+  /** Whether the resume claim has been tested against a tick yet. */
+  #joinChecked = false;
+  /** Set when the first tick proved the stream did not continue where it claimed. */
+  #joinBroken = false;
 
   constructor(
     readonly durationMs: number,
@@ -148,10 +154,36 @@ export class LiveBarBuilder {
      * the record holds and the extreme-preserving contract exists to protect.
      *
      * So a live bar is built only for a bucket that *started after* this client
-     * connected. Until the next boundary the newest bar on the chart is the
-     * newest bar in the record, which is the only honest thing to draw.
+     * connected — **unless** the caller can show it holds the bucket from its
+     * true beginning, which is what {@link gaplessFromHistory} says.
      */
     private readonly openedAtMs: number | null = null,
+    /**
+     * The sequence the stream was asked to resume at, or `null` for the live
+     * edge — **a claim this builder verifies rather than believes**.
+     *
+     * Set it to `lastSequence + 1` of the newest bar handed in as history (or
+     * of the last seeded minute): the record then covers everything before that
+     * sequence and this client holds everything from it, so a bucket after
+     * `historyThroughMs` is one it holds *entire*. Nothing is rebuilt from a
+     * partial view, which is the whole of what CA6-30 forbids.
+     *
+     * Why it matters: without it, the newest bar cannot move until the next
+     * bucket boundary — up to a full hour on the panel's default one-hour
+     * chart, with the live price line drifting away from a candle that never
+     * follows it. Reported on 2026-09-02 as "the price moves and the candle
+     * stands still", which was two correct rules producing a wrong screen.
+     *
+     * Why a sequence and not a boolean. As a boolean it was the *caller's*
+     * assurance, and the caller got it wrong: the panel latched a "we gapped"
+     * flag per effect instead of per connection, so a reconnect that gapped a
+     * second time went on folding post-hole ticks onto a record seed while the
+     * status bar said otherwise. Found by the PH-21 closure audit. A sequence
+     * is checkable — if the first tick to arrive is not the one that was asked
+     * for, the stream did not continue the record, and {@link joinBroken} says
+     * so **from the data** rather than on the caller's word.
+     */
+    private readonly resumedAtSequence: number | null = null,
   ) {
     if (!Number.isFinite(durationMs) || durationMs <= 0) {
       throw new SeriesError(`A bar duration must be positive, got ${durationMs}.`);
@@ -168,13 +200,35 @@ export class LiveBarBuilder {
    */
   accept(tick: Tick): Bar | null {
     if (this.#lastSequence !== null && tick.sequence <= this.#lastSequence) return null;
+
+    // The first tick that is not a replay settles whether the resume held. A
+    // stream that was asked for sequence N and answers with anything else did
+    // not continue the record — whatever the caller believed, and whether or
+    // not the caller was told. Replays are excluded above, so this is the tick
+    // the subscription actually began at.
+    if (this.resumedAtSequence !== null && !this.#joinChecked) {
+      this.#joinChecked = true;
+      if (tick.sequence !== this.resumedAtSequence) this.#joinBroken = true;
+    }
     this.#lastSequence = tick.sequence;
 
     const start = bucketStart(tick.instant, this.durationMs);
     // Any bucket that had already begun is the record's, not ours — whether it
     // was flushed to history or was still open when this client connected.
     if (this.historyThroughMs !== null && start <= this.historyThroughMs) return null;
-    if (this.openedAtMs !== null && start <= bucketStart(this.openedAtMs, this.durationMs)) {
+    // A seeded bucket is no exemption. The seed is the *record*; the live
+    // stream is this client's. Joining them is only sound when the stream
+    // resumed at the tick after the seed — which is exactly what
+    // `gaplessFromHistory` asserts. Without that, the ticks between the last
+    // seeded minute and this client's first are unaccounted for, and folding
+    // the tail onto the seed would draw a bucket out of two pieces with a hole
+    // between them. Such a bar is refreshed by seeding again, never by
+    // accepting a tick.
+    if (
+      !this.#gapless &&
+      this.openedAtMs !== null &&
+      start <= bucketStart(this.openedAtMs, this.durationMs)
+    ) {
       return null;
     }
 
@@ -195,9 +249,88 @@ export class LiveBarBuilder {
     return { ...this.#open };
   }
 
+  /**
+   * Start the forming bucket from bars the record already holds.
+   *
+   * The panel's coarse timeframes made the conservative rule expensive: on a
+   * one-hour chart the newest bar could not move for up to an hour, because a
+   * client that connects mid-bucket holds none of the bucket's beginning. The
+   * record does hold it — as *complete minute bars*, the permanent base tier —
+   * and folding those in is not a rebuild from a partial view. It is the
+   * record, read at a finer resolution than the chart draws.
+   *
+   * `throughSequence` is the last tick accounted for by `bars`. Ticks at or
+   * below it are ignored, so a stream resumed at `throughSequence + 1` extends
+   * the seed exactly once, and a replay that overlaps cannot double-count.
+   *
+   * Every bar must belong to the same target bucket; a caller that folds across
+   * a boundary would be inventing one.
+   */
+  seedFrom(bars: readonly HistoryCandle[], throughSequence: number): void {
+    if (bars.length === 0) return;
+    const start = bucketStart(bars[0]!.openInstant, this.durationMs);
+    // Seeding again is how a bar advances when the stream could not resume
+    // exactly — the record is re-read as it fills. Backwards it must not go: a
+    // later seed naming an earlier bucket would walk the newest bar into the
+    // past, which a chart draws without complaint.
+    //
+    // Compared against **the bar being drawn**, not against the last seed. The
+    // first version compared only against `#seeded`, which `accept` never
+    // updates — so a builder that had been seeded and then advanced into a
+    // later bucket by live ticks would accept a re-seed of the older bucket
+    // and walk the newest bar back an hour. Found by the PH-21 closure audit,
+    // which executed the sequence rather than reading the guard.
+    const newest = Math.max(this.#seeded ?? -Infinity, (this.#open?.time ?? -Infinity) * 1000);
+    if (Number.isFinite(newest) && start < newest) {
+      throw new SeriesError(
+        `A re-seed may not move the forming bucket backwards; ${String(start)} precedes ` +
+          `${String(newest)}.`,
+      );
+    }
+    for (const bar of bars) {
+      if (bucketStart(bar.openInstant, this.durationMs) !== start) {
+        throw new SeriesError(
+          `A seed must lie inside one ${String(this.durationMs)}ms bucket; ` +
+            `${String(bar.openInstant)} does not belong to the bucket at ${String(start)}.`,
+        );
+      }
+    }
+    let high = bars[0]!.high;
+    let low = bars[0]!.low;
+    for (const bar of bars) {
+      if (bar.high > high) high = bar.high;
+      if (bar.low < low) low = bar.low;
+    }
+    this.#open = {
+      time: Math.floor(start / 1000),
+      open: displayPrice(bars[0]!.open, this.instrument),
+      high: displayPrice(high, this.instrument),
+      low: displayPrice(low, this.instrument),
+      close: displayPrice(bars[bars.length - 1]!.close, this.instrument),
+    };
+    this.#lastSequence = throughSequence;
+    this.#seeded = start;
+  }
+
   /** The bar currently accumulating, if any. */
   current(): Bar | null {
     return this.#open === null ? null : { ...this.#open };
+  }
+
+  /**
+   * Whether the stream failed to continue where the resume claimed it would.
+   *
+   * False until a tick has been seen, because until then nothing is known.
+   * Once true it stays true: the hole does not close, and the bucket the
+   * client connected in is the record's for the rest of its life.
+   */
+  joinBroken(): boolean {
+    return this.#joinBroken;
+  }
+
+  /** The resume claim, still standing. */
+  get #gapless(): boolean {
+    return this.resumedAtSequence !== null && !this.#joinBroken;
   }
 }
 

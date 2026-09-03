@@ -194,6 +194,45 @@ engine and then tested a different one for everything the stream touched. The
 address is read per request now, and `env` is gone — it also published the
 engine's internal host to every viewer.
 
+## 5.2 Resuming the stream, or being told it cannot be
+
+The tick stream is resumable by sequence: `?from=N` asks for sequence N onwards,
+and a client that was delivered through M asks for `M+1` and gets an exact
+continuation. Asking for something the replay window has evicted is a `400`
+rather than a silent jump forward, because a client cannot detect what it never
+received (CA6-31, CA6-32).
+
+That refusal is right, and for one client it was ruinous. **The panel resumes
+from where the _record_ stops, not from where it was last delivered** — it has
+just loaded history, and the sequence after the newest stored candle is where
+its own account ends. But the feed keeps a bounded window of ticks (50 000 by
+default) and a restart empties it, so that sequence is routinely older than
+anything the feed still holds, through no fault of the client. Refused, the
+panel fell back to drawing no live bar at all: the price line moved and the
+newest candle stood still for up to an hour on the default one-hour chart.
+Reported twice by the Human Owner on 2026-09-02, and reproduced by hosted CI
+(run 33689094040): a 400 on the resume in a console error, and two panel tests
+failing on a status stuck at `live — reconnected after a gap`.
+
+So the endpoint takes **`onGap=live`**, and it is opt-in: without it the refusal
+is exactly what it was, and no existing client's contract moves. With it, a
+sequence the feed cannot serve yields the live edge **and an explicit `gap`
+event** carrying the sequence asked for and the feed's own reason. That is the
+whole difference between this and the silent jump forward the refusal exists to
+prevent: a gap a client is _told_ about is not a gap it mistakes for the market
+(INV-002). What the client does with it is its own business — the panel draws
+the forming bucket from the record instead, and re-reads it as it fills.
+
+**A seed is not a join.** The panel folds the record's complete minute bars into
+the bucket now forming, at any timeframe coarser than a minute. When the stream
+resumed exactly at the tick after the last of them, the seed and the stream meet
+with nothing between them and live ticks extend the bar. When it did not, they
+do not meet: this client's first tick comes after a hole, and folding the tail
+onto the seed would draw one bar out of two pieces. `LiveBarBuilder` therefore
+requires `gaplessFromHistory` explicitly and does not infer it from having been
+seeded — the bar advances by being seeded again, every completed minute, which
+is the record re-read rather than a rebuild from a partial view (CA6-30).
+
 ## 6. Creating an asset is a job
 
 `POST /assets` returns a **job id**, and the panel polls `/registrations/:id`.

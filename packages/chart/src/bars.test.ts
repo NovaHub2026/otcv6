@@ -144,6 +144,264 @@ describe('the live edge of the chart', () => {
     expect(fresh!.time).toBe(Math.floor((ORIGIN + 120_000) / 1000));
   });
 
+  it('draws the running bucket when the stream provably continues the history', () => {
+    // The other half of CA6-30, and the reason the panel looked broken on
+    // 2026-09-02: the rule above means the newest bar cannot move until the
+    // next boundary — up to an hour on the default one-hour chart, with the
+    // live price line drifting away from a candle that never follows it.
+    //
+    // The record keeps the ticks. A client that resumes the stream at
+    // `lastSequence + 1` of the newest history bar holds the running bucket
+    // from its true first tick, so drawing it invents nothing: the open is the
+    // open, and no extreme is missing. That, and only that, is what
+    // `resumedAtSequence` asserts — and the first tick to arrive is what
+    // proves it.
+    const connectedAt = ORIGIN + 90_000; // 30 seconds into the second minute
+    const builder = new LiveBarBuilder(durationMs, instrument, ORIGIN, connectedAt, 1);
+
+    // Replayed ticks of the running minute, from its first: ours to draw.
+    const first = builder.accept(tick(1, ORIGIN + 61_000, 9_000));
+    expect(first).not.toBeNull();
+    expect(first!.time).toBe(Math.floor((ORIGIN + 60_000) / 1000));
+    expect(first!.open).toBe(displayPrice(9_000, instrument));
+
+    // And the extreme the old path lost is kept, because the tick was replayed
+    // rather than missed.
+    const high = builder.accept(tick(2, ORIGIN + 70_000, 12_000));
+    expect(high!.high).toBe(displayPrice(12_000, instrument));
+    const later = builder.accept(tick(3, connectedAt + 20_000, 1_000));
+    expect(later!.high).toBe(displayPrice(12_000, instrument));
+    expect(later!.low).toBe(displayPrice(1_000, instrument));
+    expect(later!.time).toBe(first!.time);
+
+    // The bar already in history is still refused: gapless says nothing about
+    // a bucket the record has already closed.
+    expect(builder.accept(tick(4, ORIGIN + 30_000, 5_000))).toBeNull();
+  });
+
+  it('seeds the forming bucket from the minute bars the record holds', () => {
+    // The robust half of the same fix. A resumed stream covers the running
+    // bucket only while the feed still remembers it — after a restart it does
+    // not, and on an hourly chart that is an hour of a frozen candle again.
+    //
+    // The record keeps complete *minute* bars for ever: the permanent base
+    // tier. Folding those into the forming hour is not a rebuild from a partial
+    // view; it is the record, read finer than the chart draws. Only the current
+    // minute is then missing, and a stream resumed at the last minute bar's
+    // `lastSequence + 1` supplies exactly that.
+    const hour = 3_600_000;
+    const hourStart = bucketStart(ORIGIN, hour) + hour;
+    const minutes: HistoryCandle[] = [
+      candle(0, {
+        openInstant: hourStart,
+        open: 1_000,
+        high: 4_000,
+        low: 500,
+        close: 3_000,
+        lastSequence: 20,
+      }),
+      candle(0, {
+        openInstant: hourStart + 60_000,
+        open: 3_000,
+        high: 9_000,
+        low: 2_500,
+        close: 8_000,
+        firstSequence: 21,
+        lastSequence: 30,
+      }),
+    ];
+    // Gapless: the stream resumed at 31, the tick after the last seeded minute,
+    // so the seed and the stream meet with nothing between them.
+    const builder = new LiveBarBuilder(hour, instrument, bucketStart(ORIGIN, hour), Date.now(), 31);
+    builder.seedFrom(minutes, 30);
+
+    const seeded = builder.current();
+    expect(seeded!.time).toBe(Math.floor(hourStart / 1000));
+    expect(seeded!.open).toBe(displayPrice(1_000, instrument));
+    expect(seeded!.high).toBe(displayPrice(9_000, instrument));
+    expect(seeded!.low).toBe(displayPrice(500, instrument));
+
+    // A replayed tick already inside the seed is ignored, not folded twice.
+    expect(builder.accept(tick(30, hourStart + 119_000, 99_000))).toBeNull();
+    // The next one extends the same bar, and the seed's extremes survive.
+    const extended = builder.accept(tick(31, hourStart + 121_000, 10_000));
+    expect(extended!.time).toBe(seeded!.time);
+    expect(extended!.high).toBe(displayPrice(10_000, instrument));
+    expect(extended!.low).toBe(displayPrice(500, instrument));
+    expect(extended!.open).toBe(displayPrice(1_000, instrument));
+  });
+
+  it('will not fold live ticks onto a seed the stream did not join exactly', () => {
+    // The unsound case, and the reason `gaplessFromHistory` is not implied by
+    // seeding. The feed keeps a bounded window; after a restart it no longer
+    // reaches back to where the stored minutes stop, so this client's first
+    // tick comes *after* a hole. The seed is the record and it may be drawn;
+    // the tail is this client's and it may be drawn; joining them across the
+    // hole would draw one bar out of two pieces, which is what CA6-30 forbids.
+    //
+    // So the bar advances by re-reading the record instead — every completed
+    // minute widens it — and that is what the panel does on a `gap` event.
+    const hour = 3_600_000;
+    const hourStart = bucketStart(ORIGIN, hour) + hour;
+    const first = candle(0, {
+      openInstant: hourStart,
+      open: 1_000,
+      high: 4_000,
+      low: 500,
+      close: 3_000,
+      lastSequence: 20,
+    });
+    const builder = new LiveBarBuilder(
+      hour,
+      instrument,
+      bucketStart(ORIGIN, hour),
+      hourStart + 90_000,
+    );
+    builder.seedFrom([first], 20);
+    expect(builder.current()!.high).toBe(displayPrice(4_000, instrument));
+
+    // A tick inside the seeded bucket changes nothing, however extreme.
+    expect(builder.accept(tick(999, hourStart + 100_000, 99_000))).toBeNull();
+    expect(builder.current()!.high).toBe(displayPrice(4_000, instrument));
+
+    // Re-seeding is how it moves: the record has one more complete minute.
+    builder.seedFrom(
+      [
+        first,
+        candle(0, {
+          openInstant: hourStart + 60_000,
+          open: 3_000,
+          high: 9_000,
+          low: 2_500,
+          close: 8_000,
+          firstSequence: 21,
+          lastSequence: 30,
+        }),
+      ],
+      30,
+    );
+    expect(builder.current()!.high).toBe(displayPrice(9_000, instrument));
+    expect(builder.current()!.open).toBe(displayPrice(1_000, instrument));
+
+    // And the bucket after the one it connected in is this client's entire, so
+    // the conservative rule releases it and it builds tick by tick as always.
+    const next = builder.accept(tick(1_000, hourStart + hour + 1_000, 7_777));
+    expect(next!.time).toBe(Math.floor((hourStart + hour) / 1000));
+    expect(next!.open).toBe(displayPrice(7_777, instrument));
+  });
+
+  it('catches a stream that did not resume where it said it would', () => {
+    // The caller's assurance, checked rather than believed.
+    //
+    // A boolean made "gapless" the caller's word, and the caller got it wrong:
+    // the panel latched its "we gapped" flag per effect instead of per
+    // connection, so a reconnect that gapped a second time kept the optimistic
+    // builder and folded post-hole ticks onto a record seed — CA6-30's exact
+    // prohibition, with the status bar claiming the opposite. Found by the
+    // PH-21 closure audit before it reached `main`.
+    //
+    // A sequence is checkable. Asked for 31 and answered with 4,000, the
+    // stream did not continue the record, and the builder knows it from the
+    // tick rather than from a caller who may have latched a stale flag.
+    const hour = 3_600_000;
+    const hourStart = bucketStart(ORIGIN, hour) + hour;
+    const seed = candle(0, {
+      openInstant: hourStart,
+      open: 1_000,
+      high: 4_000,
+      low: 500,
+      close: 3_000,
+      lastSequence: 30,
+    });
+    const builder = new LiveBarBuilder(
+      hour,
+      instrument,
+      bucketStart(ORIGIN, hour),
+      hourStart + 90_000,
+      31,
+    );
+    builder.seedFrom([seed], 30);
+    expect(builder.joinBroken()).toBe(false); // nothing is known before a tick
+
+    // The feed could not replay from 31 and started the client much later.
+    expect(builder.accept(tick(4_000, hourStart + 100_000, 99_000))).toBeNull();
+    expect(builder.joinBroken()).toBe(true);
+    // And the seeded bar is untouched by the tick that proved the hole.
+    expect(builder.current()!.high).toBe(displayPrice(4_000, instrument));
+    // It stays broken; a hole does not close.
+    expect(builder.accept(tick(4_001, hourStart + 101_000, 98_000))).toBeNull();
+    expect(builder.joinBroken()).toBe(true);
+  });
+
+  it('accepts the resume it asked for, and only then folds the tail', () => {
+    const hour = 3_600_000;
+    const hourStart = bucketStart(ORIGIN, hour) + hour;
+    const seed = candle(0, {
+      openInstant: hourStart,
+      open: 1_000,
+      high: 4_000,
+      low: 500,
+      close: 3_000,
+      lastSequence: 30,
+    });
+    const builder = new LiveBarBuilder(
+      hour,
+      instrument,
+      bucketStart(ORIGIN, hour),
+      hourStart + 90_000,
+      31,
+    );
+    builder.seedFrom([seed], 30);
+    // A replay of a tick the seed already accounts for is not the join.
+    expect(builder.accept(tick(30, hourStart + 50_000, 99_000))).toBeNull();
+    expect(builder.joinBroken()).toBe(false);
+    // 31 is what was asked for: the stream continues the record exactly.
+    const extended = builder.accept(tick(31, hourStart + 100_000, 6_000));
+    expect(builder.joinBroken()).toBe(false);
+    expect(extended!.high).toBe(displayPrice(6_000, instrument));
+    expect(extended!.open).toBe(displayPrice(1_000, instrument));
+  });
+
+  it('refuses a re-seed that would walk the forming bucket backwards', () => {
+    const hour = 3_600_000;
+    const hourStart = bucketStart(ORIGIN, hour) + hour;
+    const builder = new LiveBarBuilder(hour, instrument);
+    builder.seedFrom([candle(0, { openInstant: hourStart + hour })], 10);
+    expect(() => builder.seedFrom([candle(0, { openInstant: hourStart })], 20)).toThrow(
+      SeriesError,
+    );
+  });
+
+  it('refuses it against the bar being drawn, not just the last seed', () => {
+    // The gap the first version left. `accept` advances `#open` into a later
+    // bucket and never touches `#seeded`, so comparing a re-seed only against
+    // the last seed let a stale refresh walk the newest bar back an hour —
+    // a chart draws that without complaint. The PH-21 closure audit found it
+    // by executing the sequence rather than reading the guard.
+    const hour = 3_600_000;
+    const first = bucketStart(ORIGIN, hour) + hour;
+    const builder = new LiveBarBuilder(hour, instrument, bucketStart(ORIGIN, hour), first, 1);
+    builder.seedFrom([candle(0, { openInstant: first, lastSequence: 0 })], 0);
+    // Live ticks carry it into the next bucket, which this client holds entire.
+    const advanced = builder.accept(tick(1, first + hour + 1_000, 7_000));
+    expect(advanced!.time).toBe(Math.floor((first + hour) / 1000));
+    // A refresh of the bucket it has left must not drag the bar back.
+    expect(() => builder.seedFrom([candle(0, { openInstant: first })], 2)).toThrow(SeriesError);
+    expect(builder.current()!.time).toBe(Math.floor((first + hour) / 1000));
+  });
+
+  it('refuses a seed that crosses a bucket boundary', () => {
+    const hour = 3_600_000;
+    const hourStart = bucketStart(ORIGIN, hour) + hour;
+    const builder = new LiveBarBuilder(hour, instrument);
+    expect(() =>
+      builder.seedFrom(
+        [candle(0, { openInstant: hourStart }), candle(0, { openInstant: hourStart + hour })],
+        2,
+      ),
+    ).toThrow(SeriesError);
+  });
+
   it('refuses a duration that is not one', () => {
     expect(() => new LiveBarBuilder(0, instrument)).toThrow(SeriesError);
     expect(() => new LiveBarBuilder(-1, instrument)).toThrow(SeriesError);

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactElement } from 'react';
 import { fetchCatalogue, type CatalogueEntry } from '../../lib/api.js';
+import { filterCatalogue, groupByFamily } from '../../lib/catalogueView.js';
 import { PANEL_TIMEFRAMES, type PanelTimeframeId } from '@otc/chart';
 import { PreviewChart } from './PreviewChart.js';
 
@@ -20,6 +21,7 @@ export function Preview({ apiBase }: { apiBase: string }): ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState<PanelTimeframeId>('1h');
+  const [query, setQuery] = useState('');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -42,6 +44,10 @@ export function Preview({ apiBase }: { apiBase: string }): ReactElement {
   if (catalogue.length === 0) return <Message text="The catalogue is empty." />;
 
   const shown = catalogue.find((entry) => entry.id === selected) ?? null;
+  // Filtering narrows the *list*, never the selection: an operator who types a
+  // query has not asked to stop watching the market on screen.
+  const groups = groupByFamily(filterCatalogue(catalogue, query));
+  const matched = groups.reduce((sum, group) => sum + group.entries.length, 0);
 
   return (
     <div style={{ display: 'flex', height: '100%', minHeight: 0 }}>
@@ -53,41 +59,86 @@ export function Preview({ apiBase }: { apiBase: string }): ReactElement {
           flexShrink: 0,
         }}
       >
-        <div style={{ padding: '12px 14px', fontSize: 12, color: '#8b93a7' }}>
+        <div style={{ padding: '12px 14px 8px', fontSize: 12, color: '#8b93a7' }}>
           {catalogue.length} registered · {catalogue.filter((entry) => entry.live).length} hosted
+          {query.trim() === '' ? '' : ` · ${matched} shown`}
         </div>
-        {catalogue.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            data-testid={`asset-${entry.id}`}
-            onClick={() => {
-              setSelected(entry.id);
+        {/*
+          A search box, because a flat unsorted list is right for five assets and
+          useless at a hundred. PH-21 measured that a hundred-asset build
+          succeeds; this is the part of that scale the panel has to absorb.
+        */}
+        <div style={{ padding: '0 14px 10px' }}>
+          <input
+            data-testid="asset-filter"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
             }}
+            placeholder="filter by id, name or family"
             style={{
-              display: 'block',
               width: '100%',
-              textAlign: 'left',
-              padding: '10px 14px',
-              background: selected === entry.id ? '#161b26' : 'transparent',
-              border: 'none',
-              borderLeft: `3px solid ${selected === entry.id ? '#3fb950' : 'transparent'}`,
+              padding: '5px 7px',
+              background: '#0b0e14',
+              border: '1px solid #242c3d',
               color: '#d7dce5',
               font: 'inherit',
-              cursor: 'pointer',
+              fontSize: 12,
             }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>{entry.displayName}</span>
-              <span style={{ color: entry.live ? '#3fb950' : '#5b6377', fontSize: 11 }}>
-                {entry.live ? 'hosted' : 'idle'}
-              </span>
+          />
+        </div>
+        {matched === 0 && (
+          <div data-testid="no-matches" style={{ padding: '8px 14px', color: '#5b6377' }}>
+            nothing matches {query}
+          </div>
+        )}
+        {groups.map((group) => (
+          <div key={group.family}>
+            <div
+              style={{
+                padding: '10px 14px 4px',
+                fontSize: 11,
+                color: '#5b6377',
+                textTransform: 'uppercase',
+                letterSpacing: 0.5,
+              }}
+            >
+              {group.family} · {group.entries.length}
             </div>
-            <div style={{ fontSize: 11, color: '#8b93a7', marginTop: 2 }}>
-              {entry.family} · {(100 * entry.dispersion.quarterlyPercent).toFixed(1)}% a quarter ·{' '}
-              {(entry.meanIntervalMs / 1000).toFixed(1)}s a tick
-            </div>
-          </button>
+            {group.entries.map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                data-testid={`asset-${entry.id}`}
+                onClick={() => {
+                  setSelected(entry.id);
+                }}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  textAlign: 'left',
+                  padding: '10px 14px',
+                  background: selected === entry.id ? '#161b26' : 'transparent',
+                  border: 'none',
+                  borderLeft: `3px solid ${selected === entry.id ? '#3fb950' : 'transparent'}`,
+                  color: '#d7dce5',
+                  font: 'inherit',
+                  cursor: 'pointer',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>{entry.displayName}</span>
+                  <span style={{ color: entry.live ? '#3fb950' : '#5b6377', fontSize: 11 }}>
+                    {entry.live ? 'hosted' : 'idle'}
+                  </span>
+                </div>
+                <div style={{ fontSize: 11, color: '#8b93a7', marginTop: 2 }}>
+                  {(100 * entry.dispersion.quarterlyPercent).toFixed(1)}% a quarter ·{' '}
+                  {(entry.meanIntervalMs / 1000).toFixed(1)}s a tick
+                </div>
+              </button>
+            ))}
+          </div>
         ))}
       </aside>
 

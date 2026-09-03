@@ -6,92 +6,79 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                                                                                                                                                                                                                                                      |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Last clean session | 2026-09-02                                                                                                                                                                                                                                                                                 |
-| Branch             | `main` — `feature/out-of-band-audit` merged 2026-09-02                                                                                                                                                                                                                                     |
-| HEAD               | the merge commit of `feature/out-of-band-audit` (code tree `023f694`)                                                                                                                                                                                                                      |
-| Remote             | `origin` → NovaHub2026/otcv6 — public; branch pushed; hosted CI `run 33671271767 — **success**, Quality Gate and Statistical Gate, 19:06–19:53 UTC; statistical 40 files, 271 tests (the six browser tests ran on the runner), worst RPC round trip 9.4 s, no orphaned process at cleanup` |
-| Active cycle       | Cycle 7, **2 of 3** phases approved                                                                                                                                                                                                                                                        |
-| Active phase       | PH-21 — the catalogue at scale (ACTIVE)                                                                                                                                                                                                                                                    |
-| Active subphase    | PH-21.1 — a hundred assets (ACTIVE)                                                                                                                                                                                                                                                        |
-| Cycle Audit        | **006 closed**; out-of-band audit 001 recorded 2026-09-02                                                                                                                                                                                                                                  |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                                                                                                                                                                                                                                         |
+| Field              | Value                                                                      |
+| ------------------ | -------------------------------------------------------------------------- |
+| Last clean session | 2026-09-02                                                                 |
+| Branch             | `main` — PH-21 merged at its close                                         |
+| Remote             | `origin` → NovaHub2026/otcv6, public                                       |
+| Active cycle       | Cycle 7, **3 of 3** phases approved (PH-19, PH-20, PH-21)                  |
+| Active phase       | none                                                                       |
+| Active subphase    | none                                                                       |
+| Cycle Audit        | **006 closed**; out-of-band audit 001 recorded 2026-09-02; **007 is next** |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                         |
+
+---
 
 ## Continuation point
 
-Read `CURRENT_STATE.md` for the authoritative position; this is the short form.
+**Run Cycle Audit 7, then PH-22.** Three approved phases is the boundary
+`GOVERNANCE.md` §28 stops normal development at. It runs automatically: nothing
+is requested and nothing is waited for. `CURRENT_STATE.md` is authoritative for
+where the project stands; this file is only what a fresh session needs first.
 
-**Continue PH-21 from PH-21.2 on a branch rebased onto `main`, which carries
-the out-of-band audit and its fixes since 2026-09-02.**
+Two things should shape its depth (§67):
 
-The Human Owner asked on 2026-09-02 for a complete audit with authority to fix
-everything found. Seven independent auditors, one worktree each, at `36bbf89`;
-83 findings, 6 critical; every material finding fixed on this branch and
-watched failing first; the record is
-[`docs/audits/OUT-OF-BAND-AUDIT-001.md`](docs/audits/OUT-OF-BAND-AUDIT-001.md).
-Fourteen GitHub Issues carry what remains, two for the Human Owner (#13 the
-licence, #14 the `GOVERNANCE.md` contradictions). `docs/BACKLOG.md` is an
-archive now.
+- The **out-of-band audit of 2026-09-02** already swept most of this cycle —
+  seven auditors, 83 findings, recorded in
+  [`OUT-OF-BAND-AUDIT-001.md`](docs/audits/OUT-OF-BAND-AUDIT-001.md). It did not
+  see anything PH-21 added after it.
+- The **PH-21 closure audit** is the standard to match. Seven readers, one per
+  claim area, each told to falsify; every finding put to an adversarial refuter
+  before it counted. Twenty survived, and three were live defects in code
+  written that day — a latch that survived a reconnect, a guard comparing a
+  field nothing updated, and two clock reads with an await between them. Every
+  one was found by **executing a sequence**, none by reading a guard.
 
-### Two sessions worked on this repository today
+Then **PH-22 — distribution under thousands of observers**, prioritised by the
+Human Owner ahead of everything else. `docs/phases/ROADMAP.md` carries what is
+already known: fan-out re-serialises every tick per subscriber (Issue #15), and
+several charts per client hit HTTP/1.1's six-connection limit (Issue #16).
 
-Another Claude session held the main working tree for PH-21.2 and PH-21.3 while
-this one audited on a separate branch; the split was agreed in writing. Its
-branch `feature/ph-21-catalogue-at-scale` is local only and carries PH-21.1
-under a second hash (`36bbf89`, the same tree as `main`'s `3a5f0a5`) plus
-PH-21.3 (`aefe1ee`) ahead of PH-21.2, with an uncommitted edit to the PH-21
-document. Whoever continues PH-21: rebase that branch onto `main` after the
-audit branch merges (the duplicate drops out), create PH-21.2's document, run
-`venueScale.ts` on a quiet machine, and re-run `catalogueScale.ts` — the
-recorded hundred-asset run predates the `alt-crypto` depth change (a3-05).
+### What PH-21 leaves behind
 
-### What this branch changed, in one paragraph each
+- **Issue #17** — `CYCLE-7-CATALOGUE-SCALE.md` predates a parameter change.
+- **Issue #18** — the 400-brief probe behind "one brief in 400" was never
+  written up as evidence.
+- **Issues #3 and #14** are the Human Owner's, and only theirs.
+- The panel is not virtualised, by decision; a hundred markets have been
+  scheduled but never hosted continuously.
 
-- **The gate.** Hosted CI was red on every push to `main` since the PH-18 merge
-  with every test passing: one test ran 92 s of synchronous work while a task
-  update was in flight, and Vitest's reply was read after its 60 s timer fired.
-  Four causes had been recorded before this one. The test yields
-  (`yieldToLoop()` from `@otc/core`, two chained immediates — one is not a full
-  loop turn), and `vitest.setup.statistical.ts` now fails a file by name at a
-  30 s round trip, watched failing on a planted 35 s block. Use
-  `npm run test:stat`, never the bare vitest command.
-- **The engine.** The mirror test reflected through the origin and passed a
-  round-number support/resistance field; it reflects through an interior
-  snapshot now (ADR-0003 §6 as written). Ids of 52–64 characters, refusals at
-  the wrong stage, `alt-crypto` drawing below its band, and the retreat
-  retrying what it cannot fix are all closed; a registration reports each
-  stage as it enters it.
-- **The guardrails.** One tokenizer, a corpus of every construct that has ever
-  hidden code from the scanners, new bans, `tools/sim` scanned, the
-  publishing-key refusal checked structurally, a loop detector that sees every
-  shape, an exact status vocabulary, 33 meta-audit mutations over all ten guard
-  files.
-- **The laboratory.** The battery states two sensitivities per horizon —
-  single-test 0.221pp and the gate's own 0.315pp at 30 s — and says which the
-  0.2513pp claim refers to; the clock grid sweeps every phase; the standing
-  verdict runs the learned family; the founding look-ahead bug has a unit guard.
-- **The runtime.** No partial minute bar is ever stored (a restart leaves a
-  visible hole); a leader retries unrecorded ticks and loses the lease after
-  three failures; `fsync`; schema versions; the registry's race and id trust.
-- **The surface.** Every write needs `OTC_ADMIN_TOKEN` as a bearer with a JSON
-  body; the service binds `127.0.0.1` unless `OTC_BIND` says otherwise; a
-  browserless host reports the panel suite as skipped, not passed; one
-  shutdown path that exits 0; honest reconnection and `/health` in the panel.
-- **The record.** PH-19's approval claimed a hosted CI result it did not have
-  and is corrected in place; "40 of 46" has a 46-row closure table; the
-  multi-node and operations architecture document exists (B-023, two cycles
-  late) and says the service composes none of it (Issue #9); the roadmap,
-  `PROJECT_CONTEXT.md`, `CLAUDE.md`'s commands and timings, ADR-0008 and the
-  decision log are brought to the present.
+### Running it locally
+
+```bash
+bash ~/.otc-local/start.sh
+```
+
+Panel on 7301, engine on 7300. It serves `~/Projects/otcv6` and prints the tree,
+branch and commit it served. That line exists because it once served a different
+worktree, and two rounds of "the chart is still broken" were about a program
+that had never contained the fix (PH-21.3 §5.1).
 
 ## Last executed verification
 
-`npm run gate` on `feature/out-of-band-audit` at `023f694`, 2026-09-02:
-**exit 0** in 32 minutes (19:06–19:38 UTC) — unit 88 files, 2,165 tests; statistical 40 files, 265 tests, 6 browser tests skipped on this host; no unhandled errors; worst RPC round trip 6.6 s against the 30 s guard. Format,
-build, both typechecks and lint exit 0, in that order — build before lint. The
-browser suite reports `skipped` on this host (no Chromium libraries); hosted CI
-requires it. Hosted CI on the same tree: `run 33671271767 — **success**, Quality Gate and Statistical Gate, 19:06–19:53 UTC; statistical 40 files, 271 tests (the six browser tests ran on the runner), worst RPC round trip 9.4 s, no orphaned process at cleanup`.
+**`npm run gate` on `feature/ph-21-catalogue-at-scale` at `e451647`** —
+`GATE_EXIT=0`, with `OTC_REQUIRE_BROWSER=1` and zero skips: 90 unit files /
+2,203 tests, 40 statistical files / 273 tests, worst RPC round trip 11.6 s
+against the 30 s guard.
+
+**Hosted CI on the same tree:**
+[run 33701581822](https://github.com/NovaHub2026/otcv6/actions/runs/33701581822)
+— success, Quality Gate and Statistical Gate, 48 minutes, 273 statistical tests
+with the eight browser tests run on the runner.
+
+Both layers, one tree. `GOVERNANCE.md` §40.1 wants the second, and PH-21 is the
+first phase in this cycle to close with it green on its own tree rather than on
+an ancestor's.
 
 ## Process, in force
 
