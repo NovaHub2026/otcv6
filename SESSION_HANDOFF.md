@@ -6,24 +6,28 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                                      |
-| ------------------ | -------------------------------------------------------------------------- |
-| Last clean session | 2026-09-02                                                                 |
-| Branch             | `main` — PH-21 merged at its close                                         |
-| Remote             | `origin` → NovaHub2026/otcv6, public                                       |
-| Active cycle       | Cycle 7, **3 of 3** phases approved (PH-19, PH-20, PH-21)                  |
-| Active phase       | none                                                                       |
-| Active subphase    | none                                                                       |
-| Cycle Audit        | **006 closed**; out-of-band audit 001 recorded 2026-09-02; **007 is next** |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                         |
+| Field              | Value                                                                  |
+| ------------------ | ---------------------------------------------------------------------- |
+| Last clean session | 2026-09-02                                                             |
+| Branch             | `main` — PH-21 merged at its close                                     |
+| Remote             | `origin` → NovaHub2026/otcv6, public                                   |
+| Active cycle       | Cycle 8, **0 of 3** phases approved                                    |
+| Active phase       | PH-22 — distribution under thousands of observers (ACTIVE)             |
+| Active subphase    | none                                                                   |
+| Cycle Audit        | **007 closed** 2026-09-03; the next is due after three approved phases |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                     |
 
 ---
 
 ## Continuation point
 
-**Begin PH-22 — distribution under thousands of observers.** Cycle Audit 7 is
-recorded and closed, so §28's boundary is behind us, and the Human Owner
-prioritised this phase ahead of everything else. `CURRENT_STATE.md` is
+**PH-22 is open**, and its phase document states the five things nobody knows
+([PH-22](docs/phases/PH-22-distribution-under-thousands-of-observers.md)).
+Cycle Audit 7 is recorded and closed, so §28's boundary is behind us.
+
+The next legal action is **PH-22.1 — an instrument that can hold thousands of
+connections**, and it is an instrument, so it owes a planted defect of its own:
+a harness that cannot detect a server refusing connections is not a harness. `CURRENT_STATE.md` is
 authoritative for where the project stands; this file is only what a fresh
 session needs first.
 

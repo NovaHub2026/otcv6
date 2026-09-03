@@ -259,11 +259,14 @@ describe('the cycle-audit boundary is a fact, not a label (CA7-11)', () => {
     const to = rest.findIndex((line) => line.startsWith('## '));
     const section = (to === -1 ? rest : rest.slice(0, to)).join('\n');
 
-    const approved = section
-      .split('\n')
-      .filter((line) => /^\|\s*PH-\d+\s*\|/.test(line))
-      .filter((line) => line.includes('APPROVED')).length;
-    expect(approved, `no approved phase rows parsed for Cycle ${cycle!}`).toBeGreaterThan(0);
+    const rows = section.split('\n').filter((line) => /^\|\s*PH-\d+\s*\|/.test(line));
+    // Rows, not approvals: a cycle that has just opened has zero of the second
+    // and must still be checkable. The first version asserted `approved > 0`
+    // and failed the moment Cycle 8 opened with PH-22 — a guard that only works
+    // in the middle of a cycle is a guard that is off at both boundaries, and
+    // the boundary is the whole subject.
+    expect(rows.length, `no phase rows parsed for Cycle ${cycle!}`).toBeGreaterThan(0);
+    const approved = rows.filter((line) => line.includes('APPROVED')).length;
     expect(Number.parseInt(claimed![1]!, 10), 'CURRENT_STATE vs the roadmap').toBe(approved);
   });
 

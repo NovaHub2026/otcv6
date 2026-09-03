@@ -555,9 +555,9 @@ a 76-byte event, which at the venue's own rate is 24 bytes per second per
 viewer — and looking at the delivery path found something an order of magnitude
 larger.
 
-| Phase | Title                                     | State       |
-| ----- | ----------------------------------------- | ----------- |
-| PH-22 | Distribution under thousands of observers | NOT STARTED |
+| Phase | Title                                     | State      |
+| ----- | ----------------------------------------- | ---------- |
+| PH-22 | Distribution under thousands of observers | **ACTIVE** |
 
 ### PH-22 — Distribution Under Thousands Of Observers
 

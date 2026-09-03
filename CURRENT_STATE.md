@@ -14,21 +14,21 @@ Last synchronized: 2026-09-02
 
 | Field                            | Value                                                                                                                  |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 7                                                                                                                |
-| Approved phases in current cycle | **3 of 3** — PH-19, PH-20, PH-21                                                                                       |
+| Active development cycle         | Cycle 8                                                                                                                |
+| Approved phases in current cycle | **0 of 3** — Cycle 8 opens with PH-22                                                                                  |
 | Cycle Audit state                | **007 closed** — 34 of 35 findings closed in the audit itself, one carried (Issue #22)                                 |
 | Last Cycle Audit                 | [Cycle Audit 007](docs/audits/CYCLE-AUDIT-007.md) — recorded 2026-09-03, eight independent auditors, one worktree each |
 
 ## Phase and subphase
 
-| Field                  | Value                                            |
-| ---------------------- | ------------------------------------------------ |
-| Active phase           | none                                             |
-| Phase lifecycle        | none                                             |
-| Active subphase        | none                                             |
-| Subphase lifecycle     | none                                             |
-| Last approved phase    | PH-21 — The catalogue at scale                   |
-| Last approved subphase | PH-21.3 — A panel that can hold a hundred assets |
+| Field                  | Value                                             |
+| ---------------------- | ------------------------------------------------- |
+| Active phase           | PH-22 — Distribution under thousands of observers |
+| Phase lifecycle        | ACTIVE                                            |
+| Active subphase        | none                                              |
+| Subphase lifecycle     | none                                              |
+| Last approved phase    | PH-21 — The catalogue at scale                    |
+| Last approved subphase | PH-21.3 — A panel that can hold a hundred assets  |
 
 Nothing is active because PH-21 closed and the cycle boundary is here: three
 approved phases, and `GOVERNANCE.md` §28 turns the work from building to
@@ -228,29 +228,28 @@ coverage has not been re-measured since 2026-08-31 (Issue #2).
 
 ## EXACT NEXT LEGAL ACTION
 
-**Begin PH-22 — distribution under thousands of observers.** Cycle Audit 7 is
-recorded and closed, so the boundary `GOVERNANCE.md` §28 stops development at is
-behind us, and the Human Owner prioritised this phase ahead of everything else
-on 2026-09-02.
+**PH-22.1 — an instrument that can hold thousands of connections.**
 
-What the audit hands it, unasked:
+PH-22 is open and its phase document states what nobody knows
+([PH-22](docs/phases/PH-22-distribution-under-thousands-of-observers.md) §1).
+Nothing in this phase may be built on an argument, and there is nothing to
+measure with until the harness exists — so the harness is first, and it is
+audited as an instrument rather than as a tool.
 
-- **CA7-04** — replay ignored backpressure entirely, and a resume is the largest
-  write this service makes. Bounded now at 1 MB, but the real number belongs to
-  a measurement of ten thousand reconnecting clients, not to a guess.
-- **CA7-33** — the feed retains 5.01 MB per asset, measured. A hundred assets is
-  501 MB of one Node heap and about 446 assets exhausts it. Nothing configures a
-  heap for the service anywhere in the repository.
-- **Issue #15** — every subscriber re-serialises the same tick.
-- **Issue #16** — several charts per client hit HTTP/1.1's six-connection limit.
-- **Issue #22** — the one audit finding carried: a resume from sequence 1 after
-  a restart is answered with the live edge and no gap event, and the honest fix
-  needs the venue's knowledge rather than the feed's. It belongs in the
-  multiplexing work rather than ahead of it.
+This project's most expensive class of defect is an instrument that silently
+stops measuring: a gate config in no TypeScript program, six browser tests
+reporting passed while launching no browser. A load harness that fails to open
+the connections it claims would produce exactly the reassuring numbers this
+phase must not generate, so PH-22.1 owes a planted defect against itself.
 
-Also open, and not PH-22's: **#17** and **#18** (scale evidence to re-take),
-**#21** (behavioural differentiation at a hundred assets), **#19** and **#20**
-(the long-run limits sweep), **#9** (the multi-node layer nothing composes).
-**#3** and **#14** are the Human Owner's and only theirs.
+Two measurements Cycle Audit 7 produced while looking elsewhere are its
+starting point: **CA7-04**, a replay bound of 1 MB chosen rather than measured,
+and **CA7-33**, 5.01 MB of feed retention per asset — 501 MB at a hundred.
+
+Then the OTC Market Lab, specified by the Human Owner on 2026-09-03 and
+authorised in [ADR-0015](docs/decisions/ADR-0015-lab-authority-and-isolation.md).
+It follows PH-22 rather than preceding it because the Lab is a heavy observer —
+many charts, dense ticks — and building it on the delivery path PH-22 is about
+to rewrite would build it twice.
 
 No authorization is required for any of it and none should be requested.
