@@ -256,3 +256,62 @@ describe('the guards have teeth', () => {
     expect(threw, 'silent truncation would be invisible to the client').toBe(true);
   });
 });
+
+describe('what Cycle Audit 7 found the feed would accept', () => {
+  it('refuses a sequence that is not a whole number, rather than guessing (CA7-20)', () => {
+    // Neither bound compares true against NaN, so it fell through both and
+    // reached `slice(Math.max(0, NaN))` — which is `slice(0)`. A client
+    // resuming with a corrupt sequence was handed the entire retained window
+    // as though it were an exact continuation.
+    const feed = new TickFeed();
+    feed.publish('eurusd', ticks(1, 5));
+    expect(feed.since('eurusd', 3)).toHaveLength(3);
+    for (const bad of [Number.NaN, 3.5, -0.5, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(() => feed.since('eurusd', bad), String(bad)).toThrow(UnknownSequenceError);
+      expect(() => feed.subscribe('eurusd', recorder(), bad), String(bad)).toThrow(
+        UnknownSequenceError,
+      );
+    }
+  });
+
+  it('leaves the feed as it found it when a batch gaps (CA7-32)', () => {
+    // The refusal used to half-apply: the ticks before the gap were retained
+    // and never delivered, so every current subscriber fell permanently behind
+    // the record without being told — the shape INV-002 exists to forbid.
+    const feed = new TickFeed();
+    feed.publish('eurusd', ticks(1, 3));
+    const sink = recorder();
+    feed.subscribe('eurusd', sink);
+    const before = sink.received.length;
+
+    // 4 continues the record; 9 does not. The batch must be refused entire.
+    const gapped = ticks(1, 2).map((entry, index) => ({
+      ...entry,
+      sequence: index === 0 ? 4 : 9,
+    }));
+    expect(() => feed.publish('eurusd', gapped)).toThrow(RangeError);
+
+    // Nothing retained, nothing delivered, and the next honest batch still fits.
+    expect(feed.retained('eurusd')).toEqual({ oldest: 1, newest: 3 });
+    expect(sink.received.length).toBe(before);
+    feed.publish('eurusd', [{ ...gapped[0]! }]);
+    expect(feed.retained('eurusd')).toEqual({ oldest: 1, newest: 4 });
+  });
+
+  it('serves the oldest retained sequence and refuses the one below it (CA7-03)', () => {
+    // The eviction boundary had no test at all: an off-by-one here is a silent
+    // one-tick skip for every reconnecting client, and the whole suite passed.
+    const feed = new TickFeed({ retainTicks: 3 });
+    feed.publish('eurusd', ticks(1, 5));
+    const { oldest, newest } = feed.retained('eurusd')!;
+    expect({ oldest, newest }).toEqual({ oldest: 3, newest: 5 });
+
+    const first = feed.since('eurusd', oldest);
+    expect(first.map((tick) => tick.sequence)).toEqual([3, 4, 5]);
+    expect(() => feed.since('eurusd', oldest - 1)).toThrow(EvictedError);
+    // And the far edge: everything, then "send me what comes next", then too far.
+    expect(feed.since('eurusd', newest).map((tick) => tick.sequence)).toEqual([5]);
+    expect(feed.since('eurusd', newest + 1)).toEqual([]);
+    expect(() => feed.since('eurusd', newest + 2)).toThrow(UnknownSequenceError);
+  });
+});

@@ -453,22 +453,42 @@ export class MarketController implements BeforeApplicationShutdown {
     // So nothing is written until the subscription exists. Replay delivered
     // during `subscribe` is buffered and flushed after the headers.
     let headersSent = false;
+    let bufferedBytes = 0;
     const buffered: string[] = [];
     const write = (chunk: string): void => {
       if (headersSent) res.write(chunk);
-      else buffered.push(chunk);
+      else {
+        buffered.push(chunk);
+        bufferedBytes += chunk.length;
+      }
     };
 
     const sink = {
       deliver: (_assetId: string, ticks: readonly Tick[]): boolean => {
         for (const tick of ticks) {
+          // The bound is checked *inside* the loop, because the whole replay
+          // arrives as a single `deliver` call: the feed hands over the entire
+          // retained backlog at once, so a check on the way out bounds nothing.
+          if (!headersSent && bufferedBytes >= MAX_REPLAY_BYTES) return false;
           // One event per tick, carrying the sequence as the SSE id so a
           // reconnecting client knows exactly where it stopped.
           write(`id: ${tick.sequence}\ndata: ${JSON.stringify(tick)}\n\n`);
         }
-        // False once the socket buffer is full: the feed then disconnects
+        // False once the client cannot keep up: the feed then disconnects
         // rather than degrading this client's view.
-        return !headersSent || !res.writableNeedDrain;
+        //
+        // **Cycle Audit 7, CA7-04.** This read `!headersSent || ...`, so during
+        // replay — the single largest write this endpoint ever makes — it was
+        // unconditionally true. Measured against a socket full from its first
+        // byte: 50,000 frames and 3.46 MiB accumulated in this process's heap,
+        // the handler blocked for 143 ms, and the subscription was neither
+        // cancelled nor ended. The live path honoured backpressure correctly on
+        // the same run, which is what made it easy to miss: the contract was
+        // kept everywhere except where it cost the most.
+        //
+        // Before the headers there is no socket to ask, so the bound is the
+        // buffer itself.
+        return headersSent ? !res.writableNeedDrain : bufferedBytes < MAX_REPLAY_BYTES;
       },
       close: (reason: string): void => {
         write(`event: close\ndata: ${JSON.stringify({ reason })}\n\n`);
@@ -505,9 +525,26 @@ export class MarketController implements BeforeApplicationShutdown {
       Connection: 'keep-alive',
     });
     headersSent = true;
-    for (const chunk of buffered) res.write(chunk);
+    // The flush honours backpressure too. It used to ignore every return value
+    // and push the whole replay at a socket that had already said stop.
+    let full = false;
+    for (const chunk of buffered) {
+      res.write(chunk);
+      if (res.writableNeedDrain) full = true;
+    }
+    buffered.length = 0;
 
     const live = subscription;
+    if (full) {
+      // Told rather than truncated: a client that is handed a short stream and
+      // no reason cannot tell it from a quiet market.
+      res.write(
+        `event: close\ndata: ${JSON.stringify({ reason: 'client fell behind during replay' })}\n\n`,
+      );
+      live.cancel('client fell behind during replay');
+      res.end();
+      return;
+    }
     this.streams.add(live);
     res.on('close', () => {
       this.streams.delete(live);
@@ -596,6 +633,21 @@ function renderPrice(
  * magnitude of slack, rather than against what the storage can survive.
  */
 const MAX_CANDLES_PER_REQUEST = 20_000;
+
+/**
+ * The most replay this process will hold in memory for one connecting client.
+ *
+ * A resume is served from the feed's retained window, which is 50,000 ticks per
+ * asset by default — about 3.5 MiB of SSE frames. Before the response headers
+ * exist there is no socket to apply backpressure against, so that whole window
+ * accumulates in the handler's heap, once per connecting client. Ten thousand
+ * observers reconnecting after a deploy is the case that matters, and it is
+ * PH-22's subject.
+ *
+ * One megabyte is roughly fifteen thousand ticks — a generous resume, and far
+ * short of what a fan-out of reconnects would cost (Cycle Audit 7, CA7-04).
+ */
+const MAX_REPLAY_BYTES = 1_000_000;
 
 /**
  * The longest display name an asset may carry.

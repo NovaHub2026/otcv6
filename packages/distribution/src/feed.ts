@@ -143,6 +143,15 @@ export class TickFeed {
     if (ticks.length === 0) return;
     const history = this.#history.get(assetId) ?? [];
     let previous = history.length > 0 ? history[history.length - 1]!.sequence : null;
+    // **Checked whole, then applied whole (Cycle Audit 7, CA7-32).** The first
+    // version validated and appended in one pass, and `history` is the stored
+    // array itself — so a batch that gapped halfway left the ticks before the
+    // gap *retained but never delivered*: the throw skipped the fan-out, and no
+    // current subscriber ever saw them again. Every observer of that asset was
+    // then permanently behind the record by however many ticks preceded the
+    // gap, silently, which is the exact shape INV-002 forbids.
+    //
+    // A refusal must leave the feed as it found it.
     for (const tick of ticks) {
       if (previous !== null && tick.sequence !== previous + 1) {
         throw new RangeError(
@@ -151,8 +160,8 @@ export class TickFeed {
         );
       }
       previous = tick.sequence;
-      history.push(tick);
     }
+    for (const tick of ticks) history.push(tick);
     if (history.length > this.#retainTicks) {
       history.splice(0, history.length - this.#retainTicks);
     }
@@ -165,6 +174,20 @@ export class TickFeed {
 
   /** Retained ticks from `fromSequence` onwards, inclusive. */
   since(assetId: string, fromSequence: number): readonly Tick[] {
+    // **Cycle Audit 7, CA7-20.** Neither bound below compares true against
+    // `NaN`, so a `NaN` fell through both and reached `history.slice(Math.max(0,
+    // NaN))` — and `slice(NaN)` is `slice(0)`. A client resuming with a corrupt
+    // sequence was handed **the entire retained window** as though it were a
+    // continuation, rather than the refusal the whole resume contract is built
+    // on. A fractional sequence was quietly floored, replaying a tick the
+    // client already had.
+    //
+    // The HTTP edge has validated `?from=` strictly since CA6 — but `since` and
+    // `subscribe` are this package's public surface, and the follower and every
+    // in-process caller reach them without passing that edge.
+    if (!Number.isSafeInteger(fromSequence) || fromSequence < 0) {
+      throw new UnknownSequenceError(assetId, fromSequence, FIRST_SEQUENCE - 1);
+    }
     const history = this.#history.get(assetId) ?? [];
     if (history.length === 0) {
       // **a5-09.** The empty case returned [] for any sequence, so the
