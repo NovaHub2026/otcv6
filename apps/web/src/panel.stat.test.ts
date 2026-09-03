@@ -231,7 +231,7 @@ async function freePort(): Promise<number> {
  * asked to resume from, and the suite failed on correct behaviour (run
  * 33689094040). The behaviour behind each spelling has its own test below.
  */
-const LIVE = /^live\b/;
+const LIVE = /^en vivo\b/;
 
 interface Observed {
   readonly consoleErrors: string[];
@@ -337,7 +337,7 @@ describe('the panel, in a browser', () => {
 
       // Defect 1 and 2: if the browser could not reach the engine, this is the
       // message the Human Owner saw.
-      expect(await page.getByText('Cannot reach the engine').count()).toBe(0);
+      expect(await page.getByText('No se alcanza el motor').count()).toBe(0);
 
       // Defect 3: the chart's canvas must have a size. `getBoundingClientRect`
       // in jsdom returns zeros for everything, which is why this needs a real
@@ -368,7 +368,7 @@ describe('the panel, in a browser', () => {
     // on a canvas, so no DOM assertion reads its close.
     //
     // What separates the defect from correct behaviour is not a price: it is
-    // *which bucket has a live bar*. Frozen means the newest bar is the last
+    // *which bucket has a vela en curso*. Frozen means the newest bar is the last
     // one history flushed, an hour old on the panel's default chart, while the
     // price line runs away from it. So the panel publishes the bucket it is
     // drawing live, and this asserts that bucket is the one now in progress.
@@ -388,12 +388,12 @@ describe('the panel, in a browser', () => {
         .toMatch(LIVE);
       await expect
         .poll(async () => page.getByTestId('forming-bucket').textContent(), { timeout: 90_000 })
-        .toMatch(/^live bar \d+$/);
+        .toMatch(/^vela en curso \d+$/);
 
       const label = (await page.getByTestId('forming-bucket').textContent()) ?? '';
-      const drawnAt = Number(/^live bar (\d+)$/.exec(label)![1]);
+      const drawnAt = Number(/^vela en curso (\d+)$/.exec(label)![1]);
       const HOUR_SECONDS = 3_600;
-      // The panel opens on a one-hour chart, so a live bar sits on an hour
+      // The panel opens on a one-hour chart, so a vela en curso sits on an hour
       // boundary, and the bucket in progress began less than an hour ago.
       expect(drawnAt % HOUR_SECONDS, `${label} is not an hour boundary`).toBe(0);
       const age = Math.floor(Date.now() / 1000) - drawnAt;
@@ -545,7 +545,7 @@ describe('the panel, in a browser', () => {
 
       await expect
         .poll(async () => page.getByTestId('job-state').textContent(), { timeout: 240_000 })
-        .toMatch(/registered/);
+        .toMatch(/registrado/);
 
       // The asset exists where an operator would look for it, and the screen it
       // arrives on is the one PH-20.1 already proved draws a market.
@@ -590,7 +590,7 @@ describe('the panel, in a browser', () => {
       await page.getByTestId('retire-confirm-xauusd').click();
       await expect
         .poll(async () => page.getByTestId('state-xauusd').textContent(), { timeout: 30_000 })
-        .toBe('retired');
+        .toBe('retirado');
 
       // And it is gone from the screen that hosts markets, while the one that
       // was renamed is still there under its new name.
@@ -602,7 +602,7 @@ describe('the panel, in a browser', () => {
       await page.getByTestId('asset-xauusd').click();
       await expect
         .poll(async () => page.getByTestId('stream-status').textContent(), { timeout: 30_000 })
-        .toContain('not hosted');
+        .toContain('sin hospedar');
 
       expect(observed.consoleErrors, 'console errors').toEqual([]);
       expect(observed.failedRequests, 'failed requests').toEqual([]);

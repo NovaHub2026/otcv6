@@ -21,19 +21,19 @@ Last synchronized: 2026-09-03
 
 ## Phase and subphase
 
-| Field                  | Value                                             |
-| ---------------------- | ------------------------------------------------- |
-| Active phase           | PH-24 — The Lab's controls: applying a selection  |
-| Phase lifecycle        | ACTIVE                                            |
-| Active subphase        | none                                              |
-| Subphase lifecycle     | N/A                                               |
-| Last approved phase    | PH-23 — The OTC Market Lab                        |
-| Last approved subphase | PH-24.5 — The diagnostics the audit found missing |
+| Field                  | Value                                            |
+| ---------------------- | ------------------------------------------------ |
+| Active phase           | PH-24 — The Lab's controls: applying a selection |
+| Phase lifecycle        | ACTIVE                                           |
+| Active subphase        | PH-24.7 — Los controles que faltan en pantalla   |
+| Subphase lifecycle     | ACTIVE                                           |
+| Last approved phase    | PH-23 — The OTC Market Lab                       |
+| Last approved subphase | PH-24.6 — Rediseño UX del panel y del Lab        |
 
-**PH-24 is active with all five subphases approved**, on
-`feature/ph-24-the-labs-controls`. The next legal action is the phase's
-integration verification and the full phase Quality Gate (`GOVERNANCE.md` §24,
-§25); its approval is Cycle 8's third phase and opens Cycle Audit 8.
+**PH-24 is active; five subphases approved and a sixth opened at the Human
+Owner's direction**: PH-24.6 redesigns the panel's and the Lab's UX — Spanish,
+cleaner, explanations behind ⓘ — before the phase closes. The merge, hosted CI
+and Cycle Audit 8 wait for it. PH-24's approval is Cycle 8's third phase.
 
 PH-23.5 closed the first item PH-23 §10 left open — the Lab now has a screen in
 the panel, behind a menu entry marked `SIM`. Building it found three defects

@@ -174,144 +174,218 @@ describe('Candle Close Control, from the panel', () => {
   const text = async (page: Page, testId: string): Promise<string> =>
     page.locator(`[data-testid="${testId}"]`).innerText();
 
+  /**
+   * A failing flow prints what the screen said and which Lab requests failed:
+   * a 30-second timeout on `waitForFunction` is otherwise the least informative
+   * message a browser test can produce.
+   */
+  const instrument = (page: Page): { errors: string[]; dump: () => Promise<string> } => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
+    page.on('response', (response) => {
+      if (response.url().includes('/lab/') && response.status() >= 400) {
+        errors.push(
+          `${String(response.status())} ${response.request().method()} ${response.url().slice(-90)}`,
+        );
+      }
+    });
+    return {
+      errors,
+      dump: async () => {
+        // The parts a flow acts on, not the page's top: header, control row,
+        // plans, positions and the session — hidden tabs included, by textContent.
+        const part = async (id: string): Promise<string> => {
+          const node = page.locator(`[data-testid="${id}"]`).first();
+          return (await node.count()) === 0
+            ? `(${id} absent)`
+            : `[${id}] ${((await node.textContent()) ?? '').replace(/\s+/g, ' ').slice(0, 400)}`;
+        };
+        const ids = [
+          'lab-header',
+          'lab-control',
+          'lab-close-plan',
+          'lab-close-notice',
+          'lab-positions',
+          'lab-scenario-plan',
+          'lab-scenario-notice',
+          'lab-session-lab',
+          'lab-session-engine',
+          'lab-closes',
+        ];
+        const parts = await Promise.all(ids.map(part));
+        return `--- lab requests/errors: ${errors.join(' ; ') || 'none'}\n${parts.join('\n')}`;
+      },
+    };
+  };
+
   it('applies an exact close to the next 30-second candle and the candle closes there', async (ctx) => {
     const page = await requireBrowser(ctx).newPage({ viewport: { width: 1280, height: 1200 } });
-    const errors: string[] = [];
-    page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
-    await page.waitForSelector('[data-testid="lab-control"]', { timeout: 30_000 });
-    // The banner is permanent (§3).
-    expect(await page.locator('body').innerText()).toMatch(/OTC LAB/);
-    expect(await page.locator('body').innerText()).toMatch(/SIMULATION ENVIRONMENT/);
+    const { errors, dump } = instrument(page);
+    try {
+      await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
+      await page.waitForSelector('[data-testid="lab-control"]', { timeout: 30_000 });
+      // The banner is permanent (§3).
+      expect(await page.locator('body').innerText()).toMatch(/OTC LAB/);
+      expect(await page.locator('body').innerText()).toMatch(/SIMULATION ENVIRONMENT/);
 
-    // The price on screen, as the operator reads it.
-    await page.waitForFunction(() => /\nprice\n[0-9.]+\n/.test(document.body.innerText), null, {
-      timeout: 30_000,
-    });
-    const price = /\nprice\n([0-9.]+)\n/.exec(await page.locator('body').innerText())![1]!;
+      // The price on screen, as the operator reads it.
+      // The price sits in the header strip since PH-24.6; the Mercado tab is hidden.
+      await page.waitForFunction(
+        () =>
+          /^[0-9]+\.[0-9]+$/.test(
+            document.querySelector('[data-testid="lab-header-price"]')?.textContent ?? '',
+          ),
+        null,
+        { timeout: 30_000 },
+      );
+      const price = (await text(page, 'lab-header-price')).trim();
 
-    await page.selectOption('[data-testid="lab-close-timeframe"]', '30s');
-    await page.selectOption('[data-testid="lab-close-bucket"]', 'next');
-    await page.fill('[data-testid="lab-close-price"]', price);
-    await page.click('[data-testid="lab-close-preview"]');
-    await page.waitForSelector('[data-testid="lab-close-plan"]', { timeout: 30_000 });
-    const plan = await text(page, 'lab-close-plan');
-    if (/parity/.test(plan)) {
-      // Half the lattice is off-parity for any window; the screen names the
-      // two reachable neighbours as buttons, and choosing one *is* the apply.
-      await page.locator('[data-testid="lab-close-plan"] button').first().click();
-    } else {
-      expect(plan).not.toMatch(/outside-natural-range/);
-      await page.click('[data-testid="lab-close-apply"]');
+      await page.selectOption('[data-testid="lab-close-timeframe"]', '30s');
+      await page.selectOption('[data-testid="lab-close-bucket"]', 'next');
+      await page.fill('[data-testid="lab-close-price"]', price);
+      await page.click('[data-testid="lab-close-preview"]');
+      await page.waitForSelector('[data-testid="lab-close-plan"]', { timeout: 30_000 });
+      const plan = await text(page, 'lab-close-plan');
+      if (/paridad/.test(plan)) {
+        // Half the lattice is off-parity for any window; the screen names the
+        // two reachable neighbours as buttons, and choosing one *is* the apply.
+        await page.locator('[data-testid="lab-close-neighbour"]').first().click();
+      } else {
+        expect(plan).not.toMatch(/FUERA DEL RANGO/);
+        await page.click('[data-testid="lab-close-apply"]');
+      }
+      await page.waitForFunction(
+        () =>
+          /ARMADO/.test(document.querySelector('[data-testid="lab-control"]')?.textContent ?? ''),
+        null,
+        { timeout: 30_000 },
+      );
+      const target = /objetivo\n([0-9.]+)/.exec(await text(page, 'lab-close-plan'))![1]!;
+
+      // The next 30-second candle ends within a minute. The outcome line is the
+      // Lab's own reading of its record at the candle's end.
+      await page.waitForFunction(
+        () =>
+          /cerró en/.test(document.querySelector('[data-testid="lab-control"]')?.textContent ?? ''),
+        null,
+        { timeout: 120_000 },
+      );
+      const control = await text(page, 'lab-control');
+      expect(control, `the candle did not close on ${target}`).toMatch(/EXACTO/);
+      expect(control).not.toMatch(/FALLÓ/);
+
+      // Both acts are in the Lab timeline and nothing is in the engine's.
+      const session = await text(page, 'lab-session-lab');
+      expect(session).toMatch(/cierre aplicado ✓/);
+      // PH-24.5 feeds the engine column by observing the engine; what must never
+      // appear there is a Lab action.
+      expect(await text(page, 'lab-session-engine')).not.toMatch(
+        /cierre aplicado|preset aplicado|escenario aplicado/,
+      );
+    } catch (error) {
+      console.error(await dump());
+      throw error;
     }
-    await page.waitForFunction(
-      () => /ARMED/.test(document.querySelector('[data-testid="lab-control"]')?.textContent ?? ''),
-      null,
-      { timeout: 30_000 },
-    );
-    const target = /target\n([0-9.]+)/.exec(await text(page, 'lab-close-plan'))![1]!;
-
-    // The next 30-second candle ends within a minute. The outcome line is the
-    // Lab's own reading of its record at the candle's end.
-    await page.waitForFunction(
-      () =>
-        /closed at/.test(document.querySelector('[data-testid="lab-control"]')?.textContent ?? ''),
-      null,
-      { timeout: 120_000 },
-    );
-    const control = await text(page, 'lab-control');
-    expect(control, `the candle did not close on ${target}`).toMatch(/EXACT/);
-    expect(control).not.toMatch(/MISSED/);
-
-    // Both acts are in the Lab timeline and nothing is in the engine's.
-    const session = await text(page, 'lab-session-lab');
-    expect(session).toMatch(/close\.apply ✓/);
-    // PH-24.5 feeds the engine column by observing the engine; what must never
-    // appear there is a Lab action.
-    expect(await text(page, 'lab-session-engine')).not.toMatch(
-      /close\.apply|preset\.apply|scenario\.apply/,
-    );
     expect(errors).toEqual([]);
     await page.close();
   }, 300_000);
   it('opens a CALL, applies WIN by minimum distance, and settlement agrees', async (ctx) => {
     const page = await requireBrowser(ctx).newPage({ viewport: { width: 1280, height: 1400 } });
-    const errors: string[] = [];
-    page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
-    await page.waitForSelector('[data-testid="lab-positions"]', { timeout: 30_000 });
-    await page.fill('[data-testid="lab-position-stake"]', '100');
-    await page.fill('[data-testid="lab-position-horizon"]', '45');
-    await page.click('[data-testid="lab-position-call"]');
-    await page.waitForSelector('[data-testid^="lab-position-lab-"]', { timeout: 30_000 });
-    const row = page.locator('[data-testid^="lab-position-lab-"]').first();
-    const id = (await row.getAttribute('data-testid'))!.replace('lab-position-', '');
+    const { errors, dump } = instrument(page);
+    try {
+      await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
+      await page.waitForSelector('[data-testid="tab-positions"]', { timeout: 30_000 });
+      await page.click('[data-testid="tab-positions"]');
+      await page.waitForSelector('[data-testid="lab-positions"]', { timeout: 30_000 });
+      await page.fill('[data-testid="lab-position-stake"]', '100');
+      await page.fill('[data-testid="lab-position-horizon"]', '45');
+      await page.click('[data-testid="lab-position-call"]');
+      await page.waitForSelector('[data-testid^="lab-position-lab-"]', { timeout: 30_000 });
+      const row = page.locator('[data-testid^="lab-position-lab-"]').first();
+      const id = (await row.getAttribute('data-testid'))!.replace('lab-position-', '');
 
-    // WIN by minimum distance; if parity refuses ±1 the Lab names ±2 and the
-    // test takes the plan the screen shows rather than redefining "minimum".
-    await page.click(`[data-testid="lab-preset-${id}-win-minimum"]`);
-    await page.waitForFunction(() => /ARMED|parity/.test(document.body.innerText), null, {
-      timeout: 30_000,
-    });
-    if (/parity/.test(await page.locator('body').innerText())) {
-      // The preset named entry and entry + 2; choosing the one above entry
-      // applies it at the position's expiry — the screen carries the instant.
-      await page.locator('[data-testid="lab-close-plan"] button').last().click();
-      await page.waitForFunction(
-        () =>
-          /ARMED/.test(document.querySelector('[data-testid="lab-control"]')?.textContent ?? ''),
-        null,
-        { timeout: 30_000 },
-      );
+      // WIN by minimum distance; if parity refuses ±1 the Lab names ±2 and the
+      // test takes the plan the screen shows rather than redefining "minimum".
+      await page.click(`[data-testid="lab-preset-${id}-win-minimum"]`);
+      await page.waitForFunction(() => /ARMADO|paridad/.test(document.body.innerText), null, {
+        timeout: 30_000,
+      });
+      if (/paridad/.test(await page.locator('body').innerText())) {
+        // The preset named entry and entry + 2; choosing the one above entry
+        // applies it at the position's expiry — the screen carries the instant.
+        await page.locator('[data-testid="lab-close-neighbour"]').last().click();
+        await page.waitForFunction(
+          () =>
+            /ARMADO/.test(document.querySelector('[data-testid="lab-control"]')?.textContent ?? ''),
+          null,
+          { timeout: 30_000 },
+        );
+      }
+      // A preset lands the operator on the Cierre tab (its plan lives there); the
+      // settled row is back on Posiciones, so open it before waiting for the row.
+      await page.click('[data-testid="tab-positions"]');
+      await page.waitForSelector(`[data-testid="lab-position-${id}-actual"]`, { timeout: 120_000 });
+      const actual = await page.locator(`[data-testid="lab-position-${id}-actual"]`).innerText();
+      expect(actual).toMatch(/COINCIDE/);
+      expect(actual).not.toMatch(/NO COINCIDE/);
+    } catch (error) {
+      console.error(await dump());
+      throw error;
     }
-    await page.waitForSelector(`[data-testid="lab-position-${id}-actual"]`, { timeout: 120_000 });
-    const actual = await page.locator(`[data-testid="lab-position-${id}-actual"]`).innerText();
-    expect(actual).toMatch(/agrees/);
-    expect(actual).not.toMatch(/DISAGREES/);
     expect(errors).toEqual([]);
     await page.close();
   }, 300_000);
   it('applies a scenario from the panel and the control row reads ARMED', async (ctx) => {
     const page = await requireBrowser(ctx).newPage({ viewport: { width: 1280, height: 1600 } });
-    const errors: string[] = [];
-    page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
-    await page.waitForSelector('[data-testid="lab-scenario-bullish-trend"]', { timeout: 30_000 });
-    // The two the signs cannot express are disabled, with their reason on screen.
-    expect(await page.locator('[data-testid="lab-scenario-extreme-volatility"]').isDisabled()).toBe(
-      true,
-    );
-    expect(await text(page, 'lab-scenario-why-low-activity')).toMatch(/arrival/);
-    await page.click('[data-testid="lab-scenario-bullish-trend"]');
-    await page.fill('[data-testid="lab-scenario-param-net"]', '3');
-    await page.click('[data-testid="lab-scenario-preview"]');
-    await page.waitForSelector('[data-testid="lab-scenario-plan"]', { timeout: 30_000 });
-    expect(await text(page, 'lab-scenario-plan')).toMatch(/armed\nno/);
-    await page.click('[data-testid="lab-scenario-apply"]');
-    await page.waitForFunction(
-      () => /ARMED/.test(document.querySelector('[data-testid="lab-control"]')?.textContent ?? ''),
-      null,
-      { timeout: 30_000 },
-    );
-    expect(await text(page, 'lab-scenario-plan')).toMatch(/armed\nYES/);
-    expect(await text(page, 'lab-session-lab')).toMatch(/scenario\.apply ✓/);
-    // PH-24.5: the engine's timeline is fed by observing the engine — at least
-    // its first sight of every market — and the closes diagnostic says what it
-    // rests on rather than calling this session's handful a pattern.
-    await page.waitForFunction(
-      () =>
-        /observed: regime/.test(
-          document.querySelector('[data-testid="lab-session-engine"]')?.textContent ?? '',
-        ),
-      null,
-      { timeout: 30_000 },
-    );
-    expect(await text(page, 'lab-session-engine')).not.toMatch(
-      /close\.apply|scenario\.apply|preset\.apply/,
-    );
-    const closes = await text(page, 'lab-closes');
-    expect(closes).toMatch(/a verdict needs 10/);
-    expect(closes).toMatch(/TOO-FEW-TO-SAY|NO-PATTERN|ONE-SIDED/);
+    const { errors, dump } = instrument(page);
+    try {
+      await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
+      await page.waitForSelector('[data-testid="tab-scenarios"]', { timeout: 30_000 });
+      await page.click('[data-testid="tab-scenarios"]');
+      await page.waitForSelector('[data-testid="lab-scenario-bullish-trend"]', { timeout: 30_000 });
+      // The two the signs cannot express are disabled, with their reason on screen.
+      expect(
+        await page.locator('[data-testid="lab-scenario-extreme-volatility"]').isDisabled(),
+      ).toBe(true);
+      await page.locator('[data-testid="lab-scenario-why-low-activity"] button').hover();
+      expect(await page.locator('[data-testid="info-text"]').first().innerText()).toMatch(
+        /llegadas/,
+      );
+      await page.click('[data-testid="lab-scenario-bullish-trend"]');
+      await page.fill('[data-testid="lab-scenario-param-net"]', '3');
+      await page.click('[data-testid="lab-scenario-preview"]');
+      await page.waitForSelector('[data-testid="lab-scenario-plan"]', { timeout: 30_000 });
+      expect(await text(page, 'lab-scenario-plan')).toMatch(/armado\nno/);
+      await page.click('[data-testid="lab-scenario-apply"]');
+      await page.waitForFunction(
+        () =>
+          /ARMADO/.test(document.querySelector('[data-testid="lab-control"]')?.textContent ?? ''),
+        null,
+        { timeout: 30_000 },
+      );
+      expect(await text(page, 'lab-scenario-plan')).toMatch(/armado\nSÍ/);
+      expect(await text(page, 'lab-session-lab')).toMatch(/escenario aplicado ✓/);
+      // PH-24.5: the engine's timeline is fed by observing the engine — at least
+      // its first sight of every market — and the closes diagnostic says what it
+      // rests on rather than calling this session's handful a pattern.
+      await page.waitForFunction(
+        () =>
+          /observado: régimen/.test(
+            document.querySelector('[data-testid="lab-session-engine"]')?.textContent ?? '',
+          ),
+        null,
+        { timeout: 30_000 },
+      );
+      expect(await text(page, 'lab-session-engine')).not.toMatch(
+        /close\.apply|scenario\.apply|preset\.apply/,
+      );
+      const closes = await text(page, 'lab-closes');
+      expect(closes).toMatch(/un veredicto necesita 10/);
+      expect(closes).toMatch(/DEMASIADO POCOS PARA DECIR|SIN PATRÓN|SESGADO/);
+    } catch (error) {
+      console.error(await dump());
+      throw error;
+    }
     expect(errors).toEqual([]);
     await page.close();
   }, 300_000);

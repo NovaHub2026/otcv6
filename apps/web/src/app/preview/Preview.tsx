@@ -3,18 +3,17 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import { fetchCatalogue, type CatalogueEntry } from '../../lib/api.js';
 import { filterCatalogue, groupByFamily } from '../../lib/catalogueView.js';
+import { es } from '../../lib/es.js';
 import { PANEL_TIMEFRAMES, type PanelTimeframeId } from '@otc/chart';
+import { Badge, FIELD, Info, T } from '../ui/kit.js';
 import { PreviewChart } from './PreviewChart.js';
 
 /**
- * The Preview submenu: pick an asset, pick a timeframe, watch.
+ * Vista: elige un activo, elige un marco, mira (PH-20, rediseñada en PH-24.6).
  *
- * **One asset per screen.** The first version put several side by side in a
- * grid, reasoning that the operator's question is comparative. The Human Owner's
- * answer was that it is not: selecting an asset should *change* the screen. That
- * is also the honest shape for a chart — two markets at half width each are two
- * charts nobody can read, and a market this project spends millions of ticks
- * making plausible deserves the whole width.
+ * Un activo por pantalla: seleccionar cambia la pantalla entera. Un mercado en
+ * el que este proyecto gasta millones de ticks haciéndolo plausible merece el
+ * ancho completo.
  */
 export function Preview({ apiBase }: { apiBase: string }): ReactElement {
   const [catalogue, setCatalogue] = useState<CatalogueEntry[] | null>(null);
@@ -39,13 +38,11 @@ export function Preview({ apiBase }: { apiBase: string }): ReactElement {
     };
   }, [apiBase]);
 
-  if (error !== null) return <Message text={`Cannot reach the engine: ${error}`} />;
-  if (catalogue === null) return <Message text="Loading the catalogue…" />;
-  if (catalogue.length === 0) return <Message text="The catalogue is empty." />;
+  if (error !== null) return <Message text={es.preview.unreachable(error)} />;
+  if (catalogue === null) return <Message text={es.preview.loading} />;
+  if (catalogue.length === 0) return <Message text={es.preview.empty} />;
 
   const shown = catalogue.find((entry) => entry.id === selected) ?? null;
-  // Filtering narrows the *list*, never the selection: an operator who types a
-  // query has not asked to stop watching the market on screen.
   const groups = groupByFamily(filterCatalogue(catalogue, query));
   const matched = groups.reduce((sum, group) => sum + group.entries.length, 0);
 
@@ -53,43 +50,41 @@ export function Preview({ apiBase }: { apiBase: string }): ReactElement {
     <div style={{ display: 'flex', height: '100%', minHeight: 0 }}>
       <aside
         style={{
-          width: 260,
-          borderRight: '1px solid #242c3d',
+          width: 250,
+          borderRight: `1px solid ${T.line}`,
           overflowY: 'auto',
           flexShrink: 0,
+          background: T.panel,
         }}
       >
-        <div style={{ padding: '12px 14px 8px', fontSize: 12, color: '#8b93a7' }}>
-          {catalogue.length} registered · {catalogue.filter((entry) => entry.live).length} hosted
-          {query.trim() === '' ? '' : ` · ${matched} shown`}
+        <div
+          style={{
+            padding: '12px 14px 6px',
+            fontSize: 11,
+            color: T.muted,
+            display: 'flex',
+            alignItems: 'center',
+          }}
+        >
+          {es.preview.registered(catalogue.length, catalogue.filter((entry) => entry.live).length)}
+          {query.trim() === '' ? '' : ` · ${es.preview.shown(matched)}`}
+          <Info text={es.preview.characterInfo} />
         </div>
-        {/*
-          A search box, because a flat unsorted list is right for five assets and
-          useless at a hundred. PH-21 measured that a hundred-asset build
-          succeeds; this is the part of that scale the panel has to absorb.
-        */}
         <div style={{ padding: '0 14px 10px' }}>
           <input
             data-testid="asset-filter"
             value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-            }}
-            placeholder="filter by id, name or family"
-            style={{
-              width: '100%',
-              padding: '5px 7px',
-              background: '#0b0e14',
-              border: '1px solid #242c3d',
-              color: '#d7dce5',
-              font: 'inherit',
-              fontSize: 12,
-            }}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={es.preview.filter}
+            style={{ ...FIELD, width: '100%' }}
           />
         </div>
         {matched === 0 && (
-          <div data-testid="no-matches" style={{ padding: '8px 14px', color: '#5b6377' }}>
-            nothing matches {query}
+          <div
+            data-testid="no-matches"
+            style={{ padding: '8px 14px', color: T.faint, fontSize: 12 }}
+          >
+            {es.preview.noMatches(query)}
           </div>
         )}
         {groups.map((group) => (
@@ -97,10 +92,10 @@ export function Preview({ apiBase }: { apiBase: string }): ReactElement {
             <div
               style={{
                 padding: '10px 14px 4px',
-                fontSize: 11,
-                color: '#5b6377',
+                fontSize: 10,
+                color: T.faint,
                 textTransform: 'uppercase',
-                letterSpacing: 0.5,
+                letterSpacing: 1,
               }}
             >
               {group.family} · {group.entries.length}
@@ -110,31 +105,34 @@ export function Preview({ apiBase }: { apiBase: string }): ReactElement {
                 key={entry.id}
                 type="button"
                 data-testid={`asset-${entry.id}`}
-                onClick={() => {
-                  setSelected(entry.id);
-                }}
+                onClick={() => setSelected(entry.id)}
                 style={{
                   display: 'block',
                   width: '100%',
                   textAlign: 'left',
-                  padding: '10px 14px',
-                  background: selected === entry.id ? '#161b26' : 'transparent',
+                  padding: '9px 14px',
+                  background: selected === entry.id ? T.raised : 'transparent',
                   border: 'none',
-                  borderLeft: `3px solid ${selected === entry.id ? '#3fb950' : 'transparent'}`,
-                  color: '#d7dce5',
+                  borderLeft: `3px solid ${selected === entry.id ? T.ok : 'transparent'}`,
+                  color: T.text,
                   font: 'inherit',
+                  fontSize: 12,
                   cursor: 'pointer',
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <div
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                >
                   <span>{entry.displayName}</span>
-                  <span style={{ color: entry.live ? '#3fb950' : '#5b6377', fontSize: 11 }}>
-                    {entry.live ? 'hosted' : 'idle'}
-                  </span>
+                  <Badge tone={entry.live ? 'ok' : 'muted'}>
+                    {entry.live ? es.preview.hosted : es.preview.idle}
+                  </Badge>
                 </div>
-                <div style={{ fontSize: 11, color: '#8b93a7', marginTop: 2 }}>
-                  {(100 * entry.dispersion.quarterlyPercent).toFixed(1)}% a quarter ·{' '}
-                  {(entry.meanIntervalMs / 1000).toFixed(1)}s a tick
+                <div style={{ fontSize: 10, color: T.faint, marginTop: 2 }}>
+                  {es.preview.character(
+                    (100 * entry.dispersion.quarterlyPercent).toFixed(1),
+                    (entry.meanIntervalMs / 1000).toFixed(1),
+                  )}
                 </div>
               </button>
             ))}
@@ -150,7 +148,7 @@ export function Preview({ apiBase }: { apiBase: string }): ReactElement {
             display: 'flex',
             gap: 6,
             padding: '8px 12px',
-            borderBottom: '1px solid #242c3d',
+            borderBottom: `1px solid ${T.line}`,
             alignItems: 'center',
             flexShrink: 0,
           }}
@@ -159,14 +157,12 @@ export function Preview({ apiBase }: { apiBase: string }): ReactElement {
             <button
               key={entry.id}
               type="button"
-              onClick={() => {
-                setTimeframe(entry.id);
-              }}
+              onClick={() => setTimeframe(entry.id)}
               style={{
                 padding: '4px 10px',
-                background: timeframe === entry.id ? '#242c3d' : 'transparent',
-                color: timeframe === entry.id ? '#d7dce5' : '#8b93a7',
-                border: '1px solid #242c3d',
+                background: timeframe === entry.id ? T.line : 'transparent',
+                color: timeframe === entry.id ? T.text : T.muted,
+                border: `1px solid ${T.line}`,
                 borderRadius: 3,
                 font: 'inherit',
                 fontSize: 12,
@@ -178,35 +174,23 @@ export function Preview({ apiBase }: { apiBase: string }): ReactElement {
           ))}
           {shown !== null && (
             <>
-              <span style={{ marginLeft: 12, color: '#d7dce5', fontSize: 12 }}>
+              <span style={{ marginLeft: 12, color: T.text, fontSize: 13 }}>
                 {shown.displayName}
               </span>
-              <span style={{ color: '#5b6377', fontSize: 12 }}>{shown.id}</span>
-              {/*
-                Sub-minute is served live rather than from storage: a stored
-                one-second bar of last March would be a shape no tick made.
-              */}
+              <span style={{ color: T.faint, fontSize: 11 }}>{shown.id}</span>
               <a
                 href={`/preview/ticks/${shown.id}`}
-                style={{
-                  marginLeft: 'auto',
-                  color: '#8b93a7',
-                  textDecoration: 'none',
-                  fontSize: 12,
-                }}
+                style={{ marginLeft: 'auto', color: T.muted, textDecoration: 'none', fontSize: 12 }}
               >
-                ticks →
+                {es.preview.ticks}
               </a>
             </>
           )}
         </div>
-
         <div style={{ flex: 1, minHeight: 0 }}>
           {shown === null ? (
-            <Message text="Select an asset." />
+            <Message text={es.preview.select} />
           ) : (
-            // Keyed on the asset, so a switch remounts the chart instead of
-            // reusing one that still holds the previous market's series.
             <PreviewChart key={shown.id} apiBase={apiBase} asset={shown} timeframeId={timeframe} />
           )}
         </div>
@@ -216,5 +200,5 @@ export function Preview({ apiBase }: { apiBase: string }): ReactElement {
 }
 
 function Message({ text }: { text: string }): ReactElement {
-  return <div style={{ padding: 24, color: '#8b93a7' }}>{text}</div>;
+  return <div style={{ padding: 24, color: T.muted }}>{text}</div>;
 }

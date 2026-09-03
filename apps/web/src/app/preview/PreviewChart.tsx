@@ -9,6 +9,8 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts';
 import { useEffect, useRef, useState, type ReactElement } from 'react';
+import { es } from '../../lib/es.js';
+import { Info, T } from '../ui/kit.js';
 import type { Tick } from '@otc/core/browser';
 import { fetchHistory, type CatalogueEntry } from '../../lib/api.js';
 import { priceFormatFor, toDisplayedPrice } from '../../lib/priceFormat.js';
@@ -96,7 +98,7 @@ export function PreviewChart({
   const container = useRef<HTMLDivElement | null>(null);
   const chart = useRef<IChartApi | null>(null);
   const series = useRef<ISeriesApi<'Candlestick'> | null>(null);
-  const [status, setStatus] = useState<string>('loading');
+  const [status, setStatus] = useState<string>(es.preview.status.loading);
   const [bars, setBars] = useState<number>(0);
   const [last, setLast] = useState<{ price: number; at: number } | null>(null);
   /**
@@ -200,9 +202,9 @@ export function PreviewChart({
 
     const liveStatus = (): string => {
       if (!connection.joinExact) {
-        return 'live — the forming candle is the record, re-read each minute';
+        return `${es.preview.status.live} — la vela en curso es el registro, releído cada minuto`;
       }
-      return afterGap ? 'live — reconnected after a gap' : 'live';
+      return afterGap ? es.preview.status.liveAfterGap : es.preview.status.live;
     };
 
     const armStall = (): void => {
@@ -222,7 +224,7 @@ export function PreviewChart({
       failures += 1;
       afterGap = true;
       const inMs = Math.min(RECONNECT_BACKOFF_MS * 2 ** (failures - 1), MAX_RECONNECT_BACKOFF_MS);
-      setStatus(`${why} — reconnecting in ${(inMs / 1000).toFixed(0)}s (attempt ${failures})`);
+      setStatus(`${why} — reconectando en ${(inMs / 1000).toFixed(0)} s (intento ${failures})`);
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null;
         void run().catch((error: unknown) => {
@@ -237,7 +239,7 @@ export function PreviewChart({
       const self = { joinExact: true };
       connection = self;
       stopReseeding();
-      setStatus(afterGap ? 'reloading history after a gap' : 'loading history');
+      setStatus(afterGap ? es.preview.status.reloadingHistory : es.preview.status.loadingHistory);
       const to = Date.now();
       const from = to - frame.defaultSpanMs;
       const history = await fetchHistory(
@@ -353,7 +355,7 @@ export function PreviewChart({
       applySeed();
 
       if (!asset.live) {
-        setStatus('history only — this market is not hosted');
+        setStatus(`solo historial — ${es.preview.status.notHosted}`);
         return;
       }
 
@@ -444,7 +446,7 @@ export function PreviewChart({
             lineWidth: 1,
             lineStyle: 2,
             axisLabelVisible: true,
-            title: 'live',
+            title: es.preview.status.live,
           });
         } else {
           priceLine.applyOptions({ price });
@@ -521,7 +523,7 @@ export function PreviewChart({
       >
         <span
           data-testid="stream-status"
-          style={{ color: status.startsWith('live') ? '#3fb950' : '#8b93a7' }}
+          style={{ color: status.startsWith(es.preview.status.live) ? T.ok : T.muted }}
         >
           {status}
         </span>
@@ -540,13 +542,35 @@ export function PreviewChart({
             </span>
           </span>
         )}
-        <span data-testid="bar-count">{bars.toLocaleString()} bars</span>
-        <span data-testid="forming-bucket" style={{ color: '#5b6377' }}>
-          {forming === null ? 'no live bar' : `live bar ${String(forming.time)}`}
+        <span data-testid="bar-count">{es.preview.bars(bars.toLocaleString())}</span>
+        {/*
+          Two renderings of the forming bar. The operator reads the time of day;
+          the browser suite reads the bucket's epoch second through `forming-bucket`,
+          a test seam that stays in the DOM but out of sight — an epoch on the
+          status strip read as debug output (PH-24.6).
+        */}
+        <span style={{ color: T.faint }}>
+          {forming === null
+            ? es.preview.noLiveBar
+            : `${es.preview.liveBar} · ${new Date(forming.time * 1000).toISOString().slice(11, 16)} UTC`}
         </span>
-        <span>quantum {asset.logQuantum.toExponential(3)}</span>
-        <span>tie rate {(100 * asset.tieRate).toFixed(2)}%</span>
-        <span>quarterly spread {(100 * asset.dispersion.quarterlyPercent).toFixed(1)}%</span>
+        <span
+          data-testid="forming-bucket"
+          style={{
+            position: 'absolute',
+            width: 1,
+            height: 1,
+            overflow: 'hidden',
+            clip: 'rect(0 0 0 0)',
+          }}
+        >
+          {forming === null
+            ? es.preview.noLiveBar
+            : `${es.preview.liveBar} ${String(forming.time)}`}
+        </span>
+        <Info
+          text={`cuanto ${asset.logQuantum.toExponential(3)} · tasa de empate ${(100 * asset.tieRate).toFixed(2)} % · dispersión trimestral ${(100 * asset.dispersion.quarterlyPercent).toFixed(1)} %`}
+        />
       </div>
     </div>
   );

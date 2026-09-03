@@ -75,6 +75,12 @@ const LAB = 'OTC LAB — SIMULATION ENVIRONMENT';
  * collides with the engine's own sequence (INV-002); kept beside the feed it
  * settles a position at a price no chart showed (INV-003). Widen the window.
  */
+/** A relative close, in lattice steps, or null when the request named a price. */
+function deltaOf(raw: string | undefined): number | null {
+  if (raw === undefined || raw.trim().length === 0) return null;
+  return Number.parseInt(raw.trim(), 10);
+}
+
 const NON_NATURAL_REFUSED =
   'nonNatural is not available. A synthetic tick appended to the feed would collide with the ' +
   "engine's own sequence numbering (INV-002); one kept beside the feed would settle a position at " +
@@ -392,10 +398,15 @@ export class LabController {
     @Query('timeframe') tf?: string,
     @Query('expiry') expiry?: string,
     @Query('nonNatural') nonNatural?: string,
+    @Query('delta') delta?: string,
   ): unknown {
     if (nonNatural !== undefined) throw new BadRequestException(NON_NATURAL_REFUSED);
-    const request = this.closeRequest(id, price, bucket, tf, expiry);
-    return { ...this.planAt(id, request.price, request.instant), environment: LAB, armed: false };
+    const request = this.closeRequest(id, price, bucket, tf, expiry, delta);
+    return {
+      ...this.planAt(id, request.price, request.instant, request.delta),
+      environment: LAB,
+      armed: false,
+    };
   }
 
   /**
@@ -415,12 +426,13 @@ export class LabController {
     @Query('timeframe') tf?: string,
     @Query('expiry') expiry?: string,
     @Query('nonNatural') nonNatural?: string,
+    @Query('delta') delta?: string,
   ): Promise<unknown> {
     if (nonNatural !== undefined) throw new BadRequestException(NON_NATURAL_REFUSED);
-    const request = this.closeRequest(id, price, bucket, tf, expiry);
+    const request = this.closeRequest(id, price, bucket, tf, expiry, delta);
     const result = await this.applyAt(
       id,
-      { price: request.price, instant: request.instant },
+      { price: request.price, instant: request.instant, delta: request.delta },
       'close.apply',
       {
         bucket: request.bucket,
@@ -440,7 +452,7 @@ export class LabController {
    */
   private async applyAt(
     id: string,
-    request: { price: string; instant: EpochMillis },
+    request: { price: string; instant: EpochMillis; delta?: number | null },
     action: string,
     parameters: Record<string, unknown>,
   ): Promise<{ plan: ReturnType<LabController['planAt']>; armed: boolean }> {
@@ -448,7 +460,7 @@ export class LabController {
     const at = this.venue.now();
     const before = this.controlState(id);
     const result = await this.venue.betweenAdvances(() => {
-      const plan = this.planAt(id, request.price, request.instant);
+      const plan = this.planAt(id, request.price, request.instant, request.delta ?? null);
       const signs = plan.selection;
       if (signs !== null && signs.length > 0) wrapper.arm(signs);
       return { plan, armed: signs !== null && signs.length > 0 };
@@ -1043,18 +1055,41 @@ export class LabController {
     bucket: string | undefined,
     tf: string | undefined,
     expiry: string | undefined,
-  ): { id: string; price: string; instant: EpochMillis; bucket: string; timeframe: string } {
+    delta?: string,
+  ): {
+    id: string;
+    price: string;
+    delta: number | null;
+    instant: EpochMillis;
+    bucket: string;
+    timeframe: string;
+  } {
     if (this.venue.hostedMarket(id) === null)
       throw new NotFoundException(`Asset ${id} is not hosted.`);
-    if (price === undefined || price.trim().length === 0) {
-      throw new BadRequestException('price is required: the close, in display units.');
+    if (
+      (price === undefined || price.trim().length === 0) &&
+      (delta === undefined || delta.trim().length === 0)
+    ) {
+      throw new BadRequestException(
+        'price (display units) or delta (lattice steps from now) is required.',
+      );
+    }
+    if (delta !== undefined && delta.trim().length > 0 && !/^-?\d+$/.test(delta.trim())) {
+      throw new BadRequestException('delta must be a whole number of lattice steps.');
     }
     if (expiry !== undefined) {
       const instant = Number(expiry);
       if (!Number.isSafeInteger(instant) || instant <= this.venue.now()) {
         throw new BadRequestException('expiry must be a future instant in epoch milliseconds.');
       }
-      return { id, price, instant: epochMillis(instant), bucket: 'expiry', timeframe: '-' };
+      return {
+        id,
+        price: price ?? '',
+        delta: deltaOf(delta),
+        instant: epochMillis(instant),
+        bucket: 'expiry',
+        timeframe: '-',
+      };
     }
     if (bucket !== 'current' && bucket !== 'next') {
       throw new BadRequestException("bucket must be 'current' or 'next' (or give expiry=).");
@@ -1066,7 +1101,8 @@ export class LabController {
     }
     return {
       id,
-      price,
+      price: price ?? '',
+      delta: deltaOf(delta),
       instant: closeInstant(this.venue.now(), tf, bucket),
       bucket,
       timeframe: tf,
@@ -1078,6 +1114,7 @@ export class LabController {
     id: string,
     priceText: string,
     instant: EpochMillis,
+    delta: number | null = null,
   ): {
     environment: string;
     asset: string;
@@ -1096,11 +1133,27 @@ export class LabController {
     selection: readonly (1 | -1)[] | null;
   } {
     const asset = this.venue.assetFor(id)!;
+    const fork = this.venue.labFork(id)!;
     let resolved;
-    try {
-      resolved = resolveTarget(asset.instrument, priceText);
-    } catch (error) {
-      throw new BadRequestException((error as Error).message);
+    if (delta !== null) {
+      // Relative: N lattice steps from where the market stands as the plan is
+      // read — the pending tick's price, which is also where the window starts.
+      const level = logPrice(fork.price + delta);
+      resolved = {
+        kind: 'level' as const,
+        level,
+        display: displayPrice(level, {
+          logQuantum: asset.instrument.logQuantum,
+          referencePrice: asset.instrument.referencePrice,
+          displayPrecision: asset.instrument.displayPrecision,
+        }).toFixed(asset.instrument.displayPrecision),
+      };
+    } else {
+      try {
+        resolved = resolveTarget(asset.instrument, priceText);
+      } catch (error) {
+        throw new BadRequestException((error as Error).message);
+      }
     }
     if (resolved.kind === 'between') {
       throw new ConflictException({
@@ -1113,7 +1166,6 @@ export class LabController {
         above: resolved.above,
       });
     }
-    const fork = this.venue.labFork(id)!;
     const window = readWindow(fork, instant);
     const plan = planClose(asset.instrument, resolved.level, window, this.venue.labRandom(id));
     return {

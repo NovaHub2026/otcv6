@@ -13,7 +13,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Remote             | `origin` → NovaHub2026/otcv6, public                                       |
 | Active cycle       | Cycle 8, **2 of 3** phases approved (PH-22, PH-23)                         |
 | Active phase       | PH-24 — The Lab's controls: applying a selection                           |
-| Active subphase    | none                                                                       |
+| Active subphase    | PH-24.7 — Los controles que faltan en pantalla                             |
 | Cycle Audit        | **007 closed** 2026-09-03; the next is due after three approved phases     |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                         |
 
@@ -34,12 +34,15 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**All five PH-24 subphases are approved.** The next legal action is PH-24's
-phase integration verification and full Quality Gate — `npm run gate` under the
-browser prefix, so the four browser files execute — then the phase approval,
-the merge to `main`, hosted CI, and **Cycle Audit 8** (three approved phases:
-PH-22, PH-23, PH-24). A closure draft for the phase document's §8–§10 is in this
-session's scratchpad (`PH-24-closure.md`).
+**PH-24.6 is approved; PH-24.7 is active**
+([PH-24.7](docs/phases/PH-24.7-los-controles-que-faltan-en-pantalla.md)). The
+panel and the Lab are in Spanish, tabbed, with every explanation behind ⓘ;
+`panelUx.test.ts` keeps it so. PH-24.7 puts on the screen the three controls
+that exist only by API or by construction: shock (locate and direct), a close
+at a typed expiry, and Target Price as a region reach. **The merge, hosted CI
+and Cycle Audit 8 wait until the Lab is complete** (the Human Owner's direction;
+`DECISION-LOG.md`, 2026-09-03). Run the browser suites under
+`LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu`.
 
 **The next phase is the decision LA-03 names.** The Lab specification audit
 ([LAB-SPECIFICATION-AUDIT-001](docs/audits/LAB-SPECIFICATION-AUDIT-001.md))

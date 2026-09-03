@@ -363,6 +363,66 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     await venue.stop();
   });
 
+  it('PH-24.6: a relative close — N lattice steps from where the market stands — is a close like any other', async () => {
+    const { venue, clock, controller } = await labVenue();
+    await advance(venue, clock, 20_000);
+    const from = venue.hostedMarket(id)!.snapshotEngine().price;
+    // Preview at +2 and -2: the target is the engine's price plus the delta, and
+    // one of the two parities is reachable in any window with ticks in it.
+    const up = controller.closePreview(
+      id,
+      undefined,
+      'next',
+      '1m',
+      undefined,
+      undefined,
+      '2',
+    ) as Applied & { target: number; fromPrice: number };
+    const down = controller.closePreview(
+      id,
+      undefined,
+      'next',
+      '1m',
+      undefined,
+      undefined,
+      '-2',
+    ) as Applied & { target: number };
+    expect(up.target).toBe(from + 2);
+    expect(down.target).toBe(from - 2);
+    expect(up.fromPrice).toBe(from);
+    expect(up.armed).toBe(false);
+    const plus1 = controller.closePreview(
+      id,
+      undefined,
+      'next',
+      '1m',
+      undefined,
+      undefined,
+      '1',
+    ) as Applied & {
+      target: number;
+      impossible: string | null;
+    };
+    const reachable = plus1.impossible === null ? '1' : '2';
+    const applied = (await controller.applyClose(
+      id,
+      undefined,
+      'next',
+      '1m',
+      undefined,
+      undefined,
+      reachable,
+    )) as Applied & { target: number };
+    expect(applied.armed).toBe(true);
+    expect(applied.target).toBe(from + Number(reachable));
+    // Neither a price nor a delta is refused by name; a fractional delta too.
+    expect(() => controller.closePreview(id, undefined, 'next', '1m')).toThrow(/price .* or delta/);
+    expect(() =>
+      controller.closePreview(id, undefined, 'next', '1m', undefined, undefined, '1.5'),
+    ).toThrow(/whole number/);
+    await venue.stop();
+  }, 60_000);
+
   it('answers 409 when the process was not composed as a Lab', async () => {
     const { venue, clock, controller } = await labVenue(false);
     await advance(venue, clock, 5_000);

@@ -109,6 +109,8 @@ state), INV-009 (a Lab settlement recomputes from the Lab's record), INV-010.
 | PH-24.3  | Presets and simulated positions, settled by `packages/trading` against the Lab's record                                         | N1–N4, O1–O10, L5 as a verification    |
 | PH-24.4  | Scenarios: the nine missing criteria, the three that sign selection cannot express — said so — and the screen for every control | P1–P17, F1–F3 (located + directed), G1 |
 | PH-24.5  | The diagnostics the audit found missing: §70 over controlled candles, §37 fenced, the engine-event timeline fed                 | K11, M7–M8, §72–§73                    |
+| PH-24.6  | Rediseño UX del panel y del Lab — en español, con tooltips (directed by the Human Owner before closing)                         | the visible half, made usable          |
+| PH-24.7  | Los controles que faltan en pantalla: shock, expiración, Target Price                                                           | F1–F3, I7, G1–G8 on the screen         |
 
 Each subphase owes its plants. PH-24.1 owes one that arms in the production
 composition and is caught.

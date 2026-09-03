@@ -403,3 +403,30 @@ chart, close and settlement are one price.
 **Revisit if:** the Lab ever gets a record of its own that no chart draws from
 and no settlement reads — at which point the tick would have somewhere to go,
 and would still need every fence ADR-0015 §3 names.
+
+## 2026-09-03 — PH-24 stays open until the Lab is complete; the cycle boundary waits
+
+**Decided:** PH-24 is not approved until everything the Lab is meant to do, and
+its tests, are finished. The Human Owner directed it in their own words —
+_"fusión, CI y Auditoría de Ciclo 8 solo se aplicará cuando … esté terminada;
+vamos a terminar absolutamente todo lo del lab y las pruebas"_ — and the form
+that honours it without amending Governance is to keep the phase **active** and
+add the remaining Lab work as its subphases (PH-24.6 the UX redesign, then the
+items the specification audit and the Lab inventory of 2026-09-03 list), rather
+than approve PH-24 and open PH-25.
+
+**Alternative:** approve PH-24 now and open new phases. `GOVERNANCE.md` §28
+makes the third approved phase of a cycle a hard boundary — development stops
+and Cycle Audit 8 runs — and PH-24 would be that third phase. Opening PH-25
+after it would have to postpone an audit the rules say does not wait, which is a
+Governance amendment only the Human Owner may make (§5.1) and which they did
+not ask for; they asked for the Lab to be finished first.
+
+**Consequence:** a longer phase with more subphases than any before it, each
+still gated and approved from evidence in its turn; the phase gate, the merge to
+`main`, hosted CI and Cycle Audit 8 all at the end. The full gate started on
+`15d25ec` for the phase closure was stopped as moot (unit 113 files / 2,445
+tests green, 6 of 43 statistical files run) and will be re-run on the final tree.
+
+**Revisit if:** the phase grows past what one audit can examine — then the
+Human Owner may prefer to approve a first half and let §28 run.
