@@ -28,7 +28,7 @@ describe('production registers no sign source (PH-24.1, ADR-0015 §3)', () => {
     const main = code('main.ts');
     expect(main).toMatch(/NestFactory\.create\(AppModule\.register\(\)/);
     expect(main, 'main.ts names a sign source').not.toMatch(
-      /signSource|SelectableSigns|SignSelector/,
+      /signSource|arrivalSource|SelectableSigns|SignSelector|SelectableArrival|ArrivalSelector/,
     );
   });
 
@@ -42,6 +42,14 @@ describe('production registers no sign source (PH-24.1, ADR-0015 §3)', () => {
     ).toHaveLength(2);
     expect(app).toMatch(/readonly signSource\?: SignSourceFactory/);
     expect(app).toMatch(/options\.signSource \?\? null/);
+    // PH-24.13: the arrival source, the same way.
+    const arrivals = app.match(/arrivalSource\b/g) ?? [];
+    expect(
+      arrivals,
+      'app.module.ts does more with arrivalSource than declare and pass it',
+    ).toHaveLength(2);
+    expect(app).toMatch(/readonly arrivalSource\?: SignSourceFactory/);
+    expect(app).toMatch(/options\.arrivalSource \?\? null/);
     expect(app, 'app.module.ts constructs a sign source itself').not.toMatch(
       /SelectableSigns|SignSelector|new .*Signs\(/,
     );
@@ -54,14 +62,29 @@ describe('production registers no sign source (PH-24.1, ADR-0015 §3)', () => {
     expect(production.length).toBeGreaterThan(5);
     for (const file of production) {
       expect(code(file), `${file} reaches the Lab's sign source`).not.toMatch(
-        /SelectableSigns|SignSelector|selectableSigns/,
+        /SelectableSigns|SignSelector|selectableSigns|SelectableArrival|ArrivalSelector|selectableArrival/,
       );
     }
+  });
+
+  it('markets are retractable only when a Lab source is composed in (PH-24.13)', () => {
+    const venue = code('venue.service.ts');
+    const sites =
+      venue.match(/retractable: this\.signSource !== null \|\| this\.arrivalSource !== null,/g) ??
+      [];
+    expect(
+      sites,
+      'every resumeMarket site derives retractable from the composed sources',
+    ).toHaveLength(2);
+    expect(venue).not.toMatch(/retractable: true/);
   });
 
   it('the runtime default is the keystream: the option is optional', () => {
     const resume = readFileSync(path.join(here, '../../../packages/runtime/src/resume.ts'), 'utf8');
     expect(resume).toMatch(/readonly signSource\?: SignSourceFactory/);
-    expect(resume).toMatch(/if \(options\.signSource === undefined\) return \{\};/);
+    expect(resume).toMatch(/readonly arrivalSource\?: SignSourceFactory/);
+    expect(resume).toMatch(
+      /if \(options\.signSource === undefined && options\.arrivalSource === undefined\) return \{\};/,
+    );
   });
 });

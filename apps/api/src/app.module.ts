@@ -43,6 +43,8 @@ import { VenueService } from './venue.service.js';
  */
 export interface AppModuleOptions {
   readonly signSource?: SignSourceFactory;
+  /** The same for the arrival stream (PH-24.13); passed through, never built here. */
+  readonly arrivalSource?: SignSourceFactory;
 }
 
 @Module({})
@@ -157,6 +159,7 @@ export class AppModule {
               null,
               backfillDaysFromEnvironment(),
               options.signSource ?? null,
+              options.arrivalSource ?? null,
             ),
         },
         {

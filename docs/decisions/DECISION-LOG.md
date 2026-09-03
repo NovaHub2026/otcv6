@@ -456,3 +456,29 @@ is removed — it moves one tab back.
 **Revisit if:** the Human Owner wants a push sized in price rather than ticks —
 then it is a selection with a target and a window, like an exact close with an
 open end, and can be built on `selectContinuation`.
+
+## 2026-09-03 — A push is instantaneous: the pending tick is retracted and the burst selects arrivals
+
+**Decided:** _"El empujar se torna demasiado lento; tiene que ser más dinámico
+e instantáneo."_ A push (PH-24.10) began after the drawn, unpublished tick
+published and then walked at the market's natural pace. PH-24.13 makes it
+begin at the instant of the click and finish in seconds: the hosted market,
+built retractable only in the Lab composition, retracts its unpublished tick
+(nothing observed it; the engine returns to the state before that draw and
+draws again from the same keystream positions); and the pushed ticks' arrival
+draws are selected — `SelectableArrival`, the sign wrapper's twin — at
+`u = e^(-1/12)`, one twelfth of the base tempo, the fastest pace the engine's own
+Hawkes law produces, closer still as the burst excites it. Magnitudes are never
+touched; duration coupling shrinks a fast tick as it always does.
+
+**Alternative:** publish the burst with rescaled instants, or add a displacement.
+Both refused: the first rewrites the engine's timing, the second the price.
+Neither is a movement the engine made.
+
+**Consequence:** the Lab selects two of the engine's five streams (signs,
+arrivals) instead of one; the production composition still selects none
+(`composition.test.ts`, extended). The specification's "manual volatility
+controls" stay out of scope: the burst is a property of a push, not a dial.
+
+**Revisit if:** the Human Owner wants the burst's pace as a control — then
+`BURST_DIVISOR` becomes a per-push parameter with the same fences.

@@ -28,15 +28,16 @@ Last synchronized: 2026-09-03
 | Active subphase        | none                                             |
 | Subphase lifecycle     | none                                             |
 | Last approved phase    | PH-23 — The OTC Market Lab                       |
-| Last approved subphase | PH-24.12 — Un solo motor                         |
+| Last approved subphase | PH-24.13 — Empujar al instante                   |
 
-**PH-24 is active; twelve subphases approved (PH-24.1–24.12).** The Lab is
-the two controls the Human Owner asked for (natural pushes by buttons; the exact
-close of the current candle), on one engine per deployment (ADR-0018): the local
-launcher runs a single Lab-composed process, the panel declares Lab mode on
-every screen, and the Lab shows its market's chart from the Lab's own engine.
-The next Lab item awaits the Human Owner. The merge, hosted CI and Cycle Audit 8
-wait until the Lab is complete; PH-24's approval is Cycle 8's third phase.
+**PH-24 is active; thirteen subphases approved (PH-24.1–24.13).** The Lab is
+the two controls the Human Owner asked for — pushes by buttons that begin at
+the instant of the click and land in about a second (the unpublished tick
+retracted, the pushed ticks in a burst at the engine's fastest natural pace;
+PH-24.13), and the exact close of the current candle — on one engine per
+deployment (ADR-0018). The next Lab item awaits the Human Owner. The merge,
+hosted CI and Cycle Audit 8 wait until the Lab is complete; PH-24's approval is
+Cycle 8's third phase.
 
 PH-23.5 closed the first item PH-23 §10 left open — the Lab now has a screen in
 the panel, behind a menu entry marked `SIM`. Building it found three defects

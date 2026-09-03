@@ -79,7 +79,8 @@ export function Empujar({
           ? p.running(pushing.direction === 1 ? 'up' : 'down', pushing.remaining)
           : p.idle}
       </Badge>
-      {last !== null && pushing !== null && (
+      {/* The last act's announcement stays: a burst lands before the strip's next poll (PH-24.13). */}
+      {last !== null && (
         <span data-testid="lab-push-landing" style={{ fontSize: 12, color: T.muted }}>
           {p.landing(last.landing.price, last.landing.afterTicks)}
           {last.extended ? ` · ${p.extended}` : ''}
@@ -101,7 +102,7 @@ export function Empujar({
             )}
           </span>
         )}
-      {last !== null && pushing !== null && last.released !== null && (
+      {last !== null && last.released !== null && (
         <span data-testid="lab-push-released" style={{ fontSize: 12, color: T.warn }}>
           {p.released(last.released.discarded)}
         </span>

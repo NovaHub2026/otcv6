@@ -116,6 +116,7 @@ state), INV-009 (a Lab settlement recomputes from the Lab's record), INV-010.
 | PH-24.10 | Empujar y cerrar: pushes naturales de N ticks por botón, la pantalla alrededor de los dos controles                             | APPROVED                                                | [PH-24.10](PH-24.10-empujar-y-cerrar.md)           |
 | PH-24.11 | El empuje siempre responde: la capa de red no lanza, el empuje libera lo armado, Objetivo de precio a Escenarios                | APPROVED                                                | [PH-24.11](PH-24.11-el-empuje-siempre-responde.md) |
 | PH-24.12 | Un solo motor: el Lab es el motor en modo simulación; el panel lo declara; el gráfico dentro del Lab                            | APPROVED                                                | [PH-24.12](PH-24.12-un-solo-motor.md)              |
+| PH-24.13 | Empujar al instante: el tick pendiente se retira, los N ticks llegan en ráfaga con las llegadas más rápidas del motor           | APPROVED                                                | [PH-24.13](PH-24.13-empujar-al-instante.md)        |
 
 Each subphase owes its plants. PH-24.1 owes one that arms in the production
 composition and is caught.

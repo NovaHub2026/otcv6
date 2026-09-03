@@ -43,6 +43,13 @@ export interface HostedMarketOptions {
    */
   readonly maxCatchUpMs?: number;
   /**
+   * Keep the engine state from before each draw, so the one drawn, unpublished
+   * tick can be retracted (PH-24.13). Off by default: production never
+   * retracts, and the snapshot per draw is work it has no use for. The Lab
+   * composition turns it on so a push can begin at the instant of the click.
+   */
+  readonly retractable?: boolean;
+  /**
    * A tick drawn before a restart but never published.
    *
    * Restoring an engine snapshot alone would skip it: the snapshot is taken
@@ -123,6 +130,10 @@ export class HostedMarket {
    */
   #lastAdvancedAt: EpochMillis | null = null;
 
+  readonly #retractable: boolean;
+  /** The engine as it was before the pending tick was drawn; null when unknown. */
+  #beforePending: ReturnType<MarketEngine['snapshot']> | null = null;
+
   constructor(options: HostedMarketOptions) {
     this.#engine = options.engine;
     this.#clock = options.clock;
@@ -135,6 +146,7 @@ export class HostedMarket {
       this.#lastPublishedPrice = resumed.price;
     }
     this.#maxCatchUpMs = options.maxCatchUpMs ?? DEFAULT_MAX_CATCH_UP_MS;
+    this.#retractable = options.retractable ?? false;
     if (!(this.#maxCatchUpMs > 0)) {
       throw new RangeError(`maxCatchUpMs must be positive, received ${this.#maxCatchUpMs}.`);
     }
@@ -237,6 +249,7 @@ export class HostedMarket {
     for (;;) {
       if (this.#pending === null) {
         if (this.#exhausted) break;
+        if (this.#retractable) this.#beforePending = this.#engine.snapshot();
         const tick = this.#engine.next();
         if (tick === null) {
           this.#exhausted = true;
@@ -274,12 +287,34 @@ export class HostedMarket {
    */
   prime(): void {
     if (this.#pending !== null || this.#exhausted) return;
+    if (this.#retractable) this.#beforePending = this.#engine.snapshot();
     const tick = this.#engine.next();
     if (tick === null) this.#exhausted = true;
     else this.#pending = tick;
   }
 
   /** Wall-clock start instant used when nothing has been published yet. */
+  /**
+   * Retract the drawn, unpublished tick (PH-24.13).
+   *
+   * Nothing observed it, so nothing published changes: the engine returns to
+   * the state from before the draw and the next `advance` draws again from
+   * the same keystream positions — same magnitudes, whatever sign and arrival
+   * source the composition plays. `false` when there is nothing to retract, or
+   * when the pending tick was inherited across a restart and this process
+   * never held the state before it.
+   */
+  retractPending(): boolean {
+    // No sequence check: the pre-draw snapshot is taken immediately before the
+    // draw and cleared with it, so it cannot describe another tick — a check
+    // that can never fire is a guard nobody watched failing (PH-24.13 plant P6).
+    if (!this.#retractable || this.#pending === null || this.#beforePending === null) return false;
+    this.#engine.restore(this.#beforePending);
+    this.#pending = null;
+    this.#beforePending = null;
+    return true;
+  }
+
   static startedAt(tick: Tick): EpochMillis {
     return epochMillis(tick.instant);
   }

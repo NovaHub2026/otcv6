@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AppModule } from '../app.module.js';
 import { LabController } from './lab.controller.js';
 import { SignSelector } from './selectableSigns.js';
+import { ArrivalSelector } from './selectableArrival.js';
 import { LabSession } from './session.js';
 import { LabPositions } from './positions.js';
 import { EngineEventObserver } from './engineEvents.js';
@@ -21,14 +22,19 @@ import { VenueService } from '../venue.service.js';
  * application; the application receives a function and does not know whose.
  */
 const selector = new SignSelector();
+const arrivals = new ArrivalSelector();
 
 @Module({
   imports: [
-    AppModule.register({ signSource: (keystream, assetId) => selector.wrap(keystream, assetId) }),
+    AppModule.register({
+      signSource: (keystream, assetId) => selector.wrap(keystream, assetId),
+      arrivalSource: (keystream, assetId) => arrivals.wrap(keystream, assetId),
+    }),
   ],
   controllers: [LabController],
   providers: [
     { provide: SignSelector, useValue: selector },
+    { provide: ArrivalSelector, useValue: arrivals },
     LabSession,
     LabPositions,
     {

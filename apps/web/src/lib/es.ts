@@ -170,7 +170,7 @@ export const es = {
     },
     push: {
       title: 'Empujar',
-      info: 'Cada botón hace que los próximos N ticks del mercado tomen ese signo — subir o bajar — con las magnitudes y los intervalos que el motor iba a generar de todos modos. No se suma nada al precio: el movimiento es del motor, solo la dirección es tuya. Al terminar, el mercado sigue su camino. Pulsar de nuevo en la misma dirección alarga el empuje; en la contraria, lo sustituye.',
+      info: 'Cada botón hace que los próximos N ticks del mercado tomen ese signo — subir o bajar — en ráfaga: llegan con los intervalos más rápidos del propio proceso de llegadas del motor, y con las magnitudes que el motor da a un tick rápido (algo más pequeñas, como en un impulso real). No se suma nada al precio: el movimiento es del motor, solo la dirección y el momento son tuyos. Al terminar, el mercado sigue su camino. Pulsar de nuevo en la misma dirección alarga el empuje; en la contraria, lo sustituye.',
       up: 'subir',
       down: 'bajar',
       unit: 'ticks',

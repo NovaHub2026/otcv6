@@ -6,6 +6,9 @@ import { PublicationService } from '../publication.service.js';
 import { VenueService } from '../venue.service.js';
 import { LabController } from './lab.controller.js';
 import { SignSelector } from './selectableSigns.js';
+import { ArrivalSelector, BURST_DIVISOR } from './selectableArrival.js';
+import { LabPositions } from './positions.js';
+import { configFor } from '@otc/engine';
 import { LabSession } from './session.js';
 
 /**
@@ -28,6 +31,7 @@ interface Pushed {
   ticks: number;
   extended: boolean;
   landing: { latticeLevel: number; price: string; afterTicks: number };
+  retracted: boolean;
   armed: boolean;
   remaining: number;
   pushing: { direction: 1 | -1; requested: number; remaining: number } | null;
@@ -36,6 +40,7 @@ interface Pushed {
 async function labVenue(withSelector = true) {
   const clock = new SteppableClock(GENESIS);
   const selector = new SignSelector();
+  const arrivals = new ArrivalSelector();
   const session = new LabSession();
   const venue = new VenueService(
     new MemoryStateStore(),
@@ -48,10 +53,11 @@ async function labVenue(withSelector = true) {
     null,
     0,
     withSelector ? (keystream, assetId) => selector.wrap(keystream, assetId) : null,
+    withSelector ? (keystream, assetId) => arrivals.wrap(keystream, assetId) : null,
   );
   await venue.start();
-  const controller = new LabController(venue, selector, session);
-  return { venue, clock, controller, selector, session };
+  const controller = new LabController(venue, selector, session, new LabPositions(), arrivals);
+  return { venue, clock, controller, selector, arrivals, session };
 }
 
 async function advance(venue: VenueService, clock: SteppableClock, ms: number): Promise<void> {
@@ -73,52 +79,61 @@ const intervals = (ticks: Tick[], from: Tick): number[] =>
   ticks.map((t, i) => t.instant - (i === 0 ? from.instant : ticks[i - 1]!.instant));
 
 describe('PH-24.10 — a push is N natural ticks', () => {
-  it('+3 is exactly three upward ticks from the next draw, then the keystream; the landing is where the record goes', async () => {
+  it('+3 retracts the pending tick and bursts three upward ticks at the fastest natural pace; the landing is where the record goes', async () => {
     const lab = await labVenue();
-    const plain = await labVenue(false);
     await advance(lab.venue, lab.clock, 120_000);
-    await advance(plain.venue, plain.clock, 120_000);
     const before = record(lab.venue);
-    const last = before[before.length - 1]!;
-    // The hosted market holds one drawn tick; the push starts on the draw after it.
+    const lastPublished = before[before.length - 1]!;
+    // The hosted market holds one drawn tick; PH-24.13 retracts it, so the push
+    // begins with that very sequence.
     const pending = lab.venue.hostedMarket(id)!.pending!;
+    expect(pending.sequence).toBe(lastPublished.sequence + 1);
 
     const pushed = (await lab.controller.push(id, '+3')) as Pushed;
     expect(pushed).toMatchObject({
       direction: 'up',
       ticks: 3,
       extended: false,
+      retracted: true,
       armed: true,
       remaining: 3,
     });
     expect(pushed.pushing).toEqual({ direction: 1, requested: 3, remaining: 3 });
     expect(pushed.landing.afterTicks).toBe(3);
+    expect(lab.venue.hostedMarket(id)!.pending).toBeNull();
 
-    await advance(lab.venue, lab.clock, 120_000);
-    await advance(plain.venue, plain.clock, 120_000);
-    const labTicks = after(record(lab.venue), pending.sequence);
-    const plainTicks = after(record(plain.venue), pending.sequence);
-    expect(labTicks.length).toBeGreaterThan(10);
-    const labDeltas = deltas(labTicks, pending);
-    const plainDeltas = deltas(plainTicks, pending);
-    // Criterion 1: the three pushed ticks are the unpushed market's magnitudes
-    // with the upward sign — a tick whose magnitude quantised to zero stays zero,
-    // because nothing is added to a price.
-    expect(labDeltas.slice(0, 3)).toEqual(plainDeltas.slice(0, 3).map(Math.abs));
-    expect(labDeltas.slice(0, 3).every((d) => d >= 0)).toBe(true);
-    // Natural: magnitudes and intervals are the unpushed market's, tick for tick,
-    // across the pushed stretch and beyond — only the signs may differ.
-    const n = Math.min(labTicks.length, plainTicks.length);
-    expect(labDeltas.slice(0, n).map(Math.abs)).toEqual(plainDeltas.slice(0, n).map(Math.abs));
-    expect(intervals(labTicks, pending).slice(0, n)).toEqual(
-      intervals(plainTicks, pending).slice(0, n),
-    );
-    // After the push, the keystream's own signs.
-    expect(labDeltas.slice(3, n)).toEqual(plainDeltas.slice(3, n));
+    // One second on, one pass: the burst's instants are already due.
+    await advance(lab.venue, lab.clock, 1_000);
+    const labTicks = after(record(lab.venue), lastPublished.sequence);
+    expect(labTicks.length).toBeGreaterThanOrEqual(3);
+    expect(labTicks[0]!.sequence).toBe(pending.sequence);
+    const labDeltas = deltas(labTicks, lastPublished);
+    const labIntervals = intervals(labTicks, lastPublished);
+    // Criterion 2: the burst — at most base / BURST_DIVISOR apart, every sign up.
+    const base = configFor(asset).arrival.baseIntervalMs;
+    for (let i = 0; i < 3; i += 1) {
+      expect(labIntervals[i]!).toBeLessThanOrEqual(Math.max(1, Math.floor(base / BURST_DIVISOR)));
+      expect(labDeltas[i]!).toBeGreaterThanOrEqual(0);
+    }
     // The landing announced is the third pushed tick's price.
     expect(labTicks[2]!.price).toBe(pushed.landing.latticeLevel);
-    expect(last.sequence).toBeLessThan(pending.sequence);
 
+    // The mirror on the burst (ADR-0003): the same push, every sign flipped, on a
+    // second venue from the same keyring — identical intervals, magnitudes negated.
+    const mirror = await labVenue();
+    await advance(mirror.venue, mirror.clock, 120_000);
+    const mirrored = (await mirror.controller.push(id, '-3')) as Pushed;
+    expect(mirrored.retracted).toBe(true);
+    await advance(mirror.venue, mirror.clock, 1_000);
+    const mirrorTicks = after(record(mirror.venue), lastPublished.sequence);
+    const mirrorDeltas = deltas(mirrorTicks, lastPublished);
+    const mirrorIntervals = intervals(mirrorTicks, lastPublished);
+    expect(mirrorIntervals.slice(0, 3)).toEqual(labIntervals.slice(0, 3));
+    // `0 - d`, not `-d`: a zero step mirrors to +0, and toEqual tells -0 apart.
+    expect(mirrorDeltas.slice(0, 3)).toEqual(labDeltas.slice(0, 3).map((d) => 0 - d));
+
+    // Criterion 3: after the push both wrappers are transparent, and the outcome
+    // is read from the record at the landing's sequence.
     const control = lab.controller.control(id) as {
       armed: boolean;
       pushing: unknown;
@@ -126,7 +141,7 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     };
     expect(control.armed).toBe(false);
     expect(control.pushing).toBeNull();
-    // The outcome is read from the record at the landing's sequence.
+    expect(lab.arrivals.for(id)!.armed).toBe(false);
     expect(control.lastPush.exact).toBe(true);
     expect(control.lastPush.landedPrice).toBe(pushed.landing.price);
   });

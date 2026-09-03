@@ -148,9 +148,10 @@ export function Lab(): ReactElement {
   useEffect(() => {
     if (selected === null) return;
     void refreshState(selected);
+    // Every second (PH-24.13): a push lands in two or three, and the strip should say so as it happens.
     const timer = setInterval(() => {
       void refreshState(selected);
-    }, 2_000);
+    }, 1_000);
     return () => {
       clearInterval(timer);
     };

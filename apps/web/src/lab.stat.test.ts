@@ -608,23 +608,46 @@ describe('Candle Close Control, from the panel', () => {
       expect(await page.locator('[data-testid="lab-push"]').isVisible()).toBe(true);
       await page.click('[data-testid="tab-close"]');
 
+      const clickedAt = performance.now();
       await page.click('[data-testid="lab-push-+3"]');
+      // PH-24.13: the burst lands in about a second, often before the strip's next
+      // poll — the running state is not waited for; the landing line stays on the
+      // strip until the record has the landing, and the outcome follows.
       await page.waitForSelector('[data-testid="lab-push-landing"]', { timeout: 30_000 });
       const landing = /llegará a ([0-9.]+) tras (\d+) ticks/.exec(
         await text(page, 'lab-push-landing'),
       );
       expect(landing, 'the strip did not announce a landing').not.toBeNull();
       expect(landing![2]).toBe('3');
-      expect(await text(page, 'lab-push-state')).toMatch(/empujando ↑/i);
 
-      // Three ticks later the record is read at the landing's sequence.
+      // Three ticks later the record is read at the landing's sequence — and with
+      // PH-24.13's burst, "later" is seconds: the pending tick was retracted and the
+      // pushed ticks arrived at the engine's fastest pace.
       await page.waitForSelector('[data-testid="lab-push-outcome"]', { timeout: 120_000 });
+      const landedAfterMs = performance.now() - clickedAt;
+      console.log(`PH-24.13 push landed ${String(Math.round(landedAfterMs))} ms after the click`);
+      expect(landedAfterMs, 'a push should land within seconds').toBeLessThan(6_000);
       const outcome = await text(page, 'lab-push-outcome');
       expect(outcome).toMatch(/↑ 3 ticks · llegó a/);
       expect(outcome, `landed elsewhere than ${landing![1]!}`).toContain(
         `llegó a ${landing![1]!} ✓`,
       );
-      expect(await text(page, 'lab-session-lab')).toMatch(/push/);
+      // The API's own account agrees: landed exactly where announced.
+      const own = (await page.evaluate(async () => {
+        const list = (await (await fetch('/lab/markets')).json()) as { markets: { id: string }[] };
+        const first = list.markets[0]!.id;
+        return (await (await fetch(`/lab/markets/${first}/control`)).json()) as unknown;
+      })) as {
+        lastPush: { exact: boolean | null; landingPrice: string; landedPrice: string | null };
+      };
+      expect(own.lastPush.exact).toBe(true);
+      expect(own.lastPush.landedPrice).toBe(landing![1]!);
+      await page.waitForFunction(
+        () =>
+          /push/.test(document.querySelector('[data-testid="lab-session-lab"]')?.textContent ?? ''),
+        null,
+        { timeout: 30_000 },
+      );
 
       // PH-24.11: a push over an armed close releases it and says so on the strip.
       const markets = (await page.evaluate(
@@ -657,8 +680,15 @@ describe('Candle Close Control, from the panel', () => {
       await page.click('[data-testid="lab-push-+1"]');
       await page.waitForSelector('[data-testid="lab-push-released"]', { timeout: 30_000 });
       expect(await text(page, 'lab-push-released')).toMatch(/se liberó lo que estaba armado/);
-      expect(await text(page, 'lab-push-state')).toMatch(/empujando ↑/i);
-      expect(await text(page, 'lab-session-lab')).toMatch(/liberado ✓ by=push/);
+      // The timeline is the strip's next poll away; the release is in the record already.
+      await page.waitForFunction(
+        () =>
+          /liberado ✓ by=push/.test(
+            document.querySelector('[data-testid="lab-session-lab"]')?.textContent ?? '',
+          ),
+        null,
+        { timeout: 30_000 },
+      );
       await page.evaluate(() => fetch('/lab/release-all', { method: 'POST' }));
     } catch (error) {
       console.error(await dump());

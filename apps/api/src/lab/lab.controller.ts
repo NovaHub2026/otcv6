@@ -34,6 +34,7 @@ import { closesDiagnostic } from './closesDiagnostic.js';
 import { positionsDiagnostic, type SettledPosition } from './positionsDiagnostic.js';
 import { SCENARIOS, scenarioNamed, scenarioParameters, shapeOf } from './scenarios.js';
 import { SelectableSigns, SignSelector } from './selectableSigns.js';
+import { ArrivalSelector, BURST_DRAW, SelectableArrival } from './selectableArrival.js';
 import { LabSession } from './session.js';
 
 /**
@@ -139,6 +140,7 @@ export class LabController {
     private readonly signs: SignSelector,
     private readonly session: LabSession,
     private readonly positions: LabPositions = new LabPositions(),
+    private readonly arrivals: ArrivalSelector = new ArrivalSelector(),
   ) {}
 
   /**
@@ -549,6 +551,7 @@ export class LabController {
       let released: { discarded: number } | null = null;
       if (wrapper.armed && !this.pushes.has(id)) {
         const discarded = wrapper.release();
+        this.arrivals.for(id)?.release();
         this.applied.delete(id);
         this.session.recordAction({
           at,
@@ -563,15 +566,36 @@ export class LabController {
         });
         released = { discarded };
       }
+      // PH-24.13: the drawn, unpublished tick is retracted so the push begins at
+      // the instant of the click. A retract restores the engine, and a restore
+      // seeks, and a seek releases — so the scripts are read before and armed after.
+      const market = this.venue.hostedMarket(id)!;
+      const carried: (1 | -1)[] = extended ? [...wrapper.remainingScript()] : [];
+      const arrival = this.arrivals.for(id);
+      const carriedDraws: number[] =
+        extended && arrival !== null ? [...arrival.remainingScript()] : [];
+      const retracted = market.retractPending();
       // Everything the market will play from its next draw, in order.
-      const script: (1 | -1)[] = extended ? [...wrapper.remainingScript(), ...signs] : signs;
+      const script: (1 | -1)[] = [...carried, ...signs];
+      const draws: number[] = [...carriedDraws, ...signs.map(() => BURST_DRAW)];
       let forkSigns: SelectableSigns | null = null;
-      const fork = this.venue.labFork(id, (keystream) => {
-        forkSigns = new SelectableSigns(keystream, id);
-        return forkSigns;
-      })!;
+      let forkArrival: SelectableArrival | null = null;
+      const fork = this.venue.labFork(
+        id,
+        (keystream) => {
+          forkSigns = new SelectableSigns(keystream, id);
+          return forkSigns;
+        },
+        arrival === null
+          ? undefined
+          : (keystream) => {
+              forkArrival = new SelectableArrival(keystream, id);
+              return forkArrival;
+            },
+      )!;
       // Armed after the fork restored: a restore seeks, and a seek releases.
       (forkSigns as SelectableSigns | null)!.arm(script);
+      (forkArrival as SelectableArrival | null)?.arm(draws);
       let level = fork.price;
       let landingInstant = fork.instant;
       for (let i = 0; i < script.length; i += 1) {
@@ -580,16 +604,19 @@ export class LabController {
         level = tick.price;
         landingInstant = tick.instant;
       }
-      if (extended) wrapper.extend(signs);
-      else wrapper.arm(signs);
+      // The live market: after the retract everything was released, so arm the whole script.
+      wrapper.arm(script);
+      arrival?.arm(draws);
       this.pushes.set(id, {
         direction,
         requested: extended ? running.requested + count : count,
       });
       // The fork started at the snapshot's sequence; the landing is script.length ticks on.
       const sequence = this.venue.hostedMarket(id)!.snapshotEngine().sequence + script.length;
-      return { level, landingInstant, afterTicks: script.length, sequence, released };
+      return { level, landingInstant, afterTicks: script.length, sequence, released, retracted };
     });
+    // The burst's first instant is already in the past: publish it now, not on the old timer.
+    this.venue.wake();
     const asset = this.venue.assetFor(id)!;
     const landing = {
       latticeLevel: result.level,
@@ -617,7 +644,7 @@ export class LabController {
       initialState: before,
       resultingState: this.controlState(id),
       succeeded: true,
-      diagnostics: { extended, landing, released: result.released },
+      diagnostics: { extended, landing, released: result.released, retracted: result.retracted },
     });
     return {
       environment: LAB,
@@ -627,6 +654,7 @@ export class LabController {
       extended,
       landing,
       released: result.released,
+      retracted: result.retracted,
       ...this.controlState(id),
     };
   }
@@ -705,6 +733,7 @@ export class LabController {
     const before = this.controlState(id);
     const pendingTick = this.venue.hostedMarket(id)?.pending?.sequence ?? null;
     const discarded = wrapper.release();
+    this.arrivals.for(id)?.release();
     this.pushes.delete(id);
     this.session.recordAction({
       at: this.venue.now(),
@@ -776,6 +805,7 @@ export class LabController {
       const before = this.controlState(id);
       const pendingTick = this.venue.hostedMarket(id)?.pending?.sequence ?? null;
       const discarded = wrapper.release();
+      this.arrivals.for(id)?.release();
       this.pushes.delete(id);
       this.session.recordAction({
         at: this.venue.now(),

@@ -570,20 +570,21 @@ market (LA-03). The phase adds a sign source that plays a chosen vector in
 lockstep with the keystream, composed only in the Lab, and builds every control
 on it — the boundary first, guarded before anything stands on it.
 
-| Subphase | Title                                                                                                            | State    |
-| -------- | ---------------------------------------------------------------------------------------------------------------- | -------- |
-| PH-24.1  | The selectable sign source and its hook                                                                          | APPROVED |
-| PH-24.2  | Candle Close Control on a real candle, apply, release, session record                                            | APPROVED |
-| PH-24.3  | Presets and simulated positions, settled against the Lab's record                                                | APPROVED |
-| PH-24.4  | Scenarios, the ones sign selection cannot express, and the screen                                                | APPROVED |
-| PH-24.5  | The diagnostics the audit found missing                                                                          | APPROVED |
-| PH-24.6  | Rediseño UX del panel y del Lab — en español, con tooltips                                                       | APPROVED |
-| PH-24.7  | Los controles que faltan en pantalla: shock, expiración, Target Price                                            | APPROVED |
-| PH-24.8  | Sesión persistente y los diagnósticos que faltan                                                                 | APPROVED |
-| PH-24.9  | Varios activos a la vez: tablero, insignias, liberar todo                                                        | APPROVED |
-| PH-24.10 | Empujar y cerrar: pushes naturales de N ticks por botón, la pantalla alrededor de los dos controles              | APPROVED |
-| PH-24.11 | El empuje siempre responde: la capa de red no lanza, el empuje libera lo armado, Objetivo de precio a Escenarios | APPROVED |
-| PH-24.12 | Un solo motor: el Lab es el motor en modo simulación; el panel lo declara; el gráfico dentro del Lab             | APPROVED |
+| Subphase | Title                                                                                                                 | State    |
+| -------- | --------------------------------------------------------------------------------------------------------------------- | -------- |
+| PH-24.1  | The selectable sign source and its hook                                                                               | APPROVED |
+| PH-24.2  | Candle Close Control on a real candle, apply, release, session record                                                 | APPROVED |
+| PH-24.3  | Presets and simulated positions, settled against the Lab's record                                                     | APPROVED |
+| PH-24.4  | Scenarios, the ones sign selection cannot express, and the screen                                                     | APPROVED |
+| PH-24.5  | The diagnostics the audit found missing                                                                               | APPROVED |
+| PH-24.6  | Rediseño UX del panel y del Lab — en español, con tooltips                                                            | APPROVED |
+| PH-24.7  | Los controles que faltan en pantalla: shock, expiración, Target Price                                                 | APPROVED |
+| PH-24.8  | Sesión persistente y los diagnósticos que faltan                                                                      | APPROVED |
+| PH-24.9  | Varios activos a la vez: tablero, insignias, liberar todo                                                             | APPROVED |
+| PH-24.10 | Empujar y cerrar: pushes naturales de N ticks por botón, la pantalla alrededor de los dos controles                   | APPROVED |
+| PH-24.11 | El empuje siempre responde: la capa de red no lanza, el empuje libera lo armado, Objetivo de precio a Escenarios      | APPROVED |
+| PH-24.12 | Un solo motor: el Lab es el motor en modo simulación; el panel lo declara; el gráfico dentro del Lab                  | APPROVED |
+| PH-24.13 | Empujar al instante: el tick pendiente se retira, los N ticks llegan en ráfaga con las llegadas más rápidas del motor | APPROVED |
 
 ### PH-23 — The OTC Market Lab
 

@@ -64,6 +64,10 @@ export interface ResumeOptions {
   readonly maxCatchUpMs?: number;
   /** See {@link SignSourceFactory}. Absent means the keystream, untouched. */
   readonly signSource?: SignSourceFactory;
+  /** The same, for the arrival stream (PH-24.13). Absent means the keystream, untouched. */
+  readonly arrivalSource?: SignSourceFactory;
+  /** See {@link HostedMarketOptions.retractable}. */
+  readonly retractable?: boolean;
 }
 
 type EpochMillisLike = ReturnType<typeof epochMillis>;
@@ -81,15 +85,26 @@ export interface ResumeResult {
  * wrapper is indistinguishable from no wrapper, and a cursor a caller supplies
  * is applied to the wrapper, which delegates the seek.
  */
-function engineStreams(options: ResumeOptions): { streams?: { readonly sign: RandomSource } } {
-  if (options.signSource === undefined) return {};
-  const keystream = options.keyring.derive({
-    env: options.environment,
-    asset: configFor(options.asset).instrument.id,
-    purpose: 'sign',
-    keyEpoch: 0,
-  });
-  return { streams: { sign: options.signSource(keystream, options.asset.definition.id) } };
+function engineStreams(options: ResumeOptions): {
+  streams?: Readonly<Partial<Record<string, RandomSource>>>;
+} {
+  if (options.signSource === undefined && options.arrivalSource === undefined) return {};
+  const derive = (purpose: 'sign' | 'arrival'): RandomSource =>
+    options.keyring.derive({
+      env: options.environment,
+      asset: configFor(options.asset).instrument.id,
+      purpose,
+      keyEpoch: 0,
+    });
+  const id = options.asset.definition.id;
+  return {
+    streams: {
+      ...(options.signSource === undefined ? {} : { sign: options.signSource(derive('sign'), id) }),
+      ...(options.arrivalSource === undefined
+        ? {}
+        : { arrival: options.arrivalSource(derive('arrival'), id) }),
+    },
+  };
 }
 
 /**
@@ -234,6 +249,7 @@ export async function resumeMarket(options: ResumeOptions): Promise<ResumeResult
       resumePending: record.pending,
       resumeLastPublished: record.lastPublished,
       ...(options.maxCatchUpMs === undefined ? {} : { maxCatchUpMs: options.maxCatchUpMs }),
+      ...(options.retractable === undefined ? {} : { retractable: options.retractable }),
     }),
     outcome: {
       kind: 'resumed',
@@ -258,6 +274,7 @@ function freshMarket(
     engine,
     clock: options.clock,
     ...(options.maxCatchUpMs === undefined ? {} : { maxCatchUpMs: options.maxCatchUpMs }),
+    ...(options.retractable === undefined ? {} : { retractable: options.retractable }),
   });
 }
 
@@ -355,6 +372,7 @@ function seamFrom(
       clock: options.clock,
       ...(record.lastPublished === null ? {} : { resumeLastPublished: record.lastPublished }),
       ...(options.maxCatchUpMs === undefined ? {} : { maxCatchUpMs: options.maxCatchUpMs }),
+      ...(options.retractable === undefined ? {} : { retractable: options.retractable }),
     }),
     outcome: { kind: 'seam', reason, fromSequence: record.lastPublished?.sequence ?? null },
   };

@@ -34,19 +34,20 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-24.10–24.12 are approved; no subphase is active.** The Lab has the two
-controls the Human Owner asked for (the Empujar strip; the exact close of the
-current candle); a push wins over what is armed and the strip is never left
-held (PH-24.11); and the deployment is **one engine** (PH-24.12, ADR-0018):
-`~/.otc-local/start.sh` starts a single Lab-composed process (`lab.main.js`,
-engine port and state, `OTC_LAB_BASE` = the engine origin; `OTC_LAB=0` for the
-production composition), the panel declares Lab mode on every screen through
-`/labmode`, and the Lab screen shows the market's chart through the read-only
-`/labengine` proxy. Vista, the chart and the Lab show one market. Replay/mirror
-groundwork (`2ff8559`) stays parked. **The next Lab item awaits the Human
-Owner; the merge, hosted CI and Cycle Audit 8 wait until the Lab is complete**
-(`DECISION-LOG.md`, 2026-09-03). Browser suites run under
-`LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu`.
+**PH-24.10–24.13 are approved; no subphase is active.** The Lab has the two
+controls the Human Owner asked for: the Empujar strip — since PH-24.13 a push
+retracts the drawn, unpublished tick and its N ticks arrive in a burst
+(`SelectableArrival`, draws at `e^(-1/12)`; markets are retractable only in the
+Lab composition; `VenueService.wake()`), measured landing 85 ms after the click
+— and the exact close of the current candle. One engine per deployment
+(PH-24.12, ADR-0018): `~/.otc-local/start.sh` starts a single Lab-composed
+process; Vista, the chart and the Lab show one market. Known trade-off: a fast
+tick is a smaller tick (duration coupling), so `+10` moves about five natural
+ticks' worth; if the Human Owner wants more, each button unit becomes two or
+three burst ticks. Replay/mirror groundwork (`2ff8559`) stays parked. **The
+next Lab item awaits the Human Owner; the merge, hosted CI and Cycle Audit 8
+wait until the Lab is complete** (`DECISION-LOG.md`, 2026-09-03). Browser suites
+run under `LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu`.
 
 **The next phase is the decision LA-03 names.** The Lab specification audit
 ([LAB-SPECIFICATION-AUDIT-001](docs/audits/LAB-SPECIFICATION-AUDIT-001.md))
