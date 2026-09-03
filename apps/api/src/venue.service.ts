@@ -1,13 +1,15 @@
 import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import {
   epochMillis,
+  logPrice,
   SystemClock,
   type Clock,
   type EpochMillis,
   type MasterKeyring,
+  type RandomSource,
   type Tick,
 } from '@otc/core';
-import { ASSET_CATALOGUE, type RegisteredAsset } from '@otc/engine';
+import { ASSET_CATALOGUE, configFor, createMarketEngine, type RegisteredAsset } from '@otc/engine';
 import {
   checkpointMarket,
   resumeMarket,
@@ -296,6 +298,95 @@ export class VenueService implements OnModuleDestroy {
     // are told rather than left holding a stream that will never tick again.
     this.feed.forget(assetId, 'asset retired');
     this.logger.log(`${assetId}: retired — no longer hosted, record untouched`);
+  }
+
+  /**
+   * The hosted market for an asset, or null.
+   *
+   * Exposed for the Lab, which reads engine state the product never publishes.
+   * The boundary that makes that safe is composition — `AppModule` does not
+   * import `LabModule` — rather than a check here, because a check here would
+   * be a flag (ADR-0015 §3).
+   */
+  hostedMarket(assetId: string): HostedMarket | null {
+    if (this.venue === null || !this.assetIds.includes(assetId)) return null;
+    try {
+      return this.venue.marketFor(assetId);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * The unsigned step sizes the next `spanMs` of this market will produce.
+   *
+   * Read from a **fork**: the engine is snapshotted and a copy is run forward,
+   * so the live market is not advanced and no keystream position is consumed
+   * twice. The steps are the same whatever signs are drawn — that is ADR-0003's
+   * theorem, and `stepIndependence.test.ts` verifies it on the shipped engine —
+   * which is what makes an exact close cost two milliseconds instead of minutes.
+   */
+  labStepsAhead(assetId: string, spanMs: number): number[] {
+    const market = this.hostedMarket(assetId);
+    const asset = this.assetFor(assetId);
+    if (market === null || asset === null) return [];
+    const snapshot = market.snapshotEngine();
+    const fork = createMarketEngine({
+      config: configFor(asset),
+      keyring: this.keyring,
+      environment: 'production',
+      start: { instant: epochMillis(snapshot.instant), price: logPrice(snapshot.price) },
+    });
+    fork.restore(snapshot);
+    const steps: number[] = [];
+    let price = snapshot.price;
+    const until = snapshot.instant + spanMs;
+    for (;;) {
+      const tick = fork.next();
+      if (tick === null || tick.instant > until) break;
+      steps.push(Math.abs(tick.price - price));
+      price = tick.price;
+    }
+    return steps;
+  }
+
+  /**
+   * The next `count` ticks this market will produce, from a fork.
+   *
+   * Same fork discipline as {@link VenueService.labStepsAhead}: the live engine
+   * is snapshotted and a copy run forward, so the market is not advanced and no
+   * keystream position is consumed twice. The Lab reads the future; it does not
+   * spend it.
+   */
+  labTicksAhead(assetId: string, count: number): Tick[] {
+    const market = this.hostedMarket(assetId);
+    const asset = this.assetFor(assetId);
+    if (market === null || asset === null) return [];
+    const snapshot = market.snapshotEngine();
+    const fork = createMarketEngine({
+      config: configFor(asset),
+      keyring: this.keyring,
+      environment: 'production',
+      start: { instant: epochMillis(snapshot.instant), price: logPrice(snapshot.price) },
+    });
+    fork.restore(snapshot);
+    const ticks: Tick[] = [];
+    for (let i = 0; i < count; i += 1) {
+      const tick = fork.next();
+      if (tick === null) break;
+      ticks.push(tick);
+    }
+    return ticks;
+  }
+
+  /** A Lab-only randomness stream: never a market one. */
+  labRandom(assetId: string): RandomSource {
+    return this.keyring.derive({
+      env: 'simulation',
+      asset: assetId,
+      purpose: 'lab-close-selection',
+      keyEpoch: 0,
+    });
   }
 
   assetFor(id: string): RegisteredAsset | null {

@@ -18,7 +18,8 @@
     "@otc/engine": "*",
     "@otc/runtime": "*",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "@otc/lab": "*"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

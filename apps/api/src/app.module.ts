@@ -145,6 +145,14 @@ import { VenueService } from './venue.service.js';
         new RegistrationService(registry, venue, keyringFromEnvironment()),
     },
   ],
+  /**
+   * Exported so the Lab can compose on top of this module (ADR-0015 §3).
+   *
+   * An export, never an import: the Lab knows about the application and the
+   * application does not know the Lab exists. `labSurface.test.ts` asserts the
+   * direction, because reversing it is what a `LAB_ENABLED` flag looks like.
+   */
+  exports: [VenueService],
 })
 export class AppModule {}
 

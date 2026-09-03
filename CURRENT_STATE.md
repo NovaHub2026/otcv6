@@ -2,7 +2,7 @@
 
 Type: CURRENT STATE
 Status: Authoritative record of current project state
-Last synchronized: 2026-09-02
+Last synchronized: 2026-09-03
 
 > This document is not a diary. It records where the project is **now** and what
 > the **exact next legal action** is. History lives in Git, phase documents and
@@ -15,24 +15,36 @@ Last synchronized: 2026-09-02
 | Field                            | Value                                                                                                                  |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | Active development cycle         | Cycle 8                                                                                                                |
-| Approved phases in current cycle | **1 of 3** — PH-22                                                                                                     |
+| Approved phases in current cycle | **2 of 3** — PH-22, PH-23                                                                                              |
 | Cycle Audit state                | **007 closed** — 34 of 35 findings closed in the audit itself, one carried (Issue #22)                                 |
 | Last Cycle Audit                 | [Cycle Audit 007](docs/audits/CYCLE-AUDIT-007.md) — recorded 2026-09-03, eight independent auditors, one worktree each |
 
 ## Phase and subphase
 
-| Field                  | Value                                                              |
-| ---------------------- | ------------------------------------------------------------------ |
-| Active phase           | none                                                               |
-| Phase lifecycle        | none                                                               |
-| Active subphase        | none                                                               |
-| Subphase lifecycle     | none                                                               |
-| Last approved phase    | PH-22 — Distribution under thousands of observers                  |
-| Last approved subphase | PH-22.3 — What happens when ten thousand clients come back at once |
+| Field                  | Value                                        |
+| ---------------------- | -------------------------------------------- |
+| Active phase           | none                                         |
+| Phase lifecycle        | none                                         |
+| Active subphase        | none                                         |
+| Subphase lifecycle     | none                                         |
+| Last approved phase    | PH-23 — The OTC Market Lab                   |
+| Last approved subphase | PH-23.6 — What the specification audit found |
 
-Nothing is active because PH-21 closed and the cycle boundary is here: three
-approved phases, and `GOVERNANCE.md` §28 turns the work from building to
-examining. Cycle Audit 7 is the next action, and it is not a phase.
+Nothing is active. Cycle 8 stands at two approved phases of three; a third
+opens the next Cycle Audit.
+
+PH-23.5 closed the first item PH-23 §10 left open — the Lab now has a screen in
+the panel, behind a menu entry marked `SIM`. Building it found three defects
+that reading the API could not: a `clean` predictability verdict resting on two
+hypotheses out of eight hundred, a realism verdict that flipped between forks of
+the same market, and a lattice index printed under the word `price`.
+
+PH-23.6 closed the two defects the Lab specification audit found by execution
+([LAB-SPECIFICATION-AUDIT-001](docs/audits/LAB-SPECIFICATION-AUDIT-001.md)): a
+shock "intervention" the signs could not select, and a candle close and a
+settlement price that name different ticks when the engine prints on a boundary
+millisecond (ADR-0017). The audit's other six findings are the next phases: a
+Lab with a correct mechanism and no controls.
 
 ## Cycle 1 result
 
