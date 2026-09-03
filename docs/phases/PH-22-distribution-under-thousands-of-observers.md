@@ -91,19 +91,29 @@ stream per asset — multiplexing changes the pipe, never the source), INV-001
 
 ## 5. Subphases
 
-| Subphase | Title                                                    | State   |
-| -------- | -------------------------------------------------------- | ------- |
-| PH-22.1  | An instrument that can hold thousands of connections     | PLANNED |
-| PH-22.2  | One tick, serialised once                                | PLANNED |
-| PH-22.3  | Many assets, one connection, the same resume contract    | PLANNED |
-| PH-22.4  | What happens when ten thousand clients come back at once | PLANNED |
+| Subphase | Title                                                    | State    |
+| -------- | -------------------------------------------------------- | -------- |
+| PH-22.1  | An instrument that can hold thousands of connections     | APPROVED |
+| PH-22.2  | Many assets, one connection, the same resume contract    | ACTIVE   |
+| PH-22.3  | What happens when ten thousand clients come back at once | PLANNED  |
 
-The order is forced by dependency rather than by taste. PH-22.2's whole claim is
-a before-and-after number, and there is nothing to take it with until PH-22.1
-exists. PH-22.3 changes what a connection _is_, so it must land after the
-per-tick cost is understood and before the reconnect behaviour is characterised
-against it. PH-22.4 is the failure case, and it is last because it needs all
-three.
+**"One tick, serialised once" was planned here and is not being built.** PH-22.1
+measured the thing it would have optimised: building an SSE frame costs 0.187 µs
+against a marginal delivery cost of 27 µs, so the whole of Issue #15 is 0.7% of
+the work. A CPU profile of the engine under 500 observers is 98.6% idle, and the
+largest remaining cost is `writev` — the socket syscall — which no amount of
+shared buffering removes and which is identical in every transport. Issue #15 is
+closed with the measurement.
+
+That is the phase working as intended rather than a change of plan. The order
+was written to make the second subphase's claim a before-and-after number, and
+the "before" said there was nothing there to improve.
+
+What remains is forced by dependency. PH-22.2 changes what a connection _is_,
+and it is the only measured ceiling left: a browser gets six connections per
+origin on HTTP/1.1, so eight charts do not fit on one client whatever the server
+can serve. PH-22.3 is the failure case and needs the new connection shape to
+characterise.
 
 **PH-22.1 is an instrument, and it will be audited as one.** This project's most
 expensive class of defect is an instrument that silently stops measuring — the

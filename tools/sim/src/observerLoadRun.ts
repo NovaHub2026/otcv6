@@ -25,6 +25,7 @@ const SWEEP = (process.env['OTC_LOAD_SWEEP'] ?? '1,10,100,500,1000,2000')
   .map((entry) => Number.parseInt(entry.trim(), 10))
   .filter((entry) => Number.isSafeInteger(entry) && entry > 0);
 const HOLD_MS = Number.parseInt(process.env['OTC_LOAD_HOLD_MS'] ?? '20000', 10);
+const WARMUP_MS = Number.parseInt(process.env['OTC_LOAD_WARMUP_MS'] ?? '20000', 10);
 const SECRET = 'a'.repeat(64);
 
 async function freePort(): Promise<number> {
@@ -91,9 +92,22 @@ async function main(): Promise<void> {
     console.info(
       `engine pid ${String(engine.pid)} on ${baseUrl}, ${String(assetIds.length)} assets`,
     );
-    console.info(`sweep: ${SWEEP.join(', ')} observers, ${String(HOLD_MS / 1000)}s hold each\n`);
+    console.info(`sweep: ${SWEEP.join(', ')} observers, ${String(HOLD_MS / 1000)}s window each\n`);
 
-    for (const observers of SWEEP) {
+    // **Warm the engine before the first size.** A freshly booted market has not
+    // drawn its first ticks, so the smallest size measures a colder engine than
+    // the largest — which is exactly what the first two runs of this instrument
+    // showed, as a rise in ticks per observer that cannot be real: an
+    // observer's tick count is a property of its asset, not of how many other
+    // observers exist. That is PH-21.2's archetype-rotation mistake in a new
+    // instrument, and read uncorrected it says "delivery improves under load".
+    process.stdout.write('warming up... ');
+    await runObserverLoad({ baseUrl, assetIds, observers: 4, holdMs: WARMUP_MS });
+    console.info('done\n');
+
+    // Interleaved and reversed on the second pass, so residual warm-up or drift
+    // cannot masquerade as a size effect (CA7-24's lesson).
+    for (const observers of [...SWEEP, ...[...SWEEP].reverse()]) {
       const report = await runObserverLoad({
         baseUrl,
         assetIds,
@@ -101,15 +115,17 @@ async function main(): Promise<void> {
         holdMs: HOLD_MS,
         ...(engine.pid === undefined ? {} : { enginePid: engine.pid }),
       });
-      const perObserver = report.established === 0 ? 0 : report.ticksDelivered / report.established;
+      // Per observer **inside the window**: the only figure comparable across
+      // sizes, because every size gets the same window on the same engine.
+      const perObserver = report.established === 0 ? 0 : report.ticksInWindow / report.established;
       const engineCpuPerTick =
-        report.engineCpuSeconds === null || report.ticksDelivered === 0
+        report.engineCpuSeconds === null || report.ticksInWindow === 0
           ? null
-          : (report.engineCpuSeconds * 1e6) / report.ticksDelivered;
+          : (report.engineCpuSeconds * 1e6) / report.ticksInWindow;
       console.info(`--- ${String(observers)} observers ---`);
       console.info(describeObserverLoad(report));
       console.info(
-        `ticks per observer ${perObserver.toFixed(1)}` +
+        `ticks per observer (window) ${perObserver.toFixed(1)}` +
           (engineCpuPerTick === null
             ? ''
             : `   engine µs per delivered tick ${engineCpuPerTick.toFixed(1)}`),

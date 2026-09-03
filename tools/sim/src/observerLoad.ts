@@ -74,6 +74,10 @@ export interface ObserverLoadReport {
   readonly engineCpuSeconds: number | null;
   readonly harnessCpuSeconds: number;
   readonly wallSeconds: number;
+  /** The measurement window: after the last observer settled, before any closed. */
+  readonly windowSeconds: number;
+  /** Ticks delivered inside that window — the only throughput figure that compares across sizes. */
+  readonly ticksInWindow: number;
   /** True when this harness outworked the engine: the latency figures are not usable. */
   readonly instrumentBound: boolean;
   /** True when every attempted observer was established and held to the end. */
@@ -129,6 +133,9 @@ export async function runObserverLoad(options: ObserverLoadOptions): Promise<Obs
   const engineCpuAtStart =
     options.enginePid === undefined ? null : await processCpuSeconds(options.enginePid);
 
+  /** Closes handed back by `open`, so the hold is a phase rather than a per-observer timer. */
+  const closers: (() => void)[] = [];
+
   const open = (index: number): Promise<void> =>
     new Promise((resolve) => {
       const state: ObserverState = {
@@ -172,7 +179,11 @@ export async function runObserverLoad(options: ObserverLoadOptions): Promise<Obs
           response.on('data', (chunk: string) => {
             // Established on the first byte, not on the socket: an accepted
             // connection that never delivers is the failure this must not hide.
-            state.established = true;
+            if (!state.established) {
+              state.established = true;
+              clearTimeout(timer);
+              settle();
+            }
             buffer += chunk;
             let boundary = buffer.indexOf('\n\n');
             while (boundary !== -1) {
@@ -214,16 +225,36 @@ export async function runObserverLoad(options: ObserverLoadOptions): Promise<Obs
       });
       request.end();
 
-      // Held for the run, then closed. The promise resolves either here or on a
-      // failure above, so a refused observer does not stall the run.
-      setTimeout(() => {
+      // **Establishment and hold are separate phases (PH-22.1).** The first
+      // version resolved this promise only after `connectTimeout + hold`, so
+      // the run began measuring the moment the first socket opened and every
+      // size measured a differently warmed engine. It showed: 6.0, 16.6 and
+      // 23.0 ticks per observer at 1, 10 and 50 — a rise that cannot be real,
+      // because an observer's tick count is a property of its asset. That is
+      // PH-21.2's archetype-rotation mistake in a new instrument, and it would
+      // have been read as "delivery improves under load".
+      //
+      // So `open` resolves on establishment or failure, and the hold happens
+      // once, for everybody, after the last one has settled.
+      closers.push(() => {
         clearTimeout(timer);
         request.destroy();
-        settle();
-      }, connectTimeoutMs + options.holdMs);
+      });
     });
 
   await Promise.all(Array.from({ length: options.observers }, (_, index) => open(index)));
+
+  // The measurement window: every observer that will connect has, and the
+  // engine has been running for the same length of time for every size.
+  const windowStart = Date.now();
+  const before = states.map((state) => state.ticks);
+  await new Promise((resolve) => setTimeout(resolve, options.holdMs));
+  const windowSeconds = (Date.now() - windowStart) / 1000;
+  const deliveredInWindow = states.reduce(
+    (sum, state, index) => sum + (state.ticks - (before[index] ?? 0)),
+    0,
+  );
+  for (const close of closers) close();
   agent.destroy();
 
   const wallSeconds = (Date.now() - started) / 1000;
@@ -259,6 +290,8 @@ export async function runObserverLoad(options: ObserverLoadOptions): Promise<Obs
     engineCpuSeconds,
     harnessCpuSeconds,
     wallSeconds,
+    windowSeconds,
+    ticksInWindow: deliveredInWindow,
     // The harness outworked the engine, so the latency it measured is partly
     // its own scheduling. Reported, never quietly used (CA6-01).
     instrumentBound: engineCpuSeconds !== null && harnessCpuSeconds > engineCpuSeconds,
@@ -278,6 +311,7 @@ export function describeObserverLoad(report: ObserverLoadReport): string {
     `engine cpu       ${report.engineCpuSeconds === null ? 'unavailable' : `${report.engineCpuSeconds.toFixed(2)}s`}`,
     `harness cpu      ${report.harnessCpuSeconds.toFixed(2)}s`,
     `wall             ${report.wallSeconds.toFixed(1)}s`,
+    `window           ${report.windowSeconds.toFixed(1)}s, ${String(report.ticksInWindow)} ticks`,
   ];
   for (const { reason, count } of report.refused) {
     lines.push(`REFUSED ${String(count)}  ${reason}`);
