@@ -558,6 +558,37 @@ larger.
 | Phase | Title                                     | State        |
 | ----- | ----------------------------------------- | ------------ |
 | PH-22 | Distribution under thousands of observers | **APPROVED** |
+| PH-23 | The OTC Market Lab                        | **ACTIVE**   |
+
+### PH-23 — The OTC Market Lab
+
+Specified by the Human Owner on 2026-09-03 in 81 sections, and authorised in
+[ADR-0015](../decisions/ADR-0015-lab-authority-and-isolation.md). It is the
+testing, validation and diagnostics environment for the engine: observe,
+intervene, force a test condition, measure, reproduce, compare, validate.
+
+**Most of its analytical half already exists, headless.** Fifteen realism
+metrics with bands, an adversarial battery of ~800 hypotheses with a stated
+minimum detectable effect, horizon coverage across every expiration, and a
+24M-tick runner. What §52–§68 of the specification asks for is a laboratory that
+has never had a window, not one that has to be built.
+
+**The genuinely new part is Candle Close Control, and it is built by selection
+rather than steering.** The engine forks from a snapshot deterministically, so
+the Lab runs many natural continuations and keeps one that already closes on the
+requested price — every path an unmodified engine path with an untouched sign
+coin. Measured against the catalogue's constants: 0.11 s for an exact centre
+close on a one-minute candle, under ten seconds out to three sigma, and out of
+reach past five. That last is not a limitation to apologise for; §37 of the
+specification already required the boundary to exist, and this makes it a
+measured probability rather than a heuristic.
+
+| Subphase | Title                                                          | State    |
+| -------- | -------------------------------------------------------------- | -------- |
+| PH-23.1  | Selection: an exact close, by search, on unmodified paths      | APPROVED |
+| PH-23.2  | The Lab surface: isolation, state, and what may never leave it | ACTIVE   |
+| PH-23.3  | The analysis already here, given a window                      | PLANNED  |
+| PH-23.4  | Interventions, scenarios and the session record                | PLANNED  |
 
 ### PH-22 — Distribution Under Thousands Of Observers
 

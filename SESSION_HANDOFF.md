@@ -6,16 +6,16 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                                  |
-| ------------------ | ---------------------------------------------------------------------- |
-| Last clean session | 2026-09-02                                                             |
-| Branch             | `main` — PH-21 merged at its close                                     |
-| Remote             | `origin` → NovaHub2026/otcv6, public                                   |
-| Active cycle       | Cycle 8, **1 of 3** phases approved (PH-22)                            |
-| Active phase       | none                                                                   |
-| Active subphase    | none                                                                   |
-| Cycle Audit        | **007 closed** 2026-09-03; the next is due after three approved phases |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                     |
+| Field              | Value                                                                    |
+| ------------------ | ------------------------------------------------------------------------ |
+| Last clean session | 2026-09-02                                                               |
+| Branch             | `main` — PH-21 merged at its close                                       |
+| Remote             | `origin` → NovaHub2026/otcv6, public                                     |
+| Active cycle       | Cycle 8, **1 of 3** phases approved (PH-22)                              |
+| Active phase       | PH-23 — the OTC Market Lab (ACTIVE)                                      |
+| Active subphase    | PH-23.2 — the Lab surface: isolation, state, and what may never leave it |
+| Cycle Audit        | **007 closed** 2026-09-03; the next is due after three approved phases   |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                       |
 
 ---
 

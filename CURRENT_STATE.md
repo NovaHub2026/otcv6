@@ -21,14 +21,14 @@ Last synchronized: 2026-09-02
 
 ## Phase and subphase
 
-| Field                  | Value                                                              |
-| ---------------------- | ------------------------------------------------------------------ |
-| Active phase           | none                                                               |
-| Phase lifecycle        | none                                                               |
-| Active subphase        | none                                                               |
-| Subphase lifecycle     | none                                                               |
-| Last approved phase    | PH-22 — Distribution under thousands of observers                  |
-| Last approved subphase | PH-22.3 — What happens when ten thousand clients come back at once |
+| Field                  | Value                                                                    |
+| ---------------------- | ------------------------------------------------------------------------ |
+| Active phase           | PH-23 — The OTC Market Lab                                               |
+| Phase lifecycle        | ACTIVE                                                                   |
+| Active subphase        | PH-23.2 — The Lab surface: isolation, state, and what may never leave it |
+| Subphase lifecycle     | ACTIVE                                                                   |
+| Last approved phase    | PH-22 — Distribution under thousands of observers                        |
+| Last approved subphase | PH-23.1 — Selection: an exact close, by search, on unmodified paths      |
 
 Nothing is active because PH-21 closed and the cycle boundary is here: three
 approved phases, and `GOVERNANCE.md` §28 turns the work from building to
