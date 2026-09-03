@@ -159,3 +159,71 @@ worth keeping. Sharing a serialised frame across subscribers — Issue #15 — w
 worth a measured 0.7%. Sharing a _socket_ across an observer's charts is worth
 30%, and nobody proposed it as a throughput change: it was filed as a fix for a
 browser limit.
+
+---
+
+## PH-22.3 — everybody comes back at once
+
+A deploy is the case that decides whether this survives production: every client
+reconnects in the same second, each asking to resume where it was.
+
+### Before
+
+Two thousand clients, five assets each, twenty seconds of window:
+
+| arrival         | resume     | established | connect p50/p99/max          | engine CPU | RSS                | gaps | duplicates |
+| --------------- | ---------- | ----------- | ---------------------------- | ---------- | ------------------ | ---- | ---------- |
+| gradual, 60 s   | live edge  | 2,000       | 126 / 818 / 1,177 ms         | 11.84 s    | 99 → 192 MB        | 0    | 0          |
+| **storm**, 0 ms | live edge  | 2,000       | 174 / 188 / **189** ms       | 4.24 s     | 192 → 252 MB       | 0    | 0          |
+| **storm**, 0 ms | 5,000 back | 2,000       | 2,728 / 5,088 / **5,155** ms | 8.38 s     | 252 → **1,470 MB** | 0    | 0          |
+
+**A storm on its own is nothing** — two thousand clients connect inside 190 ms.
+**A storm that resumes is the problem**: 1.47 GB of resident memory and five
+seconds to connect. Nobody was dropped and nobody was silently wrong, which is
+the contract holding, but ten thousand clients on that shape is roughly six
+gigabytes — past the heap Node gives itself and past the machine.
+
+CA7-04's per-connection bound of 1 MB was working exactly as designed
+throughout, and did nothing. **The quantity that matters in a storm is the sum**,
+and nothing was counting it.
+
+### The fix, and what the first attempt got wrong
+
+A process-wide replay budget: past a ceiling, a resume is treated exactly like an
+eviction, because from the client's side it is one — the ticks it asked for are
+not coming. Told (`onGap=live`), it can refetch; jumped forward in silence, it
+cannot tell that from a quiet market (INV-002).
+
+**The first version of it counted the wrong thing, and the test written for it
+said so.** It counted bytes buffered _before_ the response headers — and the
+handler is synchronous, so only one connection is ever in that state and the
+counter was always zero when the next one looked. The 1.47 GB was never in that
+buffer: it was in the write buffers of two thousand sockets that could not drain
+as fast as a replay filled them. That is `writableLength`, and it is what the
+budget counts now.
+
+### After
+
+Fifteen hundred clients, five assets each:
+
+| arrival       | resume     | established | connect p50/p99/max        | engine CPU | RSS              | gaps | duplicates | refused |
+| ------------- | ---------- | ----------- | -------------------------- | ---------- | ---------------- | ---- | ---------- | ------- |
+| gradual, 20 s | live edge  | 1,500       | 159 / 734 / 921 ms         | 4.77 s     | 97 → 165 MB      | 0    | 0          | 0       |
+| storm, 0 ms   | live edge  | 1,500       | 578 / 1,707 / 1,707 ms     | 1.81 s     | 165 → 219 MB     | 0    | 0          | 0       |
+| storm, 0 ms   | 5,000 back | 1,500       | 664 / 1,269 / **1,271** ms | 3.68 s     | 219 → **458 MB** | 0    | 0          | 0       |
+
+**And the honest part: the budget did not engage in this run.** Nothing was
+refused and no gap was reported, because the harness reads as fast as the server
+writes, so `writableLength` stays near zero and no connection ever owes
+anything. The improvement from 1,470 MB to 458 MB is a 25% smaller run plus
+whatever else changed between them; it is **not** attributable to the ceiling.
+
+What the ceiling is proven to do is what the unit tests prove: charge undrained
+bytes, release them on drain or close, refuse a resume past the ceiling without
+a gap policy, and serve the live edge with an explicit `gap` when asked to be
+told. Each watched failing.
+
+**What remains unmeasured** is the ceiling under a genuinely slow fleet — real
+browsers on real networks, which is where `writableLength` actually grows. That
+needs a harness that reads slowly on purpose, and it is the next honest step
+rather than a claim this run supports.

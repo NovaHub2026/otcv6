@@ -67,6 +67,9 @@ function asLastEventId(request: Request): string | undefined {
   return typeof header === 'string' ? header : undefined;
 }
 
+/** The injection token for the replay ceiling. */
+export const REPLAY_BUDGET = Symbol('OTC_REPLAY_BUDGET');
+
 @Controller()
 export class MarketController implements BeforeApplicationShutdown {
   /**
@@ -91,6 +94,28 @@ export class MarketController implements BeforeApplicationShutdown {
     private readonly registration: RegistrationService | null = null,
     @Optional() @Inject('ASSET_REGISTRY') private readonly registry: AssetRegistry | null = null,
     @Optional() @Inject(BOOT_NONCE) private readonly bootNonce: string | null = null,
+    /**
+     * The process-wide replay ceiling.
+     *
+     * A parameter rather than a constant so the behaviour at the ceiling can be
+     * tested with a small number instead of by buffering sixty-four megabytes.
+     * The *counter* it is compared against stays module state, because the
+     * quantity really is per process: PH-22.3 measured that a per-connection
+     * bound does nothing in a storm, since what matters when everyone
+     * reconnects at once is the sum.
+     *
+     * **Injected through a token, and that is not optional.** A bare `number`
+     * parameter makes Nest read `Number` from `design:paramtypes` and try to
+     * resolve it as a provider: `Nest can't resolve dependencies of the
+     * MarketController … argument Number at index [5]`. The service does not
+     * boot at all. The same trap is documented two parameters above for a
+     * nullable type, and it caught this one the same way — by refusing to
+     * start, in a load run, after every unit test passed. The unit tests
+     * construct this controller directly and never meet the container.
+     */
+    @Optional()
+    @Inject(REPLAY_BUDGET)
+    private readonly replayBudgetBytes: number = MAX_TOTAL_REPLAY_BYTES,
   ) {}
 
   /**
@@ -255,6 +280,9 @@ export class MarketController implements BeforeApplicationShutdown {
       for (const assetId of requested) {
         const at = resumeAt.get(assetId);
         try {
+          if (at !== undefined && replayBudgetInUse >= this.replayBudgetBytes) {
+            throw new EvictedError(assetId, at, at);
+          }
           subscriptions.push(this.venue.feed.subscribe(assetId, sinkFor(assetId), at));
         } catch (error) {
           if (!(error instanceof EvictedError || error instanceof UnknownSequenceError))
@@ -287,6 +315,8 @@ export class MarketController implements BeforeApplicationShutdown {
       if (res.writableNeedDrain) full = true;
     }
     buffered.length = 0;
+
+    chargeUndrained(res);
 
     const live = {
       cancel: (reason?: string): void => {
@@ -687,6 +717,12 @@ export class MarketController implements BeforeApplicationShutdown {
 
     let subscription: { cancel: (reason?: string) => void } | null = null;
     try {
+      if (fromSequence !== undefined && replayBudgetInUse >= this.replayBudgetBytes) {
+        // The process is already replaying to as many clients as it will hold.
+        // Treated exactly like an eviction, because from the client's side it is
+        // one: the ticks it asked for are not coming (PH-22.3).
+        throw new EvictedError(id, fromSequence, fromSequence);
+      }
       subscription = this.venue.feed.subscribe(id, sink, fromSequence);
     } catch (error) {
       if (error instanceof EvictedError || error instanceof UnknownSequenceError) {
@@ -722,6 +758,10 @@ export class MarketController implements BeforeApplicationShutdown {
       if (res.writableNeedDrain) full = true;
     }
     buffered.length = 0;
+
+    // What this connection still owes the socket, charged to the process until
+    // it drains. This is the quantity a reconnect storm grows.
+    chargeUndrained(res);
 
     const live = subscription;
     if (full) {
@@ -848,6 +888,71 @@ const MAX_REPLAY_BYTES = 1_000_000;
  * quantity instead of a per-connection one.
  */
 const MAX_MULTIPLEXED_ASSETS = 32;
+
+/**
+ * The most replay this **process** will hold at once, across every connection.
+ *
+ * `MAX_REPLAY_BYTES` bounds one client. PH-22.3 measured what happens when they
+ * all arrive together: two thousand clients resuming five assets each, five
+ * thousand sequences back, took the engine from 252 MB to **1,470 MB** of
+ * resident memory and 5.1 seconds to connect. The per-connection bound was
+ * working exactly as designed and did nothing, because the quantity that
+ * matters in a storm is the sum.
+ *
+ * Ten thousand clients on the same shape is roughly six gigabytes, past the
+ * heap Node gives itself by default and past the machine this was measured on.
+ * A deploy is precisely when every client reconnects, so this is not a rare
+ * case; it is the case.
+ *
+ * Sixty-four megabytes is about sixty simultaneous full-depth replays, and a
+ * storm larger than that is served at the live edge **with a `gap` event that
+ * says so** — the same answer an eviction gets, for the same reason. A client
+ * told it has a gap can refetch; a client silently jumped forward cannot tell
+ * the difference from a quiet market (INV-002).
+ */
+const MAX_TOTAL_REPLAY_BYTES = 64_000_000;
+
+/**
+ * Bytes this process has handed to sockets for replay that have not drained.
+ *
+ * **The first version of this counted the wrong thing**, and the test that was
+ * meant to exercise it said so: it counted bytes buffered *before* the response
+ * headers, and the whole handler is synchronous, so only one connection is ever
+ * in that state and the counter was always zero when the next one checked it.
+ *
+ * The 1,470 MB PH-22.3 measured was never in that buffer. It was in the
+ * kernel-and-Node write buffers of two thousand sockets that could not drain as
+ * fast as a replay filled them — which is a quantity Node exposes directly, as
+ * `writableLength`, and which is the thing a storm actually grows.
+ */
+let replayBudgetInUse = 0;
+
+/**
+ * Charge a response's undrained bytes to the process, and release them when the
+ * socket catches up or the client goes away.
+ */
+function chargeUndrained(res: Response): void {
+  const owed = res.writableLength;
+  if (owed <= 0) return;
+  replayBudgetInUse += owed;
+  let released = false;
+  const release = (): void => {
+    if (released) return;
+    released = true;
+    replayBudgetInUse -= owed;
+  };
+  res.once('drain', release);
+  res.once('close', release);
+  res.once('finish', release);
+}
+
+/** For tests: what the process currently has committed to replay. */
+export function replayBudgetUsed(): number {
+  return replayBudgetInUse;
+}
+
+/** For tests: the process-wide ceiling. */
+export const REPLAY_BUDGET_BYTES = MAX_TOTAL_REPLAY_BYTES;
 
 /**
  * The longest display name an asset may carry.

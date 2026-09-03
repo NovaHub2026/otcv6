@@ -36,7 +36,11 @@ import {
   MAX_BACKFILL_DAYS,
 } from './app.module.js';
 import { HistoryService } from './history.service.js';
-import { MarketController, MAX_DISPLAY_NAME_LENGTH } from './market.controller.js';
+import {
+  MarketController,
+  MAX_DISPLAY_NAME_LENGTH,
+  replayBudgetUsed,
+} from './market.controller.js';
 import { PublicationService } from './publication.service.js';
 import { VenueService } from './venue.service.js';
 
@@ -602,10 +606,12 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     status: () => number;
     body: () => string;
     ended: () => boolean;
+    drain: () => void;
   } {
     let status = 0;
     let ended = false;
     const chunks: string[] = [];
+    const pending: (() => void)[] = [];
     const res = {
       writeHead: (code: number) => {
         status = code;
@@ -621,11 +627,32 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
         ended = true;
       },
       on: () => undefined,
+      once: (event: string, handler: () => void) => {
+        // A socket that drains immediately unless the test says it is full;
+        // when it is, the handlers are kept so the test can drain it later and
+        // check that the charge is actually released.
+        if (event === 'drain' && !clientIsFull) handler();
+        else pending.push(handler);
+        return res;
+      },
       get writableNeedDrain() {
         return clientIsFull && chunks.length > 0;
       },
+      get writableLength() {
+        // Undrained bytes: everything written, when the client cannot read.
+        return clientIsFull ? chunks.join('').length : 0;
+      },
     } as unknown as Response;
-    return { res, status: () => status, body: () => chunks.join(''), ended: () => ended };
+    return {
+      res,
+      status: () => status,
+      body: () => chunks.join(''),
+      ended: () => ended,
+      /** Let the socket catch up, so a test can check the charge is released. */
+      drain: () => {
+        for (const handler of pending.splice(0)) handler();
+      },
+    };
   }
 
   it('tells a client about the gap instead of refusing it, when asked to (onGap=live)', () => {
@@ -750,6 +777,69 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     expect(() => controller.multiplexed(untouched(), request(), 'eurusd,eurusd')).toThrow(
       /more than once/,
     );
+  });
+
+  it('charges undrained socket bytes to the process, and releases them (PH-22.3)', () => {
+    // **The first version of this counted the wrong thing**, and this test is
+    // what said so. It counted bytes buffered *before* the response headers —
+    // but the handler is synchronous, so only one connection is ever in that
+    // state and the counter was always zero when the next one looked.
+    //
+    // The 1,470 MB PH-22.3 measured was never there. It was in the write
+    // buffers of two thousand sockets that could not drain as fast as a replay
+    // filled them, which Node exposes as `writableLength`.
+    const { controller } = streaming();
+    const startedAt = replayBudgetUsed();
+
+    // A client that drains: nothing owed.
+    const fast = recording();
+    controller.stream('eurusd', fast.res, request(), '10');
+    expect(replayBudgetUsed(), 'a draining client owes nothing').toBe(startedAt);
+
+    // A client that cannot read: its undrained bytes are charged, then released
+    // when the connection closes.
+    const slow = recording(true);
+    controller.stream('eurusd', slow.res, request(), '10');
+    expect(replayBudgetUsed(), 'a stalled client owes its buffer').toBeGreaterThan(startedAt);
+
+    // And it stops owing when the socket catches up. A budget that is charged
+    // and never released is worse than no budget: it would refuse every resume
+    // for the life of the process after one busy minute.
+    slow.drain();
+    expect(replayBudgetUsed(), 'the charge outlived the drain').toBe(startedAt);
+  });
+
+  it('serves the live edge with a gap when the process is out of replay budget (PH-22.3)', () => {
+    // Past the ceiling a resume is treated exactly like an eviction, because
+    // from the client's side it is one: the ticks it asked for are not coming.
+    // Told, it can refetch. Silently jumped forward, it cannot tell the
+    // difference from a quiet market (INV-002).
+    const feed = new TickFeed({ retainTicks: 50 });
+    feed.publish('eurusd', ticks(20));
+    const venue = { ...venueStub(['eurusd']), feed } as unknown as VenueService;
+    const controller = new MarketController(venue, null, null, null, null, 1);
+
+    // Fill the budget with one client that cannot read.
+    const stalled = recording(true);
+    controller.stream('eurusd', stalled.res, request(), '5', 'live');
+    expect(replayBudgetUsed()).toBeGreaterThan(0);
+
+    // The live edge still works: no resume, no budget needed.
+    const live = recording();
+    controller.stream('eurusd', live.res, request());
+    expect(live.status()).toBe(200);
+    expect(live.body()).not.toMatch(/event: gap/);
+
+    // A resume past the ceiling is refused without a gap policy...
+    expect(() => controller.stream('eurusd', untouched(), request(), '5')).toThrow(
+      BadRequestException,
+    );
+    // ...and served at the live edge, with a gap, when asked to be told.
+    const told = recording();
+    controller.stream('eurusd', told.res, request(), '5', 'live');
+    expect(told.status()).toBe(200);
+    expect(told.body()).toMatch(/event: gap/);
+    expect(told.body()).not.toMatch(/"sequence":5/);
   });
 
   it('refuses a gap policy it does not have, by name', () => {

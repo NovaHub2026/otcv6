@@ -15,7 +15,7 @@ Last synchronized: 2026-09-02
 | Field                            | Value                                                                                                                  |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | Active development cycle         | Cycle 8                                                                                                                |
-| Approved phases in current cycle | **0 of 3** — Cycle 8 opens with PH-22                                                                                  |
+| Approved phases in current cycle | **1 of 3** — PH-22                                                                                                     |
 | Cycle Audit state                | **007 closed** — 34 of 35 findings closed in the audit itself, one carried (Issue #22)                                 |
 | Last Cycle Audit                 | [Cycle Audit 007](docs/audits/CYCLE-AUDIT-007.md) — recorded 2026-09-03, eight independent auditors, one worktree each |
 
@@ -23,12 +23,12 @@ Last synchronized: 2026-09-02
 
 | Field                  | Value                                                              |
 | ---------------------- | ------------------------------------------------------------------ |
-| Active phase           | PH-22 — Distribution under thousands of observers                  |
-| Phase lifecycle        | ACTIVE                                                             |
-| Active subphase        | PH-22.3 — What happens when ten thousand clients come back at once |
-| Subphase lifecycle     | ACTIVE                                                             |
-| Last approved phase    | PH-21 — The catalogue at scale                                     |
-| Last approved subphase | PH-22.2 — Many assets, one connection, the same resume contract    |
+| Active phase           | none                                                               |
+| Phase lifecycle        | none                                                               |
+| Active subphase        | none                                                               |
+| Subphase lifecycle     | none                                                               |
+| Last approved phase    | PH-22 — Distribution under thousands of observers                  |
+| Last approved subphase | PH-22.3 — What happens when ten thousand clients come back at once |
 
 Nothing is active because PH-21 closed and the cycle boundary is here: three
 approved phases, and `GOVERNANCE.md` §28 turns the work from building to

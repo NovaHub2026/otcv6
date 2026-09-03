@@ -58,6 +58,16 @@ export interface ObserverLoadOptions {
    * connection — because that is what the contract is about.
    */
   readonly assetsPerConnection?: number;
+  /**
+   * Spread the arrivals over this many milliseconds. Zero is a storm: everyone
+   * at once, which is what a deploy looks like from the server's side.
+   */
+  readonly arrivalMs?: number;
+  /**
+   * Resume this many sequences behind the live edge, so the connection costs a
+   * replay rather than a subscription. Undefined subscribes at the live edge.
+   */
+  readonly resumeBack?: number;
 }
 
 export interface ObserverLoadReport {
@@ -73,6 +83,13 @@ export interface ObserverLoadReport {
   readonly duplicates: number;
   /** `receivedAt - tick.instant`, in milliseconds. */
   readonly latencyMs: {
+    readonly p50: number;
+    readonly p90: number;
+    readonly p99: number;
+    readonly max: number;
+  };
+  /** Request to first byte, per observer: what a storm actually costs a client. */
+  readonly connectMs: {
     readonly p50: number;
     readonly p90: number;
     readonly p99: number;
@@ -136,6 +153,7 @@ export async function runObserverLoad(options: ObserverLoadOptions): Promise<Obs
   const agent = new Agent({ keepAlive: false, maxSockets: Infinity, maxFreeSockets: 0 });
   const states: ObserverState[] = [];
   const latencies: number[] = [];
+  const connects: number[] = [];
   const started = Date.now();
   const harnessCpuAtStart = process.cpuUsage();
   const engineCpuAtStart =
@@ -143,6 +161,26 @@ export async function runObserverLoad(options: ObserverLoadOptions): Promise<Obs
 
   /** Closes handed back by `open`, so the hold is a phase rather than a per-observer timer. */
   const closers: (() => void)[] = [];
+
+  /**
+   * Where a resuming observer starts, or null for the live edge.
+   *
+   * Read once, from the newest sequence the feed holds, so every observer in a
+   * storm asks for the same depth of replay — which is what makes the runs
+   * comparable, and what a deploy actually produces.
+   */
+  let resumeFrom: number | null = null;
+  if (options.resumeBack !== undefined && options.resumeBack > 0) {
+    try {
+      const probe = await fetch(`${options.baseUrl}/markets/${options.assetIds[0]!}`);
+      const market = (await probe.json()) as { sequence?: number };
+      if (typeof market.sequence === 'number') {
+        resumeFrom = Math.max(1, market.sequence - options.resumeBack);
+      }
+    } catch {
+      resumeFrom = null;
+    }
+  }
 
   const open = (index: number): Promise<void> =>
     new Promise((resolve) => {
@@ -162,10 +200,19 @@ export async function runObserverLoad(options: ObserverLoadOptions): Promise<Obs
           options.assetIds[(index * perConnection + offset) % options.assetIds.length]!,
       );
       const unique = [...new Set(carried)];
+      const openedAt = Date.now();
       const url =
         perConnection === 1
-          ? new URL(`${options.baseUrl}/markets/${unique[0]!}/stream`)
-          : new URL(`${options.baseUrl}/markets/stream?assets=${unique.join(',')}`);
+          ? new URL(
+              `${options.baseUrl}/markets/${unique[0]!}/stream` +
+                (resumeFrom === null ? '' : `?from=${String(resumeFrom)}&onGap=live`),
+            )
+          : new URL(
+              `${options.baseUrl}/markets/stream?assets=${unique.join(',')}` +
+                (resumeFrom === null
+                  ? ''
+                  : `&from=${unique.map((id) => `${id}:${String(resumeFrom)}`).join(',')}&onGap=live`),
+            );
       let settled = false;
       const settle = (): void => {
         if (settled) return;
@@ -204,6 +251,7 @@ export async function runObserverLoad(options: ObserverLoadOptions): Promise<Obs
             // connection that never delivers is the failure this must not hide.
             if (!state.established) {
               state.established = true;
+              connects.push(Date.now() - openedAt);
               clearTimeout(timer);
               settle();
             }
@@ -272,7 +320,21 @@ export async function runObserverLoad(options: ObserverLoadOptions): Promise<Obs
       });
     });
 
-  await Promise.all(Array.from({ length: options.observers }, (_, index) => open(index)));
+  const arrivalMs = options.arrivalMs ?? 0;
+  await Promise.all(
+    Array.from({ length: options.observers }, (_, index) =>
+      arrivalMs === 0
+        ? open(index)
+        : new Promise<void>((resolve) => {
+            setTimeout(
+              () => {
+                void open(index).then(resolve);
+              },
+              Math.floor((index * arrivalMs) / options.observers),
+            );
+          }),
+    ),
+  );
 
   // The measurement window: every observer that will connect has, and the
   // engine has been running for the same length of time for every size.
@@ -302,6 +364,7 @@ export async function runObserverLoad(options: ObserverLoadOptions): Promise<Obs
     reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
   }
   latencies.sort((a, b) => a - b);
+  connects.sort((a, b) => a - b);
   const established = states.filter((state) => state.established).length;
 
   return {
@@ -316,6 +379,12 @@ export async function runObserverLoad(options: ObserverLoadOptions): Promise<Obs
       p90: percentile(latencies, 0.9),
       p99: percentile(latencies, 0.99),
       max: latencies.length === 0 ? Number.NaN : latencies[latencies.length - 1]!,
+    },
+    connectMs: {
+      p50: percentile(connects, 0.5),
+      p90: percentile(connects, 0.9),
+      p99: percentile(connects, 0.99),
+      max: connects.length === 0 ? Number.NaN : connects[connects.length - 1]!,
     },
     engineCpuSeconds,
     harnessCpuSeconds,
@@ -337,6 +406,7 @@ export function describeObserverLoad(report: ObserverLoadReport): string {
     `ticks delivered  ${String(report.ticksDelivered)}`,
     `gaps             ${String(report.gaps)}`,
     `duplicates       ${String(report.duplicates)}`,
+    `connect ms       p50 ${report.connectMs.p50.toFixed(0)}  p90 ${report.connectMs.p90.toFixed(0)}  p99 ${report.connectMs.p99.toFixed(0)}  max ${report.connectMs.max.toFixed(0)}`,
     `latency ms       p50 ${report.latencyMs.p50.toFixed(0)}  p90 ${report.latencyMs.p90.toFixed(0)}  p99 ${report.latencyMs.p99.toFixed(0)}  max ${report.latencyMs.max.toFixed(0)}`,
     `engine cpu       ${report.engineCpuSeconds === null ? 'unavailable' : `${report.engineCpuSeconds.toFixed(2)}s`}`,
     `harness cpu      ${report.harnessCpuSeconds.toFixed(2)}s`,
