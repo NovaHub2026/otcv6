@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MasterKeyring } from '@otc/core';
-import { INTERVENTIONS, selectContinuation } from './intervention.js';
+import { INTERVENTIONS, nextShock, selectContinuation } from './intervention.js';
 
 /**
  * An intervention chooses among the engine's futures; it never makes one.
@@ -156,18 +156,99 @@ describe('an intervention selects, it does not steer', () => {
 
   it('cannot produce a shape the steps do not allow', () => {
     // The load-bearing property: an intervention has no power the engine did
-    // not already have. A shock larger than the largest step is unreachable
+    // not already have. A level beyond the sum of the steps is unreachable
     // however long it samples, because the steps are the engine's.
     const remaining = [2, 3, 4, 5];
     const result = selectContinuation({
       steps: remaining,
       random: stream('draws-f'),
-      criterion: INTERVENTIONS.shock(6),
+      criterion: INTERVENTIONS.touches(15),
       maxAttempts: 2_000,
     });
     expect(
       result.chosen,
       'an intervention manufactured a step the engine never produced',
     ).toBeNull();
+  });
+});
+
+describe('every intervention is a choice the signs can make (LA-01)', () => {
+  /**
+   * LAB-SPECIFICATION-AUDIT-001, LA-01. `INTERVENTIONS.shock` accepted the
+   * first vector drawn or none of them, under every seed, because a
+   * displacement's absolute value is the step and the steps do not depend on
+   * the signs. A criterion the signs cannot change is not an intervention; it
+   * is a detector, and a Lab that offered it as an intervention would report
+   * an acceptance rate of 1 for something nobody chose.
+   *
+   * So every entry is exercised at a parameter inside its own range and must
+   * accept some natural continuations and reject others. The table is keyed by
+   * name and compared against the object's keys, so a new entry has to be
+   * added here — with a parameter that makes it discriminating — before it can
+   * exist.
+   */
+  it('has no criterion that is constant across sign vectors', () => {
+    const remaining = steps(30, 'la01');
+    const total = remaining.reduce((a, b) => a + b, 0);
+    const table: Record<
+      keyof typeof INTERVENTIONS,
+      (c: Parameters<ReturnType<typeof INTERVENTIONS.touches>>[0]) => boolean
+    > = {
+      bullishPressure: INTERVENTIONS.bullishPressure(Math.floor(total / 6)),
+      bearishPressure: INTERVENTIONS.bearishPressure(Math.floor(total / 6)),
+      expandedVolatility: INTERVENTIONS.expandedVolatility(Math.floor(total / 3)),
+      compressedVolatility: INTERVENTIONS.compressedVolatility(Math.floor(total / 3)),
+      touches: INTERVENTIONS.touches(Math.floor(total / 6)),
+      trendThenPullback: INTERVENTIONS.trendThenPullback(Math.floor(total / 10), 0.3),
+      directionAt: INTERVENTIONS.directionAt(3, 1),
+    };
+    expect(Object.keys(table).sort()).toEqual(Object.keys(INTERVENTIONS).sort());
+    const draws = stream('la01-draws');
+    const vectors = Array.from({ length: 2_000 }, () =>
+      remaining.map((): 1 | -1 => (draws.nextBoolean() ? 1 : -1)),
+    );
+    for (const [name, predicate] of Object.entries(table)) {
+      let accepted = 0;
+      for (const signs of vectors) {
+        // The same walk `selectContinuation` performs, inlined so this test
+        // does not depend on the sampler it is checking the inputs of.
+        const path: number[] = [];
+        let net = 0;
+        let high = 0;
+        let low = 0;
+        for (const [i, step] of remaining.entries()) {
+          net += signs[i]! * step;
+          path.push(net);
+          if (net > high) high = net;
+          if (net < low) low = net;
+        }
+        if (predicate({ signs, path, net, high, low })) accepted += 1;
+      }
+      expect(accepted, `${name} accepts every sign vector`).toBeLessThan(vectors.length);
+      expect(accepted, `${name} accepts no sign vector`).toBeGreaterThan(0);
+    }
+  });
+
+  it('locates the next shock instead of pretending to select it', () => {
+    expect(nextShock([2, 3, 9, 1], 9)).toEqual({ atTick: 2, step: 9 });
+    expect(nextShock([2, 3, 9, 1], 10)).toBeNull();
+    expect(nextShock([], 1)).toBeNull();
+  });
+
+  it('chooses the direction of a shock the engine is about to produce', () => {
+    // What "a positive shock" honestly means: the engine placed the step; the
+    // coin picks its sign; a criterion over the coin is accepted about half
+    // the time — and the acceptance rate says so.
+    const remaining = [2, 3, 9, 1];
+    const shock = nextShock(remaining, 9)!;
+    const result = selectContinuation({
+      steps: remaining,
+      random: stream('draws-shock'),
+      criterion: INTERVENTIONS.directionAt(shock.atTick, -1),
+    });
+    expect(result.chosen).not.toBeNull();
+    expect(result.chosen!.signs[shock.atTick]).toBe(-1);
+    expect(result.chosen!.path[shock.atTick]! - result.chosen!.path[shock.atTick - 1]!).toBe(-9);
+    expect(result.attempts).toBeLessThanOrEqual(12);
   });
 });

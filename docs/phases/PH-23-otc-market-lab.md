@@ -91,9 +91,15 @@ _magnitude and rhythm_ state: regime and its age, the cascade, arrival rate,
 keystream cursors. §10 becomes that, and a panel that says plainly why direction
 is 50/50 is the best demonstration of the product the Lab can offer.
 
-**§39 is a verification, not a feature.** "Candle close = expiration settlement =
-one canonical price" is already INV-003 and already true. The Lab's job is to
-make it _checkable_, and if it ever fails that is a finding about the engine.
+**§39 is a verification, and it was not true as written.** "Candle close =
+expiration settlement = one canonical price": one canonical price is INV-003
+and holds. That the candle's close and the expiry price are the same _tick_ did
+not — the chart's bucket is half-open and the settlement lookup is inclusive, so
+a tick on the boundary millisecond is the next candle's open and the expiry
+price, once in 471–1,163 candles on the shipped engine
+(LAB-SPECIFICATION-AUDIT-001, LA-02). ADR-0017 keeps both rules, pins the
+relationship in a test, and defines the Lab's exact close against the price
+that pays.
 
 **§41's settlement presets are the sharpest thing in the specification**, and
 they are fine: `WIN by Minimum Distance` asks for a close one tick above entry,
@@ -182,8 +188,10 @@ breakdown describes a probabilistic directional engine, and this is not one. The
 Lab reports exactly 0.5 / 0.5 with ADR-0003's reason and no breakdown. That is
 the best demonstration of the product the Lab can offer.
 
-**§39 is a verification, not a feature.** One canonical price for chart, close
-and settlement is already INV-003 and already true.
+**§39 is a verification, and one half of it was wrong.** One canonical price
+for chart, close and settlement is INV-003. That the candle's close is the
+expiry _tick_ is true except when the engine prints on the boundary
+millisecond, and ADR-0017 records which rule pays.
 
 ## 10. What the phase leaves open
 

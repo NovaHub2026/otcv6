@@ -90,9 +90,16 @@ export const INTERVENTIONS = {
   expandedVolatility: (range: number) => (c: Continuation) => c.high - c.low >= range,
   /** §14, compressed. */
   compressedVolatility: (range: number) => (c: Continuation) => c.high - c.low <= range,
-  /** §15. A displacement of at least this size within any single tick. */
-  shock: (size: number) => (c: Continuation) =>
-    c.path.some((value, i) => Math.abs(value - (i === 0 ? 0 : c.path[i - 1]!)) >= size),
+  /**
+   * The direction of one particular tick.
+   *
+   * With {@link nextShock} this is what "a positive shock" honestly means here:
+   * the engine decides *whether* a large step happens and *when*; the coin
+   * decides which way; and a criterion over the coin is a selection like any
+   * other, accepted about half the time.
+   */
+  directionAt: (tick: number, direction: 1 | -1) => (c: Continuation) =>
+    c.signs[tick] === direction,
   /** §16. Reaches a region without being required to end there. */
   touches: (level: number) => (c: Continuation) => (level >= 0 ? c.high >= level : c.low <= level),
   /**
@@ -119,3 +126,28 @@ export const INTERVENTIONS = {
     return peak - trough >= depth * peak;
   },
 } as const;
+
+/**
+ * Where the engine's next large step is in this window, if there is one.
+ *
+ * **LAB-SPECIFICATION-AUDIT-001, LA-01.** This was `INTERVENTIONS.shock`: a
+ * predicate accepting any continuation containing a single-tick displacement
+ * of at least `size`. Executed, it accepted the first vector drawn or none of
+ * them, under every seed — a displacement is `sign × step` and its absolute
+ * value is the step. A shock is a **magnitude** event; magnitudes do not depend
+ * on the signs (ADR-0003, `stepIndependence.test.ts`); so a selection over
+ * signs cannot produce one, and the predicate was a detector wearing the name
+ * of an intervention. Its docstring said "keep one containing a displacement
+ * above a threshold" as if there were a choice being made.
+ *
+ * So it is a detector, named as one. What the Lab can honestly say about a
+ * shock is whether the engine is about to produce one and at which tick; what
+ * it cannot do is order one. `directionAt` then chooses its sign.
+ */
+export function nextShock(
+  steps: readonly number[],
+  size: number,
+): { readonly atTick: number; readonly step: number } | null {
+  const atTick = steps.findIndex((step) => step >= size);
+  return atTick < 0 ? null : { atTick, step: steps[atTick]! };
+}

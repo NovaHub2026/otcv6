@@ -21,14 +21,14 @@ Last synchronized: 2026-09-03
 
 ## Phase and subphase
 
-| Field                  | Value                           |
-| ---------------------- | ------------------------------- |
-| Active phase           | none                            |
-| Phase lifecycle        | none                            |
-| Active subphase        | none                            |
-| Subphase lifecycle     | none                            |
-| Last approved phase    | PH-23 — The OTC Market Lab      |
-| Last approved subphase | PH-23.5 — The Lab, in the panel |
+| Field                  | Value                                        |
+| ---------------------- | -------------------------------------------- |
+| Active phase           | none                                         |
+| Phase lifecycle        | none                                         |
+| Active subphase        | none                                         |
+| Subphase lifecycle     | none                                         |
+| Last approved phase    | PH-23 — The OTC Market Lab                   |
+| Last approved subphase | PH-23.6 — What the specification audit found |
 
 Nothing is active. Cycle 8 stands at two approved phases of three; a third
 opens the next Cycle Audit.
@@ -38,6 +38,13 @@ the panel, behind a menu entry marked `SIM`. Building it found three defects
 that reading the API could not: a `clean` predictability verdict resting on two
 hypotheses out of eight hundred, a realism verdict that flipped between forks of
 the same market, and a lattice index printed under the word `price`.
+
+PH-23.6 closed the two defects the Lab specification audit found by execution
+([LAB-SPECIFICATION-AUDIT-001](docs/audits/LAB-SPECIFICATION-AUDIT-001.md)): a
+shock "intervention" the signs could not select, and a candle close and a
+settlement price that name different ticks when the engine prints on a boundary
+millisecond (ADR-0017). The audit's other six findings are the next phases: a
+Lab with a correct mechanism and no controls.
 
 ## Cycle 1 result
 
