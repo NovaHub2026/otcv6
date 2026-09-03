@@ -25,16 +25,18 @@ Last synchronized: 2026-09-03
 | ---------------------- | ------------------------------------------------- |
 | Active phase           | PH-24 — The Lab's controls: applying a selection  |
 | Phase lifecycle        | ACTIVE                                            |
-| Active subphase        | PH-24.1 — The selectable sign source and its hook |
+| Active subphase        | PH-24.2 — Candle Close Control on a real candle   |
 | Subphase lifecycle     | ACTIVE                                            |
 | Last approved phase    | PH-23 — The OTC Market Lab                        |
-| Last approved subphase | PH-23.6 — What the specification audit found      |
+| Last approved subphase | PH-24.1 — The selectable sign source and its hook |
 
-**PH-24 is active**, on `feature/ph-24-the-labs-controls`, and its first
-subphase is the boundary: a sign source that plays a chosen vector in lockstep
-with the keystream, composed only in the Lab and asserted absent from
-production before any control is built on it. Its approval would be Cycle 8's
-third phase and opens Cycle Audit 8.
+**PH-24 is active**, on `feature/ph-24-the-labs-controls`. PH-24.1 built the
+boundary — a sign source that plays a chosen vector in lockstep with the
+keystream, composed only in the Lab, asserted absent from production, both
+processes booting from the new composition. PH-24.2 puts Candle Close Control
+on a real candle: current or next, a typed price resolved against the lattice,
+apply and release, the session record fed, and the screen. PH-24's approval
+would be Cycle 8's third phase and opens Cycle Audit 8.
 
 PH-23.5 closed the first item PH-23 §10 left open — the Lab now has a screen in
 the panel, behind a menu entry marked `SIM`. Building it found three defects

@@ -570,13 +570,13 @@ market (LA-03). The phase adds a sign source that plays a chosen vector in
 lockstep with the keystream, composed only in the Lab, and builds every control
 on it — the boundary first, guarded before anything stands on it.
 
-| Subphase | Title                                                                 | State   |
-| -------- | --------------------------------------------------------------------- | ------- |
-| PH-24.1  | The selectable sign source and its hook                               | ACTIVE  |
-| PH-24.2  | Candle Close Control on a real candle, apply, release, session record | PLANNED |
-| PH-24.3  | Presets and simulated positions, settled against the Lab's record     | PLANNED |
-| PH-24.4  | Scenarios, the ones sign selection cannot express, and the screen     | PLANNED |
-| PH-24.5  | The diagnostics the audit found missing                               | PLANNED |
+| Subphase | Title                                                                 | State    |
+| -------- | --------------------------------------------------------------------- | -------- |
+| PH-24.1  | The selectable sign source and its hook                               | APPROVED |
+| PH-24.2  | Candle Close Control on a real candle, apply, release, session record | ACTIVE   |
+| PH-24.3  | Presets and simulated positions, settled against the Lab's record     | PLANNED  |
+| PH-24.4  | Scenarios, the ones sign selection cannot express, and the screen     | PLANNED  |
+| PH-24.5  | The diagnostics the audit found missing                               | PLANNED  |
 
 ### PH-23 — The OTC Market Lab
 

@@ -7,6 +7,7 @@ import {
   type Clock,
   type Environment,
   type MasterKeyring,
+  type RandomSource,
 } from '@otc/core';
 import {
   configFor,
@@ -39,6 +40,19 @@ export type RecoveryOutcome =
   | { readonly kind: 'resumed'; readonly fromSequence: number }
   | { readonly kind: 'seam'; readonly reason: string; readonly fromSequence: number | null };
 
+/**
+ * A hook on the engine's sign stream, for a composition that may have one.
+ *
+ * Given the keystream's own `sign` stream for an asset, returns the stream the
+ * engine will draw its fair coin from. **The runtime's default is identity**,
+ * and the production composition never supplies anything else — the Lab does
+ * (PH-24.1), to play a chosen sign vector in lockstep with the keystream. Every
+ * other stream is untouched: a hook here can decide which way a step goes and
+ * nothing about how large it is, which is exactly the separation ADR-0003
+ * rests on, and `stepIndependence.test.ts` verifies on the shipped engine.
+ */
+export type SignSourceFactory = (keystream: RandomSource, assetId: string) => RandomSource;
+
 export interface ResumeOptions {
   readonly asset: RegisteredAsset;
   readonly keyring: MasterKeyring;
@@ -48,6 +62,8 @@ export interface ResumeOptions {
   readonly genesisInstant: EpochMillisLike;
   readonly leaseBlocks?: bigint;
   readonly maxCatchUpMs?: number;
+  /** See {@link SignSourceFactory}. Absent means the keystream, untouched. */
+  readonly signSource?: SignSourceFactory;
 }
 
 type EpochMillisLike = ReturnType<typeof epochMillis>;
@@ -55,6 +71,25 @@ type EpochMillisLike = ReturnType<typeof epochMillis>;
 export interface ResumeResult {
   readonly market: HostedMarket;
   readonly outcome: RecoveryOutcome;
+}
+
+/**
+ * The streams an engine is built with: nothing, unless a sign source was given.
+ *
+ * The keystream sign stream is derived exactly as `createMarketEngine` derives
+ * it — same environment, instrument id, purpose and epoch — so a transparent
+ * wrapper is indistinguishable from no wrapper, and a cursor a caller supplies
+ * is applied to the wrapper, which delegates the seek.
+ */
+function engineStreams(options: ResumeOptions): { streams?: { readonly sign: RandomSource } } {
+  if (options.signSource === undefined) return {};
+  const keystream = options.keyring.derive({
+    env: options.environment,
+    asset: configFor(options.asset).instrument.id,
+    purpose: 'sign',
+    keyEpoch: 0,
+  });
+  return { streams: { sign: options.signSource(keystream, options.asset.definition.id) } };
 }
 
 /**
@@ -104,6 +139,7 @@ export async function resumeMarket(options: ResumeOptions): Promise<ResumeResult
     config: configFor(asset),
     keyring,
     environment,
+    ...engineStreams(options),
     start: { instant: options.genesisInstant, price: logPrice(0) },
   });
   try {
@@ -119,6 +155,9 @@ export async function resumeMarket(options: ResumeOptions): Promise<ResumeResult
       config: configFor(asset),
       keyring,
       environment,
+      // Not hooked, deliberately. This engine exists to check the record against
+      // the snapshot and is discarded; a sign source registered here would be
+      // the one a Lab later armed, on an engine nothing hosts.
       start: { instant: options.genesisInstant, price: logPrice(0) },
     });
     engineForProbe.restore(record.snapshot);
@@ -211,6 +250,7 @@ function freshMarket(
     config: configFor(options.asset),
     keyring: options.keyring,
     environment: options.environment,
+    ...engineStreams(options),
     start: { instant: options.genesisInstant, price: logPrice(0) },
     ...(cursors === undefined ? {} : { cursors }),
   });
@@ -305,6 +345,7 @@ function seamFrom(
     config: configFor(options.asset),
     keyring: options.keyring,
     environment: options.environment,
+    ...engineStreams(options),
     start,
     cursors,
   });

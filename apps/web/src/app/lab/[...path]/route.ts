@@ -36,7 +36,11 @@ const NOT_RUNNING = {
     'OTC_LAB_BASE=http://127.0.0.1:3100.',
 };
 
-async function forward(request: NextRequest, path: string[]): Promise<Response> {
+async function forward(
+  request: NextRequest,
+  path: string[],
+  method: 'GET' | 'POST',
+): Promise<Response> {
   const base = labBase();
   if (base === null) {
     return Response.json(NOT_RUNNING, { status: 503 });
@@ -44,7 +48,10 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   const url = new URL(`${base}/lab/${path.join('/')}`);
   url.search = request.nextUrl.search;
   try {
-    const upstream = await fetch(url, { method: 'GET', headers: { accept: 'application/json' } });
+    // POST for the Lab's acts — apply, release — carrying only the query: the
+    // routes take no body, and a proxy that forwarded one would be forwarding
+    // something nothing reads (PH-24.2).
+    const upstream = await fetch(url, { method, headers: { accept: 'application/json' } });
     // The body is handed over unread, like the engine proxy: a Lab response can
     // be a long analysis and a buffered proxy would hold all of it.
     return new Response(upstream.body, {
@@ -67,5 +74,13 @@ export async function GET(
   context: { params: Promise<{ path: string[] }> },
 ): Promise<Response> {
   const { path } = await context.params;
-  return forward(request, path);
+  return forward(request, path, 'GET');
+}
+
+export async function POST(
+  request: NextRequest,
+  context: { params: Promise<{ path: string[] }> },
+): Promise<Response> {
+  const { path } = await context.params;
+  return forward(request, path, 'POST');
 }

@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { AppModule } from '../app.module.js';
 import { LabController } from './lab.controller.js';
+import { SignSelector } from './selectableSigns.js';
+import { LabSession } from './session.js';
 
 /**
  * The Lab, composed **on top of** the application rather than inside it.
@@ -10,5 +12,18 @@ import { LabController } from './lab.controller.js';
  * an `AppModule` that imports a Lab it disables by flag — is the arrangement
  * ADR-0015 §3 refuses, because a flag is a thing that can be wrong.
  */
-@Module({ imports: [AppModule], controllers: [LabController] })
+/**
+ * The Lab's handle on every hosted engine's coin, created here and handed
+ * *into* the application. The import direction is unchanged: the Lab knows the
+ * application; the application receives a function and does not know whose.
+ */
+const selector = new SignSelector();
+
+@Module({
+  imports: [
+    AppModule.register({ signSource: (keystream, assetId) => selector.wrap(keystream, assetId) }),
+  ],
+  controllers: [LabController],
+  providers: [{ provide: SignSelector, useValue: selector }, LabSession],
+})
 export class LabModule {}

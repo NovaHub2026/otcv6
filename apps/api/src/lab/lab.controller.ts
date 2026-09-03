@@ -1,15 +1,22 @@
 import {
   BadRequestException,
+  ConflictException,
   Controller,
   Get,
   NotFoundException,
   Param,
+  Post,
   Query,
 } from '@nestjs/common';
 import { displayPrice } from '@otc/chart';
+import { isTimeframeId, type TimeframeId } from '@otc/core';
 import { assessRealism, buildObserverDataset, runBattery } from '@otc/lab';
 import { selectClose } from '@otc/engine';
+import { STATE_RECORD_VERSION } from '@otc/runtime';
 import { VenueService } from '../venue.service.js';
+import { closeInstant, planClose, readWindow, resolveTarget, type Bucket } from './closeControl.js';
+import { SelectableSigns, SignSelector } from './selectableSigns.js';
+import { LabSession } from './session.js';
 
 /**
  * The OTC Lab's read surface.
@@ -43,6 +50,19 @@ import { VenueService } from '../venue.service.js';
  */
 const LAB_SAMPLE_TICKS = 1_000_000;
 
+/** Every Lab response says what it is (§3). */
+const LAB = 'OTC LAB — SIMULATION ENVIRONMENT';
+
+/**
+ * What §78's "engine version" is, here.
+ *
+ * No code version constant exists in this repository — `@otc/engine` is
+ * `0.0.0` and the commit is not available at runtime — so the honest identity a
+ * record can carry is the state-record format the snapshot follows. It is
+ * named as what it is rather than dressed as a semver.
+ */
+const ENGINE_VERSION = `state-record/${String(STATE_RECORD_VERSION)}`;
+
 /**
  * Below this many surviving hypotheses there is no verdict, only a word.
  *
@@ -70,7 +90,11 @@ const LAB_MAX_SAMPLE_TICKS = 2_000_000;
 
 @Controller('lab')
 export class LabController {
-  constructor(private readonly venue: VenueService) {}
+  constructor(
+    private readonly venue: VenueService,
+    private readonly signs: SignSelector,
+    private readonly session: LabSession,
+  ) {}
 
   /**
    * The engine's internal state for one asset.
@@ -289,8 +313,8 @@ export class LabController {
    * thumb — a measured probability. Parity and range impossibilities are named
    * without sampling, because exhaustion is a poor way to learn them.
    *
-   * This route reports; it does not apply. Applying a close is PH-23.4, and it
-   * belongs behind the same boundary.
+   * This route reports; it does not apply. Applying a close is PH-24.2, on the
+   * sign source PH-24.1 composes, and it belongs behind the same boundary.
    */
   @Get('markets/:id/reachable/:delta')
   reachable(@Param('id') id: string, @Param('delta') delta: string): unknown {
@@ -315,6 +339,275 @@ export class LabController {
       acceptanceRate: selection.acceptanceRate,
       reachability: selection.reachability,
       impossible: selection.impossible,
+    };
+  }
+
+  // ── Candle Close Control on a real candle (PH-24.2) ─────────────────────
+
+  /**
+   * What applying this close would do, without doing it.
+   *
+   * The same computation `apply` performs — target resolved against the
+   * lattice, window read from a fork up to and including the candle's end
+   * (ADR-0017), selection attempted, reachability measured — returned as a
+   * preview. A price that is not a lattice level answers with the two levels
+   * around it (409); an off-parity level answers with its two reachable
+   * neighbours; nothing is armed.
+   */
+  @Get('markets/:id/close/preview')
+  closePreview(
+    @Param('id') id: string,
+    @Query('price') price?: string,
+    @Query('bucket') bucket?: string,
+    @Query('timeframe') tf?: string,
+  ): unknown {
+    const request = this.closeRequest(id, price, bucket, tf);
+    return { ...this.plan(request), armed: false };
+  }
+
+  /**
+   * Select a close and arm it, in one critical section.
+   *
+   * Read, select and arm happen inside `betweenAdvances`, synchronously: the
+   * fork describes the future from the engine's current state, and an advance
+   * between the read and the arm would make the vector begin one tick late
+   * (PH-24.2 §2). The session records the act with §78's fields whether or not
+   * a vector was found — a refused close is an action too.
+   */
+  @Post('markets/:id/close')
+  async applyClose(
+    @Param('id') id: string,
+    @Query('price') price?: string,
+    @Query('bucket') bucket?: string,
+    @Query('timeframe') tf?: string,
+  ): Promise<unknown> {
+    const request = this.closeRequest(id, price, bucket, tf);
+    const wrapper = this.wrapperFor(id);
+    const at = this.venue.now();
+    const before = this.controlState(id);
+    const result = await this.venue.betweenAdvances(() => {
+      const plan = this.plan(request);
+      const signs = plan.selection;
+      if (signs !== null && signs.length > 0) wrapper.arm(signs);
+      return { plan, armed: signs !== null && signs.length > 0 };
+    });
+    this.session.recordAction({
+      at,
+      asset: id,
+      engineVersion: ENGINE_VERSION,
+      action: 'close.apply',
+      parameters: { price: request.price, bucket: request.bucket, timeframe: request.timeframe },
+      initialState: before,
+      resultingState: this.controlState(id),
+      succeeded: result.armed,
+      diagnostics: {
+        target: result.plan.target,
+        delta: result.plan.delta,
+        ticksInWindow: result.plan.ticksInWindow,
+        attempts: result.plan.attempts,
+        acceptanceRate: result.plan.acceptanceRate,
+        reachability: result.plan.reachability,
+        impossible: result.plan.impossible,
+      },
+    });
+    if (result.armed) {
+      this.applied.set(id, { instant: result.plan.instant, target: result.plan.target });
+    }
+    return { ...result.plan, environment: LAB, armed: result.armed };
+  }
+
+  /**
+   * Back to the keystream. Says how many scripted signs were never drawn.
+   *
+   * And which tick, if any, is already drawn: a hosted market holds one drawn,
+   * unpublished tick, and if its coin was tossed under the script it is
+   * published as drawn — nothing un-tosses a coin. The keystream resumes with
+   * the next draw. No jump, no invalid state (H5), one tick of latency, named.
+   */
+  @Post('markets/:id/release')
+  release(@Param('id') id: string): unknown {
+    const wrapper = this.wrapperFor(id);
+    const before = this.controlState(id);
+    const pendingTick = this.venue.hostedMarket(id)?.pending?.sequence ?? null;
+    const discarded = wrapper.release();
+    this.session.recordAction({
+      at: this.venue.now(),
+      asset: id,
+      engineVersion: ENGINE_VERSION,
+      action: 'release',
+      parameters: {},
+      initialState: before,
+      resultingState: this.controlState(id),
+      succeeded: true,
+      diagnostics: { discarded, pendingTick },
+    });
+    return {
+      environment: LAB,
+      asset: id,
+      released: true,
+      discarded,
+      pendingTick,
+      ...this.controlState(id),
+    };
+  }
+
+  /** Whether a script is being played into this market, and how much remains. */
+  @Get('markets/:id/control')
+  control(@Param('id') id: string): unknown {
+    this.wrapperFor(id);
+    return { environment: LAB, asset: id, ...this.controlState(id) };
+  }
+
+  /** The session, as two timelines that are never merged (§72–§73). */
+  @Get('session')
+  sessionTimelines(): unknown {
+    return this.session.timelines();
+  }
+
+  /**
+   * The last close applied per asset, so `control` can say what became of it.
+   *
+   * Once the candle's end has passed, the outcome is read from the Lab's own
+   * feed exactly as settlement would read it — the price in force at the
+   * instant (ADR-0017) — and compared with the target. "Applied" is a claim
+   * about the future; this is the sentence that checks it.
+   */
+  private readonly applied = new Map<string, { instant: number; target: number }>();
+
+  private outcomeFor(id: string): {
+    instant: number;
+    target: number;
+    closed: number | null;
+    exact: boolean | null;
+  } | null {
+    const last = this.applied.get(id);
+    if (last === undefined) return null;
+    if (this.venue.now() <= last.instant) return { ...last, closed: null, exact: null };
+    let closed: number | null = null;
+    try {
+      for (const tick of this.venue.feed.since(id, 1)) {
+        if (tick.instant <= last.instant) closed = tick.price;
+        else break;
+      }
+    } catch {
+      closed = null;
+    }
+    return { ...last, closed, exact: closed === null ? null : closed === last.target };
+  }
+
+  private wrapperFor(id: string): SelectableSigns {
+    if (this.venue.hostedMarket(id) === null)
+      throw new NotFoundException(`Asset ${id} is not hosted.`);
+    const wrapper = this.signs.for(id);
+    if (wrapper === null) {
+      // Hosted and yet unwrapped: the venue was not composed through the Lab.
+      throw new ConflictException(
+        `Asset ${id} is hosted but its sign source is not selectable. This process was not ` +
+          `composed as a Lab (PH-24.1).`,
+      );
+    }
+    return wrapper;
+  }
+
+  private controlState(id: string): {
+    armed: boolean;
+    remaining: number;
+    sequence: number;
+    lastApplied: ReturnType<LabController['outcomeFor']>;
+  } {
+    const wrapper = this.signs.for(id);
+    const market = this.venue.hostedMarket(id);
+    return {
+      armed: wrapper?.armed ?? false,
+      remaining: wrapper?.remaining ?? 0,
+      sequence: market?.snapshotEngine().sequence ?? -1,
+      lastApplied: this.outcomeFor(id),
+    };
+  }
+
+  private closeRequest(
+    id: string,
+    price: string | undefined,
+    bucket: string | undefined,
+    tf: string | undefined,
+  ): { id: string; price: string; bucket: Bucket; timeframe: TimeframeId } {
+    if (this.venue.hostedMarket(id) === null)
+      throw new NotFoundException(`Asset ${id} is not hosted.`);
+    if (price === undefined || price.trim().length === 0) {
+      throw new BadRequestException('price is required: the close, in display units.');
+    }
+    if (bucket !== 'current' && bucket !== 'next') {
+      throw new BadRequestException("bucket must be 'current' or 'next'.");
+    }
+    if (tf === undefined || !isTimeframeId(tf)) {
+      throw new BadRequestException(
+        `timeframe must be one of the chart's timeframes, received ${tf}.`,
+      );
+    }
+    return { id, price, bucket, timeframe: tf };
+  }
+
+  /** The computation preview and apply share. Never arms. */
+  private plan(request: { id: string; price: string; bucket: Bucket; timeframe: TimeframeId }): {
+    environment: string;
+    asset: string;
+    price: string;
+    target: number;
+    instant: number;
+    fromPrice: number;
+    ticksInWindow: number;
+    lastTickInWindow: number | null;
+    delta: number;
+    attempts: number;
+    acceptanceRate: number;
+    reachability: string;
+    impossible: string | null;
+    reachableNeighbours: readonly string[] | null;
+    selection: readonly (1 | -1)[] | null;
+  } {
+    const asset = this.venue.assetFor(request.id)!;
+    let resolved;
+    try {
+      resolved = resolveTarget(asset.instrument, request.price);
+    } catch (error) {
+      throw new BadRequestException((error as Error).message);
+    }
+    if (resolved.kind === 'between') {
+      throw new ConflictException({
+        environment: LAB,
+        asset: request.id,
+        message:
+          `${resolved.requested} is not a lattice level for this asset. The two around it are ` +
+          `${resolved.below} and ${resolved.above}. Nothing was armed.`,
+        below: resolved.below,
+        above: resolved.above,
+      });
+    }
+    const fork = this.venue.labFork(request.id)!;
+    const instant = closeInstant(this.venue.now(), request.timeframe, request.bucket);
+    const window = readWindow(fork, instant);
+    const plan = planClose(
+      asset.instrument,
+      resolved.level,
+      window,
+      this.venue.labRandom(request.id),
+    );
+    return {
+      environment: LAB,
+      asset: request.id,
+      price: plan.display,
+      target: plan.target,
+      instant,
+      fromPrice: window.fromPrice,
+      ticksInWindow: window.steps.length,
+      lastTickInWindow: window.lastInstant,
+      delta: plan.delta,
+      attempts: plan.selection.attempts,
+      acceptanceRate: plan.selection.acceptanceRate,
+      reachability: plan.selection.reachability,
+      impossible: plan.selection.impossible,
+      reachableNeighbours: plan.reachableNeighbours,
+      selection: plan.selection.signs,
     };
   }
 }

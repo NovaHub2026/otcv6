@@ -1,6 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useState, type ReactElement, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type CSSProperties,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 
 /**
  * The OTC Lab, in the panel.
@@ -40,14 +47,54 @@ interface LabState {
   readonly direction: { readonly up: number; readonly down: number; readonly why: string };
 }
 
-interface Reachability {
+/** What the Lab answers to a preview or an apply (PH-24.2). */
+interface ClosePlan {
+  readonly price: string;
+  readonly target: number;
+  readonly instant: number;
+  readonly fromPrice: number;
+  readonly ticksInWindow: number;
   readonly delta: number;
-  readonly ticksRemaining: number;
   readonly attempts: number;
   readonly acceptanceRate: number;
   readonly reachability: string;
   readonly impossible: string | null;
+  readonly reachableNeighbours: readonly string[] | null;
+  readonly armed: boolean;
 }
+
+/** A price between two lattice levels: the Lab names both and arms nothing. */
+interface BetweenLevels {
+  readonly message: string;
+  readonly below: string;
+  readonly above: string;
+}
+
+interface Control {
+  readonly armed: boolean;
+  readonly remaining: number;
+  readonly lastApplied: {
+    readonly instant: number;
+    readonly target: number;
+    readonly closed: number | null;
+    readonly exact: boolean | null;
+  } | null;
+}
+
+interface Session {
+  readonly engine: readonly { at: number; asset: string; kind: string; detail: string }[];
+  readonly lab: readonly {
+    at: number;
+    asset: string;
+    action: string;
+    succeeded: boolean;
+    parameters: Record<string, unknown>;
+    diagnostics: Record<string, unknown>;
+  }[];
+}
+
+type CloseTimeframe = '30s' | '1m' | '5m' | '15m';
+const CLOSE_TIMEFRAMES: readonly CloseTimeframe[] = ['30s', '1m', '5m', '15m'];
 
 interface Quality {
   readonly sampledTicks: number;
@@ -83,6 +130,15 @@ async function labGet<T>(path: string): Promise<T | Unavailable> {
   return body;
 }
 
+/** The Lab's acts — apply, release — as POSTs carrying only the query. */
+async function labPost<T>(path: string): Promise<T | Unavailable> {
+  const response = await fetch(`/lab/${path}`, { method: 'POST' });
+  return (await response.json()) as T | Unavailable;
+}
+
+const isBetween = (value: unknown): value is BetweenLevels =>
+  typeof value === 'object' && value !== null && 'below' in value && 'above' in value;
+
 const isUnavailable = (value: unknown): value is Unavailable =>
   typeof value === 'object' && value !== null && (value as { running?: unknown }).running === false;
 
@@ -91,8 +147,13 @@ export function Lab(): ReactElement {
   const [selected, setSelected] = useState<string | null>(null);
   const [state, setState] = useState<LabState | null>(null);
   const [unavailable, setUnavailable] = useState<string | null>(null);
-  const [delta, setDelta] = useState('0');
-  const [reach, setReach] = useState<Reachability | null>(null);
+  const [tf, setTf] = useState<CloseTimeframe>('1m');
+  const [bucket, setBucket] = useState<'current' | 'next'>('current');
+  const [price, setPrice] = useState('');
+  const [plan, setPlan] = useState<ClosePlan | null>(null);
+  const [notice, setNotice] = useState<BetweenLevels | string | null>(null);
+  const [control, setControl] = useState<Control | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [quality, setQuality] = useState<Quality | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -122,6 +183,12 @@ export function Lab(): ReactElement {
     }
     setUnavailable(null);
     setState(body);
+    const [ctl, timelines] = await Promise.all([
+      labGet<Control>(`markets/${asset}/control`),
+      labGet<Session>('session'),
+    ]);
+    if (!isUnavailable(ctl)) setControl(ctl);
+    if (!isUnavailable(timelines)) setSession(timelines);
   }, []);
 
   useEffect(() => {
@@ -135,16 +202,56 @@ export function Lab(): ReactElement {
     };
   }, [selected, refreshState]);
 
-  const probe = async (): Promise<void> => {
+  const closeQuery = (): string =>
+    `price=${encodeURIComponent(price.trim())}&bucket=${bucket}&timeframe=${tf}`;
+
+  const settle = (body: ClosePlan | BetweenLevels | Unavailable | { message?: string }): void => {
+    if (isUnavailable(body)) {
+      setUnavailable(body.reason);
+      return;
+    }
+    if (isBetween(body)) {
+      setPlan(null);
+      setNotice(body);
+      return;
+    }
+    if ('reachability' in body) {
+      setNotice(null);
+      setPlan(body);
+      return;
+    }
+    setPlan(null);
+    setNotice(typeof body.message === 'string' ? body.message : 'The Lab refused the request.');
+  };
+
+  const previewClose = async (): Promise<void> => {
     if (selected === null) return;
-    setBusy('reachability');
-    const body = await labGet<Reachability>(`markets/${selected}/reachable/${delta.trim()}`);
+    setBusy('preview');
+    settle(
+      await labGet<ClosePlan | BetweenLevels>(`markets/${selected}/close/preview?${closeQuery()}`),
+    );
+    setBusy(null);
+  };
+
+  const applyClose = async (): Promise<void> => {
+    if (selected === null) return;
+    setBusy('apply');
+    settle(await labPost<ClosePlan | BetweenLevels>(`markets/${selected}/close?${closeQuery()}`));
+    setBusy(null);
+    void refreshState(selected);
+  };
+
+  const releaseMarket = async (): Promise<void> => {
+    if (selected === null) return;
+    setBusy('release');
+    const body = await labPost<Control>(`markets/${selected}/release`);
     setBusy(null);
     if (isUnavailable(body)) {
       setUnavailable(body.reason);
       return;
     }
-    setReach(body);
+    setPlan(null);
+    void refreshState(selected);
   };
 
   const runQuality = async (): Promise<void> => {
@@ -168,12 +275,22 @@ export function Lab(): ReactElement {
         <div style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
           <MarketState state={state} />
           <CloseControl
-            delta={delta}
-            onDelta={setDelta}
-            onProbe={probe}
-            busy={busy === 'reachability'}
-            result={reach}
+            timeframe={tf}
+            onTimeframe={setTf}
+            bucket={bucket}
+            onBucket={setBucket}
+            price={price}
+            onPrice={setPrice}
+            onPreview={previewClose}
+            onApply={applyClose}
+            onRelease={releaseMarket}
+            busy={busy}
+            plan={plan}
+            notice={notice}
+            control={control}
+            displayPrecision={state === null ? 7 : (state.price.split('.')[1] ?? '').length}
           />
+          <SessionPanel session={session} />
           <QualityPanel quality={quality} busy={busy === 'quality'} onRun={runQuality} />
         </div>
       </div>
@@ -327,78 +444,296 @@ function MarketState({ state }: { state: LabState | null }): ReactElement {
   );
 }
 
-/** §19–§37, as far as PH-23 built it: reachability, measured. */
+/**
+ * Candle Close Control (§19–§37), on a real candle (PH-24.2).
+ *
+ * The operator picks the current or the next candle on a timeframe, types a
+ * price in display units, sees what applying it would do — the lattice level,
+ * the instant, how many ticks remain, the measured reachability — applies it,
+ * and can release the market at any time. A price between two lattice levels
+ * is answered with both, as buttons, and nothing is armed. The outcome of the
+ * last applied close is shown once its candle has ended, read the way
+ * settlement reads (ADR-0017), because "applied" is a claim about the future
+ * and this is the line that checks it.
+ */
 function CloseControl({
-  delta,
-  onDelta,
-  onProbe,
+  timeframe,
+  onTimeframe,
+  bucket,
+  onBucket,
+  price,
+  onPrice,
+  onPreview,
+  onApply,
+  onRelease,
   busy,
-  result,
+  plan,
+  notice,
+  control,
+  displayPrecision,
 }: {
-  delta: string;
-  onDelta: (value: string) => void;
-  onProbe: () => Promise<void>;
-  busy: boolean;
-  result: Reachability | null;
+  timeframe: CloseTimeframe;
+  onTimeframe: (value: CloseTimeframe) => void;
+  bucket: 'current' | 'next';
+  onBucket: (value: 'current' | 'next') => void;
+  price: string;
+  onPrice: (value: string) => void;
+  onPreview: () => Promise<void>;
+  onApply: () => Promise<void>;
+  onRelease: () => Promise<void>;
+  busy: string | null;
+  plan: ClosePlan | null;
+  notice: BetweenLevels | string | null;
+  control: Control | null;
+  displayPrecision: number;
 }): ReactElement {
+  const field = {
+    background: '#0b0e14',
+    border: '1px solid #242c3d',
+    color: '#d7dce5',
+    padding: '4px 8px',
+    fontSize: 12,
+  } as const;
+  const button = (kind: 'neutral' | 'arm' | 'release'): CSSProperties => ({
+    background: kind === 'arm' ? '#1f3a2a' : kind === 'release' ? '#3a1f1f' : '#161b26',
+    border: `1px solid ${kind === 'arm' ? '#3fb950' : kind === 'release' ? '#f85149' : '#242c3d'}`,
+    color: '#d7dce5',
+    padding: '4px 12px',
+    cursor: busy !== null ? 'wait' : 'pointer',
+    fontSize: 12,
+  });
+  const when = (instant: number): string => new Date(instant).toISOString().slice(11, 19) + ' UTC';
+  const armed = control?.armed ?? false;
   return (
-    <Section title="CANDLE CLOSE CONTROL — REACHABILITY">
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-        <input
-          data-testid="lab-delta"
-          value={delta}
+    <Section title="CANDLE CLOSE CONTROL">
+      <div
+        style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}
+      >
+        <select
+          data-testid="lab-close-timeframe"
+          value={timeframe}
           onChange={(event) => {
-            onDelta(event.target.value);
+            onTimeframe(event.target.value as CloseTimeframe);
           }}
-          style={{
-            width: 120,
-            background: '#0b0e14',
-            border: '1px solid #242c3d',
-            color: '#d7dce5',
-            padding: '4px 8px',
-            fontSize: 12,
+          style={field}
+        >
+          {CLOSE_TIMEFRAMES.map((id) => (
+            <option key={id} value={id}>
+              {id}
+            </option>
+          ))}
+        </select>
+        <select
+          data-testid="lab-close-bucket"
+          value={bucket}
+          onChange={(event) => {
+            onBucket(event.target.value as 'current' | 'next');
           }}
+          style={field}
+        >
+          <option value="current">current candle</option>
+          <option value="next">next candle</option>
+        </select>
+        <input
+          data-testid="lab-close-price"
+          value={price}
+          placeholder={`close, ${String(displayPrecision)} decimals`}
+          onChange={(event) => {
+            onPrice(event.target.value);
+          }}
+          style={{ ...field, width: 150 }}
         />
-        <span style={{ color: '#5b6377', fontSize: 11 }}>lattice steps from here</span>
         <button
           type="button"
-          data-testid="lab-probe"
-          disabled={busy}
+          data-testid="lab-close-preview"
+          disabled={busy !== null}
           onClick={() => {
-            void onProbe();
+            void onPreview();
           }}
-          style={{
-            background: '#161b26',
-            border: '1px solid #242c3d',
-            color: '#d7dce5',
-            padding: '4px 12px',
-            cursor: busy ? 'wait' : 'pointer',
-            fontSize: 12,
-          }}
+          style={button('neutral')}
         >
-          {busy ? 'sampling…' : 'Measure'}
+          {busy === 'preview' ? 'sampling…' : 'Preview'}
+        </button>
+        <button
+          type="button"
+          data-testid="lab-close-apply"
+          disabled={busy !== null || price.trim().length === 0}
+          onClick={() => {
+            void onApply();
+          }}
+          style={button('arm')}
+        >
+          {busy === 'apply' ? 'arming…' : 'Apply'}
+        </button>
+        <button
+          type="button"
+          data-testid="lab-close-release"
+          disabled={busy !== null || !armed}
+          onClick={() => {
+            void onRelease();
+          }}
+          style={button('release')}
+        >
+          Release market
         </button>
       </div>
-      {result !== null && (
-        <div data-testid="lab-reachability">
-          <Row label="reachability" value={result.reachability} />
-          <Row label="ticks remaining" value={String(result.ticksRemaining)} />
-          <Row label="attempts" value={String(result.attempts)} />
+      <div data-testid="lab-control" style={{ marginBottom: 8 }}>
+        <Row
+          label="sign source"
+          value={
+            armed
+              ? `ARMED — ${String(control?.remaining ?? 0)} scripted signs remaining`
+              : 'keystream (nothing armed)'
+          }
+        />
+        {control?.lastApplied !== null && control?.lastApplied !== undefined && (
+          <Row
+            label="last applied"
+            value={
+              control.lastApplied.closed === null
+                ? `target ${String(control.lastApplied.target)} at ${when(control.lastApplied.instant)} — pending`
+                : `target ${String(control.lastApplied.target)} · closed at ${String(
+                    control.lastApplied.closed,
+                  )} ${control.lastApplied.exact ? '— EXACT' : '— MISSED'}`
+            }
+          />
+        )}
+      </div>
+      {typeof notice === 'string' && (
+        <div
+          data-testid="lab-close-notice"
+          style={{ color: '#e3b341', fontSize: 11, lineHeight: 1.6 }}
+        >
+          {notice}
+        </div>
+      )}
+      {notice !== null && typeof notice !== 'string' && (
+        <div
+          data-testid="lab-close-notice"
+          style={{ color: '#e3b341', fontSize: 11, lineHeight: 1.6 }}
+        >
+          {notice.message}{' '}
+          {[notice.below, notice.above].map((level) => (
+            <button
+              key={level}
+              type="button"
+              onClick={() => {
+                onPrice(level);
+              }}
+              style={{ ...button('neutral'), marginLeft: 6, padding: '1px 8px' }}
+            >
+              {level}
+            </button>
+          ))}
+        </div>
+      )}
+      {plan !== null && (
+        <div data-testid="lab-close-plan">
+          <Row label="target" value={`${plan.price} (lattice ${String(plan.target)})`} />
+          <Row label="closes at" value={when(plan.instant)} />
+          <Row label="ticks in window" value={String(plan.ticksInWindow)} />
+          <Row label="lattice steps to go" value={String(plan.delta)} />
+          <Row label="reachability" value={plan.reachability} />
+          <Row label="attempts" value={String(plan.attempts)} />
           <Row
             label="acceptance rate"
-            value={result.acceptanceRate === 0 ? '0' : result.acceptanceRate.toFixed(6)}
+            value={plan.acceptanceRate === 0 ? '0' : plan.acceptanceRate.toFixed(6)}
           />
-          {result.impossible !== null && (
+          <Row
+            label="armed"
+            value={plan.armed ? 'YES — the next ticks are the selected vector' : 'no'}
+          />
+          {plan.impossible !== null && (
             <div style={{ color: '#e3b341', fontSize: 11, marginTop: 6, lineHeight: 1.6 }}>
-              {result.impossible}
+              {plan.impossible}
+              {plan.reachableNeighbours !== null && (
+                <>
+                  {' '}
+                  Reachable next to it:{' '}
+                  {plan.reachableNeighbours.map((level) => (
+                    <button
+                      key={level}
+                      type="button"
+                      onClick={() => {
+                        onPrice(level);
+                      }}
+                      style={{ ...button('neutral'), marginLeft: 6, padding: '1px 8px' }}
+                    >
+                      {level}
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
           )}
         </div>
       )}
       <div style={{ color: '#5b6377', fontSize: 11, marginTop: 8, lineHeight: 1.6 }}>
-        The rate is measured, not estimated: it is the fraction of the engine&apos;s own futures
-        that close there. A target the market cannot reach is refused by arithmetic, without
-        sampling.
+        The close is the price in force at the candle&apos;s end (ADR-0017). It is selected among
+        the engine&apos;s own futures, never steered: the rate is the fraction of them that close
+        there, and a target the market cannot reach is refused, with the reachable prices beside it
+        named.
+      </div>
+    </Section>
+  );
+}
+
+/**
+ * The session: two timelines, never merged (§72–§73).
+ *
+ * The engine's own events on one side, the operator's acts on the other. The
+ * engine list is empty until PH-24.5 feeds it, and says so rather than
+ * pretending nothing happened.
+ */
+function SessionPanel({ session }: { session: Session | null }): ReactElement {
+  const when = (instant: number): string => new Date(instant).toISOString().slice(11, 19);
+  return (
+    <Section title="SESSION — TWO TIMELINES">
+      <div style={{ display: 'flex', gap: 16 }}>
+        <div style={{ flex: 1 }} data-testid="lab-session-engine">
+          <div style={{ color: '#8b93a7', fontSize: 10, letterSpacing: 1, marginBottom: 4 }}>
+            ENGINE — what the market did, unasked
+          </div>
+          {session === null || session.engine.length === 0 ? (
+            <div style={{ color: '#5b6377', fontSize: 11 }}>
+              nothing recorded yet — regime and volatility events are fed in PH-24.5
+            </div>
+          ) : (
+            session.engine.map((event, i) => (
+              <div key={i} style={{ fontSize: 11, color: '#d7dce5' }}>
+                {when(event.at)} · {event.asset} · {event.kind} — {event.detail}
+              </div>
+            ))
+          )}
+        </div>
+        <div style={{ flex: 1 }} data-testid="lab-session-lab">
+          <div style={{ color: '#f85149', fontSize: 10, letterSpacing: 1, marginBottom: 4 }}>
+            LAB — what an operator asked for
+          </div>
+          {session === null || session.lab.length === 0 ? (
+            <div style={{ color: '#5b6377', fontSize: 11 }}>no Lab action in this session</div>
+          ) : (
+            [...session.lab].reverse().map((action, i) => (
+              <div key={i} style={{ fontSize: 11, color: '#d7dce5', lineHeight: 1.6 }}>
+                {when(action.at)} · {action.asset} · <strong>{action.action}</strong>{' '}
+                {action.succeeded ? '✓' : '✗'}{' '}
+                <span style={{ color: '#8b93a7' }}>
+                  {Object.entries(action.parameters)
+                    .map(([k, v]) => `${k}=${String(v)}`)
+                    .join(' ')}
+                  {' · '}
+                  {Object.entries(action.diagnostics)
+                    .filter(([, v]) => v !== null && typeof v !== 'object')
+                    .map(
+                      ([k, v]) =>
+                        `${k}=${typeof v === 'number' ? String(Number(v.toFixed(6))) : String(v)}`,
+                    )
+                    .join(' ')}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </Section>
   );

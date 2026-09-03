@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, type DynamicModule } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { MasterKeyring, SystemClock } from '@otc/core';
 import { ASSET_CATALOGUE } from '@otc/engine';
@@ -8,6 +8,7 @@ import {
   SqliteCandleHistory,
   type AssetRegistry,
   type CandleHistory,
+  type SignSourceFactory,
   type StateStore,
 } from '@otc/runtime';
 import type { RegisteredAsset } from '@otc/engine';
@@ -31,130 +32,151 @@ import { VenueService } from './venue.service.js';
  * the environment decides — the state directory, the secret, the backfill, the
  * admin token, the boot nonce — is read here once and handed down as a value.
  */
-@Module({
-  controllers: [MarketController],
-  providers: [
-    {
-      provide: 'STATE_STORE',
-      useFactory: (): StateStore => new FileStateStore(process.env.OTC_STATE_DIR ?? './.otc-state'),
-    },
-    {
-      provide: 'CANDLE_HISTORY',
-      // Defaults *inside* the state directory rather than beside it. A
-      // deployment that moves its state somewhere else means to move all of it,
-      // and a history that stayed behind would be a chart of a different market
-      // than the one the checkpoints describe.
-      useFactory: (): CandleHistory =>
-        new SqliteCandleHistory(
-          process.env.OTC_HISTORY_DB ?? `${process.env.OTC_STATE_DIR ?? './.otc-state'}/history.db`,
-        ),
-    },
-    {
-      provide: 'ASSET_REGISTRY',
-      // Inside the state directory, beside the checkpoints, for the reason the
-      // history database is: a deployment that moves its state means to move all
-      // of it, and a registry left behind would describe assets whose records
-      // went elsewhere.
-      useFactory: (): AssetRegistry =>
-        new FileAssetRegistry(
-          process.env.OTC_ASSET_REGISTRY_DIR ??
-            `${process.env.OTC_STATE_DIR ?? './.otc-state'}/assets`,
-          new SystemClock(),
-        ),
-    },
-    {
+/**
+ * What a composition may hand the application, and the one thing it may hand.
+ *
+ * PH-24.1. `signSource` reaches `resumeMarket` and wraps the keystream's sign
+ * stream for every hosted engine. Production registers **nothing** here —
+ * `main.ts` calls `register()` bare, and `composition.test.ts` asserts it — and
+ * the Lab registers `SelectableSigns` (ADR-0015 §3: the boundary is what is
+ * composed, not a flag).
+ */
+export interface AppModuleOptions {
+  readonly signSource?: SignSourceFactory;
+}
+
+@Module({})
+export class AppModule {
+  static register(options: AppModuleOptions = {}): DynamicModule {
+    return {
+      module: AppModule,
+      controllers: [MarketController],
+      providers: [
+        {
+          provide: 'STATE_STORE',
+          useFactory: (): StateStore =>
+            new FileStateStore(process.env.OTC_STATE_DIR ?? './.otc-state'),
+        },
+        {
+          provide: 'CANDLE_HISTORY',
+          // Defaults *inside* the state directory rather than beside it. A
+          // deployment that moves its state somewhere else means to move all of it,
+          // and a history that stayed behind would be a chart of a different market
+          // than the one the checkpoints describe.
+          useFactory: (): CandleHistory =>
+            new SqliteCandleHistory(
+              process.env.OTC_HISTORY_DB ??
+                `${process.env.OTC_STATE_DIR ?? './.otc-state'}/history.db`,
+            ),
+        },
+        {
+          provide: 'ASSET_REGISTRY',
+          // Inside the state directory, beside the checkpoints, for the reason the
+          // history database is: a deployment that moves its state means to move all
+          // of it, and a registry left behind would describe assets whose records
+          // went elsewhere.
+          useFactory: (): AssetRegistry =>
+            new FileAssetRegistry(
+              process.env.OTC_ASSET_REGISTRY_DIR ??
+                `${process.env.OTC_STATE_DIR ?? './.otc-state'}/assets`,
+              new SystemClock(),
+            ),
+        },
+        {
+          /**
+           * The operator's write credential, or null when none was given (a6-01).
+           *
+           * Null does not stop the boot: the guard refuses every write with a
+           * message naming the variable, and reads carry on. A token that is set
+           * but too short to be one *does* stop the boot, the way a malformed
+           * master secret does.
+           */
+          provide: ADMIN_TOKEN,
+          useFactory: (): string | null => adminTokenFromEnvironment(),
+        },
+        {
+          /**
+           * A value a test that spawns this service passes in and reads back from
+           * `/health`, so it knows the service answering is the one it started
+           * (a6-14). Null in every other deployment.
+           */
+          provide: BOOT_NONCE,
+          useFactory: (): string | null => bootNonceFromEnvironment(),
+        },
+        {
+          // Global, so no write route can be added without the credential check.
+          provide: APP_GUARD,
+          useClass: AdminWriteGuard,
+        },
+        {
+          // The catalogue this process hosts: the five compiled assets plus every
+          // asset an operator has registered here. Resolved once, at boot, and
+          // handed to everything that needs it — `VenueService` owns the list from
+          // then on, because an asset created at runtime has to reach the venue, the
+          // history and the publisher together or not at all.
+          provide: 'ASSETS',
+          inject: ['ASSET_REGISTRY'],
+          useFactory: async (registry: AssetRegistry): Promise<RegisteredAsset[]> => {
+            const stored = await registry.list();
+            const compiled = new Set(ASSET_CATALOGUE.map((asset) => asset.definition.id));
+            for (const asset of stored) {
+              if (compiled.has(asset.definition.id)) {
+                // Two assets with one id derive the same keystream: one market under
+                // two names, INV-003 broken before a tick is published.
+                throw new Error(
+                  `Registered asset ${asset.definition.id} collides with a compiled ` +
+                    `catalogue entry. Remove one before starting.`,
+                );
+              }
+            }
+            return [...ASSET_CATALOGUE, ...stored];
+          },
+        },
+        {
+          provide: HistoryService,
+          inject: ['CANDLE_HISTORY', 'ASSETS'],
+          useFactory: (history: CandleHistory, assets: RegisteredAsset[]): HistoryService =>
+            new HistoryService(history, assets),
+        },
+        {
+          provide: VenueService,
+          inject: ['STATE_STORE', HistoryService, 'ASSETS'],
+          useFactory: (
+            store: StateStore,
+            history: HistoryService,
+            assets: RegisteredAsset[],
+          ): VenueService =>
+            new VenueService(
+              store,
+              keyringFromEnvironment(),
+              new SystemClock(),
+              assets,
+              5_000,
+              new PublicationService(assets),
+              history,
+              null,
+              backfillDaysFromEnvironment(),
+              options.signSource ?? null,
+            ),
+        },
+        {
+          provide: RegistrationService,
+          inject: ['ASSET_REGISTRY', VenueService],
+          useFactory: (registry: AssetRegistry, venue: VenueService): RegistrationService =>
+            new RegistrationService(registry, venue, keyringFromEnvironment()),
+        },
+      ],
       /**
-       * The operator's write credential, or null when none was given (a6-01).
+       * Exported so the Lab can compose on top of this module (ADR-0015 §3).
        *
-       * Null does not stop the boot: the guard refuses every write with a
-       * message naming the variable, and reads carry on. A token that is set
-       * but too short to be one *does* stop the boot, the way a malformed
-       * master secret does.
+       * An export, never an import: the Lab knows about the application and the
+       * application does not know the Lab exists. `labSurface.test.ts` asserts the
+       * direction, because reversing it is what a `LAB_ENABLED` flag looks like.
        */
-      provide: ADMIN_TOKEN,
-      useFactory: (): string | null => adminTokenFromEnvironment(),
-    },
-    {
-      /**
-       * A value a test that spawns this service passes in and reads back from
-       * `/health`, so it knows the service answering is the one it started
-       * (a6-14). Null in every other deployment.
-       */
-      provide: BOOT_NONCE,
-      useFactory: (): string | null => bootNonceFromEnvironment(),
-    },
-    {
-      // Global, so no write route can be added without the credential check.
-      provide: APP_GUARD,
-      useClass: AdminWriteGuard,
-    },
-    {
-      // The catalogue this process hosts: the five compiled assets plus every
-      // asset an operator has registered here. Resolved once, at boot, and
-      // handed to everything that needs it — `VenueService` owns the list from
-      // then on, because an asset created at runtime has to reach the venue, the
-      // history and the publisher together or not at all.
-      provide: 'ASSETS',
-      inject: ['ASSET_REGISTRY'],
-      useFactory: async (registry: AssetRegistry): Promise<RegisteredAsset[]> => {
-        const stored = await registry.list();
-        const compiled = new Set(ASSET_CATALOGUE.map((asset) => asset.definition.id));
-        for (const asset of stored) {
-          if (compiled.has(asset.definition.id)) {
-            // Two assets with one id derive the same keystream: one market under
-            // two names, INV-003 broken before a tick is published.
-            throw new Error(
-              `Registered asset ${asset.definition.id} collides with a compiled ` +
-                `catalogue entry. Remove one before starting.`,
-            );
-          }
-        }
-        return [...ASSET_CATALOGUE, ...stored];
-      },
-    },
-    {
-      provide: HistoryService,
-      inject: ['CANDLE_HISTORY', 'ASSETS'],
-      useFactory: (history: CandleHistory, assets: RegisteredAsset[]): HistoryService =>
-        new HistoryService(history, assets),
-    },
-    {
-      provide: VenueService,
-      inject: ['STATE_STORE', HistoryService, 'ASSETS'],
-      useFactory: (
-        store: StateStore,
-        history: HistoryService,
-        assets: RegisteredAsset[],
-      ): VenueService =>
-        new VenueService(
-          store,
-          keyringFromEnvironment(),
-          new SystemClock(),
-          assets,
-          5_000,
-          new PublicationService(assets),
-          history,
-          null,
-          backfillDaysFromEnvironment(),
-        ),
-    },
-    {
-      provide: RegistrationService,
-      inject: ['ASSET_REGISTRY', VenueService],
-      useFactory: (registry: AssetRegistry, venue: VenueService): RegistrationService =>
-        new RegistrationService(registry, venue, keyringFromEnvironment()),
-    },
-  ],
-  /**
-   * Exported so the Lab can compose on top of this module (ADR-0015 §3).
-   *
-   * An export, never an import: the Lab knows about the application and the
-   * application does not know the Lab exists. `labSurface.test.ts` asserts the
-   * direction, because reversing it is what a `LAB_ENABLED` flag looks like.
-   */
-  exports: [VenueService],
-})
-export class AppModule {}
+      exports: [VenueService],
+    };
+  }
+}
 
 /**
  * The most days a backfill may be asked for in one boot.

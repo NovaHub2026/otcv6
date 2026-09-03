@@ -13,7 +13,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Remote             | `origin` → NovaHub2026/otcv6, public                                       |
 | Active cycle       | Cycle 8, **2 of 3** phases approved (PH-22, PH-23)                         |
 | Active phase       | PH-24 — The Lab's controls: applying a selection                           |
-| Active subphase    | PH-24.1 — The selectable sign source and its hook                          |
+| Active subphase    | PH-24.2 — Candle Close Control on a real candle                            |
 | Cycle Audit        | **007 closed** 2026-09-03; the next is due after three approved phases     |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                         |
 
@@ -34,14 +34,16 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-23 is merged; PH-24 is open** ([PH-24](docs/phases/PH-24-the-labs-controls.md)),
-and its first subphase is [PH-24.1](docs/phases/PH-24.1-the-selectable-sign-source.md):
-`SelectableSigns` under `apps/api/src/lab/`, an optional `signSource` in
-`resumeMarket` defaulting to identity, `AppModule.register()` so `main.ts`
-passes nothing and `lab.main.ts` passes the factory — and the architecture
-test that asserts production registers none, written and watched failing
-**before** a route uses any of it. Cycle 8 stands at 2 of 3 approved phases;
-PH-24's approval opens Cycle Audit 8.
+**PH-24.1 is approved; PH-24.2 is active**
+([PH-24.2](docs/phases/PH-24.2-candle-close-control-on-a-real-candle.md)).
+Built so far: `closeControl.ts` (a typed price is a lattice level or its two
+neighbours; the window is inclusive at the candle's end per ADR-0017 and starts
+at the engine's current price, the pending tick's), `VenueService.betweenAdvances`
+and `labFork`, and five routes — preview, apply, release, control, session —
+with `closeRoutes.test.ts` closing the current and the next candle exactly on a
+real Lab-composed venue. **Not yet built: the screen** (PH-24.2 §5) — the
+control in `Lab.tsx` and a browser assertion of an applied close. Cycle 8 stands
+at 2 of 3 approved phases; PH-24's approval opens Cycle Audit 8.
 
 **The next phase is the decision LA-03 names.** The Lab specification audit
 ([LAB-SPECIFICATION-AUDIT-001](docs/audits/LAB-SPECIFICATION-AUDIT-001.md))

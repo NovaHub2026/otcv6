@@ -5,6 +5,7 @@ import {
   SystemClock,
   type Clock,
   type EpochMillis,
+  type LogPrice,
   type MasterKeyring,
   type RandomSource,
   type Tick,
@@ -16,6 +17,7 @@ import {
   Venue,
   type HostedMarket,
   type RecoveryOutcome,
+  type SignSourceFactory,
   type StateStore,
   type AssetOverlay,
 } from '@otc/runtime';
@@ -124,6 +126,15 @@ export class VenueService implements OnModuleDestroy {
      * market's past is.
      */
     private readonly backfillDays = 0,
+    /**
+     * A hook on every hosted engine's sign stream, or null (PH-24.1).
+     *
+     * Null in production, always: `AppModule.register()` is called bare by
+     * `main.ts`. The Lab composes a `SelectableSigns` factory here so it can
+     * play a chosen vector into a hosted engine — and `composition.test.ts`
+     * asserts the production path never does.
+     */
+    private readonly signSource: SignSourceFactory | null = null,
   ) {}
 
   /** Resume every asset, then begin publishing. */
@@ -158,6 +169,7 @@ export class VenueService implements OnModuleDestroy {
         continue;
       }
       const { market, outcome } = await resumeMarket({
+        ...(this.signSource === null ? {} : { signSource: this.signSource }),
         asset,
         keyring: this.keyring,
         environment: 'production',
@@ -301,6 +313,29 @@ export class VenueService implements OnModuleDestroy {
   }
 
   /**
+   * Run `fn` with no advance in flight and none able to start before it returns.
+   *
+   * PH-24.2. Arming a sign source is only correct against the future the fork
+   * described, and the fork was read from a snapshot: if the venue advanced in
+   * between, the vector begins one tick late and an exact close lands one step
+   * off. So the read, the selection and the arming happen in one synchronous
+   * `fn`, after the in-flight advance has settled — and the wait loops, because
+   * the timer that starts the next advance can fire while this is awaiting the
+   * last one. `fn` runs synchronously the moment the check passes, and a new
+   * advance can only start from a timer, which cannot interleave with it.
+   *
+   * Economically blind and Lab-agnostic: this knows nothing about `fn`. It is
+   * the same discipline `retire` and `host` use, offered as a function.
+   */
+  async betweenAdvances<T>(fn: () => T): Promise<T> {
+    for (;;) {
+      const current = this.inFlight;
+      await current;
+      if (current === this.inFlight) return fn();
+    }
+  }
+
+  /**
    * The hosted market for an asset, or null.
    *
    * Exposed for the Lab, which reads engine state the product never publishes.
@@ -379,6 +414,40 @@ export class VenueService implements OnModuleDestroy {
     return ticks;
   }
 
+  /**
+   * A fork of a hosted market, positioned where the live engine stands.
+   *
+   * Same discipline as {@link VenueService.labStepsAhead}: snapshot, copy,
+   * restore — the live market is not advanced and no keystream position is
+   * spent twice. The fork stands at the engine's current price, which is the
+   * pending tick's when one is drawn (the snapshot is taken after that draw),
+   * and its first `next()` is the tick the live engine will draw next. That is
+   * exactly the alignment PH-24.2 needs for an armed vector to begin on the
+   * right tick.
+   */
+  labFork(assetId: string): {
+    readonly price: LogPrice;
+    readonly instant: EpochMillis;
+    next(): Tick | null;
+  } | null {
+    const market = this.hostedMarket(assetId);
+    const asset = this.assetFor(assetId);
+    if (market === null || asset === null) return null;
+    const snapshot = market.snapshotEngine();
+    const fork = createMarketEngine({
+      config: configFor(asset),
+      keyring: this.keyring,
+      environment: 'production',
+      start: { instant: epochMillis(snapshot.instant), price: logPrice(snapshot.price) },
+    });
+    fork.restore(snapshot);
+    return {
+      price: snapshot.price,
+      instant: epochMillis(snapshot.instant),
+      next: () => fork.next(),
+    };
+  }
+
   /** A Lab-only randomness stream: never a market one. */
   labRandom(assetId: string): RandomSource {
     return this.keyring.derive({
@@ -431,6 +500,7 @@ export class VenueService implements OnModuleDestroy {
       });
     }
     const { market, outcome } = await resumeMarket({
+      ...(this.signSource === null ? {} : { signSource: this.signSource }),
       asset,
       keyring: this.keyring,
       environment: 'production',
