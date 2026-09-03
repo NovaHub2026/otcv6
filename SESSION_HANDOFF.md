@@ -9,7 +9,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Field              | Value                                                                  |
 | ------------------ | ---------------------------------------------------------------------- |
 | Last clean session | 2026-09-03                                                             |
-| Branch             | `feature/ph-23-otc-market-lab` — PH-23 approved, **not yet merged**    |
+| Branch             | `main` — PH-23 merged at its close, CI green on `3582d04` (both gates) |
 | Remote             | `origin` → NovaHub2026/otcv6, public                                   |
 | Active cycle       | Cycle 8, **2 of 3** phases approved (PH-22, PH-23)                     |
 | Active phase       | none                                                                   |
@@ -24,8 +24,9 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 `CURRENT_STATE.md` is authoritative for where the project stands; this file is
 only what a fresh session needs first.
 
-**PH-23.5 and PH-23.6 are approved** on this branch, gated on this tree and
-pushed; hosted CI is corroborating `3582d04` (`GOVERNANCE.md` §40.1). The
+**PH-23.5 and PH-23.6 are approved**, gated on this tree; hosted CI
+corroborated `3582d04`, Quality Gate and Statistical Gate both green
+(`GOVERNANCE.md` §40.1). The
 browser suite skips under a bare `npm run gate` on this machine and executes
 with the library prefix — run the gate as:
 
@@ -33,9 +34,9 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**The next legal action is to merge `feature/ph-23-otc-market-lab` into `main`
-once CI is green**, then open the next phase on its own branch. Cycle 8 stands
-at 2 of 3 approved phases; the third opens Cycle Audit 8.
+**PH-23 is merged.** The next legal action is to open the next phase on its own
+branch, `feature/ph-24-the-labs-controls`. Cycle 8 stands at 2 of 3 approved
+phases; the third opens Cycle Audit 8.
 
 **The next phase is the decision LA-03 names.** The Lab specification audit
 ([LAB-SPECIFICATION-AUDIT-001](docs/audits/LAB-SPECIFICATION-AUDIT-001.md))
