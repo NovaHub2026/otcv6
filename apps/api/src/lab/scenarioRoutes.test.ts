@@ -67,7 +67,7 @@ describe('scenarios on a real Lab-composed venue', () => {
       scenarios: { name: string; selectable: boolean; why: string | null }[];
       shock: { why: string };
     };
-    expect(body.scenarios).toHaveLength(16);
+    expect(body.scenarios).toHaveLength(17);
     expect(body.scenarios.filter((s) => !s.selectable).map((s) => s.name)).toEqual([
       'extreme-volatility',
       'low-activity',
@@ -152,6 +152,41 @@ describe('scenarios on a real Lab-composed venue', () => {
     expect(some.armed).toBe(true);
     expect(some.shockAt).not.toBeNull();
     expect(some.acceptanceRate).toBeGreaterThan(0.05); // a coin toss, roughly one in two
+    await venue.stop();
+  }, 60_000);
+
+  it('PH-24.7: Target Price reaches a level with no terminal condition, by price or by steps', async () => {
+    const { venue, clock, controller } = await labVenue();
+    await advance(venue, clock, 20_000);
+    const from = venue.hostedMarket(id)!.snapshotEngine().price;
+    const byLevel = (await controller.applyScenario(id, {
+      name: 'target-price',
+      window: '60000',
+      level: '4',
+    })) as Applied & { shape: { high: number; net: number } | null; targetLevel: number | null };
+    expect(byLevel.armed).toBe(true);
+    expect(byLevel.shape!.high).toBeGreaterThanOrEqual(4);
+    expect(byLevel.targetLevel).toBe(from + 4);
+    await advance(venue, clock, 70_000);
+    // The published path touched the level inside the window; where it ended is
+    // the engine's business — a target price is not a close.
+    const ticks = venue.feed
+      .since(id, venue.feed.retained(id)!.oldest)
+      .filter((t) => t.instant > byLevel.instant - 60_000 && t.instant <= byLevel.instant);
+    expect(Math.max(...ticks.map((t) => t.price)) - from).toBeGreaterThanOrEqual(4);
+    // And by price: the controller resolves it to a level on the lattice.
+    const price = (
+      controller.closePreview(id, undefined, 'next', '1m', undefined, undefined, '-3') as {
+        price: string;
+      }
+    ).price;
+    const byPrice = controller.scenarioPreview(id, {
+      name: 'target-price',
+      window: '60000',
+      price,
+    }) as Applied & { targetLevel: number | null };
+    expect(byPrice.targetLevel).toBe(venue.hostedMarket(id)!.snapshotEngine().price - 3);
+    expect(byPrice.armed).toBe(false);
     await venue.stop();
   }, 60_000);
 });

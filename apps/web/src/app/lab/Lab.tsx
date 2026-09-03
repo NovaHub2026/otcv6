@@ -63,7 +63,8 @@ export function Lab(): ReactElement {
   const [busy, setBusy] = useState<string | null>(null);
 
   const [tf, setTf] = useState<CloseTimeframe>('1m');
-  const [bucket, setBucket] = useState<'current' | 'next'>('current');
+  const [bucket, setBucket] = useState<'current' | 'next' | 'expiry'>('current');
+  const [expiryTime, setExpiryTime] = useState('');
   const [price, setPrice] = useState('');
   const [plan, setPlan] = useState<ClosePlan | null>(null);
   const [notice, setNotice] = useState<BetweenLevels | string | null>(null);
@@ -128,8 +129,30 @@ export function Lab(): ReactElement {
     };
   }, [selected, refreshState]);
 
-  const closeQuery = (): string =>
-    `price=${encodeURIComponent(price.trim())}&bucket=${bucket}&timeframe=${tf}`;
+  // A typed UTC time (HH:MM[:SS], today) as an instant; tomorrow's if it has passed.
+  const expiryInstant = (): number | null => {
+    const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(expiryTime.trim());
+    if (m === null) return null;
+    const now = new Date();
+    let at = Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      Number(m[1]),
+      Number(m[2]),
+      Number(m[3] ?? '0'),
+    );
+    if (at <= Date.now()) at += 86_400_000;
+    return at;
+  };
+  const addressing = (): string => {
+    if (bucket === 'expiry') {
+      const at = expiryInstant();
+      return at === null ? `bucket=current&timeframe=${tf}` : `expiry=${String(at)}`;
+    }
+    return `bucket=${bucket}&timeframe=${tf}`;
+  };
+  const closeQuery = (): string => `price=${encodeURIComponent(price.trim())}&${addressing()}`;
 
   const settle = (
     body: ClosePlan | BetweenLevels | { running: false; reason: string } | { message?: string },
@@ -179,7 +202,7 @@ export function Lab(): ReactElement {
     setBusy('apply');
     const query =
       planExpiry === null
-        ? `price=${encodeURIComponent(level)}&bucket=${bucket}&timeframe=${tf}`
+        ? `price=${encodeURIComponent(level)}&${addressing()}`
         : `price=${encodeURIComponent(level)}&expiry=${String(planExpiry)}`;
     settle(await labPost<ClosePlan | BetweenLevels>(`markets/${selected}/close?${query}`));
     setBusy(null);
@@ -193,7 +216,7 @@ export function Lab(): ReactElement {
     if (selected === null) return;
     setPlanExpiry(null);
     setBusy(apply ? 'apply' : 'preview');
-    const query = `delta=${String(delta)}&bucket=${bucket}&timeframe=${tf}`;
+    const query = `delta=${String(delta)}&${addressing()}`;
     settle(
       apply
         ? await labPost<ClosePlan | BetweenLevels>(`markets/${selected}/close?${query}`)
@@ -252,13 +275,13 @@ export function Lab(): ReactElement {
   const runScenario = async (
     name: string,
     windowMs: number,
-    params: Record<string, number>,
+    params: Record<string, number | string>,
     apply: boolean,
   ): Promise<void> => {
     if (selected === null) return;
     setBusy(apply ? 'scenario-apply' : 'scenario-preview');
     const query = [`name=${name}`, `window=${String(windowMs)}`]
-      .concat(Object.entries(params).map(([k, v]) => `${k}=${String(v)}`))
+      .concat(Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`))
       .join('&');
     const body = apply
       ? await labPost<ScenarioPlan | { message?: string }>(`markets/${selected}/scenario?${query}`)
@@ -324,6 +347,10 @@ export function Lab(): ReactElement {
                 onTimeframe={setTf}
                 bucket={bucket}
                 onBucket={setBucket}
+                expiryTime={expiryTime}
+                onExpiryTime={setExpiryTime}
+                onTarget={runScenario}
+                targetPlan={scenarioPlan}
                 price={price}
                 onPrice={setPrice}
                 onPreview={previewClose}

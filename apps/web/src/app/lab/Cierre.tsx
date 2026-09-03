@@ -2,7 +2,8 @@
 
 import type { ReactElement } from 'react';
 import { es } from '../../lib/es.js';
-import { Button, Field, FIELD, Notice, Row, Section, T } from '../ui/kit.js';
+import { Button, Field, FIELD, Info, Notice, Row, Section, T } from '../ui/kit.js';
+import { useState } from 'react';
 import {
   CLOSE_TIMEFRAMES,
   when,
@@ -10,6 +11,7 @@ import {
   type ClosePlan,
   type CloseTimeframe,
   type Control,
+  type ScenarioPlan,
 } from './labApi.js';
 
 /**
@@ -26,6 +28,10 @@ export function Cierre({
   onTimeframe,
   bucket,
   onBucket,
+  expiryTime,
+  onExpiryTime,
+  onTarget,
+  targetPlan,
   price,
   onPrice,
   onPreview,
@@ -41,8 +47,18 @@ export function Cierre({
 }: {
   timeframe: CloseTimeframe;
   onTimeframe: (value: CloseTimeframe) => void;
-  bucket: 'current' | 'next';
-  onBucket: (value: 'current' | 'next') => void;
+  bucket: 'current' | 'next' | 'expiry';
+  onBucket: (value: 'current' | 'next' | 'expiry') => void;
+  expiryTime: string;
+  onExpiryTime: (value: string) => void;
+  /** Target Price goes through the scenario route with the `touches` criterion. */
+  onTarget: (
+    name: string,
+    windowMs: number,
+    params: Record<string, number | string>,
+    apply: boolean,
+  ) => Promise<void>;
+  targetPlan: ScenarioPlan | null;
   price: string;
   onPrice: (value: string) => void;
   onPreview: () => Promise<void>;
@@ -88,13 +104,25 @@ export function Cierre({
           <select
             data-testid="lab-close-bucket"
             value={bucket}
-            onChange={(e) => onBucket(e.target.value as 'current' | 'next')}
+            onChange={(e) => onBucket(e.target.value as 'current' | 'next' | 'expiry')}
             style={FIELD}
           >
             <option value="current">{es.lab.close.current}</option>
             <option value="next">{es.lab.close.next}</option>
+            <option value="expiry">{es.lab.close.atTime}</option>
           </select>
         </Field>
+        {bucket === 'expiry' && (
+          <Field label={es.lab.close.expiryTime} info={es.lab.close.expiryInfo} width={110}>
+            <input
+              data-testid="lab-close-expiry"
+              value={expiryTime}
+              placeholder="16:45:00"
+              onChange={(e) => onExpiryTime(e.target.value)}
+              style={FIELD}
+            />
+          </Field>
+        )}
         <Field label={es.lab.close.price} width={170}>
           <input
             data-testid="lab-close-price"
@@ -268,6 +296,143 @@ export function Cierre({
         </div>
       )}
       <div style={{ color: T.faint, fontSize: 10, marginTop: 8 }}>ADR-0017 · PH-24.2</div>
+      <TargetPrice onTarget={onTarget} plan={targetPlan} busy={busy} />
     </Section>
+  );
+}
+
+/**
+ * Target Price (§G): reach a level, above or below, with no terminal condition.
+ *
+ * Kept visibly apart from the close above it (G8): this asks the market to
+ * touch a level somewhere in the window and says nothing about where it ends.
+ * It goes through the scenario route with the `touches` criterion, by price or
+ * by steps, and its strength is the acceptance rate — never a mode.
+ */
+function TargetPrice({
+  onTarget,
+  plan,
+  busy,
+}: {
+  onTarget: (
+    name: string,
+    windowMs: number,
+    params: Record<string, number | string>,
+    apply: boolean,
+  ) => Promise<void>;
+  plan: ScenarioPlan | null;
+  busy: string | null;
+}): ReactElement {
+  const [price, setPrice] = useState('');
+  const [steps, setSteps] = useState('');
+  const [windowSeconds, setWindowSeconds] = useState('60');
+  const t = es.lab.close.targetPrice;
+  const params = (): Record<string, number | string> =>
+    price.trim().length > 0
+      ? { price: price.trim() }
+      : { level: Number(steps.trim() === '' ? '0' : steps.trim()) };
+  const shown = plan !== null && plan.scenario === 'target-price' ? plan : null;
+  return (
+    <div
+      data-testid="lab-target"
+      style={{ marginTop: 14, borderTop: `1px solid ${T.line}`, paddingTop: 10 }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          color: T.muted,
+          fontSize: 10,
+          letterSpacing: 1,
+          marginBottom: 6,
+        }}
+      >
+        {t.title.toUpperCase()}
+        <Info text={t.info} />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'flex-end', flexWrap: 'wrap', gap: 4 }}>
+        <Field label={t.price} width={150}>
+          <input
+            data-testid="lab-target-price"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            style={FIELD}
+          />
+        </Field>
+        <Field label={t.steps} width={110}>
+          <input
+            data-testid="lab-target-steps"
+            value={steps}
+            onChange={(e) => setSteps(e.target.value)}
+            placeholder="+15"
+            style={FIELD}
+          />
+        </Field>
+        <Field label={t.window} width={80}>
+          <input
+            data-testid="lab-target-window"
+            value={windowSeconds}
+            onChange={(e) => setWindowSeconds(e.target.value)}
+            style={FIELD}
+          />
+        </Field>
+        <span style={{ display: 'inline-flex', gap: 6, marginBottom: 10 }}>
+          <Button
+            testId="lab-target-preview"
+            disabled={busy !== null}
+            onClick={() =>
+              void onTarget('target-price', Number(windowSeconds) * 1000, params(), false)
+            }
+          >
+            {t.preview}
+          </Button>
+          <Button
+            kind="primary"
+            testId="lab-target-apply"
+            disabled={busy !== null}
+            onClick={() =>
+              void onTarget('target-price', Number(windowSeconds) * 1000, params(), true)
+            }
+          >
+            {t.apply}
+          </Button>
+        </span>
+      </div>
+      {shown !== null && (
+        <div data-testid="lab-target-plan">
+          <Row
+            label={t.level}
+            value={shown.targetPrice ?? '—'}
+            info={`${es.lab.market.lattice}: ${shown.targetLevel === null || shown.targetLevel === undefined ? '—' : String(shown.targetLevel)}`}
+          />
+          <Row
+            label={es.lab.scenarios.windowRow}
+            value={es.lab.scenarios.windowValue(shown.ticksInWindow, when(shown.instant))}
+          />
+          <Row
+            label={es.lab.close.rate}
+            value={shown.acceptanceRate === 0 ? '0' : shown.acceptanceRate.toFixed(6)}
+            info={es.lab.close.rateInfo}
+          />
+          {shown.shape !== null && (
+            <Row
+              label={es.lab.scenarios.shape}
+              value={`máx ${String(shown.shape.high)} · mín ${String(shown.shape.low)} · neto ${String(shown.shape.net)}`}
+            />
+          )}
+          <Row
+            label="armado"
+            value={shown.armed ? es.lab.scenarios.armedYes : es.lab.close.armedNo}
+            tone={shown.armed ? 'ok' : undefined}
+          />
+          <div style={{ color: T.faint, fontSize: 11 }}>{t.noEnd}</div>
+          {shown.impossible !== null && (
+            <Notice tone="warn" detail={shown.impossible}>
+              {es.lab.scenarios.noneFound}
+            </Notice>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

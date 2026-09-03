@@ -127,6 +127,16 @@ export const SCENARIOS: readonly Scenario[] = [
     criterion: (p) => INTERVENTIONS.reversal(-Math.abs(p['fall']!), p['rise']!),
   },
   {
+    // §G. Target Price: reach a level, above (positive) or below (negative),
+    // with no terminal condition — the distinction G8 insists on and the audit
+    // found correctly kept. Its strength is the acceptance rate, never a mode.
+    name: 'target-price',
+    label: 'G Target Price',
+    selectable: true,
+    parameters: [steps('level', 'level to touch (steps from here, ± for above/below)', 15)],
+    criterion: (p) => INTERVENTIONS.touches(p['level']!),
+  },
+  {
     name: 'volatility-expansion',
     label: 'P12 Volatility expansion',
     selectable: true,

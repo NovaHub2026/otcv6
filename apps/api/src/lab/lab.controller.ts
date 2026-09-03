@@ -811,7 +811,12 @@ export class LabController {
   private scenarioRequest(
     id: string,
     query: Record<string, string | undefined>,
-  ): { name: string; windowMs: number; params: Readonly<Record<string, number>> } {
+  ): {
+    name: string;
+    windowMs: number;
+    params: Readonly<Record<string, number>>;
+    absoluteLevel?: number;
+  } {
     if (this.venue.hostedMarket(id) === null)
       throw new NotFoundException(`Asset ${id} is not hosted.`);
     const name = query['name'];
@@ -840,6 +845,32 @@ export class LabController {
         message: scenario.why,
       });
     }
+    // Target Price by price: resolved against the lattice like a close, kept as
+    // an absolute level so the plan measures the distance from where the market
+    // stands when it is read, not when the request was parsed.
+    if (
+      name === 'target-price' &&
+      query['price'] !== undefined &&
+      query['price'].trim().length > 0
+    ) {
+      const asset = this.venue.assetFor(id)!;
+      let resolved;
+      try {
+        resolved = resolveTarget(asset.instrument, query['price']);
+      } catch (error) {
+        throw new BadRequestException((error as Error).message);
+      }
+      if (resolved.kind === 'between') {
+        throw new ConflictException({
+          environment: LAB,
+          asset: id,
+          message: `${resolved.requested} is not a lattice level for this asset. The two around it are ${resolved.below} and ${resolved.above}.`,
+          below: resolved.below,
+          above: resolved.above,
+        });
+      }
+      return { name, windowMs, params: { level: 0 }, absoluteLevel: resolved.level };
+    }
     try {
       return { name, windowMs, params: scenarioParameters(scenario, query) };
     } catch (error) {
@@ -850,7 +881,12 @@ export class LabController {
   /** The computation preview and apply share. Never arms. */
   private planScenario(
     id: string,
-    request: { name: string; windowMs: number; params: Readonly<Record<string, number>> },
+    request: {
+      name: string;
+      windowMs: number;
+      params: Readonly<Record<string, number>>;
+      absoluteLevel?: number;
+    },
   ): {
     environment: string;
     asset: string;
@@ -864,9 +900,21 @@ export class LabController {
     impossible: string | null;
     selection: readonly (1 | -1)[] | null;
     shockAt: number | null;
+    targetLevel: number | null;
+    targetPrice: string | null;
   } {
     const instant = epochMillis(this.venue.now() + request.windowMs);
     const window = readWindow(this.venue.labFork(id)!, instant);
+    // Target Price: the level to touch, as a distance from where the market
+    // stands now (the window's start), whichever way it was addressed.
+    const targetLevel =
+      request.name === 'target-price'
+        ? (request.absoluteLevel ?? window.fromPrice + request.params['level']!)
+        : null;
+    const params =
+      targetLevel === null
+        ? request.params
+        : { ...request.params, level: targetLevel - window.fromPrice };
     const base = {
       environment: LAB,
       asset: id,
@@ -874,6 +922,16 @@ export class LabController {
       windowMs: request.windowMs,
       instant,
       ticksInWindow: window.steps.length,
+      targetLevel,
+      // The level as a price too (PH-23.5 §6): the screen prints this, never the index.
+      targetPrice:
+        targetLevel === null
+          ? null
+          : displayPrice(targetLevel, {
+              logQuantum: this.venue.assetFor(id)!.instrument.logQuantum,
+              referencePrice: this.venue.assetFor(id)!.instrument.referencePrice,
+              displayPrecision: this.venue.assetFor(id)!.instrument.displayPrecision,
+            }).toFixed(this.venue.assetFor(id)!.instrument.displayPrecision),
     };
     let criterion: (c: Continuation) => boolean;
     let shockAt: number | null = null;
@@ -899,7 +957,7 @@ export class LabController {
         request.params['direction'] === 1 ? 1 : -1,
       );
     } else {
-      criterion = scenarioNamed(request.name)!.criterion!(request.params);
+      criterion = scenarioNamed(request.name)!.criterion!(params);
     }
     if (window.steps.length === 0) {
       return {

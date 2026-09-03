@@ -28,11 +28,13 @@ export function Escenarios({
   onRun: (
     name: string,
     windowMs: number,
-    params: Record<string, number>,
+    params: Record<string, number | string>,
     apply: boolean,
   ) => Promise<void>;
 }): ReactElement {
   const [windowSeconds, setWindowSeconds] = useState('60');
+  const [shockSize, setShockSize] = useState('40');
+  const [shockDirection, setShockDirection] = useState<'1' | '-1'>('1');
   const [chosen, setChosen] = useState<string | null>(null);
   const [params, setParams] = useState<Record<string, string>>({});
   const scenario = scenarios.find((s) => s.name === chosen) ?? null;
@@ -147,13 +149,107 @@ export function Escenarios({
           </span>
         </div>
       )}
+      <div
+        data-testid="lab-shock"
+        style={{ margin: '10px 0', borderTop: `1px solid ${T.line}`, paddingTop: 8 }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            color: T.muted,
+            fontSize: 10,
+            letterSpacing: 1,
+            marginBottom: 6,
+          }}
+        >
+          {es.lab.scenarios.shock.title.toUpperCase()}
+          <Info text={es.lab.scenarios.shock.info} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'flex-end', flexWrap: 'wrap', gap: 4 }}>
+          <Field label={es.lab.scenarios.shock.size} width={110}>
+            <input
+              data-testid="lab-shock-size"
+              value={shockSize}
+              onChange={(e) => setShockSize(e.target.value)}
+              style={FIELD}
+            />
+          </Field>
+          <Field label={es.lab.scenarios.shock.direction} width={90}>
+            <select
+              data-testid="lab-shock-direction"
+              value={shockDirection}
+              onChange={(e) => setShockDirection(e.target.value as '1' | '-1')}
+              style={FIELD}
+            >
+              <option value="1">{es.lab.scenarios.shock.up}</option>
+              <option value="-1">{es.lab.scenarios.shock.down}</option>
+            </select>
+          </Field>
+          <Field label={es.lab.scenarios.window} width={80}>
+            <input
+              data-testid="lab-shock-window"
+              value={windowSeconds}
+              onChange={(e) => setWindowSeconds(e.target.value)}
+              style={FIELD}
+            />
+          </Field>
+          <span style={{ display: 'inline-flex', gap: 6, marginBottom: 10 }}>
+            <Button
+              testId="lab-shock-preview"
+              disabled={busy !== null}
+              onClick={() =>
+                void onRun(
+                  'shock',
+                  Number(windowSeconds) * 1000,
+                  { size: Number(shockSize), direction: Number(shockDirection) },
+                  false,
+                )
+              }
+            >
+              {es.lab.scenarios.shock.preview}
+            </Button>
+            <Button
+              kind="primary"
+              testId="lab-shock-apply"
+              disabled={busy !== null}
+              onClick={() =>
+                void onRun(
+                  'shock',
+                  Number(windowSeconds) * 1000,
+                  { size: Number(shockSize), direction: Number(shockDirection) },
+                  true,
+                )
+              }
+            >
+              {es.lab.scenarios.shock.apply}
+            </Button>
+          </span>
+        </div>
+      </div>
       {notice !== null && <Notice testId="lab-scenario-notice">{notice}</Notice>}
       {plan !== null && (
         <div data-testid="lab-scenario-plan">
           <Row
             label={es.lab.scenarios.title.toLowerCase()}
-            value={es.lab.scenarios.labels[plan.scenario] ?? plan.scenario}
+            value={
+              plan.scenario === 'shock'
+                ? 'shock'
+                : (es.lab.scenarios.labels[plan.scenario] ?? plan.scenario)
+            }
           />
+          {plan.scenario === 'shock' && (
+            <Row
+              label="shock"
+              value={
+                plan.shockAt === null || plan.shockAt === undefined
+                  ? es.lab.scenarios.shock.none
+                  : es.lab.scenarios.shock.at(plan.shockAt + 1)
+              }
+              tone={plan.shockAt === null || plan.shockAt === undefined ? 'warn' : 'ok'}
+              testId="lab-shock-at"
+            />
+          )}
           <Row
             label={es.lab.scenarios.windowRow}
             value={es.lab.scenarios.windowValue(plan.ticksInWindow, when(plan.instant))}

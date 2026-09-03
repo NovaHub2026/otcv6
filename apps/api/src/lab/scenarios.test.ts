@@ -8,8 +8,10 @@ import { SCENARIOS, scenarioNamed, scenarioParameters, shapeOf } from './scenari
  */
 describe('the scenario catalogue', () => {
   it('names the sixteen the specification lists, P1 to P16, once each', () => {
-    expect(SCENARIOS).toHaveLength(16);
-    expect(new Set(SCENARIOS.map((s) => s.name)).size).toBe(16);
+    // Sixteen P-scenarios and Target Price (§G), which the specification names
+    // apart from them and PH-24.7 offers as its own control.
+    expect(SCENARIOS).toHaveLength(17);
+    expect(new Set(SCENARIOS.map((s) => s.name)).size).toBe(17);
     for (let n = 1; n <= 16; n += 1) {
       expect(
         SCENARIOS.some((s) => s.label.startsWith(`P${String(n)} `)),

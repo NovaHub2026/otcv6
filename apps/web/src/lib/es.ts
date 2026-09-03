@@ -153,6 +153,21 @@ export const es = {
       bucket: 'vela',
       current: 'vela actual',
       next: 'vela siguiente',
+      atTime: 'a una hora',
+      expiryTime: 'hora (UTC, hoy)',
+      expiryInfo:
+        'El cierre se define en ese instante exacto: el precio en vigor a esa hora, inclusive (ADR-0017). Si la hora ya pasó hoy, se toma la de mañana.',
+      targetPrice: {
+        title: 'Objetivo de precio — tocar un nivel, sin hora fija',
+        info: 'Distinto del cierre exacto: aquí el mercado tiene que alcanzar el nivel en algún momento de la ventana, sin condición sobre dónde termina (§G). La fuerza no es un modo: es la tasa de aceptación, la fracción de futuros del propio motor que lo tocan.',
+        price: 'precio a tocar',
+        steps: 'o pasos desde aquí (± arriba/abajo)',
+        window: 'ventana (s)',
+        preview: 'Previsualizar',
+        apply: 'Aplicar',
+        level: 'nivel a tocar',
+        noEnd: 'sin condición de cierre — el motor decide dónde termina',
+      },
       price: 'precio de cierre',
       preview: 'Previsualizar',
       apply: 'Aplicar',
@@ -234,6 +249,18 @@ export const es = {
       apply: 'Aplicar',
       notSelectable: 'no seleccionable',
       whyTitle: 'Por qué no',
+      shock: {
+        title: 'Shock — localizar el próximo paso grande y elegir su dirección',
+        info: 'Un shock es un paso de magnitud excepcional en un solo tick, y la magnitud la decide el motor, no los signos (ADR-0003). El Lab no puede encargarlo: busca en la ventana si el motor está a punto de producir uno de al menos este tamaño y, si lo está, elige su dirección — una moneda que la moneda justa pudo haber sacado.',
+        size: 'paso ≥ (pasos del retículo)',
+        direction: 'dirección',
+        up: 'sube',
+        down: 'baja',
+        preview: 'Buscar',
+        apply: 'Aplicar dirección',
+        none: 'No viene ningún paso de ese tamaño en la ventana.',
+        at: (tick: number) => `viene en el tick ${String(tick)} de la ventana`,
+      },
       why: {
         'extreme-volatility':
           'La volatilidad extrema son pasos grandes, y el tamaño de un paso no depende de los signos (ADR-0003). Ningún criterio sobre signos puede seleccionarla; el Lab muestra el régimen y la cascada en Mercado y puede decir si viene un paso grande (shock).',
@@ -241,6 +268,7 @@ export const es = {
           'La actividad es el proceso de llegadas — cuánto pasa entre ticks — y los intervalos no dependen de los signos. Ningún criterio sobre signos puede seleccionarla; el Lab muestra la excitación de llegadas en Mercado.',
       } as Record<string, string>,
       labels: {
+        'target-price': 'Objetivo de precio',
         'bullish-trend': 'Tendencia alcista',
         'bearish-trend': 'Tendencia bajista',
         sideways: 'Lateral',

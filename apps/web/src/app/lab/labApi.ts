@@ -158,6 +158,9 @@ export interface ScenarioPlan {
   } | null;
   readonly impossible: string | null;
   readonly armed: boolean;
+  readonly shockAt?: number | null;
+  readonly targetLevel?: number | null;
+  readonly targetPrice?: string | null;
 }
 
 export interface Quality {

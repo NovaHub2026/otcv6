@@ -21,14 +21,14 @@ Last synchronized: 2026-09-03
 
 ## Phase and subphase
 
-| Field                  | Value                                            |
-| ---------------------- | ------------------------------------------------ |
-| Active phase           | PH-24 — The Lab's controls: applying a selection |
-| Phase lifecycle        | ACTIVE                                           |
-| Active subphase        | PH-24.7 — Los controles que faltan en pantalla   |
-| Subphase lifecycle     | ACTIVE                                           |
-| Last approved phase    | PH-23 — The OTC Market Lab                       |
-| Last approved subphase | PH-24.6 — Rediseño UX del panel y del Lab        |
+| Field                  | Value                                                      |
+| ---------------------- | ---------------------------------------------------------- |
+| Active phase           | PH-24 — The Lab's controls: applying a selection           |
+| Phase lifecycle        | ACTIVE                                                     |
+| Active subphase        | PH-24.8 — Sesión persistente y los diagnósticos que faltan |
+| Subphase lifecycle     | ACTIVE                                                     |
+| Last approved phase    | PH-23 — The OTC Market Lab                                 |
+| Last approved subphase | PH-24.7 — Los controles que faltan en pantalla             |
 
 **PH-24 is active; five subphases approved and a sixth opened at the Human
 Owner's direction**: PH-24.6 redesigns the panel's and the Lab's UX — Spanish,

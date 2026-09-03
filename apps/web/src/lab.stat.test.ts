@@ -389,4 +389,115 @@ describe('Candle Close Control, from the panel', () => {
     expect(errors).toEqual([]);
     await page.close();
   }, 300_000);
+
+  it('PH-24.7: locates a coming shock from the screen and chooses its direction, or says none is coming', async (ctx) => {
+    const page = await requireBrowser(ctx).newPage({ viewport: { width: 1280, height: 1600 } });
+    const { errors, dump } = instrument(page);
+    try {
+      await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
+      await page.waitForSelector('[data-testid="tab-scenarios"]', { timeout: 30_000 });
+      await page.click('[data-testid="tab-scenarios"]');
+      await page.waitForSelector('[data-testid="lab-shock-size"]', { timeout: 30_000 });
+      // A step the window cannot contain: the Lab says none is coming, and arms nothing.
+      await page.fill('[data-testid="lab-shock-size"]', '100000');
+      await page.click('[data-testid="lab-shock-preview"]');
+      await page.waitForSelector('[data-testid="lab-shock-at"]', { timeout: 30_000 });
+      expect(await text(page, 'lab-shock-at')).toMatch(/No viene/);
+      // A step of one: some step in the window is that large; its direction is chosen.
+      await page.fill('[data-testid="lab-shock-size"]', '1');
+      await page.selectOption('[data-testid="lab-shock-direction"]', '-1');
+      await page.click('[data-testid="lab-shock-apply"]');
+      await page.waitForFunction(
+        () =>
+          /viene en el tick/.test(
+            document.querySelector('[data-testid="lab-shock-at"]')?.textContent ?? '',
+          ),
+        null,
+        { timeout: 30_000 },
+      );
+      await page.waitForFunction(
+        () =>
+          /ARMADO/.test(document.querySelector('[data-testid="lab-control"]')?.textContent ?? ''),
+        null,
+        { timeout: 30_000 },
+      );
+      expect(await text(page, 'lab-session-lab')).toMatch(/escenario aplicado ✓/);
+    } catch (error) {
+      console.error(await dump());
+      throw error;
+    }
+    expect(errors).toEqual([]);
+    await page.close();
+  }, 300_000);
+
+  it('PH-24.7: closes at a typed time, exactly, from the screen', async (ctx) => {
+    const page = await requireBrowser(ctx).newPage({ viewport: { width: 1280, height: 1600 } });
+    const { errors, dump } = instrument(page);
+    try {
+      await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
+      await page.waitForSelector('[data-testid="lab-control"]', { timeout: 30_000 });
+      await page.selectOption('[data-testid="lab-close-bucket"]', 'expiry');
+      // Forty seconds from now, as HH:MM:SS UTC — the screen resolves it to an instant.
+      const at = new Date(Date.now() + 40_000);
+      await page.fill('[data-testid="lab-close-expiry"]', at.toISOString().slice(11, 19));
+      // A relative target: one of ±1 is reachable in any window with ticks; the
+      // parity refusal names the neighbour, which is the act.
+      await page.click('[data-testid="lab-close-delta-+1"]');
+      await page.waitForSelector('[data-testid="lab-close-plan"]', { timeout: 30_000 });
+      if (!/SÍ/.test(await text(page, 'lab-close-plan'))) {
+        await page.locator('[data-testid="lab-close-neighbour"]').last().click();
+      }
+      await page.waitForFunction(
+        () =>
+          /ARMADO/.test(document.querySelector('[data-testid="lab-control"]')?.textContent ?? ''),
+        null,
+        { timeout: 30_000 },
+      );
+      const plan = await text(page, 'lab-close-plan');
+      expect(plan).toMatch(new RegExp(`${at.toISOString().slice(11, 16)}`));
+      await page.waitForFunction(
+        () =>
+          /cerró en/.test(document.querySelector('[data-testid="lab-control"]')?.textContent ?? ''),
+        null,
+        { timeout: 120_000 },
+      );
+      expect(await text(page, 'lab-control')).toMatch(/EXACTO/);
+    } catch (error) {
+      console.error(await dump());
+      throw error;
+    }
+    expect(errors).toEqual([]);
+    await page.close();
+  }, 300_000);
+
+  it('PH-24.7: Target Price touches a level from the screen and says it has no terminal condition', async (ctx) => {
+    const page = await requireBrowser(ctx).newPage({ viewport: { width: 1280, height: 1600 } });
+    const { errors, dump } = instrument(page);
+    try {
+      await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
+      await page.waitForSelector('[data-testid="lab-target-steps"]', { timeout: 30_000 });
+      await page.fill('[data-testid="lab-target-steps"]', '3');
+      await page.click('[data-testid="lab-target-preview"]');
+      await page.waitForSelector('[data-testid="lab-target-plan"]', { timeout: 30_000 });
+      const preview = await text(page, 'lab-target-plan');
+      expect(preview).toMatch(/sin condición de cierre/);
+      expect(preview).toMatch(/armado\nno/);
+      await page.click('[data-testid="lab-target-apply"]');
+      // Wait on this act's own plan: the control row can already read ARMADO from
+      // an earlier flow's close on the same Lab, which would pass for nothing.
+      await page.waitForFunction(
+        () =>
+          /SÍ/.test(document.querySelector('[data-testid="lab-target-plan"]')?.textContent ?? ''),
+        null,
+        { timeout: 30_000 },
+      );
+      expect(await text(page, 'lab-target-plan')).toMatch(/armado\nSÍ/);
+      expect(await text(page, 'lab-session-lab')).toMatch(/escenario aplicado ✓/);
+    } catch (error) {
+      console.error(await dump());
+      throw error;
+    }
+    expect(errors).toEqual([]);
+    await page.close();
+  }, 300_000);
 });

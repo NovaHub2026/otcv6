@@ -134,6 +134,50 @@ describe('the Lab is marked wherever it appears', () => {
     expect(code('lab/[...path]/route.ts')).toMatch(/export async function POST/);
   });
 
+  it('puts the three missing controls on the screen, each as what it is (PH-24.7)', () => {
+    const cierre = code('lab/Cierre.tsx');
+    const escenarios = code('lab/Escenarios.tsx');
+    // A close at a typed time is a third addressing mode beside the two candles.
+    expect(cierre).toMatch(/<option value="expiry">/);
+    expect(cierre).toMatch(/(data-testid|testId)="lab-close-expiry"/);
+    expect(code('lab/Lab.tsx')).toMatch(/expiry=\$\{String\(at\)\}/);
+    // Target Price is visibly apart from the close and never a close: no
+    // terminal condition, strength as the acceptance rate.
+    for (const handle of [
+      'lab-target',
+      'lab-target-price',
+      'lab-target-steps',
+      'lab-target-preview',
+      'lab-target-apply',
+      'lab-target-plan',
+    ]) {
+      expect(cierre, `${handle} missing`).toMatch(new RegExp(`(data-testid|testId)="${handle}"`));
+    }
+    expect(cierre).toMatch(/es\.lab\.close\.targetPrice/);
+    expect(cierre, 'the no-terminal-condition line is gone').toMatch(/\bnoEnd\b/);
+    expect(cierre).toMatch(/onTarget\('target-price'/);
+    expect(cierre, 'target price must not go through the close route').not.toMatch(/\/close\?/);
+    // The level as a price (PH-23.5 §6), the lattice index behind ⓘ.
+    expect(cierre).toMatch(/shown\.targetPrice/);
+    expect(cierre, 'a lattice index under the word nivel').not.toMatch(
+      /value=\{\s*shown\.targetLevel/,
+    );
+    // The shock: locate, then direct — a size, a direction, and where it comes.
+    for (const handle of [
+      'lab-shock',
+      'lab-shock-size',
+      'lab-shock-direction',
+      'lab-shock-preview',
+      'lab-shock-apply',
+      'lab-shock-at',
+    ]) {
+      expect(escenarios, `${handle} missing`).toMatch(
+        new RegExp(`(data-testid|testId)="${handle}"`),
+      );
+    }
+    expect(escenarios).toMatch(/es\.lab\.scenarios\.shock\.none/);
+  });
+
   it('shows simulated positions with expected and actual side by side (PH-24.3)', () => {
     const source = code('lab/Posiciones.tsx');
     for (const handle of ['lab-position-call', 'lab-position-put', 'lab-positions']) {

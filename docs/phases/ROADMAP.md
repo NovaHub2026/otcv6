@@ -578,7 +578,8 @@ on it — the boundary first, guarded before anything stands on it.
 | PH-24.4  | Scenarios, the ones sign selection cannot express, and the screen     | APPROVED |
 | PH-24.5  | The diagnostics the audit found missing                               | APPROVED |
 | PH-24.6  | Rediseño UX del panel y del Lab — en español, con tooltips            | APPROVED |
-| PH-24.7  | Los controles que faltan en pantalla: shock, expiración, Target Price | ACTIVE   |
+| PH-24.7  | Los controles que faltan en pantalla: shock, expiración, Target Price | APPROVED |
+| PH-24.8  | Sesión persistente y los diagnósticos que faltan                      | ACTIVE   |
 
 ### PH-23 — The OTC Market Lab
 
