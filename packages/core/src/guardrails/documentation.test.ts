@@ -136,7 +136,10 @@ describe('the roadmap tracks every phase document', () => {
 
     // A phase that has been started owes a document. One that is only planned
     // does not — PH-22 is a row and a paragraph of intent, and that is correct.
-    const started = rows.filter((row) => row.state !== 'not started' && row.state !== 'next');
+    // Vocabulary from `stateConsistency.test.ts`: NOT STARTED and PLANNED both
+    // mean "no work has begun", and neither owes a Technical Document yet.
+    const NOT_YET = new Set(['not started', 'planned', 'next']);
+    const started = rows.filter((row) => !NOT_YET.has(row.state));
     expect(started.length, 'no started rows were parsed').toBeGreaterThan(20);
     const undocumented = [...new Set(started.map((row) => row.id))].filter(
       (id) => !present.has(id),

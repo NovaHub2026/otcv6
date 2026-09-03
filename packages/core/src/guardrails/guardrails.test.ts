@@ -149,6 +149,21 @@ const AMBIENT_TIME_ALLOWLIST = [
   'tools/sim/src/horizonEvidence.ts',
   'tools/sim/src/runner.ts',
   'tools/sim/src/venueScale.ts',
+  /**
+   * The observer load harness (PH-22.1).
+   *
+   * It measures delivery latency as `receivedAt − tick.instant`, so reading the
+   * wall clock is the measurement rather than an accident of implementation —
+   * and it times how long a connection has waited for its first byte, which is
+   * how a refusal is told from a slow start. Neither can be taken from an
+   * injected clock without the harness measuring the clock instead of the
+   * server.
+   *
+   * It is a deliberate act, not a generation path: nothing imports it, it
+   * produces no record, and every number it emits is labelled with the process
+   * it was taken from.
+   */
+  'tools/sim/src/observerLoad.ts',
 ];
 
 interface Source {

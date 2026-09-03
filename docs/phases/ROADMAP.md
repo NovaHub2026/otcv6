@@ -561,6 +561,13 @@ larger.
 
 ### PH-22 — Distribution Under Thousands Of Observers
 
+| Subphase | Title                                                    | State   |
+| -------- | -------------------------------------------------------- | ------- |
+| PH-22.1  | An instrument that can hold thousands of connections     | ACTIVE  |
+| PH-22.2  | One tick, serialised once                                | PLANNED |
+| PH-22.3  | Many assets, one connection, the same resume contract    | PLANNED |
+| PH-22.4  | What happens when ten thousand clients come back at once | PLANNED |
+
 Nobody has ever opened two simultaneous clients against this engine. Everything
 below is therefore a hypothesis with a number attached, and the phase exists to
 replace the numbers with measurements before changing anything.

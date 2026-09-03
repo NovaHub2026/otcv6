@@ -109,6 +109,34 @@ const ENGINE_STEP = '    this.#price += sign * steps;';
 
 const MUTATIONS: Mutation[] = [
   {
+    guard: 'the gate runs the tests that exist — a root of statistical tests dropped',
+    test: guard('gate.test.ts'),
+    edits: [
+      {
+        file: 'vitest.config.ts',
+        find: "            'apps/*/src/**/*.stat.test.ts',\n",
+        replace: '',
+      },
+    ],
+    defect:
+      'CA7-16: deleting one glob removed six statistical files including the entire ' +
+      'eight-test browser suite, with every step of the gate still green',
+  },
+  {
+    guard: 'the gate runs the tests that exist — a stray .only left able to silence a sibling',
+    test: guard('gate.test.ts'),
+    edits: [
+      {
+        file: 'vitest.config.ts',
+        find: '          allowOnly: false,\n          testTimeout: unitTimeoutMs,',
+        replace: '          testTimeout: unitTimeoutMs,',
+      },
+    ],
+    defect:
+      'CA7-17: Vitest defaults allowOnly to !process.env.CI, so a stray it.only silenced ' +
+      'its failing siblings in the layer an approval is recorded from',
+  },
+  {
     guard: 'economic blindness — economic vocabulary in the price path',
     test: guard('guardrails.test.ts'),
     edits: [
