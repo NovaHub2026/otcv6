@@ -15,20 +15,20 @@ Last synchronized: 2026-09-02
 | Field                            | Value                                                                                                                  |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | Active development cycle         | Cycle 8                                                                                                                |
-| Approved phases in current cycle | **1 of 3** — PH-22                                                                                                     |
+| Approved phases in current cycle | **2 of 3** — PH-22, PH-23                                                                                              |
 | Cycle Audit state                | **007 closed** — 34 of 35 findings closed in the audit itself, one carried (Issue #22)                                 |
 | Last Cycle Audit                 | [Cycle Audit 007](docs/audits/CYCLE-AUDIT-007.md) — recorded 2026-09-03, eight independent auditors, one worktree each |
 
 ## Phase and subphase
 
-| Field                  | Value                                                                    |
-| ---------------------- | ------------------------------------------------------------------------ |
-| Active phase           | PH-23 — The OTC Market Lab                                               |
-| Phase lifecycle        | ACTIVE                                                                   |
-| Active subphase        | PH-23.2 — The Lab surface: isolation, state, and what may never leave it |
-| Subphase lifecycle     | ACTIVE                                                                   |
-| Last approved phase    | PH-22 — Distribution under thousands of observers                        |
-| Last approved subphase | PH-23.1 — Selection: an exact close, by search, on unmodified paths      |
+| Field                  | Value                                                     |
+| ---------------------- | --------------------------------------------------------- |
+| Active phase           | none                                                      |
+| Phase lifecycle        | none                                                      |
+| Active subphase        | none                                                      |
+| Subphase lifecycle     | none                                                      |
+| Last approved phase    | PH-23 — The OTC Market Lab                                |
+| Last approved subphase | PH-23.4 — Interventions, scenarios and the session record |
 
 Nothing is active because PH-21 closed and the cycle boundary is here: three
 approved phases, and `GOVERNANCE.md` §28 turns the work from building to

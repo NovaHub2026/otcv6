@@ -9,10 +9,23 @@
   "include": ["src/**/*.ts"],
   "exclude": ["dist", "node_modules"],
   "references": [
-    { "path": "../../packages/core" },
-    { "path": "../../packages/engine" },
-    { "path": "../../packages/runtime" },
-    { "path": "../../packages/distribution" },
-    { "path": "../../packages/chart" }
+    {
+      "path": "../../packages/core"
+    },
+    {
+      "path": "../../packages/engine"
+    },
+    {
+      "path": "../../packages/runtime"
+    },
+    {
+      "path": "../../packages/distribution"
+    },
+    {
+      "path": "../../packages/chart"
+    },
+    {
+      "path": "../../packages/lab"
+    }
   ]
 }

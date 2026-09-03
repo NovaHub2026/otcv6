@@ -350,6 +350,35 @@ export class VenueService implements OnModuleDestroy {
     return steps;
   }
 
+  /**
+   * The next `count` ticks this market will produce, from a fork.
+   *
+   * Same fork discipline as {@link VenueService.labStepsAhead}: the live engine
+   * is snapshotted and a copy run forward, so the market is not advanced and no
+   * keystream position is consumed twice. The Lab reads the future; it does not
+   * spend it.
+   */
+  labTicksAhead(assetId: string, count: number): Tick[] {
+    const market = this.hostedMarket(assetId);
+    const asset = this.assetFor(assetId);
+    if (market === null || asset === null) return [];
+    const snapshot = market.snapshotEngine();
+    const fork = createMarketEngine({
+      config: configFor(asset),
+      keyring: this.keyring,
+      environment: 'production',
+      start: { instant: epochMillis(snapshot.instant), price: logPrice(snapshot.price) },
+    });
+    fork.restore(snapshot);
+    const ticks: Tick[] = [];
+    for (let i = 0; i < count; i += 1) {
+      const tick = fork.next();
+      if (tick === null) break;
+      ticks.push(tick);
+    }
+    return ticks;
+  }
+
   /** A Lab-only randomness stream: never a market one. */
   labRandom(assetId: string): RandomSource {
     return this.keyring.derive({

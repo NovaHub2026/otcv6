@@ -2,7 +2,7 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-23
-Status: ACTIVE
+Status: APPROVED
 Cycle: 8 (phase 2 of 3)
 Created: 2026-09-03
 Branch: `feature/ph-23-otc-market-lab`
@@ -131,11 +131,72 @@ state is exposed in the Lab and nowhere else).
 | -------- | -------------------------------------------------------------- | -------- |
 | PH-23.1  | Selection: an exact close, by search, on unmodified paths      | APPROVED |
 | PH-23.2  | The Lab surface: isolation, state, and what may never leave it | APPROVED |
-| PH-23.3  | The analysis already here, given a window                      | ACTIVE   |
-| PH-23.4  | Interventions, scenarios and the session record                | PLANNED  |
+| PH-23.3  | The analysis already here, given a window                      | APPROVED |
+| PH-23.4  | Interventions, scenarios and the session record                | APPROVED |
 
 PH-23.1 is first because it is the only part whose feasibility is not obvious,
 and because every later subphase is a view onto it. If the search turns out to
 cost minutes rather than seconds on a real engine, the design changes and
 everything after it changes with it — so it is measured before anything is built
 on top.
+
+## 7. What the phase delivered
+
+**Most of the Lab already existed.** The claim in §1 held: `packages/lab` is the
+laboratory §52–§68 describes, and what it lacked was a window. The genuinely new
+work was smaller and sharper than the specification's length suggests.
+
+| Delivered                                             | Where                                 |
+| ----------------------------------------------------- | ------------------------------------- |
+| An exact close by **selection**, 0.2–2.0 ms           | `closeSelection.ts`, PH-23.1          |
+| Step independence verified on the shipped engine      | `stepIndependence.test.ts`            |
+| A Lab absent from production, not disabled in it      | `lab/`, `labSurface.test.ts`, PH-23.2 |
+| Engine state and keystream cursors, served only there | `lab.controller.ts`                   |
+| The realism and battery verdicts, with sensitivity    | PH-23.3                               |
+| Interventions as criteria over natural futures        | `intervention.ts`, PH-23.4            |
+| Two timelines that cannot merge                       | `session.ts`                          |
+
+## 8. The decision the phase rests on
+
+**Selection, not steering.** ADR-0003 makes every sign vector the engine's own
+output and makes the magnitudes independent of the signs, so the Lab chooses
+among futures the engine produced rather than producing one. That single
+decision is why:
+
+- INV-001 needed no exemption, and ADR-0015's authorisation went unused for the
+  thing it was granted for;
+- §21, §22, §25, §28, §29, §31, §32, §70 and §71 hold by construction rather
+  than by care;
+- §36's reachability is a measured probability;
+- an intervention that asks for something the market does not do reports zero
+  instead of a best effort.
+
+The property that makes this product unexploitable is the same property that
+makes its laboratory cheap. That is worth stating plainly, because it is not a
+coincidence and it will be tempting to break.
+
+## 9. What the specification will need changed
+
+**§10 cannot exist as written.** "UP 51.8% / DOWN 48.2%" with an influence
+breakdown describes a probabilistic directional engine, and this is not one. The
+Lab reports exactly 0.5 / 0.5 with ADR-0003's reason and no breakdown. That is
+the best demonstration of the product the Lab can offer.
+
+**§39 is a verification, not a feature.** One canonical price for chart, close
+and settlement is already INV-003 and already true.
+
+## 10. What the phase leaves open
+
+**No UI.** Every subphase built API and boundary; §5–§7's screen is not built.
+That was deliberate — the screen is worth less than what is underneath it — but
+it is the visible half of what was asked for, and it is not done.
+
+**Interventions are not wired into the controller.** The mechanism and its
+record exist and are guarded; the routes are not (PH-23.4 §8, criterion 5).
+
+**§67's large runs are not jobs.** `/lab/markets/:id/quality` is bounded at
+40,000 ticks and says so. A twenty-four-million-tick battery belongs to a job
+with an id and a record, like registration (PH-23.3 §6, criterion 5).
+
+**No replay or snapshot UI** (§74–§77). The determinism it would rest on exists
+and is tested; the surface is not built.

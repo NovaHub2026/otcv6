@@ -36,7 +36,29 @@ const ALLOWED: Record<string, readonly string[]> = {
   '@otc/trading': ['@otc/core'],
   '@otc/distribution': ['@otc/core'],
   '@otc/chart': ['@otc/core'],
-  '@otc/api': ['@otc/core', '@otc/engine', '@otc/runtime', '@otc/distribution', '@otc/chart'],
+  /**
+   * `@otc/lab` was added for the OTC Market Lab (PH-23.3), under
+   * `ADR-0015` §1: a rule that a new, legitimate subsystem cannot satisfy has
+   * met a case its author did not foresee.
+   *
+   * The Lab's whole analytical half already exists in `@otc/lab` — fifteen
+   * realism metrics with bands, an adversarial battery of ~800 hypotheses with
+   * a stated minimum detectable effect — and it had never had a window. Serving
+   * it needs the service to reach it.
+   *
+   * The *neighbouring* prohibition stays and is the point: `@otc/web` may never
+   * reach `@otc/lab` or `@otc/fixtures`. The analysis runs on the server and
+   * the browser receives results, which is a design this rule improves rather
+   * than obstructs.
+   */
+  '@otc/api': [
+    '@otc/core',
+    '@otc/engine',
+    '@otc/runtime',
+    '@otc/distribution',
+    '@otc/chart',
+    '@otc/lab',
+  ],
   // The browser bundle. `@otc/lab` and `@otc/fixtures` must never appear here:
   // one carries the attack battery, the other the planted-defect corpus.
   '@otc/web': ['@otc/core', '@otc/chart'],

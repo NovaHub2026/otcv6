@@ -558,7 +558,7 @@ larger.
 | Phase | Title                                     | State        |
 | ----- | ----------------------------------------- | ------------ |
 | PH-22 | Distribution under thousands of observers | **APPROVED** |
-| PH-23 | The OTC Market Lab                        | **ACTIVE**   |
+| PH-23 | The OTC Market Lab                        | **APPROVED** |
 
 ### PH-23 — The OTC Market Lab
 
@@ -587,8 +587,8 @@ measured probability rather than a heuristic.
 | -------- | -------------------------------------------------------------- | -------- |
 | PH-23.1  | Selection: an exact close, by search, on unmodified paths      | APPROVED |
 | PH-23.2  | The Lab surface: isolation, state, and what may never leave it | APPROVED |
-| PH-23.3  | The analysis already here, given a window                      | ACTIVE   |
-| PH-23.4  | Interventions, scenarios and the session record                | PLANNED  |
+| PH-23.3  | The analysis already here, given a window                      | APPROVED |
+| PH-23.4  | Interventions, scenarios and the session record                | APPROVED |
 
 ### PH-22 — Distribution Under Thousands Of Observers
 

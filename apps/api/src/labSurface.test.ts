@@ -49,8 +49,20 @@ describe('the production composition cannot reach the Lab', () => {
   });
 
   it('the Lab composes the application, and not the other way round', () => {
+    // The direction is the boundary. The Lab may know about the application;
+    // the application may not know the Lab exists.
     expect(read('lab/lab.module.ts')).toMatch(/from '\.\.\/app\.module\.js'/);
-    expect(read('app.module.ts')).not.toMatch(/lab/i);
+
+    // Checked on what the module *does*, not on whether it says the word. The
+    // first version of this forbade the string `lab` anywhere in the file and
+    // fired on a comment explaining why the export is safe — a guard that
+    // punishes the explanation of the rule it enforces is a guard that will be
+    // deleted the first time it is inconvenient.
+    const app = read('app.module.ts');
+    expect(app, 'AppModule imports the Lab').not.toMatch(/from '\.\/lab\//);
+    expect(app, 'AppModule declares a Lab provider or controller').not.toMatch(
+      /\bLab(Module|Controller|Service)\b/,
+    );
   });
 
   it('keystream cursors appear in the Lab and in no production response', () => {
@@ -72,6 +84,24 @@ describe('the production composition cannot reach the Lab', () => {
     const returns = controller.split('return {').length - 1;
     expect(returns).toBeGreaterThan(1);
     expect(controller.match(/OTC LAB — SIMULATION ENVIRONMENT/g) ?? []).toHaveLength(returns);
+  });
+
+  it('never serves a predictability verdict without its sensitivity (§68, CA7-05)', () => {
+    // "Clean" and "clean at a minimum detectable effect of 0.22pp" are
+    // different claims, and only the second can be acted on. `VALIDATION.md`
+    // exists to keep them apart, and Cycle Audit 7 caught PH-21 collapsing
+    // exactly that distinction for a different metric.
+    //
+    // A dashboard that shows a verdict and hides the resolution at which it
+    // looked is worse than no dashboard: it invites the reliance
+    // `differentiation.ts` warns about, in writing.
+    const controller = read('lab/lab.controller.ts');
+    const block = /predictability:\s*\{([\s\S]*?)\n      \},/.exec(controller)?.[1];
+    expect(block, 'no predictability block found').toBeDefined();
+    expect(block!, 'the verdict is served').toMatch(/clean:/);
+    expect(block!, 'and its sensitivity travels with it').toMatch(/sensitivity:/);
+    // And the sample size, for the same reason.
+    expect(controller).toMatch(/sampledTicks:/);
   });
 
   it('reports direction as exactly one half, with its reason and no breakdown', () => {

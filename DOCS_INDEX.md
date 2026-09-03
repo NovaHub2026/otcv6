@@ -80,6 +80,7 @@ of 2026-09-02 wrote it.
 | [`CYCLE-7-CATALOGUE-SCALE.md`](docs/evidence/CYCLE-7-CATALOGUE-SCALE.md) | A hundred assets registered, with cost by archetype and the closest pair (PH-21.1)             |
 | [`CYCLE-7-VENUE-SCALE.md`](docs/evidence/CYCLE-7-VENUE-SCALE.md)         | A hundred markets hosted: scheduling cost per market-advance, and a quarter on disk (PH-21.2)  |
 | [`CYCLE-8-OBSERVER-LOAD.md`](docs/evidence/CYCLE-8-OBSERVER-LOAD.md)     | Two thousand observers: what a delivered tick costs, and why it is not serialisation (PH-22.1) |
+| [`CYCLE-8-LAB-SURFACE.md`](docs/evidence/CYCLE-8-LAB-SURFACE.md)         | The Lab answering: engine state, measured reachability, and the quality dashboard (PH-23.1-3)  |
 
 ## Decision records
 
