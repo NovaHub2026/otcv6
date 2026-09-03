@@ -36,8 +36,11 @@ import {
  *    affordable, and it has never been multiplied by a hundred and weighed.
  *
  * Registration is skipped: the personalities are drawn and calibrated once at
- * the smallest count and reused, because what is being measured is the *runtime*
- * and a fresh solve per size would measure the solve.
+ * the **largest** count and the smaller sizes are prefixes of that draw, because
+ * what is being measured is the *runtime* and a fresh solve per size would
+ * measure the solve. (Cycle Audit 7, CA7-26: this said "smallest", which is the
+ * one design decision the docstring exists to explain, and it disagreed with
+ * the code beneath it.)
  */
 const SEED = process.env.OTC_VENUE_SEED ?? 'venue-scale';
 const SIZES = (process.env.OTC_VENUE_SIZES ?? '5,25,50,100').split(',').map(Number);
@@ -157,9 +160,17 @@ async function main(): Promise<void> {
   // occupying 0.0 MB, and a storage budget of 0.00 GB for a hundred assets,
   // which is the shape of a recorded number that is simply false.
   //
-  // Closing the database checkpoints the WAL into the main file, and the sum is
-  // taken across all three files anyway, so neither a checkpoint that has not
-  // happened nor one that has can move the total.
+  // Closing the database checkpoints the WAL into the main file. That close is
+  // the whole of the defence, and the three-file sum is *not* a second one.
+  //
+  // **Cycle Audit 7, CA7-21.** The comment here used to claim the sum made the
+  // measurement checkpoint-independent. Measured: the same backfill reads
+  // 1,437,696 B before the close and 602,112 B after — 139% apart — because an
+  // un-checkpointed WAL holds copies of pages that also still exist, stale, in
+  // the main file, and `-shm` is 32 kB of pure overhead counted as data. The
+  // sum is kept because it is harmless and because a `-wal` left behind by a
+  // crash would otherwise vanish from the total; it defends nothing on its own,
+  // and saying it did was a second wrong claim about the same defect.
   history.close();
   const bytes = (
     await Promise.all(
@@ -184,7 +195,10 @@ async function main(): Promise<void> {
       `${((perAssetDay * 90 * 100) / 1e9).toFixed(2)} GB |`,
   );
   console.info(
-    `\nMinute bars only. The hourly tier is derived from them and adds 1/60th of the rows.`,
+    `\nBytes per bar divides total file size by MINUTE bars, and the file already` +
+      ` contains the hourly tier: adding a sixtieth on top double-counts it` +
+      ` (Cycle Audit 7, CA7-25). Measured on this shape of run: 1h 192 rows,` +
+      ` 1m 11,516 — 52.6 B per minute bar against 51.8 B per stored row.`,
   );
   await rm(directory, { recursive: true, force: true });
 }

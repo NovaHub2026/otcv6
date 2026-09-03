@@ -181,8 +181,33 @@ theorem admits a direct structural test instead:
 5. randomise `N` over many seeds per CI run.
 
 Any mechanism that reads a sign, a price level, or anything derived from them
-fails this test immediately and unambiguously. It is cheap, exact, and it is the
-gate that a statistical battery cannot replace.
+**within the window the test runs** fails it immediately and unambiguously. It
+is cheap, exact, and it is the gate that a statistical battery cannot replace.
+
+**The window is a precondition, and it was unstated until Cycle Audit 7
+(CA7-01).** Every mirror invocation in the repository compares a bounded run:
+10,000 ticks in `productionComposition.test.ts` — the only one that drives the
+shipped factory under `environment: 'production'` — 45,000 in
+`phaseAcceptance`, 50,000 in `multiAsset`, 60,300 in `mirror.test.ts`, and
+120,000 in `sampledCatalogue`, the highest anywhere. Against btcusd's recorded
+`meanIntervalMs` of 333, 120,000 ticks is about eleven hours of market life and
+10,000 is under an hour; a hosted market runs for months, and `#sequence` is
+monotonic across restarts by design.
+
+An auditor planted the canonical banned mechanism — the leverage effect —
+behind `#sequence > 200_000` and **every mirror test in the repository passed**,
+while the battery in `phaseAcceptance.stat.test.ts` returned `EXPLOITABLE` at
++0.473pp with z = 5.95. The relationship this section describes was inverted for
+that plant: the statistical gate caught what the structural one could not see.
+
+This does not change the decision, and it is not a hole an ordinary mistake
+falls into — every _unconditionally_ applied sign-reading mechanism, the
+leverage effect included, diverges at step one of every mirror test, and the
+evasion requires code that deliberately waits. It changes what the sentence
+above is entitled to claim. The mirror test is exact **about the window it
+runs**, INV-006 is enforced jointly with the battery (`INVARIANTS.md`), and
+hosted CI runs the full statistical suite on every pull request and every push
+to `main`, so the plant cannot reach trusted integrated state.
 
 ## Consequences
 

@@ -35,21 +35,37 @@ itself uses (ADR-0010).
 | 50      | 1,723,904       | 4.2          | 57.9                  | 413,723 |
 | 100     | 3,311,069       | 8.0          | 55.7                  | 413,177 |
 
-**The cost is linear in ticks, and the constant is small.** Twenty times the
+**The cost tracks ticks published, not markets hosted.** Twenty times the
 markets cost forty times the wall clock — 0.2 s to 8.0 s — and forty times the
-_ticks_: 85,751 to 3,311,069. Throughput is flat to within 7% across the whole
-range, and that is the linearity this table establishes. Scheduling cost tracks
-ticks published, not markets hosted.
+_ticks_: 85,751 to 3,311,069.
 
-The per-market-advance column is therefore not a cost curve, and reading it as
-one was the first mistake made here. It doubles from 5 to 25 markets and then
-stops, because **the sizes are not samples of the same catalogue**: the runner
-assigns archetypes in rotation, so the 5-market slice is `major-fx`, `cross-fx`,
-`blue-chip-index`, `sector-etf` and `metal` — and excludes `energy`,
-`major-crypto` and `alt-crypto`, which are the three fastest tempo boxes. The
-small venue is slower per market because it is made of slower markets, not
-because a fixed cost is being amortised. Found by the PH-21 closure audit,
-which recomputed the ratio from the table's own columns.
+Throughput across the four sizes spans 7%, and that is **not** enough to call it
+flat. Cycle Audit 7 measured this instrument's own repeat-to-repeat spread at a
+_fixed_ size — five repeats, sizes interleaved and order-reversed so warm-up
+cannot masquerade as a size effect — and found 4–11% on an idle machine and
+42–55% under load (CA7-24). A 7% spread across four unreplicated points is at or
+inside the noise floor of the thing measuring it. What the table supports is an
+order of magnitude, not a shape: **generation costs on the order of 0.04% of one
+core at a hundred real-time markets**, and nothing here rules out a slope of a
+few percent hiding inside the scatter.
+
+The per-market-advance column is not a cost curve either, and reading it as one
+was the first mistake made here. It doubles from 5 to 25 markets and then stops,
+because **the sizes are not samples of the same catalogue**: the runner assigns
+archetypes in rotation, so the 5-market slice takes the first five archetypes in
+declaration order and the later sizes add the rest. The tempo boxes, fastest
+first, are `alt-crypto` 450–1100 ms, `major-crypto` 900–1500, `cross-fx`
+1400–2400, `energy` 1600–2800, then `major-fx`, `sector-etf`, `metal` and
+`blue-chip-index` out to 6000. The small slice is missing `alt-crypto` and
+`major-crypto` — the two fastest — while `cross-fx`, the third fastest, is
+inside it. So the small venue is made of slower markets, and the per-market
+figure rises as faster ones join.
+
+Two corrections in two passes on one paragraph, and both were caught by
+re-derivation rather than by reading: the PH-21 closure audit found the ratio
+stated as twenty against a table showing forty, and Cycle Audit 7 found the
+replacement naming the wrong families and overstating what four points can
+establish (CA7-23, CA7-24).
 
 What that means for the product: at a hundred markets the venue spends **8
 seconds of CPU per six simulated hours**, so a real-time venue of a hundred
@@ -74,8 +90,12 @@ Eight assets backfilled through two days into a real SQLite candle history.
 | ------------- | ----------------- | ----------------------- |
 | 75 kB         | 6.7 MB            | **0.67 GB**             |
 
-Minute bars only; the hourly tier is derived from them and adds a sixtieth of
-the rows.
+Bytes per bar divides total file size by **minute** bars, and the file already
+contains the hourly tier — so adding a sixtieth on top double-counts it
+(CA7-25). Measured on this shape of run: 192 hourly rows against 11,516 minute
+rows, 52.6 B per minute bar and 51.8 B per stored row. The hourly tier is
+stored, not derived on read; timeframes coarser than an hour and finer than an
+hour are folded from these two on the way out.
 
 **This confirms the number the catalogue's affordability rests on.**
 `CATALOGUE_AND_PANEL.md` §4 says a quarter is 131,759 candles per asset because
@@ -103,10 +123,18 @@ exactly that storage is cheap, and a pleasant wrong number is the kind that
 survives review. What caught it was the per-bar figure the table did not have:
 52 bytes is a plausible row and 0 bytes is not.
 
-The runner closes the database before measuring now, and sums `history.db`,
-`-wal` and `-shm`, so neither a checkpoint that has happened nor one that has
-not can move the total. The per-bar column exists so that the next wrong number
-is visible in the table rather than only in the total.
+The runner closes the database before measuring now. **That close is the whole
+of the defence** — a claim this document also got wrong on its first pass, and
+Cycle Audit 7 measured it (CA7-21): the same backfill reads 1,437,696 B before
+the close and 602,112 B after, 139% apart, because an un-checkpointed WAL holds
+copies of pages that also still exist, stale, in the main file, and `-shm` is
+32 kB of pure overhead counted as data. Summing the three files is kept because
+a `-wal` left behind by a crash would otherwise vanish from the total; it
+defends nothing on its own, and saying it did was a second wrong claim about the
+same defect.
+
+The per-bar column exists so that the next wrong number is visible in the table
+rather than only in the total.
 
 ## What this does not settle
 

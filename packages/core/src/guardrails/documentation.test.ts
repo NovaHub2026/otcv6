@@ -207,6 +207,84 @@ describe('phase states agree between documents and the roadmap', () => {
   );
 });
 
+describe('the cycle-audit boundary is a fact, not a label (CA7-11)', () => {
+  /**
+   * **Cycle Audit 7.** The state guards checked every phase and subphase row
+   * and nothing about the two fields that decide whether an audit is *due*:
+   * `Cycle Audit state` was asserted only to be present, never to have a value,
+   * and the "exact next legal action" only to be longer than sixty characters.
+   * Nothing read `docs/audits/` — although this same file already enumerates it
+   * for the index check — and nothing related the next action to the
+   * approved-phase count this file already computes from the roadmap.
+   *
+   * `GOVERNANCE.md` §28 makes three approved phases a hard boundary: development
+   * stops and the audit runs. A record that can drift on exactly that is a
+   * record that can hide the one rule the project cannot postpone.
+   */
+  const state = read('CURRENT_STATE.md');
+
+  /** Audit records that exist, by number. */
+  const recorded = listMarkdown('docs/audits')
+    .map((name) => /^CYCLE-AUDIT-(\d+)\.md$/.exec(name)?.[1])
+    .filter((number): number is string => number !== undefined)
+    .map((number) => Number.parseInt(number, 10))
+    .sort((a, b) => a - b);
+
+  it('has audit records to check', () => {
+    expect(recorded.length).toBeGreaterThan(0);
+  });
+
+  it('names the last closed audit as the highest record that exists', () => {
+    const claimed = /Cycle Audit state\s*\|\s*\*\*(\d+) closed\*\*/.exec(state)?.[1];
+    expect(claimed, 'CURRENT_STATE does not state a closed cycle-audit number').toBeDefined();
+    expect(Number.parseInt(claimed!, 10), 'the highest audit record on disk').toBe(
+      recorded[recorded.length - 1],
+    );
+  });
+
+  it('counts the approved phases of the current cycle the way the roadmap does', () => {
+    const claimed = /Approved phases in current cycle\s*\|\s*\*\*(\d+) of (\d+)\*\*/.exec(state);
+    expect(claimed, 'CURRENT_STATE does not state an approved-phase count').not.toBeNull();
+    const cycle = /Active development cycle\s*\|\s*Cycle (\d+)/.exec(state)?.[1];
+    expect(cycle, 'CURRENT_STATE does not state a cycle number').toBeDefined();
+
+    // The roadmap's section for that cycle, up to the next `## ` heading.
+    // Read line by line rather than with a multiline regex: the heading and the
+    // rows are both anchored, and a regex that quietly matched nothing is how
+    // this check would fail open.
+    const lines = read('docs/phases/ROADMAP.md').split('\n');
+    const from = lines.findIndex((line) => line.startsWith(`## Cycle ${cycle!}`));
+    expect(from, `the roadmap has no section for Cycle ${cycle!}`).toBeGreaterThanOrEqual(0);
+    const rest = lines.slice(from + 1);
+    const to = rest.findIndex((line) => line.startsWith('## '));
+    const section = (to === -1 ? rest : rest.slice(0, to)).join('\n');
+
+    const approved = section
+      .split('\n')
+      .filter((line) => /^\|\s*PH-\d+\s*\|/.test(line))
+      .filter((line) => line.includes('APPROVED')).length;
+    expect(approved, `no approved phase rows parsed for Cycle ${cycle!}`).toBeGreaterThan(0);
+    expect(Number.parseInt(claimed![1]!, 10), 'CURRENT_STATE vs the roadmap').toBe(approved);
+  });
+
+  it('names the audit as the next action when the cycle is full and unaudited', () => {
+    const claimed = /Approved phases in current cycle\s*\|\s*\*\*(\d+) of (\d+)\*\*/.exec(state);
+    const done = Number.parseInt(claimed![1]!, 10);
+    const needed = Number.parseInt(claimed![2]!, 10);
+    const cycle = Number.parseInt(
+      /Active development cycle\s*\|\s*Cycle (\d+)/.exec(state)![1]!,
+      10,
+    );
+    if (done < needed || recorded.includes(cycle)) return;
+    // Three approved phases, and no record for this cycle: §28 says development
+    // stops here, so the document a fresh agent reads has to say so.
+    const action = /## EXACT NEXT LEGAL ACTION\n([\s\S]*)$/.exec(state)?.[1] ?? '';
+    expect(action, 'the cycle is full and unaudited; the next action must be the audit').toMatch(
+      /Cycle Audit/i,
+    );
+  });
+});
+
 describe('every repo-relative link resolves', () => {
   const documents = [
     'DOCS_INDEX.md',

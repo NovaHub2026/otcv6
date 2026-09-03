@@ -10,6 +10,11 @@ export default tseslint.config(
       '**/coverage/**',
       '**/artifacts/**',
       '**/.next/**',
+      // Agent worktrees. Cycle Audit 7 ran eight auditors in isolated trees
+      // under here — 3.5 GB of full repository copies — and ESLint walked into
+      // them and aborted on heap exhaustion (exit 134). `.gitignore` does not
+      // reach ESLint; this does.
+      '**/.claude/**',
       // Next.js generates these and lints the web app itself during `next build`
       // with its own ruleset. Linting a generated declaration file here only
       // produces noise about a triple-slash reference the framework requires.

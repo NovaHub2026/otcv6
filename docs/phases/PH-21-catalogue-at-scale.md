@@ -71,13 +71,13 @@ asset — a hundred assets are a hundred keystreams, never one shared).
 The five questions of §1, with the number that answers each and the record it
 came from.
 
-| #   | Question                                                | Answer                                                                                                                              |
-| --- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Does a hundred-asset build succeed?                     | **100 of 100 registered, 0 refused**, 327 s single-threaded, 1.8 s median and 20.5 s worst ([PH-21.1](PH-21.1-a-hundred-assets.md)) |
-| 2   | Do a hundred assets stay distinct?                      | **Closest of 5,460 pairs at 0.0282**, 2.8× the 0.01 floor ([PH-21.1](PH-21.1-a-hundred-assets.md))                                  |
-| 3   | What does the venue cost per tick at a hundred markets? | **413,177 ticks/s at a hundred markets**, flat to 7% across a 20× range ([PH-21.2](PH-21.2-the-venue-under-a-full-catalogue.md))    |
-| 4   | What does it cost on disk?                              | **52 bytes per minute bar**, 0.67 GB for a hundred assets over a quarter ([PH-21.2](PH-21.2-the-venue-under-a-full-catalogue.md))   |
-| 5   | Does the panel survive it?                              | **Yes** — search, grouping, and a virtualisation decision recorded rather than taken ([PH-21.3](PH-21.3-a-panel-at-scale.md))       |
+| #   | Question                                                | Answer                                                                                                                                                                |
+| --- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Does a hundred-asset build succeed?                     | **100 of 100 registered, 0 refused**, 327 s single-threaded, 1.8 s median and 20.5 s worst ([PH-21.1](PH-21.1-a-hundred-assets.md))                                   |
+| 2   | Do a hundred assets stay distinct?                      | **In parameter space, yes** — closest of 5,460 pairs at 0.0282, 2.8× the floor. Behaviourally, unmeasured at that scale (§8) ([PH-21.1](PH-21.1-a-hundred-assets.md)) |
+| 3   | What does the venue cost per tick at a hundred markets? | **413,177 ticks/s at a hundred markets**, flat to 7% across a 20× range ([PH-21.2](PH-21.2-the-venue-under-a-full-catalogue.md))                                      |
+| 4   | What does it cost on disk?                              | **52 bytes per minute bar**, 0.67 GB for a hundred assets over a quarter ([PH-21.2](PH-21.2-the-venue-under-a-full-catalogue.md))                                     |
+| 5   | Does the panel survive it?                              | **Yes** — search, grouping, and a virtualisation decision recorded rather than taken ([PH-21.3](PH-21.3-a-panel-at-scale.md))                                         |
 
 Three of the five were arguments before this phase and are measurements after
 it. Question 3's argument — "the markets share a clock and nothing else, so the
@@ -164,6 +164,16 @@ candle a client resumes at — which is exactly the condition that froze the
 candle. The defect cannot return without that test saying so.
 
 ## 8. What the phase leaves open
+
+**INV-007 at a hundred assets is a necessary condition, not a measurement.**
+Question 2 above is answered by the proximity check, and
+`differentiation.ts`'s own docstring says that check "compares parameters, not
+behaviour", is "necessary and not sufficient", and that a guard which "reads as
+a proof of the invariant, and is a proximity check on a parameter vector, is
+worse than no guard because it invites reliance". This phase's first record
+wrote that reliance; Cycle Audit 7 named it (CA7-05). The sufficient check is
+behavioural, exists, and runs at 24 assets — not a hundred. Closing that is
+Issue #21.
 
 **A hundred registered is not a hundred hosted.** PH-21.2 measured the venue's
 scheduling loop and the store's footprint at a hundred markets; the publication
