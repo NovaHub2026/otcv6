@@ -10,6 +10,8 @@ export default tseslint.config(
       '**/coverage/**',
       '**/artifacts/**',
       '**/.next/**',
+      // The browser suites' own build directory (PH-24.14): generated, like .next.
+      '**/.next-stat/**',
       // Agent worktrees. Cycle Audit 7 ran eight auditors in isolated trees
       // under here — 3.5 GB of full repository copies — and ESLint walked into
       // them and aborted on heap exhaustion (exit 134). `.gitignore` does not

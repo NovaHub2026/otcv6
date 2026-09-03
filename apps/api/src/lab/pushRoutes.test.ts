@@ -6,7 +6,7 @@ import { PublicationService } from '../publication.service.js';
 import { VenueService } from '../venue.service.js';
 import { LabController } from './lab.controller.js';
 import { SignSelector } from './selectableSigns.js';
-import { ArrivalSelector, BURST_DIVISOR } from './selectableArrival.js';
+import { ArrivalSelector, BURST_DIVISOR, PACE_DIVISORS } from './selectableArrival.js';
 import { LabPositions } from './positions.js';
 import { configFor } from '@otc/engine';
 import { LabSession } from './session.js';
@@ -32,6 +32,7 @@ interface Pushed {
   extended: boolean;
   landing: { latticeLevel: number; price: string; afterTicks: number };
   retracted: boolean;
+  pace: string;
   armed: boolean;
   remaining: number;
   pushing: { direction: 1 | -1; requested: number; remaining: number } | null;
@@ -98,7 +99,8 @@ describe('PH-24.10 — a push is N natural ticks', () => {
       armed: true,
       remaining: 3,
     });
-    expect(pushed.pushing).toEqual({ direction: 1, requested: 3, remaining: 3 });
+    expect(pushed.pushing).toEqual({ direction: 1, requested: 3, remaining: 3, pace: 'rapido' });
+    expect(pushed.pace).toBe('rapido');
     expect(pushed.landing.afterTicks).toBe(3);
     expect(lab.venue.hostedMarket(id)!.pending).toBeNull();
 
@@ -153,11 +155,11 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     expect(first.remaining).toBe(5);
     const second = (await lab.controller.push(id, '+3')) as Pushed;
     expect(second).toMatchObject({ extended: true, remaining: 8 });
-    expect(second.pushing).toEqual({ direction: 1, requested: 8, remaining: 8 });
+    expect(second.pushing).toEqual({ direction: 1, requested: 8, remaining: 8, pace: 'rapido' });
     expect(second.landing.afterTicks).toBe(8);
     const reversed = (await lab.controller.push(id, '-2')) as Pushed;
     expect(reversed).toMatchObject({ direction: 'down', extended: false, remaining: 2 });
-    expect(reversed.pushing).toEqual({ direction: -1, requested: 2, remaining: 2 });
+    expect(reversed.pushing).toEqual({ direction: -1, requested: 2, remaining: 2, pace: 'rapido' });
     const released = lab.controller.release(id) as { discarded: number; pushing: unknown };
     expect(released.discarded).toBe(2);
     expect(released.pushing).toBeNull();
@@ -206,7 +208,7 @@ describe('PH-24.10 — a push is N natural ticks', () => {
       lastApplied: unknown;
     };
     expect(pushed.released).toEqual({ discarded: beforePush.remaining });
-    expect(pushed.pushing).toEqual({ direction: 1, requested: 2, remaining: 2 });
+    expect(pushed.pushing).toEqual({ direction: 1, requested: 2, remaining: 2, pace: 'rapido' });
     expect(pushed.lastApplied).toBeNull();
     const lines = lab.session.toLines();
     expect(
@@ -220,5 +222,47 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     for (const bad of ['0', '1.5', 'x', '51', '-51', undefined]) {
       await expect(lab.controller.push(id, bad)).rejects.toThrow(/ticks must be/);
     }
+  });
+
+  it("PH-24.15: normal plays the keystream's own intervals, medio one sixth of the tempo; the pace is recorded", async () => {
+    const base = configFor(asset).arrival.baseIntervalMs;
+    // normal: the pushed stretch has the unpushed venue's intervals, tick for tick —
+    // the retract redraws from the same keystream positions and no arrival draw is scripted.
+    const lab = await labVenue();
+    const plain = await labVenue(false);
+    await advance(lab.venue, lab.clock, 120_000);
+    await advance(plain.venue, plain.clock, 120_000);
+    const lastPublished = record(lab.venue)[record(lab.venue).length - 1]!;
+    const pushed = (await lab.controller.push(id, '+3', 'normal')) as Pushed;
+    expect(pushed.pace).toBe('normal');
+    expect(pushed.retracted).toBe(true);
+    await advance(lab.venue, lab.clock, 60_000);
+    await advance(plain.venue, plain.clock, 60_000);
+    const labTicks = after(record(lab.venue), lastPublished.sequence);
+    const plainTicks = after(record(plain.venue), lastPublished.sequence);
+    expect(intervals(labTicks, lastPublished).slice(0, 3)).toEqual(
+      intervals(plainTicks, lastPublished).slice(0, 3),
+    );
+    expect(deltas(labTicks, lastPublished).slice(0, 3)).toEqual(
+      deltas(plainTicks, lastPublished).slice(0, 3).map(Math.abs),
+    );
+    expect(
+      lab.session.toLines().some((l) => /"action":"push"/.test(l) && /"pace":"normal"/.test(l)),
+    ).toBe(true);
+
+    // medio: at most base / 6 apart.
+    const medio = await labVenue();
+    await advance(medio.venue, medio.clock, 120_000);
+    const last2 = record(medio.venue)[record(medio.venue).length - 1]!;
+    const m = (await medio.controller.push(id, '-4', 'medio')) as Pushed;
+    expect(m.pushing).toEqual({ direction: -1, requested: 4, remaining: 4, pace: 'medio' });
+    await advance(medio.venue, medio.clock, 5_000);
+    const mTicks = after(record(medio.venue), last2.sequence);
+    const bound = Math.max(1, Math.floor(base / PACE_DIVISORS.medio!));
+    for (const ms of intervals(mTicks, last2).slice(0, 4)) expect(ms).toBeLessThanOrEqual(bound);
+    for (const d of deltas(mTicks, last2).slice(0, 4)) expect(d).toBeLessThanOrEqual(0);
+
+    // An unknown pace is refused.
+    await expect(medio.controller.push(id, '1', 'turbo')).rejects.toThrow(/pace must be one of/);
   });
 });

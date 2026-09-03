@@ -95,15 +95,19 @@ export interface BetweenLevels {
 export const isBetween = (value: unknown): value is BetweenLevels =>
   typeof value === 'object' && value !== null && 'below' in value && 'above' in value;
 
+export type Pace = 'normal' | 'medio' | 'rapido';
+
 export interface Pushing {
   readonly direction: 1 | -1;
   readonly requested: number;
   readonly remaining: number;
+  readonly pace?: Pace;
 }
 
 export interface PushResult extends Control {
   readonly direction: 'up' | 'down';
   readonly ticks: number;
+  readonly pace?: Pace;
   readonly extended: boolean;
   readonly landing: {
     readonly latticeLevel: number;

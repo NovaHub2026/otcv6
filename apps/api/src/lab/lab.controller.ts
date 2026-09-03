@@ -34,7 +34,13 @@ import { closesDiagnostic } from './closesDiagnostic.js';
 import { positionsDiagnostic, type SettledPosition } from './positionsDiagnostic.js';
 import { SCENARIOS, scenarioNamed, scenarioParameters, shapeOf } from './scenarios.js';
 import { SelectableSigns, SignSelector } from './selectableSigns.js';
-import { ArrivalSelector, BURST_DRAW, SelectableArrival } from './selectableArrival.js';
+import {
+  ArrivalSelector,
+  PACES,
+  paceDraw,
+  SelectableArrival,
+  type Pace,
+} from './selectableArrival.js';
 import { LabSession } from './session.js';
 
 /**
@@ -523,8 +529,18 @@ export class LabController {
    * computed on a fork playing the same signs: the Lab may look.
    */
   @Post('markets/:id/push')
-  async push(@Param('id') id: string, @Query('ticks') ticksText?: string): Promise<unknown> {
+  async push(
+    @Param('id') id: string,
+    @Query('ticks') ticksText?: string,
+    @Query('pace') paceText?: string,
+  ): Promise<unknown> {
     const ticks = Number(ticksText);
+    const pace: Pace = (paceText ?? 'rapido') as Pace;
+    if (!PACES.includes(pace)) {
+      throw new BadRequestException(
+        `pace must be one of ${PACES.join(', ')}, received ${paceText}.`,
+      );
+    }
     if (
       ticksText === undefined ||
       !/^[+-]?\d+$/.test(ticksText.trim()) ||
@@ -572,12 +588,14 @@ export class LabController {
       const market = this.venue.hostedMarket(id)!;
       const carried: (1 | -1)[] = extended ? [...wrapper.remainingScript()] : [];
       const arrival = this.arrivals.for(id);
-      const carriedDraws: number[] =
+      const carriedDraws: (number | null)[] =
         extended && arrival !== null ? [...arrival.remainingScript()] : [];
       const retracted = market.retractPending();
       // Everything the market will play from its next draw, in order.
       const script: (1 | -1)[] = [...carried, ...signs];
-      const draws: number[] = [...carriedDraws, ...signs.map(() => BURST_DRAW)];
+      // One arrival entry per pushed tick, aligned with the signs; null is the keystream's own draw.
+      const draw = paceDraw(pace);
+      const draws: (number | null)[] = [...carriedDraws, ...signs.map(() => draw)];
       let forkSigns: SelectableSigns | null = null;
       let forkArrival: SelectableArrival | null = null;
       const fork = this.venue.labFork(
@@ -610,6 +628,7 @@ export class LabController {
       this.pushes.set(id, {
         direction,
         requested: extended ? running.requested + count : count,
+        pace,
       });
       // The fork started at the snapshot's sequence; the landing is script.length ticks on.
       const sequence = this.venue.hostedMarket(id)!.snapshotEngine().sequence + script.length;
@@ -640,7 +659,7 @@ export class LabController {
       asset: id,
       engineVersion: ENGINE_VERSION,
       action: 'push',
-      parameters: { ticks },
+      parameters: { ticks, pace },
       initialState: before,
       resultingState: this.controlState(id),
       succeeded: true,
@@ -651,6 +670,7 @@ export class LabController {
       asset: id,
       direction: direction === 1 ? 'up' : 'down',
       ticks: count,
+      pace,
       extended,
       landing,
       released: result.released,
@@ -1342,7 +1362,7 @@ export class LabController {
   >();
 
   /** Pushes running per market (PH-24.10): direction and how many ticks were asked in all. */
-  private readonly pushes = new Map<string, { direction: 1 | -1; requested: number }>();
+  private readonly pushes = new Map<string, { direction: 1 | -1; requested: number; pace: Pace }>();
 
   /** Where the last push said it would land, so `control` can read the record there (PH-24.10). */
   private readonly pushLandings = new Map<
@@ -1456,7 +1476,7 @@ export class LabController {
   private controlState(id: string): {
     armed: boolean;
     remaining: number;
-    pushing: { direction: 1 | -1; requested: number; remaining: number } | null;
+    pushing: { direction: 1 | -1; requested: number; remaining: number; pace: Pace } | null;
     lastPush: {
       direction: 1 | -1;
       ticks: number;
@@ -1483,6 +1503,7 @@ export class LabController {
               direction: push.direction,
               requested: push.requested,
               remaining: wrapper?.remaining ?? 0,
+              pace: push.pace,
             },
       lastPush: this.pushOutcome(id),
       sequence: market?.snapshotEngine().sequence ?? -1,

@@ -12,7 +12,7 @@ import { exp, type RandomSource, type StreamCursor } from '@otc/core';
  * it is the one call the arrival model makes.
  */
 export class SelectableArrival implements RandomSource {
-  #script: readonly number[] | null = null;
+  #script: readonly (number | null)[] | null = null;
   #at = 0;
 
   constructor(
@@ -32,15 +32,21 @@ export class SelectableArrival implements RandomSource {
     return this.#script === null ? 0 : this.#script.length - this.#at;
   }
 
-  remainingScript(): readonly number[] {
+  remainingScript(): readonly (number | null)[] {
     return this.#script === null ? [] : this.#script.slice(this.#at);
   }
 
-  /** Play these draws, each in [0, 1), for the next `draws.length` intervals. Replaces. */
-  arm(draws: readonly number[]): void {
+  /**
+   * Play these draws for the next `draws.length` intervals. Replaces.
+   *
+   * A `null` entry passes the keystream's own draw through (PH-24.15's `normal`
+   * pace): the script still has to be one entry per pushed tick, so that the
+   * arrival script and the sign script stay aligned when paces mix.
+   */
+  arm(draws: readonly (number | null)[]): void {
     if (draws.length === 0) throw new RangeError('A script must contain at least one draw.');
     for (const draw of draws) {
-      if (!(draw >= 0 && draw < 1))
+      if (draw !== null && !(draw >= 0 && draw < 1))
         throw new RangeError(`A draw must lie in [0, 1), received ${String(draw)}.`);
     }
     this.#script = [...draws];
@@ -48,7 +54,7 @@ export class SelectableArrival implements RandomSource {
   }
 
   /** Play these draws after the ones still to be drawn; transparent, an arm. */
-  extend(draws: readonly number[]): void {
+  extend(draws: readonly (number | null)[]): void {
     if (draws.length === 0) throw new RangeError('An extension must contain at least one draw.');
     if (this.#script === null) {
       this.arm(draws);
@@ -74,7 +80,7 @@ export class SelectableArrival implements RandomSource {
       this.#script = null;
       this.#at = 0;
     }
-    return scripted;
+    return scripted === null ? draw : scripted;
   }
 
   nextBoolean(): boolean {
@@ -132,3 +138,20 @@ export class ArrivalSelector {
 export const BURST_DIVISOR = 12;
 // The portable exp (CA7-14): this constant decides what a replay must reproduce.
 export const BURST_DRAW = 1 - exp(-1 / BURST_DIVISOR);
+
+/**
+ * The push's pace (PH-24.15): which arrival draws the pushed ticks play.
+ * `normal` plays none — the keystream's own; `medio` one sixth of the base
+ * tempo; `rapido` PH-24.13's one twelfth. The same fences for all three.
+ */
+export type Pace = 'normal' | 'medio' | 'rapido';
+export const PACES: readonly Pace[] = ['normal', 'medio', 'rapido'];
+export const PACE_DIVISORS: Readonly<Record<Pace, number | null>> = {
+  normal: null,
+  medio: 6,
+  rapido: BURST_DIVISOR,
+};
+export function paceDraw(pace: Pace): number | null {
+  const divisor = PACE_DIVISORS[pace];
+  return divisor === null ? null : 1 - exp(-1 / divisor);
+}

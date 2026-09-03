@@ -3,7 +3,7 @@
 import type { ReactElement } from 'react';
 import { es } from '../../lib/es.js';
 import { Badge, Button, Info, Notice, T } from '../ui/kit.js';
-import type { Control, PushResult } from './labApi.js';
+import type { Control, Pace, PushResult } from './labApi.js';
 
 export const PUSH_SIZES = [1, 3, 5, 10] as const;
 
@@ -20,12 +20,17 @@ export function Empujar({
   error,
   busy,
   onPush,
+  pace,
+  onPace,
 }: {
   control: Control | null;
   last: PushResult | null;
   error: string | null;
   busy: string | null;
   onPush: (ticks: number) => Promise<void>;
+  /** PH-24.15: the pace the next pushes play. */
+  pace: Pace;
+  onPace: (pace: Pace) => void;
 }): ReactElement {
   const p = es.lab.push;
   const pushing = control?.pushing ?? null;
@@ -74,6 +79,29 @@ export function Empujar({
         </Button>
       ))}
       <span style={{ color: T.faint, fontSize: 11 }}>{p.up}</span>
+      <span style={{ color: T.faint, fontSize: 11, marginLeft: 6 }}>
+        {p.pace.label} <Info text={p.pace.info} />
+      </span>
+      {(['normal', 'medio', 'rapido'] as const).map((key) => (
+        <button
+          key={key}
+          type="button"
+          data-testid={`lab-push-pace-${key}`}
+          onClick={() => onPace(key)}
+          style={{
+            padding: '2px 8px',
+            background: pace === key ? T.line : 'transparent',
+            color: pace === key ? T.text : T.muted,
+            border: `1px solid ${T.line}`,
+            borderRadius: 3,
+            font: 'inherit',
+            fontSize: 11,
+            cursor: 'pointer',
+          }}
+        >
+          {p.pace[key]}
+        </button>
+      ))}
       <Badge tone={pushing !== null ? 'lab' : 'muted'} testId="lab-push-state">
         {pushing !== null
           ? p.running(pushing.direction === 1 ? 'up' : 'down', pushing.remaining)
@@ -83,6 +111,7 @@ export function Empujar({
       {last !== null && (
         <span data-testid="lab-push-landing" style={{ fontSize: 12, color: T.muted }}>
           {p.landing(last.landing.price, last.landing.afterTicks)}
+          {last.pace !== undefined ? ` · ${p.pace[last.pace]}` : ''}
           {last.extended ? ` · ${p.extended}` : ''}
         </span>
       )}

@@ -357,6 +357,33 @@ describe('the Lab is marked wherever it appears', () => {
         `${suite} build and start`,
       ).toHaveLength(2);
     }
+    // Next rewrites tsconfig's include and next-env.d.ts for the build directory it used:
+    // both globs are listed so nothing is rewritten, and the generated file is not tracked.
+    const tsconfig = JSON.parse(
+      readFileSync(path.join(app, '..', '..', 'tsconfig.json'), 'utf8'),
+    ) as {
+      include: string[];
+    };
+    expect(tsconfig.include).toContain('.next/types/**/*.ts');
+    expect(tsconfig.include).toContain('.next-stat/types/**/*.ts');
+    const gitignore = readFileSync(path.join(app, '..', '..', '..', '..', '.gitignore'), 'utf8');
+    expect(gitignore).toMatch(/^apps\/web\/next-env\.d\.ts$/m);
+    expect(gitignore).toMatch(/^\.next-stat\/$/m);
+    // And the linter must not read it: the first isolated gate failed on 536 generated-file errors.
+    const eslint = readFileSync(path.join(app, '..', '..', '..', '..', 'eslint.config.js'), 'utf8');
+    expect(eslint).toMatch(/'\*\*\/\.next-stat\/\*\*'/);
+  });
+
+  it('offers the push its pace — normal, medio, rápido — and sends it with every push (PH-24.15)', () => {
+    const strip = code('lab/Empujar.tsx');
+    for (const key of ['normal', 'medio', 'rapido']) {
+      expect(strip).toMatch(new RegExp(`lab-push-pace-`));
+      expect(strip).toMatch(new RegExp(`'${key}'`));
+    }
+    expect(strip).toMatch(/p\.pace\.label/);
+    const lab = code('lab/Lab.tsx');
+    expect(lab).toMatch(/useState<Pace>\('rapido'\)/);
+    expect(lab).toMatch(/push\?ticks=\$\{String\(ticks\)\}&pace=\$\{pace\}/);
   });
 
   it('says the Lab is absent rather than hiding that it can be', () => {

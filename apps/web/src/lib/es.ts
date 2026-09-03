@@ -187,6 +187,13 @@ export const es = {
       refusedPush:
         'hay un empuje en curso — espera a que termine o libéralo antes de fijar un cierre',
       failed: (reason: string) => `el empuje no se envió: ${reason}`,
+      pace: {
+        label: 'ritmo',
+        normal: 'normal',
+        medio: 'medio',
+        rapido: 'rápido',
+        info: 'El ritmo al que llegan los N ticks del empuje. Normal: los intervalos que sortea el propio mercado. Medio: ráfaga a un sexto del tempo base. Rápido: ráfaga a un doceavo. En los tres casos las magnitudes son las del motor — un tick rápido es un tick más pequeño, como en cualquier impulso — y el empuje arranca en el instante del clic.',
+      },
     },
     header: {
       price: 'precio',

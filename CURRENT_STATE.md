@@ -25,18 +25,18 @@ Last synchronized: 2026-09-03
 | ---------------------- | ------------------------------------------------ |
 | Active phase           | PH-24 — The Lab's controls: applying a selection |
 | Phase lifecycle        | ACTIVE                                           |
-| Active subphase        | PH-24.15 — El ritmo del empuje                   |
-| Subphase lifecycle     | ACTIVE                                           |
+| Active subphase        | none                                             |
+| Subphase lifecycle     | none                                             |
 | Last approved phase    | PH-23 — The OTC Market Lab                       |
-| Last approved subphase | PH-24.14 — El panel se recupera solo             |
+| Last approved subphase | PH-24.15 — El ritmo del empuje                   |
 
-**PH-24 is active; fourteen subphases approved (PH-24.1–24.14); PH-24.15 —
-El ritmo del empuje — active.** The Lab is the two controls the Human Owner
-asked for — instantaneous pushes by buttons (PH-24.13) and the exact close of
-the current candle — on one engine per deployment (ADR-0018), with a panel that
-recovers by itself and a gate that never touches it (PH-24.14). PH-24.15 makes
-the push's pace a selector. The merge, hosted CI and Cycle Audit 8 wait until
-the Lab is complete; PH-24's approval is Cycle 8's third phase.
+**PH-24 is active; fifteen subphases approved (PH-24.1–24.15).** The Lab is
+the two controls the Human Owner asked for — instantaneous pushes by buttons
+with a pace selector (normal, medio, rápido) and the exact close of the current
+candle — on one engine per deployment (ADR-0018), with a panel that recovers by
+itself and a gate that never touches it. The next Lab item awaits the Human
+Owner. The merge, hosted CI and Cycle Audit 8 wait until the Lab is complete;
+PH-24's approval is Cycle 8's third phase.
 
 PH-23.5 closed the first item PH-23 §10 left open — the Lab now has a screen in
 the panel, behind a menu entry marked `SIM`. Building it found three defects

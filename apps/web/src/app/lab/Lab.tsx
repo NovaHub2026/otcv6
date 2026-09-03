@@ -14,6 +14,7 @@ import {
   type CloseTimeframe,
   type Control,
   type ControlAll,
+  type Pace,
   type PushResult,
   type LabMarket,
   type MarketControl,
@@ -86,6 +87,7 @@ export function Lab(): ReactElement {
   const [all, setAll] = useState<ControlAll | null>(null);
   const [lastPush, setLastPush] = useState<PushResult | null>(null);
   const [pushError, setPushError] = useState<string | null>(null);
+  const [pace, setPace] = useState<Pace>('rapido');
   const [catalogue, setCatalogue] = useState<CatalogueEntry[]>([]);
   const [chartTf, setChartTf] = useState<PanelTimeframeId>('1m');
   const [positions, setPositions] = useState<LabPositionView[]>([]);
@@ -261,7 +263,9 @@ export function Lab(): ReactElement {
     setBusy('push');
     setPushError(null);
     try {
-      const body = await labPost<PushResult>(`markets/${selected}/push?ticks=${String(ticks)}`);
+      const body = await labPost<PushResult>(
+        `markets/${selected}/push?ticks=${String(ticks)}&pace=${pace}`,
+      );
       if (isUnavailable(body)) {
         // A failed push is said on the strip; the screen and its buttons stay.
         setPushError(es.lab.push.failed(body.reason));
@@ -386,7 +390,15 @@ export function Lab(): ReactElement {
         <AssetList assets={assets} selected={selected} onSelect={setSelected} all={all} />
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
           <HeaderStrip state={state} regime={regime} control={control} />
-          <Empujar control={control} last={lastPush} error={pushError} busy={busy} onPush={push} />
+          <Empujar
+            control={control}
+            last={lastPush}
+            error={pushError}
+            busy={busy}
+            onPush={push}
+            pace={pace}
+            onPace={setPace}
+          />
           <LabChart
             entry={catalogue.find((c) => c.id === selected) ?? null}
             timeframe={chartTf}

@@ -612,6 +612,8 @@ describe('Candle Close Control, from the panel', () => {
       expect(await page.locator('[data-testid="lab-push"]').isVisible()).toBe(true);
       await page.click('[data-testid="tab-close"]');
 
+      // PH-24.15: the pace is chosen on the strip and travels with the push.
+      await page.click('[data-testid="lab-push-pace-rapido"]');
       const clickedAt = performance.now();
       await page.click('[data-testid="lab-push-+3"]');
       // PH-24.13: the burst lands in about a second, often before the strip's next
@@ -623,6 +625,7 @@ describe('Candle Close Control, from the panel', () => {
       );
       expect(landing, 'the strip did not announce a landing').not.toBeNull();
       expect(landing![2]).toBe('3');
+      expect(await text(page, 'lab-push-landing')).toMatch(/rápido/i);
 
       // Three ticks later the record is read at the landing's sequence — and with
       // PH-24.13's burst, "later" is seconds: the pending tick was retracted and the
@@ -653,6 +656,25 @@ describe('Candle Close Control, from the panel', () => {
         { timeout: 30_000 },
       );
 
+      // PH-24.15: a medio push lands too, and the session records its pace.
+      await page.click('[data-testid="lab-push-pace-medio"]');
+      await page.click('[data-testid="lab-push--1"]');
+      await page.waitForFunction(
+        () =>
+          /↓ 1 ticks · llegó a/.test(
+            document.querySelector('[data-testid="lab-push-outcome"]')?.textContent ?? '',
+          ),
+        null,
+        { timeout: 60_000 },
+      );
+      await page.waitForFunction(
+        () =>
+          /pace=medio/.test(
+            document.querySelector('[data-testid="lab-session-lab"]')?.textContent ?? '',
+          ),
+        null,
+        { timeout: 30_000 },
+      );
       // PH-24.11: a push over an armed close releases it and says so on the strip.
       const markets = (await page.evaluate(
         async () => (await (await fetch('/lab/markets')).json()) as unknown,
