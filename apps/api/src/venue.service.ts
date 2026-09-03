@@ -33,6 +33,17 @@ import { PublicationService } from './publication.service.js';
  * the build if anything under `packages/` imports a framework, which is what
  * keeps the batteries able to drive the engine from a plain Node process.
  */
+/**
+ * How long the scheduler waits when the only thing due is a stalled market.
+ *
+ * A stall never resolves on its own — `#lastAdvancedAt` moves only after the
+ * bound check the stall fails — so the loop would otherwise spin at 1 ms
+ * for the life of the process (Cycle Audit 7, CA7-10). A quarter second still
+ * notices a market that starts publishing again within one of its own
+ * intervals, and costs four passes a second instead of eight hundred.
+ */
+const STALLED_BACKOFF_MS = 250;
+
 @Injectable()
 export class VenueService implements OnModuleDestroy {
   private readonly logger = new Logger(VenueService.name);
@@ -49,6 +60,9 @@ export class VenueService implements OnModuleDestroy {
    */
   readonly feed = new TickFeed();
   private readonly latest = new Map<string, Tick>();
+
+  /** Assets that published on the last pass; 0 with a stall means spinning. */
+  private lastPublishedCount = 0;
   /**
    * Markets that failed their last advance, and why.
    *
@@ -266,6 +280,18 @@ export class VenueService implements OnModuleDestroy {
     await this.checkpoint();
     this.venue?.unhost(assetId);
     this.retired.add(assetId);
+    // **Cycle Audit 7, CA7-15.** Everything this service remembers *about* a
+    // market has to go with it. `tick()` clears `stalled` only for an asset that
+    // appears in `published`, and an unhosted asset never appears there — so
+    // retiring a stalled market left `/health` reporting `degraded` about it for
+    // the life of the process, next to `assets: 0`, with nothing able to clear
+    // it. That is CA6-33's failure with the sign flipped: a monitor permanently
+    // red about an asset the operator deliberately removed is a monitor an
+    // operator learns to ignore.
+    this.stalled.delete(assetId);
+    this.stalledLogged.delete(assetId);
+    this.latest.delete(assetId);
+    this.recovery.delete(assetId);
     this.logger.log(`${assetId}: retired — no longer hosted, record untouched`);
   }
 
@@ -363,6 +389,7 @@ export class VenueService implements OnModuleDestroy {
     // The failure list is the one thing that says so, and it was being thrown
     // away by the only caller that mattered.
     const { published, failures } = this.venue.advanceDetailed(epochMillis(this.clock.now()));
+    this.lastPublishedCount = published.length;
     for (const failure of failures) {
       this.stalled.set(failure.assetId, failure.error.message);
       // Logged once per distinct *kind* of failure, keyed on the error's name:
@@ -417,23 +444,47 @@ export class VenueService implements OnModuleDestroy {
    * The catalogue spans 333ms to 3352ms of mean interval; one interval would
    * either burn CPU on the slow assets or publish the fast ones late.
    */
+  /**
+   * How long the next pass waits, as a value rather than a side effect.
+   *
+   * Its own method so the decision can be asserted: `schedule()` ends in a
+   * `setTimeout`, and a scheduler that spins is invisible to a test that can
+   * only observe a timer being set (Cycle Audit 7, CA7-10).
+   */
+  nextWaitMs(): number {
+    let wait = this.venue?.msUntilNextTick() ?? 50;
+    // **Cycle Audit 7, CA7-10.** A stalled market keeps a pending tick whose
+    // instant recedes further into the past on every pass, so its
+    // `msUntilNextTick` is 0 for ever — and the venue takes the minimum across
+    // markets, so one stalled asset pinned the whole scheduler to a 1 ms timer.
+    // Measured: 4 scheduler passes per real second healthy, 839 after a 20 s
+    // skew — a 210x increase, sustained for the life of the process, each pass
+    // walking every market and constructing a `CatchUpTooLargeError`. Nothing
+    // in the logs grew to say so, because the per-asset line is deduped on the
+    // error's name (a6-05), so the only visible symptom was a hot core.
+    //
+    // The condition is narrow on purpose: a pass that published nothing while
+    // something is stalled is the stall spinning. A healthy venue always
+    // publishes when it is due, so this never engages on one.
+    if (this.lastPublishedCount === 0 && this.stalled.size > 0) {
+      wait = Math.max(wait, STALLED_BACKOFF_MS);
+    }
+    return Math.max(1, Math.min(wait, 1_000));
+  }
+
   private schedule(): void {
     if (this.stopping || this.venue === null) return;
-    const wait = this.venue.msUntilNextTick() ?? 50;
-    this.timer = setTimeout(
-      () => {
-        // Kept so `stop()` can wait for it rather than checkpointing on top of
-        // an advance that is still writing.
-        this.inFlight = this.tick()
-          .catch((error: unknown) => {
-            this.logger.error(`tick failed: ${String(error)}`);
-          })
-          .finally(() => {
-            this.schedule();
-          });
-        void this.inFlight;
-      },
-      Math.max(1, Math.min(wait, 1_000)),
-    );
+    this.timer = setTimeout(() => {
+      // Kept so `stop()` can wait for it rather than checkpointing on top of
+      // an advance that is still writing.
+      this.inFlight = this.tick()
+        .catch((error: unknown) => {
+          this.logger.error(`tick failed: ${String(error)}`);
+        })
+        .finally(() => {
+          this.schedule();
+        });
+      void this.inFlight;
+    }, this.nextWaitMs());
   }
 }
