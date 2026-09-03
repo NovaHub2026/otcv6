@@ -118,10 +118,50 @@ could have been closed on the local gate alone at any point in that window.
 
 ## 7. Phase gate
 
-> **Verification in flight.** The gate and the hosted run for this tree are
-> executing as this is written; this block is filled from their exit codes, and
-> is not an approval until it is. `GOVERNANCE.md` §68: only executed checks may
-> be reported as passing.
+Executed on `feature/ph-21-catalogue-at-scale` at `e451647`, 2026-09-02/03,
+with `OTC_REQUIRE_BROWSER=1` so a missing Chromium is a failure rather than a
+skip — **zero tests reported skipped in either layer**.
+
+```
+npm run gate  ->  GATE_EXIT=0
+  format:check     0
+  build            0
+  typecheck:web    0
+  typecheck:config 0
+  lint             0
+  unit          90 files, 2,203 tests        29.8s
+  statistical   40 files,   273 tests     3,386.5s
+```
+
+| Layer                | Result                                                                                                            |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Local gate           | **PASSED (exit 0)** — worst RPC round trip 11.6 s against the 30 s guard                                          |
+| Hosted CI, same tree | [run 33701581822](https://github.com/NovaHub2026/otcv6/actions/runs/33701581822) — **success**, both jobs, 48 min |
+| — Quality Gate       | 90 files, 2,203 unit tests                                                                                        |
+| — Statistical Gate   | 40 files, 273 tests, 2,837.8 s; worst RPC round trip 9.5 s                                                        |
+| Browser suite        | 8 tests, run in both layers — including `draws the bucket now forming, however the stream had to reach it`        |
+
+**The browser suite ran locally as well as hosted**, which it had not done since
+a6-03 recorded that no Chromium could launch on this host. The three libraries
+were supplied without root (PH-21.3 §5.2); that prefix is a local artefact
+outside the repository, so **the hosted run is the authority** and the local one
+is what made the defects measurable while they were being fixed.
+
+Two honest notes on the numbers. The local statistical suite took 3,386 s
+against the runner's 2,838 s — 19% slower, because two audit fan-outs were
+competing for the machine for part of it. CA6-01 is this project's record of
+what a contended wall-clock measurement is worth, so it is said rather than
+hidden: every wall-clock assertion in the suite passed anyway, and the figure to
+compare against the runner's is the hosted one. And the run recorded above is
+the **second** attempt: the first exited 1 on four state-consistency guardrails
+that caught the closure being written — the roadmap moved to APPROVED while
+PH-21.3's own document still read ACTIVE, and `CURRENT_STATE.md` named a phase
+the roadmap had just approved. The guards were right; the record was mid-edit.
+
+The forming-bucket test passing **on the runner** is the load-bearing line. A CI
+engine is always freshly started, so its feed can never replay from the stored
+candle a client resumes at — which is exactly the condition that froze the
+candle. The defect cannot return without that test saying so.
 
 ## 8. What the phase leaves open
 

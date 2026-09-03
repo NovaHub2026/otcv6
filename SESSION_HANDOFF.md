@@ -66,10 +66,19 @@ that had never contained the fix (PH-21.3 §5.1).
 
 ## Last executed verification
 
-> **Verification in flight.** The gate and the hosted run for this tree are
-> executing as this is written; this block is filled from their exit codes, and
-> is not an approval until it is. `GOVERNANCE.md` §68: only executed checks may
-> be reported as passing.
+**`npm run gate` on `feature/ph-21-catalogue-at-scale` at `e451647`** —
+`GATE_EXIT=0`, with `OTC_REQUIRE_BROWSER=1` and zero skips: 90 unit files /
+2,203 tests, 40 statistical files / 273 tests, worst RPC round trip 11.6 s
+against the 30 s guard.
+
+**Hosted CI on the same tree:**
+[run 33701581822](https://github.com/NovaHub2026/otcv6/actions/runs/33701581822)
+— success, Quality Gate and Statistical Gate, 48 minutes, 273 statistical tests
+with the eight browser tests run on the runner.
+
+Both layers, one tree. `GOVERNANCE.md` §40.1 wants the second, and PH-21 is the
+first phase in this cycle to close with it green on its own tree rather than on
+an ancestor's.
 
 ## Process, in force
 
