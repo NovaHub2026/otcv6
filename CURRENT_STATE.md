@@ -12,12 +12,12 @@ Last synchronized: 2026-09-02
 
 ## Development cycle
 
-| Field                            | Value                                                                                                                                               |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 7                                                                                                                                             |
-| Approved phases in current cycle | **3 of 3** — PH-19, PH-20, PH-21                                                                                                                    |
-| Cycle Audit state                | **006 closed**; out-of-band audit 001 run 2026-09-02 (does not reset the counter)                                                                   |
-| Last Cycle Audit                 | [Cycle Audit 006](docs/audits/CYCLE-AUDIT-006.md) — recorded 2026-09-01; [Out-of-band Audit 001](docs/audits/OUT-OF-BAND-AUDIT-001.md) — 2026-09-02 |
+| Field                            | Value                                                                                                                  |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Active development cycle         | Cycle 7                                                                                                                |
+| Approved phases in current cycle | **3 of 3** — PH-19, PH-20, PH-21                                                                                       |
+| Cycle Audit state                | **007 closed** — 34 of 35 findings closed in the audit itself, one carried (Issue #22)                                 |
+| Last Cycle Audit                 | [Cycle Audit 007](docs/audits/CYCLE-AUDIT-007.md) — recorded 2026-09-03, eight independent auditors, one worktree each |
 
 ## Phase and subphase
 
@@ -202,50 +202,54 @@ coverage has not been re-measured since 2026-08-31 (Issue #2).
 
 ## Relevant records
 
-| Kind     | Reference                                                                                                                                                                                                                                                              |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ADR-0001 | Repository, toolchain and package architecture (APPROVED)                                                                                                                                                                                                              |
-| ADR-0002 | Deterministic entropy architecture (APPROVED)                                                                                                                                                                                                                          |
-| ADR-0003 | Conditional sign symmetry as the anti-predictability architecture (APPROVED)                                                                                                                                                                                           |
-| ADR-0004 | Canonical price representation: an integer log lattice (APPROVED)                                                                                                                                                                                                      |
-| ADR-0005 | A multifractal cascade as the volatility process (APPROVED)                                                                                                                                                                                                            |
-| ADR-0006 | A layered sign-blind market model (APPROVED)                                                                                                                                                                                                                           |
-| ADR-0007 | At-the-money settlement: a tie is refunded (APPROVED, Human Owner)                                                                                                                                                                                                     |
-| ADR-0008 | Full delegation: automatic audits, autonomous decisions (APPROVED)                                                                                                                                                                                                     |
-| ADR-0009 | Hosted CI reinstated after the repository was made public (APPROVED)                                                                                                                                                                                                   |
-| ADR-0010 | The catch-up bound: no unobserved burst may span a contract (APPROVED)                                                                                                                                                                                                 |
-| ADR-0011 | Subagents are an engineering decision; audits use independent ones (APPROVED)                                                                                                                                                                                          |
-| ADR-0012 | Generation is single-writer per asset; leadership is a fenced lease (APPROVED)                                                                                                                                                                                         |
-| ADR-0013 | Governance says what is true (PROPOSED — the Human Owner's to apply, Issue #14)                                                                                                                                                                                        |
-| ADR-0014 | Chart library and repository licence: Lightweight Charts, Apache-2.0 (APPROVED)                                                                                                                                                                                        |
-| Backlog  | [GitHub Issues](https://github.com/NovaHub2026/otcv6/issues) #1–#18; #1 and #13 are closed. Two remain the Human Owner's: #3 and #14                                                                                                                                   |
-| Roadmap  | `docs/phases/ROADMAP.md`                                                                                                                                                                                                                                               |
-| Branch   | `feature/ph-21-catalogue-at-scale`, merged into `main` at the close of PH-21. It was **merged** with `origin/main` at `6579a2e` rather than rebased, so PH-21.1 sits on it under two hashes (`3a5f0a5`, `36bbf89`); both are ancestors and the duplication is cosmetic |
-| Audit    | [`docs/audits/OUT-OF-BAND-AUDIT-001.md`](docs/audits/OUT-OF-BAND-AUDIT-001.md) — 83 findings, 6 critical, seven independent auditors                                                                                                                                   |
+| Kind     | Reference                                                                                                                                                                                                                          |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ADR-0001 | Repository, toolchain and package architecture (APPROVED)                                                                                                                                                                          |
+| ADR-0002 | Deterministic entropy architecture (APPROVED)                                                                                                                                                                                      |
+| ADR-0003 | Conditional sign symmetry as the anti-predictability architecture (APPROVED)                                                                                                                                                       |
+| ADR-0004 | Canonical price representation: an integer log lattice (APPROVED)                                                                                                                                                                  |
+| ADR-0005 | A multifractal cascade as the volatility process (APPROVED)                                                                                                                                                                        |
+| ADR-0006 | A layered sign-blind market model (APPROVED)                                                                                                                                                                                       |
+| ADR-0007 | At-the-money settlement: a tie is refunded (APPROVED, Human Owner)                                                                                                                                                                 |
+| ADR-0008 | Full delegation: automatic audits, autonomous decisions (APPROVED)                                                                                                                                                                 |
+| ADR-0009 | Hosted CI reinstated after the repository was made public (APPROVED)                                                                                                                                                               |
+| ADR-0010 | The catch-up bound: no unobserved burst may span a contract (APPROVED)                                                                                                                                                             |
+| ADR-0011 | Subagents are an engineering decision; audits use independent ones (APPROVED)                                                                                                                                                      |
+| ADR-0012 | Generation is single-writer per asset; leadership is a fenced lease (APPROVED)                                                                                                                                                     |
+| ADR-0013 | Governance says what is true (PROPOSED — the Human Owner's to apply, Issue #14)                                                                                                                                                    |
+| ADR-0014 | Chart library and repository licence: Lightweight Charts, Apache-2.0 (APPROVED)                                                                                                                                                    |
+| Backlog  | [GitHub Issues](https://github.com/NovaHub2026/otcv6/issues) #1–#22; #1 and #13 closed. Two remain the Human Owner's: #3 and #14                                                                                                   |
+| Roadmap  | `docs/phases/ROADMAP.md`                                                                                                                                                                                                           |
+| Branch   | `main`. PH-21 merged at `3e4ec7e`; Cycle Audit 7 fixes merged after it. PH-21.1 sits under two hashes (`3a5f0a5`, `36bbf89`) because the branch was merged rather than rebased; both are ancestors and the duplication is cosmetic |
+| Audit    | [`docs/audits/OUT-OF-BAND-AUDIT-001.md`](docs/audits/OUT-OF-BAND-AUDIT-001.md) — 83 findings, 6 critical, seven independent auditors                                                                                               |
 
 ---
 
 ## EXACT NEXT LEGAL ACTION
 
-**Run Cycle Audit 7.** PH-19, PH-20 and PH-21 are three approved phases, and
-`GOVERNANCE.md` §28 stops normal development at that boundary. Nothing is
-requested and nothing is waited for (ADR-0008); the pause changes the mode of
-work from building to examining, and that is all it changes.
+**Begin PH-22 — distribution under thousands of observers.** Cycle Audit 7 is
+recorded and closed, so the boundary `GOVERNANCE.md` §28 stops development at is
+behind us, and the Human Owner prioritised this phase ahead of everything else
+on 2026-09-02.
 
-§67 lets the audit's depth be chosen by risk, and two things should shape it:
+What the audit hands it, unasked:
 
-1. **The out-of-band audit of 2026-09-02 already covered most of this cycle's
-   surface** — seven auditors, 83 findings. Repeating its sweep would mostly
-   re-derive it. What it did _not_ see is everything PH-21 added afterwards.
-2. **The PH-21 closure audit is the model to beat.** Seven readers, each told to
-   falsify one claim area, every finding put to an adversarial refuter: twenty
-   survived, and **three were live defects in code written the same day** — a
-   latch that survived a reconnect, a guard comparing the wrong field, and two
-   clock reads with an await between them. None would have been found by
-   reading. Cycle Audit 7 should execute sequences, not inspect guards
-   (`GOVERNANCE.md` §28.1), and plant against every guard this cycle added.
+- **CA7-04** — replay ignored backpressure entirely, and a resume is the largest
+  write this service makes. Bounded now at 1 MB, but the real number belongs to
+  a measurement of ten thousand reconnecting clients, not to a guess.
+- **CA7-33** — the feed retains 5.01 MB per asset, measured. A hundred assets is
+  501 MB of one Node heap and about 446 assets exhausts it. Nothing configures a
+  heap for the service anywhere in the repository.
+- **Issue #15** — every subscriber re-serialises the same tick.
+- **Issue #16** — several charts per client hit HTTP/1.1's six-connection limit.
+- **Issue #22** — the one audit finding carried: a resume from sequence 1 after
+  a restart is answered with the live edge and no gap event, and the honest fix
+  needs the venue's knowledge rather than the feed's. It belongs in the
+  multiplexing work rather than ahead of it.
 
-Then **PH-22 — distribution under thousands of observers**, which the Human
-Owner prioritised ahead of everything else on 2026-09-02.
+Also open, and not PH-22's: **#17** and **#18** (scale evidence to re-take),
+**#21** (behavioural differentiation at a hundred assets), **#19** and **#20**
+(the long-run limits sweep), **#9** (the multi-node layer nothing composes).
+**#3** and **#14** are the Human Owner's and only theirs.
 
 No authorization is required for any of it and none should be requested.
