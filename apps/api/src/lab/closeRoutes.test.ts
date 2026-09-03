@@ -346,6 +346,23 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     await venue.stop();
   }, 60_000);
 
+  it('PH-24.5: refuses a non-natural close by name, and never appends a tick to a feed', async () => {
+    const { venue, clock, controller } = await labVenue();
+    await advance(venue, clock, 20_000);
+    await expect(
+      controller.applyClose(id, '1.0800000', 'current', '1m', undefined, '1'),
+    ).rejects.toMatchObject({ status: 400 });
+    // The preview route is synchronous: it throws rather than rejecting.
+    expect(() => controller.closePreview(id, '1.0800000', 'current', '1m', undefined, '1')).toThrow(
+      /nonNatural is not available/,
+    );
+    // And the session's closes diagnostic says what it rests on.
+    const closes = controller.sessionCloses() as { verdict: string; controlled: number };
+    expect(closes.verdict).toBe('too-few-to-say');
+    expect(closes.controlled).toBe(0);
+    await venue.stop();
+  });
+
   it('answers 409 when the process was not composed as a Lab', async () => {
     const { venue, clock, controller } = await labVenue(false);
     await advance(venue, clock, 5_000);

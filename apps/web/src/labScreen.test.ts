@@ -189,6 +189,16 @@ describe('the Lab is marked wherever it appears', () => {
     expect(source).toMatch(/plan\.shape\.net/);
   });
 
+  it("shows the session's closes with the count a verdict rests on (PH-24.5)", () => {
+    const source = code('lab/Lab.tsx');
+    expect(source).toMatch(/data-testid="lab-closes"/);
+    expect(source).toMatch(/lab-closes-verdict/);
+    // Never a verdict without its count — and the floor printed beside it.
+    expect(source).toMatch(/closes\.minimumForVerdict/);
+    expect(source).toMatch(/closes\.controlled/);
+    expect(source).toMatch(/closes\.note/);
+  });
+
   it('says the Lab is absent rather than hiding that it can be', () => {
     // The Lab is a separate process by design (ADR-0015 §3). A screen that hid
     // the entry until one existed would make the boundary look like a bug.

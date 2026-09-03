@@ -29,6 +29,7 @@ import { STATE_RECORD_VERSION } from '@otc/runtime';
 import { VenueService } from '../venue.service.js';
 import { closeInstant, planClose, readWindow, resolveTarget } from './closeControl.js';
 import { isPreset, LabPositions, presetLevel, PRESETS, type LabPosition } from './positions.js';
+import { closesDiagnostic } from './closesDiagnostic.js';
 import { SCENARIOS, scenarioNamed, scenarioParameters, shapeOf } from './scenarios.js';
 import { SelectableSigns, SignSelector } from './selectableSigns.js';
 import { LabSession } from './session.js';
@@ -67,6 +68,19 @@ const LAB_SAMPLE_TICKS = 1_000_000;
 
 /** Every Lab response says what it is (§3). */
 const LAB = 'OTC LAB — SIMULATION ENVIRONMENT';
+
+/**
+ * §37's synthetic terminal tick, refused by name (PH-24.5 §3, DECISION-LOG
+ * 2026-09-03). Inside the Lab it has nowhere to go: appended to the feed it
+ * collides with the engine's own sequence (INV-002); kept beside the feed it
+ * settles a position at a price no chart showed (INV-003). Widen the window.
+ */
+const NON_NATURAL_REFUSED =
+  'nonNatural is not available. A synthetic tick appended to the feed would collide with the ' +
+  "engine's own sequence numbering (INV-002); one kept beside the feed would settle a position at " +
+  'a price no chart showed (INV-003). Neither is a Lab. Widen the window — the next candle, a ' +
+  'longer timeframe, an expiry further out — until selection reaches the target, or take a ' +
+  'reachable neighbour.';
 
 /**
  * What §78's "engine version" is, here.
@@ -377,7 +391,9 @@ export class LabController {
     @Query('bucket') bucket?: string,
     @Query('timeframe') tf?: string,
     @Query('expiry') expiry?: string,
+    @Query('nonNatural') nonNatural?: string,
   ): unknown {
+    if (nonNatural !== undefined) throw new BadRequestException(NON_NATURAL_REFUSED);
     const request = this.closeRequest(id, price, bucket, tf, expiry);
     return { ...this.planAt(id, request.price, request.instant), environment: LAB, armed: false };
   }
@@ -398,7 +414,9 @@ export class LabController {
     @Query('bucket') bucket?: string,
     @Query('timeframe') tf?: string,
     @Query('expiry') expiry?: string,
+    @Query('nonNatural') nonNatural?: string,
   ): Promise<unknown> {
+    if (nonNatural !== undefined) throw new BadRequestException(NON_NATURAL_REFUSED);
     const request = this.closeRequest(id, price, bucket, tf, expiry);
     const result = await this.applyAt(
       id,
@@ -510,6 +528,19 @@ export class LabController {
   @Get('session')
   sessionTimelines(): unknown {
     return this.session.timelines();
+  }
+
+  // ── §70 over the session's closes (PH-24.5) ─────────────────────────────
+
+  /**
+   * The distribution of this session's controlled closes, with what it rests on.
+   *
+   * The paths carry no signature (PH-23.1); the operator's choices can. Served
+   * beside the two timelines so a session reads as evidence about both.
+   */
+  @Get('session/closes')
+  sessionCloses(): unknown {
+    return { environment: LAB, ...closesDiagnostic(this.session.labActions) };
   }
 
   // ── Simulated positions and presets (PH-24.3) ───────────────────────────

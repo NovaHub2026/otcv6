@@ -13,7 +13,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Remote             | `origin` → NovaHub2026/otcv6, public                                       |
 | Active cycle       | Cycle 8, **2 of 3** phases approved (PH-22, PH-23)                         |
 | Active phase       | PH-24 — The Lab's controls: applying a selection                           |
-| Active subphase    | PH-24.5 — The diagnostics the audit found missing                          |
+| Active subphase    | none                                                                       |
 | Cycle Audit        | **007 closed** 2026-09-03; the next is due after three approved phases     |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                         |
 
@@ -34,17 +34,12 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-24.4 is approved; PH-24.5 is active**
-([PH-24.5](docs/phases/PH-24.5-the-diagnostics-the-audit-found-missing.md)) —
-the last subphase of PH-24. Fourteen scenarios are selection criteria, two are
-refused with the reason (magnitude and arrival events the signs cannot change),
-a shock is located and its direction chosen, and all of it is on the screen with
-three browser flows green. PH-24.5 builds the §70 diagnostic over the
-**operator's** closes, feeds the engine timeline by observing the engine, and
-records that §37's synthetic tick is **not built**: inside the Lab it has
-nowhere to go that does not break INV-002 or INV-003 there (PH-24.5 §3,
-`DECISION-LOG.md`). Drafts of its modules and tests are in this session's
-scratchpad. PH-24's approval is Cycle 8's third phase and opens Cycle Audit 8.
+**All five PH-24 subphases are approved.** The next legal action is PH-24's
+phase integration verification and full Quality Gate — `npm run gate` under the
+browser prefix, so the four browser files execute — then the phase approval,
+the merge to `main`, hosted CI, and **Cycle Audit 8** (three approved phases:
+PH-22, PH-23, PH-24). A closure draft for the phase document's §8–§10 is in this
+session's scratchpad (`PH-24-closure.md`).
 
 **The next phase is the decision LA-03 names.** The Lab specification audit
 ([LAB-SPECIFICATION-AUDIT-001](docs/audits/LAB-SPECIFICATION-AUDIT-001.md))

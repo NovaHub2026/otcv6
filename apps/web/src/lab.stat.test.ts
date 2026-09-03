@@ -226,7 +226,11 @@ describe('Candle Close Control, from the panel', () => {
     // Both acts are in the Lab timeline and nothing is in the engine's.
     const session = await text(page, 'lab-session-lab');
     expect(session).toMatch(/close\.apply ✓/);
-    expect(await text(page, 'lab-session-engine')).toMatch(/nothing recorded yet/);
+    // PH-24.5 feeds the engine column by observing the engine; what must never
+    // appear there is a Lab action.
+    expect(await text(page, 'lab-session-engine')).not.toMatch(
+      /close\.apply|preset\.apply|scenario\.apply/,
+    );
     expect(errors).toEqual([]);
     await page.close();
   }, 300_000);
@@ -291,6 +295,23 @@ describe('Candle Close Control, from the panel', () => {
     );
     expect(await text(page, 'lab-scenario-plan')).toMatch(/armed\nYES/);
     expect(await text(page, 'lab-session-lab')).toMatch(/scenario\.apply ✓/);
+    // PH-24.5: the engine's timeline is fed by observing the engine — at least
+    // its first sight of every market — and the closes diagnostic says what it
+    // rests on rather than calling this session's handful a pattern.
+    await page.waitForFunction(
+      () =>
+        /observed: regime/.test(
+          document.querySelector('[data-testid="lab-session-engine"]')?.textContent ?? '',
+        ),
+      null,
+      { timeout: 30_000 },
+    );
+    expect(await text(page, 'lab-session-engine')).not.toMatch(
+      /close\.apply|scenario\.apply|preset\.apply/,
+    );
+    const closes = await text(page, 'lab-closes');
+    expect(closes).toMatch(/a verdict needs 10/);
+    expect(closes).toMatch(/TOO-FEW-TO-SAY|NO-PATTERN|ONE-SIDED/);
     expect(errors).toEqual([]);
     await page.close();
   }, 300_000);

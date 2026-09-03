@@ -103,6 +103,22 @@ describe('the production composition cannot reach the Lab', () => {
     expect(controller).toMatch(/const LAB = 'OTC LAB — SIMULATION ENVIRONMENT'/);
   });
 
+  it('never appends a tick to a feed from outside the engine (PH-24.5 §3)', () => {
+    // §37's synthetic tick is not built, and this is the mechanism that keeps
+    // it not built: the Lab reads feeds; it does not write them. The engine is
+    // the single writer (ADR-0012), and a tick from anywhere else collides with
+    // its sequence numbering.
+    const labDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'lab');
+    const sources = readdirSync(labDir).filter((n) => /\.ts$/.test(n) && !/\.test\.ts$/.test(n));
+    expect(sources.length).toBeGreaterThan(5);
+    for (const file of sources) {
+      const source = readFileSync(path.join(labDir, file), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/(^|[^:])\/\/.*$/gm, '$1');
+      expect(source, `lab/${file} writes to a feed`).not.toMatch(/\.publish\(|feed\.forget\(/);
+    }
+  });
+
   it('never serves a predictability verdict without its sensitivity (§68, CA7-05)', () => {
     // "Clean" and "clean at a minimum detectable effect of 0.22pp" are
     // different claims, and only the second can be acted on. `VALIDATION.md`

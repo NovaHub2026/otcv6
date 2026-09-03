@@ -21,22 +21,19 @@ Last synchronized: 2026-09-03
 
 ## Phase and subphase
 
-| Field                  | Value                                                                       |
-| ---------------------- | --------------------------------------------------------------------------- |
-| Active phase           | PH-24 — The Lab's controls: applying a selection                            |
-| Phase lifecycle        | ACTIVE                                                                      |
-| Active subphase        | PH-24.5 — The diagnostics the audit found missing                           |
-| Subphase lifecycle     | ACTIVE                                                                      |
-| Last approved phase    | PH-23 — The OTC Market Lab                                                  |
-| Last approved subphase | PH-24.4 — Scenarios, the ones sign selection cannot express, and the screen |
+| Field                  | Value                                             |
+| ---------------------- | ------------------------------------------------- |
+| Active phase           | PH-24 — The Lab's controls: applying a selection  |
+| Phase lifecycle        | ACTIVE                                            |
+| Active subphase        | none                                              |
+| Subphase lifecycle     | N/A                                               |
+| Last approved phase    | PH-23 — The OTC Market Lab                        |
+| Last approved subphase | PH-24.5 — The diagnostics the audit found missing |
 
-**PH-24 is active**, on `feature/ph-24-the-labs-controls`. PH-24.1 built the
-boundary — a sign source that plays a chosen vector in lockstep with the
-keystream, composed only in the Lab, asserted absent from production, both
-processes booting from the new composition. PH-24.2 puts Candle Close Control
-on a real candle: current or next, a typed price resolved against the lattice,
-apply and release, the session record fed, and the screen. PH-24's approval
-would be Cycle 8's third phase and opens Cycle Audit 8.
+**PH-24 is active with all five subphases approved**, on
+`feature/ph-24-the-labs-controls`. The next legal action is the phase's
+integration verification and the full phase Quality Gate (`GOVERNANCE.md` §24,
+§25); its approval is Cycle 8's third phase and opens Cycle Audit 8.
 
 PH-23.5 closed the first item PH-23 §10 left open — the Lab now has a screen in
 the panel, behind a menu entry marked `SIM`. Building it found three defects

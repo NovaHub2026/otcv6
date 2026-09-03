@@ -5,6 +5,7 @@ import type { AssetRegistry } from '@otc/runtime';
 import { bindAddressFromEnvironment, isExposedBind } from '../bind.js';
 import { VenueService } from '../venue.service.js';
 import { LabModule } from './lab.module.js';
+import { EngineEventObserver } from './engineEvents.js';
 
 /**
  * The Lab's entry point, and the reason there are two.
@@ -29,6 +30,8 @@ async function bootstrap(): Promise<void> {
   const venue = app.get(VenueService);
   venue.applyOverlays(await app.get<AssetRegistry>('ASSET_REGISTRY').overlays());
   await venue.start();
+  // The engine's timeline, fed from here on (PH-24.5 §4).
+  app.get(EngineEventObserver).start();
 
   const host = bindAddressFromEnvironment(process.env);
   const port = Number.parseInt(process.env['OTC_LAB_PORT'] ?? '3100', 10);

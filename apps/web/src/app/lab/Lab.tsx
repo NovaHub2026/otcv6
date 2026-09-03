@@ -152,6 +152,16 @@ interface ScenarioPlan {
   readonly armed: boolean;
 }
 
+/** §70 over the operator's closes (PH-24.5 §2). */
+interface ClosesView {
+  readonly controlled: number;
+  readonly distances: Readonly<Record<string, number>>;
+  readonly oneStepFraction: number | null;
+  readonly minimumForVerdict: number;
+  readonly verdict: 'too-few-to-say' | 'no-pattern' | 'one-sided';
+  readonly note: string;
+}
+
 type CloseTimeframe = '30s' | '1m' | '5m' | '15m';
 const CLOSE_TIMEFRAMES: readonly CloseTimeframe[] = ['30s', '1m', '5m', '15m'];
 
@@ -222,6 +232,7 @@ export function Lab(): ReactElement {
   const [scenarios, setScenarios] = useState<ScenarioView[]>([]);
   const [scenarioPlan, setScenarioPlan] = useState<ScenarioPlan | null>(null);
   const [scenarioNotice, setScenarioNotice] = useState<string | null>(null);
+  const [closes, setCloses] = useState<ClosesView | null>(null);
   const [positionNotice, setPositionNotice] = useState<string | null>(null);
   const [quality, setQuality] = useState<Quality | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -255,14 +266,16 @@ export function Lab(): ReactElement {
     }
     setUnavailable(null);
     setState(body);
-    const [ctl, timelines, open] = await Promise.all([
+    const [ctl, timelines, open, diagnostic] = await Promise.all([
       labGet<Control>(`markets/${asset}/control`),
       labGet<Session>('session'),
       labGet<{ positions: LabPositionView[] }>(`markets/${asset}/positions`),
+      labGet<ClosesView>('session/closes'),
     ]);
     if (!isUnavailable(ctl)) setControl(ctl);
     if (!isUnavailable(timelines)) setSession(timelines);
     if (!isUnavailable(open)) setPositions(open.positions);
+    if (!isUnavailable(diagnostic)) setCloses(diagnostic);
   }, []);
 
   useEffect(() => {
@@ -466,6 +479,7 @@ export function Lab(): ReactElement {
             notice={positionNotice}
           />
           <SessionPanel session={session} />
+          <ClosesPanel closes={closes} />
           <QualityPanel quality={quality} busy={busy === 'quality'} onRun={runQuality} />
         </div>
       </div>
@@ -1271,6 +1285,66 @@ function PositionsPanel({
         the asset&apos;s own tick. Settlement is the production engine against this Lab&apos;s
         record; the two columns must agree, and a row where they do not is a finding, not a display
         bug.
+      </div>
+    </Section>
+  );
+}
+
+/**
+ * §70, over the operator (PH-24.5 §2).
+ *
+ * The paths a selection produces carry no signature — that is the construction,
+ * and a plant that replaced the sampler with a solver was caught. What can
+ * carry one is the hand choosing the closes: a session that always closes one
+ * step past entry is a distribution no natural market has. This shows that
+ * distribution and what it rests on, and refuses to call three closes a
+ * pattern.
+ */
+function ClosesPanel({ closes }: { closes: ClosesView | null }): ReactElement {
+  const colour =
+    closes === null || closes.verdict === 'too-few-to-say'
+      ? '#8b93a7'
+      : closes.verdict === 'one-sided'
+        ? '#e3b341'
+        : '#3fb950';
+  return (
+    <Section title="THIS SESSION'S CLOSES — THE OPERATOR'S PATTERN, NOT THE PATH'S">
+      <div data-testid="lab-closes">
+        {closes === null ? (
+          <div style={{ color: '#5b6377', fontSize: 11 }}>no reading yet</div>
+        ) : (
+          <>
+            <Row
+              label="controlled closes"
+              value={`${String(closes.controlled)} (a verdict needs ${String(closes.minimumForVerdict)})`}
+            />
+            <Row
+              label="one lattice step away"
+              value={
+                closes.oneStepFraction === null
+                  ? '—'
+                  : `${String(Math.round(closes.oneStepFraction * 100))}%`
+              }
+            />
+            <Row
+              label="distances (steps: count)"
+              value={
+                Object.keys(closes.distances).length === 0
+                  ? '—'
+                  : Object.entries(closes.distances)
+                      .map(([d, n]) => `${d}: ${String(n)}`)
+                      .join(' · ')
+              }
+            />
+            <div
+              style={{ color: colour, fontSize: 12, marginTop: 4 }}
+              data-testid="lab-closes-verdict"
+            >
+              <strong>{closes.verdict.toUpperCase()}</strong>
+            </div>
+            <div style={{ color: '#8b93a7', fontSize: 11, lineHeight: 1.6 }}>{closes.note}</div>
+          </>
+        )}
       </div>
     </Section>
   );
