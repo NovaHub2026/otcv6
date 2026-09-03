@@ -559,6 +559,24 @@ larger.
 | ----- | ----------------------------------------- | ------------ |
 | PH-22 | Distribution under thousands of observers | **APPROVED** |
 | PH-23 | The OTC Market Lab                        | **APPROVED** |
+| PH-24 | The Lab's controls: applying a selection  | **ACTIVE**   |
+
+### PH-24 — The Lab's controls: applying a selection
+
+Opened 2026-09-03 from
+[LAB-SPECIFICATION-AUDIT-001](../audits/LAB-SPECIFICATION-AUDIT-001.md): a Lab
+with a correct mechanism and no controls. Nothing is ever applied to a hosted
+market (LA-03). The phase adds a sign source that plays a chosen vector in
+lockstep with the keystream, composed only in the Lab, and builds every control
+on it — the boundary first, guarded before anything stands on it.
+
+| Subphase | Title                                                                 | State   |
+| -------- | --------------------------------------------------------------------- | ------- |
+| PH-24.1  | The selectable sign source and its hook                               | ACTIVE  |
+| PH-24.2  | Candle Close Control on a real candle, apply, release, session record | PLANNED |
+| PH-24.3  | Presets and simulated positions, settled against the Lab's record     | PLANNED |
+| PH-24.4  | Scenarios, the ones sign selection cannot express, and the screen     | PLANNED |
+| PH-24.5  | The diagnostics the audit found missing                               | PLANNED |
 
 ### PH-23 — The OTC Market Lab
 

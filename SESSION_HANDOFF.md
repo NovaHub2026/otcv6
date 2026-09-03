@@ -6,16 +6,16 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                                  |
-| ------------------ | ---------------------------------------------------------------------- |
-| Last clean session | 2026-09-03                                                             |
-| Branch             | `main` — PH-23 merged at its close, CI green on `3582d04` (both gates) |
-| Remote             | `origin` → NovaHub2026/otcv6, public                                   |
-| Active cycle       | Cycle 8, **2 of 3** phases approved (PH-22, PH-23)                     |
-| Active phase       | none                                                                   |
-| Active subphase    | none                                                                   |
-| Cycle Audit        | **007 closed** 2026-09-03; the next is due after three approved phases |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                     |
+| Field              | Value                                                                      |
+| ------------------ | -------------------------------------------------------------------------- |
+| Last clean session | 2026-09-03                                                                 |
+| Branch             | `feature/ph-24-the-labs-controls` — off `main` at `8f62e4b` (PH-23 merged) |
+| Remote             | `origin` → NovaHub2026/otcv6, public                                       |
+| Active cycle       | Cycle 8, **2 of 3** phases approved (PH-22, PH-23)                         |
+| Active phase       | PH-24 — The Lab's controls: applying a selection                           |
+| Active subphase    | PH-24.1 — The selectable sign source and its hook                          |
+| Cycle Audit        | **007 closed** 2026-09-03; the next is due after three approved phases     |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                         |
 
 ---
 
@@ -34,9 +34,14 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-23 is merged.** The next legal action is to open the next phase on its own
-branch, `feature/ph-24-the-labs-controls`. Cycle 8 stands at 2 of 3 approved
-phases; the third opens Cycle Audit 8.
+**PH-23 is merged; PH-24 is open** ([PH-24](docs/phases/PH-24-the-labs-controls.md)),
+and its first subphase is [PH-24.1](docs/phases/PH-24.1-the-selectable-sign-source.md):
+`SelectableSigns` under `apps/api/src/lab/`, an optional `signSource` in
+`resumeMarket` defaulting to identity, `AppModule.register()` so `main.ts`
+passes nothing and `lab.main.ts` passes the factory — and the architecture
+test that asserts production registers none, written and watched failing
+**before** a route uses any of it. Cycle 8 stands at 2 of 3 approved phases;
+PH-24's approval opens Cycle Audit 8.
 
 **The next phase is the decision LA-03 names.** The Lab specification audit
 ([LAB-SPECIFICATION-AUDIT-001](docs/audits/LAB-SPECIFICATION-AUDIT-001.md))

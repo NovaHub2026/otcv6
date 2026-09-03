@@ -21,17 +21,20 @@ Last synchronized: 2026-09-03
 
 ## Phase and subphase
 
-| Field                  | Value                                        |
-| ---------------------- | -------------------------------------------- |
-| Active phase           | none                                         |
-| Phase lifecycle        | none                                         |
-| Active subphase        | none                                         |
-| Subphase lifecycle     | none                                         |
-| Last approved phase    | PH-23 — The OTC Market Lab                   |
-| Last approved subphase | PH-23.6 — What the specification audit found |
+| Field                  | Value                                             |
+| ---------------------- | ------------------------------------------------- |
+| Active phase           | PH-24 — The Lab's controls: applying a selection  |
+| Phase lifecycle        | ACTIVE                                            |
+| Active subphase        | PH-24.1 — The selectable sign source and its hook |
+| Subphase lifecycle     | ACTIVE                                            |
+| Last approved phase    | PH-23 — The OTC Market Lab                        |
+| Last approved subphase | PH-23.6 — What the specification audit found      |
 
-Nothing is active. Cycle 8 stands at two approved phases of three; a third
-opens the next Cycle Audit.
+**PH-24 is active**, on `feature/ph-24-the-labs-controls`, and its first
+subphase is the boundary: a sign source that plays a chosen vector in lockstep
+with the keystream, composed only in the Lab and asserted absent from
+production before any control is built on it. Its approval would be Cycle 8's
+third phase and opens Cycle Audit 8.
 
 PH-23.5 closed the first item PH-23 §10 left open — the Lab now has a screen in
 the panel, behind a menu entry marked `SIM`. Building it found three defects
