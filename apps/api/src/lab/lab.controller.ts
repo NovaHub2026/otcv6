@@ -18,11 +18,18 @@ import {
   type Tick,
 } from '@otc/core';
 import { assessRealism, buildObserverDataset, runBattery } from '@otc/lab';
-import { selectClose } from '@otc/engine';
+import {
+  INTERVENTIONS,
+  nextShock,
+  selectClose,
+  selectContinuation,
+  type Continuation,
+} from '@otc/engine';
 import { STATE_RECORD_VERSION } from '@otc/runtime';
 import { VenueService } from '../venue.service.js';
 import { closeInstant, planClose, readWindow, resolveTarget } from './closeControl.js';
 import { isPreset, LabPositions, presetLevel, PRESETS, type LabPosition } from './positions.js';
+import { SCENARIOS, scenarioNamed, scenarioParameters, shapeOf } from './scenarios.js';
 import { SelectableSigns, SignSelector } from './selectableSigns.js';
 import { LabSession } from './session.js';
 
@@ -672,6 +679,215 @@ export class LabController {
               net: actual.net,
               agrees: actual.outcome === expected.outcome,
             },
+    };
+  }
+
+  // ── Scenarios (PH-24.4) ─────────────────────────────────────────────────
+
+  /**
+   * The sixteen, each with its parameters — and, for the two that are not
+   * criteria over sign vectors, the reason instead of a button.
+   */
+  @Get('scenarios')
+  scenarios(): unknown {
+    return {
+      environment: LAB,
+      scenarios: SCENARIOS.map((s) => ({
+        name: s.name,
+        label: s.label,
+        selectable: s.selectable,
+        why: s.why ?? null,
+        parameters: s.parameters,
+      })),
+      shock: {
+        name: 'shock',
+        label: 'F Shock: locate the next large step and choose its direction',
+        parameters: [
+          { name: 'size', label: 'step ≥ (lattice steps)', default: 40 },
+          { name: 'direction', label: '+1 up, -1 down', default: 1 },
+        ],
+        why:
+          'A shock is a magnitude event the signs cannot produce (LA-01). The Lab finds the ' +
+          'next step of at least this size in the window, if the engine is about to make one, ' +
+          'and selects its direction — a coin toss the fair coin could have produced.',
+      },
+    };
+  }
+
+  /** What applying a scenario over the next window would select, without arming. */
+  @Get('markets/:id/scenario/preview')
+  scenarioPreview(
+    @Param('id') id: string,
+    @Query() query: Record<string, string | undefined>,
+  ): unknown {
+    const request = this.scenarioRequest(id, query);
+    return { ...this.planScenario(id, request), environment: LAB, armed: false };
+  }
+
+  /**
+   * Select a continuation with the scenario's shape and arm it.
+   *
+   * Same critical section as a close (PH-24.2 §2). A criterion nothing satisfies
+   * in the draws reports a rate of zero and arms nothing (PH-23.4 §4): "this
+   * market does not do that in this window" is an answer, and a nudged path
+   * that nearly does is not.
+   */
+  @Post('markets/:id/scenario')
+  async applyScenario(
+    @Param('id') id: string,
+    @Query() query: Record<string, string | undefined>,
+  ): Promise<unknown> {
+    const request = this.scenarioRequest(id, query);
+    const wrapper = this.wrapperFor(id);
+    const at = this.venue.now();
+    const before = this.controlState(id);
+    const result = await this.venue.betweenAdvances(() => {
+      const plan = this.planScenario(id, request);
+      if (plan.selection !== null && plan.selection.length > 0) wrapper.arm(plan.selection);
+      return { plan, armed: plan.selection !== null && plan.selection.length > 0 };
+    });
+    this.session.recordAction({
+      at,
+      asset: id,
+      engineVersion: ENGINE_VERSION,
+      action: 'scenario.apply',
+      parameters: { scenario: request.name, windowMs: request.windowMs, ...request.params },
+      initialState: before,
+      resultingState: this.controlState(id),
+      succeeded: result.armed,
+      diagnostics: {
+        attempts: result.plan.attempts,
+        acceptanceRate: result.plan.acceptanceRate,
+        shape: result.plan.shape,
+        impossible: result.plan.impossible,
+      },
+    });
+    return { ...result.plan, environment: LAB, armed: result.armed };
+  }
+
+  private scenarioRequest(
+    id: string,
+    query: Record<string, string | undefined>,
+  ): { name: string; windowMs: number; params: Readonly<Record<string, number>> } {
+    if (this.venue.hostedMarket(id) === null)
+      throw new NotFoundException(`Asset ${id} is not hosted.`);
+    const name = query['name'];
+    if (name === undefined)
+      throw new BadRequestException('name is required: a scenario, or shock.');
+    const windowMs = Number(query['window'] ?? '60000');
+    if (!Number.isSafeInteger(windowMs) || windowMs < 5_000 || windowMs > 900_000) {
+      throw new BadRequestException('window must be 5000..900000 milliseconds.');
+    }
+    if (name === 'shock') {
+      const size = Number(query['size'] ?? '40');
+      const direction = Number(query['direction'] ?? '1');
+      if (!Number.isSafeInteger(size) || size < 1)
+        throw new BadRequestException('size must be ≥ 1.');
+      if (direction !== 1 && direction !== -1)
+        throw new BadRequestException('direction must be 1 or -1.');
+      return { name, windowMs, params: { size, direction } };
+    }
+    const scenario = scenarioNamed(name);
+    if (scenario === null) throw new BadRequestException(`Unknown scenario ${name}.`);
+    if (!scenario.selectable) {
+      throw new ConflictException({
+        environment: LAB,
+        asset: id,
+        scenario: name,
+        message: scenario.why,
+      });
+    }
+    try {
+      return { name, windowMs, params: scenarioParameters(scenario, query) };
+    } catch (error) {
+      throw new BadRequestException((error as Error).message);
+    }
+  }
+
+  /** The computation preview and apply share. Never arms. */
+  private planScenario(
+    id: string,
+    request: { name: string; windowMs: number; params: Readonly<Record<string, number>> },
+  ): {
+    environment: string;
+    asset: string;
+    scenario: string;
+    windowMs: number;
+    instant: number;
+    ticksInWindow: number;
+    attempts: number;
+    acceptanceRate: number;
+    shape: ReturnType<typeof shapeOf> | null;
+    impossible: string | null;
+    selection: readonly (1 | -1)[] | null;
+    shockAt: number | null;
+  } {
+    const instant = epochMillis(this.venue.now() + request.windowMs);
+    const window = readWindow(this.venue.labFork(id)!, instant);
+    const base = {
+      environment: LAB,
+      asset: id,
+      scenario: request.name,
+      windowMs: request.windowMs,
+      instant,
+      ticksInWindow: window.steps.length,
+    };
+    let criterion: (c: Continuation) => boolean;
+    let shockAt: number | null = null;
+    if (request.name === 'shock') {
+      const found = nextShock(window.steps, request.params['size']!);
+      if (found === null) {
+        return {
+          ...base,
+          attempts: 0,
+          acceptanceRate: 0,
+          shape: null,
+          impossible:
+            `The engine produces no step of at least ${String(request.params['size'])} lattice ` +
+            `steps in the next ${String(window.steps.length)} ticks. A shock is not something the ` +
+            `Lab can order (LA-01); widen the window or lower the size.`,
+          selection: null,
+          shockAt: null,
+        };
+      }
+      shockAt = found.atTick;
+      criterion = INTERVENTIONS.directionAt(
+        found.atTick,
+        request.params['direction'] === 1 ? 1 : -1,
+      );
+    } else {
+      criterion = scenarioNamed(request.name)!.criterion!(request.params);
+    }
+    if (window.steps.length === 0) {
+      return {
+        ...base,
+        attempts: 0,
+        acceptanceRate: 0,
+        shape: null,
+        impossible: 'No tick falls inside the window.',
+        selection: null,
+        shockAt,
+      };
+    }
+    const result = selectContinuation({
+      steps: window.steps,
+      random: this.venue.labRandom(id),
+      criterion,
+      maxAttempts: 20_000,
+    });
+    return {
+      ...base,
+      attempts: result.attempts,
+      acceptanceRate: result.acceptanceRate,
+      shape: result.chosen === null ? null : shapeOf(result.chosen),
+      impossible:
+        result.chosen === null
+          ? `No natural continuation of ${String(window.steps.length)} ticks satisfied ` +
+            `${request.name} in ${String(result.attempts)} draws. This market does not do that ` +
+            `in this window; that is the answer, not a shortfall of effort.`
+          : null,
+      selection: result.chosen?.signs ?? null,
+      shockAt,
     };
   }
 

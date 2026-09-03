@@ -201,6 +201,13 @@ describe('every intervention is a choice the signs can make (LA-01)', () => {
       touches: INTERVENTIONS.touches(Math.floor(total / 6)),
       trendThenPullback: INTERVENTIONS.trendThenPullback(Math.floor(total / 10), 0.3),
       directionAt: INTERVENTIONS.directionAt(3, 1),
+      // PH-24.4: one parameterisation per new criterion, inside its range.
+      sideways: INTERVENTIONS.sideways(Math.floor(total / 3)),
+      bearTrendThenPullback: INTERVENTIONS.bearTrendThenPullback(Math.floor(total / 10), 0.3),
+      breakout: INTERVENTIONS.breakout(Math.floor(total / 8), Math.floor(total / 8)),
+      falseBreakout: INTERVENTIONS.falseBreakout(Math.floor(total / 8)),
+      reversal: INTERVENTIONS.reversal(Math.floor(total / 10), Math.floor(total / 10)),
+      noise: INTERVENTIONS.noise(Math.floor(remaining.length / 2)),
     };
     expect(Object.keys(table).sort()).toEqual(Object.keys(INTERVENTIONS).sort());
     const draws = stream('la01-draws');
@@ -250,5 +257,97 @@ describe('every intervention is a choice the signs can make (LA-01)', () => {
     expect(result.chosen!.signs[shock.atTick]).toBe(-1);
     expect(result.chosen!.path[shock.atTick]! - result.chosen!.path[shock.atTick - 1]!).toBe(-9);
     expect(result.attempts).toBeLessThanOrEqual(12);
+  });
+});
+
+describe('the scenario criteria PH-24.4 adds find the shape they name, on real steps', () => {
+  const remaining = steps(40, 'ph244');
+  const total = remaining.reduce((a, b) => a + b, 0);
+  const find = (
+    criterion: (c: Parameters<ReturnType<typeof INTERVENTIONS.touches>>[0]) => boolean,
+    label: string,
+  ) => {
+    const result = selectContinuation({
+      steps: remaining,
+      random: stream(label),
+      criterion,
+      maxAttempts: 50_000,
+    });
+    expect(result.chosen, `${label}: nothing satisfied it in 50,000 draws`).not.toBeNull();
+    return result.chosen!;
+  };
+
+  it('P3 sideways: narrow range and little net movement', () => {
+    const c = find(INTERVENTIONS.sideways(Math.floor(total / 3)), 'p3');
+    expect(c.high - c.low).toBeLessThanOrEqual(Math.floor(total / 3));
+    expect(Math.abs(c.net)).toBeLessThanOrEqual(Math.floor(total / 6));
+  });
+
+  it('P5 bear trend then pullback: the trough comes first, the recovery after', () => {
+    const fall = Math.floor(total / 10);
+    const c = find(INTERVENTIONS.bearTrendThenPullback(fall, 0.3), 'p5');
+    const trough = Math.min(...c.path);
+    const troughAt = c.path.indexOf(trough);
+    expect(-trough).toBeGreaterThanOrEqual(fall);
+    expect(Math.max(...c.path.slice(troughAt + 1)) - trough).toBeGreaterThanOrEqual(0.3 * -trough);
+  });
+
+  it('P6 / P7 breakout: reaches the level, holds, ends beyond it — both ways', () => {
+    const level = Math.floor(total / 8);
+    const up = find(INTERVENTIONS.breakout(level, level), 'p6');
+    const at = up.path.findIndex((v) => v >= level);
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(up.path.slice(at).every((v) => v >= 0)).toBe(true);
+    expect(up.net).toBeGreaterThanOrEqual(level);
+    const down = find(INTERVENTIONS.breakout(-level, level), 'p7');
+    expect(down.low).toBeLessThanOrEqual(-level);
+    expect(down.net).toBeLessThanOrEqual(-level);
+  });
+
+  it('P6 breakout requires the hold: a level reached, given back and regained is not one', () => {
+    // Deterministic, because the shape test above draws real paths and a plant
+    // that dropped the hold requirement slipped past it by chance. Two
+    // continuations by hand: one gives back more than `hold` after reaching the
+    // level and ends above it anyway; one holds.
+    const path = (values: number[]) => ({
+      signs: values.map((v, i): 1 | -1 => (v >= (i === 0 ? 0 : values[i - 1]!) ? 1 : -1)),
+      path: values,
+      net: values[values.length - 1]!,
+      high: Math.max(0, ...values),
+      low: Math.min(0, ...values),
+    });
+    const givesBack = path([5, 12, 20, 3, 9, 22]); // reaches 20, falls to 3 (gives back 17), ends 22
+    const holds = path([5, 12, 20, 15, 18, 22]); // never below 20 - 10 after reaching 20
+    expect(INTERVENTIONS.breakout(20, 10)(givesBack)).toBe(false);
+    expect(INTERVENTIONS.breakout(20, 10)(holds)).toBe(true);
+    expect(INTERVENTIONS.breakout(-20, 10)(path([-5, -12, -20, -3, -9, -22]))).toBe(false);
+    expect(INTERVENTIONS.breakout(-20, 10)(path([-5, -12, -20, -15, -18, -22]))).toBe(true);
+  });
+
+  it('P8 / P9 false breakout: touches the level and ends back across it', () => {
+    const level = Math.floor(total / 8);
+    const up = find(INTERVENTIONS.falseBreakout(level), 'p8');
+    expect(up.high).toBeGreaterThanOrEqual(level);
+    expect(up.net).toBeLessThan(level);
+    const down = find(INTERVENTIONS.falseBreakout(-level), 'p9');
+    expect(down.low).toBeLessThanOrEqual(-level);
+    expect(down.net).toBeGreaterThan(-level);
+  });
+
+  it('P10 / P11 reversal: a move one way, a net the other', () => {
+    const size = Math.floor(total / 12);
+    const bullBear = find(INTERVENTIONS.reversal(size, size), 'p10');
+    expect(bullBear.high).toBeGreaterThanOrEqual(size);
+    expect(bullBear.net).toBeLessThanOrEqual(-size);
+    const bearBull = find(INTERVENTIONS.reversal(-size, size), 'p11');
+    expect(bearBull.low).toBeLessThanOrEqual(-size);
+    expect(bearBull.net).toBeGreaterThanOrEqual(size);
+  });
+
+  it('P14 noise: at least the stated number of direction changes', () => {
+    const c = find(INTERVENTIONS.noise(30), 'p14');
+    let changes = 0;
+    for (let i = 1; i < c.signs.length; i += 1) if (c.signs[i] !== c.signs[i - 1]) changes += 1;
+    expect(changes).toBeGreaterThanOrEqual(30);
   });
 });

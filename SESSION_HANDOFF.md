@@ -6,16 +6,16 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                                       |
-| ------------------ | --------------------------------------------------------------------------- |
-| Last clean session | 2026-09-03                                                                  |
-| Branch             | `feature/ph-24-the-labs-controls` — off `main` at `8f62e4b` (PH-23 merged)  |
-| Remote             | `origin` → NovaHub2026/otcv6, public                                        |
-| Active cycle       | Cycle 8, **2 of 3** phases approved (PH-22, PH-23)                          |
-| Active phase       | PH-24 — The Lab's controls: applying a selection                            |
-| Active subphase    | PH-24.4 — Scenarios, the ones sign selection cannot express, and the screen |
-| Cycle Audit        | **007 closed** 2026-09-03; the next is due after three approved phases      |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                          |
+| Field              | Value                                                                      |
+| ------------------ | -------------------------------------------------------------------------- |
+| Last clean session | 2026-09-03                                                                 |
+| Branch             | `feature/ph-24-the-labs-controls` — off `main` at `8f62e4b` (PH-23 merged) |
+| Remote             | `origin` → NovaHub2026/otcv6, public                                       |
+| Active cycle       | Cycle 8, **2 of 3** phases approved (PH-22, PH-23)                         |
+| Active phase       | PH-24 — The Lab's controls: applying a selection                           |
+| Active subphase    | PH-24.5 — The diagnostics the audit found missing                          |
+| Cycle Audit        | **007 closed** 2026-09-03; the next is due after three approved phases     |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                         |
 
 ---
 
@@ -34,17 +34,17 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-24.3 is approved; PH-24.4 is active**
-([PH-24.4](docs/phases/PH-24.4-scenarios-and-the-screen.md)). Simulated
-positions are `packages/trading` contracts settled by the production `settle`
-against the Lab's record, presets are closes at a position's expiry, and both
-browser flows pass against a Lab booted from `lab.main.js`. Two defects were
-found only on the long-running local Lab (PH-24.3 §9) — a feed window that does
-not start at 1 is the class to test for. PH-24.4 adds the nine missing scenario
-criteria to `INTERVENTIONS`, declares P15/P16 not selectable with the reason,
-wires scenario routes, and puts the section on the screen; the LA-01 guard
-extends to every new criterion by construction. Cycle 8 stands at 2 of 3
-approved phases; PH-24's approval opens Cycle Audit 8.
+**PH-24.4 is approved; PH-24.5 is active**
+([PH-24.5](docs/phases/PH-24.5-the-diagnostics-the-audit-found-missing.md)) —
+the last subphase of PH-24. Fourteen scenarios are selection criteria, two are
+refused with the reason (magnitude and arrival events the signs cannot change),
+a shock is located and its direction chosen, and all of it is on the screen with
+three browser flows green. PH-24.5 builds the §70 diagnostic over the
+**operator's** closes, feeds the engine timeline by observing the engine, and
+records that §37's synthetic tick is **not built**: inside the Lab it has
+nowhere to go that does not break INV-002 or INV-003 there (PH-24.5 §3,
+`DECISION-LOG.md`). Drafts of its modules and tests are in this session's
+scratchpad. PH-24's approval is Cycle 8's third phase and opens Cycle Audit 8.
 
 **The next phase is the decision LA-03 names.** The Lab specification audit
 ([LAB-SPECIFICATION-AUDIT-001](docs/audits/LAB-SPECIFICATION-AUDIT-001.md))

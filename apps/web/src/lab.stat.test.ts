@@ -267,4 +267,31 @@ describe('Candle Close Control, from the panel', () => {
     expect(errors).toEqual([]);
     await page.close();
   }, 300_000);
+  it('applies a scenario from the panel and the control row reads ARMED', async (ctx) => {
+    const page = await requireBrowser(ctx).newPage({ viewport: { width: 1280, height: 1600 } });
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
+    await page.waitForSelector('[data-testid="lab-scenario-bullish-trend"]', { timeout: 30_000 });
+    // The two the signs cannot express are disabled, with their reason on screen.
+    expect(await page.locator('[data-testid="lab-scenario-extreme-volatility"]').isDisabled()).toBe(
+      true,
+    );
+    expect(await text(page, 'lab-scenario-why-low-activity')).toMatch(/arrival/);
+    await page.click('[data-testid="lab-scenario-bullish-trend"]');
+    await page.fill('[data-testid="lab-scenario-param-net"]', '3');
+    await page.click('[data-testid="lab-scenario-preview"]');
+    await page.waitForSelector('[data-testid="lab-scenario-plan"]', { timeout: 30_000 });
+    expect(await text(page, 'lab-scenario-plan')).toMatch(/armed\nno/);
+    await page.click('[data-testid="lab-scenario-apply"]');
+    await page.waitForFunction(
+      () => /ARMED/.test(document.querySelector('[data-testid="lab-control"]')?.textContent ?? ''),
+      null,
+      { timeout: 30_000 },
+    );
+    expect(await text(page, 'lab-scenario-plan')).toMatch(/armed\nYES/);
+    expect(await text(page, 'lab-session-lab')).toMatch(/scenario\.apply ✓/);
+    expect(errors).toEqual([]);
+    await page.close();
+  }, 300_000);
 });

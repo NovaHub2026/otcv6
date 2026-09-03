@@ -124,6 +124,34 @@ const PRESET_LABELS: readonly { name: string; label: string }[] = [
   { name: 'exact-entry', label: 'exact entry' },
 ];
 
+/** A scenario as the Lab catalogues it (PH-24.4). */
+interface ScenarioView {
+  readonly name: string;
+  readonly label: string;
+  readonly selectable: boolean;
+  readonly why: string | null;
+  readonly parameters: readonly { name: string; label: string; default: number }[];
+}
+
+interface ScenarioPlan {
+  readonly scenario: string;
+  readonly windowMs: number;
+  readonly instant: number;
+  readonly ticksInWindow: number;
+  readonly attempts: number;
+  readonly acceptanceRate: number;
+  readonly shape: {
+    net: number;
+    high: number;
+    low: number;
+    range: number;
+    directionChanges: number;
+    ticks: number;
+  } | null;
+  readonly impossible: string | null;
+  readonly armed: boolean;
+}
+
 type CloseTimeframe = '30s' | '1m' | '5m' | '15m';
 const CLOSE_TIMEFRAMES: readonly CloseTimeframe[] = ['30s', '1m', '5m', '15m'];
 
@@ -191,6 +219,9 @@ export function Lab(): ReactElement {
   const [session, setSession] = useState<Session | null>(null);
   const [positions, setPositions] = useState<LabPositionView[]>([]);
   const [planExpiry, setPlanExpiry] = useState<number | null>(null);
+  const [scenarios, setScenarios] = useState<ScenarioView[]>([]);
+  const [scenarioPlan, setScenarioPlan] = useState<ScenarioPlan | null>(null);
+  const [scenarioNotice, setScenarioNotice] = useState<string | null>(null);
   const [positionNotice, setPositionNotice] = useState<string | null>(null);
   const [quality, setQuality] = useState<Quality | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -200,6 +231,9 @@ export function Lab(): ReactElement {
     // production catalogue beside a close-selection control would be offering
     // to steer a market carrying positions, whatever the request underneath
     // actually reached (§3). It cannot name one because it never learns one.
+    void labGet<{ scenarios: ScenarioView[] }>('scenarios').then((body) => {
+      if (!isUnavailable(body)) setScenarios(body.scenarios);
+    });
     void labGet<{ markets: LabMarket[] }>('markets').then((body) => {
       if (isUnavailable(body)) {
         setUnavailable(body.reason);
@@ -336,6 +370,37 @@ export function Lab(): ReactElement {
     void refreshState(selected);
   };
 
+  const runScenario = async (
+    name: string,
+    windowMs: number,
+    params: Record<string, number>,
+    apply: boolean,
+  ): Promise<void> => {
+    if (selected === null) return;
+    setBusy(apply ? 'scenario-apply' : 'scenario-preview');
+    const query = [`name=${name}`, `window=${String(windowMs)}`]
+      .concat(Object.entries(params).map(([k, v]) => `${k}=${String(v)}`))
+      .join('&');
+    const body = apply
+      ? await labPost<ScenarioPlan | { message?: string }>(`markets/${selected}/scenario?${query}`)
+      : await labGet<ScenarioPlan | { message?: string }>(
+          `markets/${selected}/scenario/preview?${query}`,
+        );
+    setBusy(null);
+    if (isUnavailable(body)) {
+      setUnavailable(body.reason);
+      return;
+    }
+    if ('attempts' in body) {
+      setScenarioNotice(null);
+      setScenarioPlan(body);
+    } else {
+      setScenarioPlan(null);
+      setScenarioNotice(body.message ?? 'The Lab refused the scenario.');
+    }
+    if (apply) void refreshState(selected);
+  };
+
   const releaseMarket = async (): Promise<void> => {
     if (selected === null) return;
     setBusy('release');
@@ -385,6 +450,13 @@ export function Lab(): ReactElement {
             notice={notice}
             control={control}
             displayPrecision={state === null ? 7 : (state.price.split('.')[1] ?? '').length}
+          />
+          <ScenariosPanel
+            scenarios={scenarios}
+            plan={scenarioPlan}
+            notice={scenarioNotice}
+            busy={busy}
+            onRun={runScenario}
           />
           <PositionsPanel
             positions={positions}
@@ -840,6 +912,211 @@ function SessionPanel({ session }: { session: Session | null }): ReactElement {
             ))
           )}
         </div>
+      </div>
+    </Section>
+  );
+}
+
+/**
+ * Scenarios (§48–§49, P1–P16), as selection criteria over the next window.
+ *
+ * "The Lab defines the scenario. The OTC Engine generates the path." Literally:
+ * every candidate is the engine's own continuation and the Lab keeps one whose
+ * shape matches. The two scenarios the signs cannot express are shown greyed
+ * with the reason, not with a button. A preview shows the selected shape and
+ * how rare it was before anything is armed.
+ */
+function ScenariosPanel({
+  scenarios,
+  plan,
+  notice,
+  busy,
+  onRun,
+}: {
+  scenarios: readonly ScenarioView[];
+  plan: ScenarioPlan | null;
+  notice: string | null;
+  busy: string | null;
+  onRun: (
+    name: string,
+    windowMs: number,
+    params: Record<string, number>,
+    apply: boolean,
+  ) => Promise<void>;
+}): ReactElement {
+  const [windowSeconds, setWindowSeconds] = useState('60');
+  const [chosen, setChosen] = useState<string | null>(null);
+  const [params, setParams] = useState<Record<string, string>>({});
+  const scenario = scenarios.find((s) => s.name === chosen) ?? null;
+  const field = {
+    background: '#0b0e14',
+    border: '1px solid #242c3d',
+    color: '#d7dce5',
+    padding: '3px 6px',
+    fontSize: 11,
+    width: 70,
+  } as const;
+  const numbers = (): Record<string, number> =>
+    Object.fromEntries(
+      (scenario?.parameters ?? []).map((p) => [
+        p.name,
+        Number(params[p.name] ?? String(p.default)),
+      ]),
+    );
+  const when = (instant: number): string => new Date(instant).toISOString().slice(11, 19) + ' UTC';
+  return (
+    <Section title="SCENARIOS — THE LAB DEFINES THE SHAPE, THE ENGINE GENERATES THE PATH">
+      <div
+        style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}
+        data-testid="lab-scenarios"
+      >
+        {scenarios.map((s) => (
+          <button
+            key={s.name}
+            type="button"
+            data-testid={`lab-scenario-${s.name}`}
+            disabled={!s.selectable || busy !== null}
+            title={s.why ?? s.label}
+            onClick={() => {
+              setChosen(s.name);
+              setParams({});
+            }}
+            style={{
+              background: chosen === s.name ? '#1f2a3a' : '#161b26',
+              border: `1px solid ${s.selectable ? (chosen === s.name ? '#58a6ff' : '#242c3d') : '#2a2a2a'}`,
+              color: s.selectable ? '#d7dce5' : '#5b6377',
+              padding: '3px 8px',
+              fontSize: 11,
+              cursor: s.selectable ? 'pointer' : 'not-allowed',
+              textDecoration: s.selectable ? 'none' : 'line-through',
+            }}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {scenarios
+        .filter((s) => !s.selectable)
+        .map((s) => (
+          <div
+            key={s.name}
+            data-testid={`lab-scenario-why-${s.name}`}
+            style={{ color: '#5b6377', fontSize: 11, lineHeight: 1.6 }}
+          >
+            <strong>{s.label}</strong> — {s.why}
+          </div>
+        ))}
+      {scenario !== null && (
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            margin: '8px 0',
+          }}
+        >
+          <span style={{ color: '#5b6377', fontSize: 11 }}>window (s)</span>
+          <input
+            data-testid="lab-scenario-window"
+            value={windowSeconds}
+            onChange={(e) => {
+              setWindowSeconds(e.target.value);
+            }}
+            style={field}
+          />
+          {scenario.parameters.map((p) => (
+            <span key={p.name} style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+              <span style={{ color: '#5b6377', fontSize: 11 }}>{p.label}</span>
+              <input
+                data-testid={`lab-scenario-param-${p.name}`}
+                value={params[p.name] ?? String(p.default)}
+                onChange={(e) => {
+                  setParams({ ...params, [p.name]: e.target.value });
+                }}
+                style={field}
+              />
+            </span>
+          ))}
+          <button
+            type="button"
+            data-testid="lab-scenario-preview"
+            disabled={busy !== null}
+            onClick={() => {
+              void onRun(scenario.name, Number(windowSeconds) * 1000, numbers(), false);
+            }}
+            style={{
+              background: '#161b26',
+              border: '1px solid #242c3d',
+              color: '#d7dce5',
+              padding: '3px 10px',
+              fontSize: 11,
+            }}
+          >
+            Preview
+          </button>
+          <button
+            type="button"
+            data-testid="lab-scenario-apply"
+            disabled={busy !== null}
+            onClick={() => {
+              void onRun(scenario.name, Number(windowSeconds) * 1000, numbers(), true);
+            }}
+            style={{
+              background: '#1f3a2a',
+              border: '1px solid #3fb950',
+              color: '#d7dce5',
+              padding: '3px 10px',
+              fontSize: 11,
+            }}
+          >
+            Apply
+          </button>
+        </div>
+      )}
+      {notice !== null && (
+        <div
+          data-testid="lab-scenario-notice"
+          style={{ color: '#e3b341', fontSize: 11, lineHeight: 1.6 }}
+        >
+          {notice}
+        </div>
+      )}
+      {plan !== null && (
+        <div data-testid="lab-scenario-plan">
+          <Row label="scenario" value={plan.scenario} />
+          <Row
+            label="window"
+            value={`${String(plan.ticksInWindow)} ticks, until ${when(plan.instant)}`}
+          />
+          <Row label="attempts" value={String(plan.attempts)} />
+          <Row
+            label="acceptance rate"
+            value={plan.acceptanceRate === 0 ? '0' : plan.acceptanceRate.toFixed(6)}
+          />
+          {plan.shape !== null && (
+            <Row
+              label="selected shape"
+              value={`net ${String(plan.shape.net)} · high ${String(plan.shape.high)} · low ${String(
+                plan.shape.low,
+              )} · range ${String(plan.shape.range)} · ${String(plan.shape.directionChanges)} direction changes`}
+            />
+          )}
+          <Row
+            label="armed"
+            value={plan.armed ? 'YES — the next ticks are the selected continuation' : 'no'}
+          />
+          {plan.impossible !== null && (
+            <div style={{ color: '#e3b341', fontSize: 11, marginTop: 6, lineHeight: 1.6 }}>
+              {plan.impossible}
+            </div>
+          )}
+        </div>
+      )}
+      <div style={{ color: '#5b6377', fontSize: 11, marginTop: 8, lineHeight: 1.6 }}>
+        A scenario is a criterion over the engine&apos;s own futures for the window. Nothing is
+        produced, one is chosen; the rate says how rare the shape is, and a shape this market does
+        not make in this window is reported as zero, not nudged into being.
       </div>
     </Section>
   );

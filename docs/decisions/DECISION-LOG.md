@@ -383,3 +383,23 @@ that had never contained the fix. Both reports were accurate; they were about a
 different build. The third instance of this project's most expensive mistake —
 testing the wrong thing and believing the answer — so the launcher now says what
 it ran (see PH-21.3 §5.1).
+
+## 2026-09-03 — §37's non-natural terminal tick is not built
+
+**Decided:** the Lab does not append a synthetic tick to reach a target outside
+the natural range. An unreachable close is refused with its reason and its
+reachable neighbours; the operator widens the window instead (PH-24.5 §3).
+
+**Alternative:** ADR-0015 §3 permitted exactly one shape — a synthetic terminal
+tick, only in the Lab, labelled, excluded from every measurement — "only where
+it can never enter a published record". Building PH-24.2–24.4 made the
+condition concrete: the Lab market's feed _is_ the Lab's published record (its
+chart, its positions, its `control` all read it). A tick appended to the feed
+collides with the engine's own sequence numbering (INV-002, in the Lab); a tick
+kept beside the feed settles a position at a price no chart showed (INV-003,
+L6–L7). Neither is a testing environment for a product whose claim is that
+chart, close and settlement are one price.
+
+**Revisit if:** the Lab ever gets a record of its own that no chart draws from
+and no settlement reads — at which point the tick would have somewhere to go,
+and would still need every fence ADR-0015 §3 names.

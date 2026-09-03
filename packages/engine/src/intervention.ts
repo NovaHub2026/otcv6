@@ -103,6 +103,61 @@ export const INTERVENTIONS = {
   /** §16. Reaches a region without being required to end there. */
   touches: (level: number) => (c: Continuation) => (level >= 0 ? c.high >= level : c.low <= level),
   /**
+   * P3. Sideways: a narrow realised range **and** little net movement — which is
+   * what an operator means by it; a narrow range that drifts is a trend.
+   */
+  sideways: (range: number) => (c: Continuation) =>
+    c.high - c.low <= range && Math.abs(c.net) <= range / 2,
+  /**
+   * P5. A fall of at least `fall`, then a counter-move of `depth` of it — the
+   * mirror of {@link INTERVENTIONS.trendThenPullback}.
+   */
+  bearTrendThenPullback: (fall: number, depth: number) => (c: Continuation) => {
+    let trough = 0;
+    let troughAt = -1;
+    for (const [i, value] of c.path.entries()) {
+      if (value < trough) {
+        trough = value;
+        troughAt = i;
+      }
+    }
+    if (-trough < fall || troughAt < 0) return false;
+    const after = c.path.slice(troughAt + 1);
+    if (after.length === 0) return false;
+    return Math.max(...after) - trough >= depth * -trough;
+  },
+  /**
+   * P6 / P7. A breakout: the path reaches `level` (positive: above; negative:
+   * below), never gives back more than `hold` of it afterwards, and ends beyond
+   * it. A level reached and abandoned is {@link INTERVENTIONS.falseBreakout}.
+   */
+  breakout: (level: number, hold: number) => (c: Continuation) => {
+    const up = level > 0;
+    const at = c.path.findIndex((v) => (up ? v >= level : v <= level));
+    if (at < 0) return false;
+    const rest = c.path.slice(at);
+    const held = up ? rest.every((v) => v >= level - hold) : rest.every((v) => v <= level + hold);
+    return held && (up ? c.net >= level : c.net <= level);
+  },
+  /** P8 / P9. Reaches `level` and ends back on the other side of it. */
+  falseBreakout: (level: number) => (c: Continuation) => {
+    const up = level > 0;
+    const touched = up ? c.high >= level : c.low <= level;
+    return touched && (up ? c.net < level : c.net > level);
+  },
+  /**
+   * P10 / P11. A move of at least `first` (positive: a rise, negative: a fall),
+   * then a net at the end of at least `second` the other way.
+   */
+  reversal: (first: number, second: number) => (c: Continuation) =>
+    first > 0 ? c.high >= first && c.net <= -second : c.low <= first && c.net >= second,
+  /** P14. Noise: at least `changes` reversals of direction between consecutive ticks. */
+  noise: (changes: number) => (c: Continuation) => {
+    let count = 0;
+    for (let i = 1; i < c.signs.length; i += 1) if (c.signs[i] !== c.signs[i - 1]) count += 1;
+    return count >= changes;
+  },
+  /**
    * §48. A rise, then a counter-move of a stated depth, then anything.
    *
    * Expressed as a shape and not as a script: the peak must come before the

@@ -174,6 +174,21 @@ describe('the Lab is marked wherever it appears', () => {
     expect(source).toMatch(/p\.actual === null && \(/);
   });
 
+  it('offers the scenarios as selection, and the two the signs cannot express as a sentence (PH-24.4)', () => {
+    const source = code('lab/Lab.tsx');
+    expect(source).toMatch(/data-testid="lab-scenarios"/);
+    expect(source).toMatch(/data-testid=\{`lab-scenario-\$\{s\.name\}`\}/);
+    // Not selectable means no button that works — disabled, with the reason
+    // beside it — never a button that would report an acceptance rate of one.
+    expect(source).toMatch(/disabled=\{!s\.selectable \|\| busy !== null\}/);
+    expect(source).toMatch(/lab-scenario-why-/);
+    // Preview before apply, and the shape and the rate shown, not only "armed".
+    expect(source).toMatch(/lab-scenario-preview/);
+    expect(source).toMatch(/lab-scenario-apply/);
+    expect(source).toMatch(/plan\.acceptanceRate/);
+    expect(source).toMatch(/plan\.shape\.net/);
+  });
+
   it('says the Lab is absent rather than hiding that it can be', () => {
     // The Lab is a separate process by design (ADR-0015 §3). A screen that hid
     // the entry until one existed would make the boundary look like a bug.

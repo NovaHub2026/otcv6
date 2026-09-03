@@ -165,9 +165,10 @@ export {
   type Reachability,
 } from './closeSelection.js';
 export {
-  INTERVENTIONS,
-  selectContinuation,
   type Continuation,
+  INTERVENTIONS,
   type InterventionRequest,
   type InterventionResult,
+  nextShock,
+  selectContinuation,
 } from './intervention.js';
