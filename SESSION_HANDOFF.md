@@ -23,7 +23,8 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 **Run Cycle Audit 7, then PH-22.** Three approved phases is the boundary
 `GOVERNANCE.md` §28 stops normal development at. It runs automatically: nothing
-is requested and nothing is waited for.
+is requested and nothing is waited for. `CURRENT_STATE.md` is authoritative for
+where the project stands; this file is only what a fresh session needs first.
 
 Two things should shape its depth (§67):
 

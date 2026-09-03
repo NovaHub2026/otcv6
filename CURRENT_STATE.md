@@ -21,14 +21,18 @@ Last synchronized: 2026-09-02
 
 ## Phase and subphase
 
-| Field                  | Value                                                      |
-| ---------------------- | ---------------------------------------------------------- |
-| Active phase           | none — PH-21 is closed; **Cycle Audit 7** is the next work |
-| Phase lifecycle        | —                                                          |
-| Active subphase        | none                                                       |
-| Subphase lifecycle     | —                                                          |
-| Last approved phase    | PH-21 — The catalogue at scale                             |
-| Last approved subphase | PH-21.3 — A panel that can hold a hundred assets           |
+| Field                  | Value                                            |
+| ---------------------- | ------------------------------------------------ |
+| Active phase           | none                                             |
+| Phase lifecycle        | none                                             |
+| Active subphase        | none                                             |
+| Subphase lifecycle     | none                                             |
+| Last approved phase    | PH-21 — The catalogue at scale                   |
+| Last approved subphase | PH-21.3 — A panel that can hold a hundred assets |
+
+Nothing is active because PH-21 closed and the cycle boundary is here: three
+approved phases, and `GOVERNANCE.md` §28 turns the work from building to
+examining. Cycle Audit 7 is the next action, and it is not a phase.
 
 ## Cycle 1 result
 
