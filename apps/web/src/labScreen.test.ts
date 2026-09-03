@@ -327,6 +327,38 @@ describe('the Lab is marked wherever it appears', () => {
     expect(banner).toMatch(/fetch\('\/labmode'/);
   });
 
+  it('recovers by itself after an outage (PH-24.14)', () => {
+    // The chart's first load fails into the same backoff the stream uses, never a dead status line.
+    const chart = code('preview/PreviewChart.tsx');
+    const mountCatch =
+      /void run\(\)\.catch\(\(error: unknown\) => \{\s*if \(controller\.signal\.aborted\) return;\s*([^}]*)\}\);/.exec(
+        chart,
+      );
+    expect(mountCatch, 'the mount-time run().catch is gone').not.toBeNull();
+    expect(mountCatch![1]).toMatch(/retryLater\(\(error as Error\)\.message\)/);
+    expect(mountCatch![1]).not.toMatch(/setStatus\(/);
+    // The Lab's notice tells a transport failure from "not configured".
+    const lab = code('lab/Lab.tsx');
+    expect(lab).toMatch(/es\.lab\.unreachable/);
+    expect(lab).toMatch(/\? es\.lab\.notRunning\s*: es\.lab\.unreachable/);
+  });
+
+  it('the browser suites never build into the served panel directory (PH-24.14)', () => {
+    const config = strip(readFileSync(path.join(app, '..', '..', 'next.config.mjs'), 'utf8'));
+    expect(config).toMatch(/distDir: process\.env\.OTC_NEXT_DIST_DIR \?\? '\.next'/);
+    for (const suite of ['lab.stat.test.ts', 'panel.stat.test.ts']) {
+      const source = strip(readFileSync(path.join(app, '..', suite), 'utf8'));
+      expect(source, `${suite} names the suite's own build directory`).toMatch(
+        /const STAT_DIST_DIR = '\.next-stat';/,
+      );
+      // Once for the build, once for the start: both must agree on the directory.
+      expect(
+        source.match(/OTC_NEXT_DIST_DIR: STAT_DIST_DIR/g) ?? [],
+        `${suite} build and start`,
+      ).toHaveLength(2);
+    }
+  });
+
   it('says the Lab is absent rather than hiding that it can be', () => {
     expect(lab()).toMatch(/lab-not-running/);
     expect(code('lab/[...path]/route.ts')).toMatch(/OTC_LAB_BASE/);

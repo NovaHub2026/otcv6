@@ -13,7 +13,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Remote             | `origin` → NovaHub2026/otcv6, public                                       |
 | Active cycle       | Cycle 8, **2 of 3** phases approved (PH-22, PH-23)                         |
 | Active phase       | PH-24 — The Lab's controls: applying a selection                           |
-| Active subphase    | none                                                                       |
+| Active subphase    | PH-24.15 — El ritmo del empuje                                             |
 | Cycle Audit        | **007 closed** 2026-09-03; the next is due after three approved phases     |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                         |
 
@@ -34,20 +34,20 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-24.10–24.13 are approved; no subphase is active.** The Lab has the two
-controls the Human Owner asked for: the Empujar strip — since PH-24.13 a push
-retracts the drawn, unpublished tick and its N ticks arrive in a burst
-(`SelectableArrival`, draws at `e^(-1/12)`; markets are retractable only in the
-Lab composition; `VenueService.wake()`), measured landing 85 ms after the click
-— and the exact close of the current candle. One engine per deployment
-(PH-24.12, ADR-0018): `~/.otc-local/start.sh` starts a single Lab-composed
-process; Vista, the chart and the Lab show one market. Known trade-off: a fast
-tick is a smaller tick (duration coupling), so `+10` moves about five natural
-ticks' worth; if the Human Owner wants more, each button unit becomes two or
-three burst ticks. Replay/mirror groundwork (`2ff8559`) stays parked. **The
-next Lab item awaits the Human Owner; the merge, hosted CI and Cycle Audit 8
-wait until the Lab is complete** (`DECISION-LOG.md`, 2026-09-03). Browser suites
-run under `LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu`.
+**PH-24.10–24.14 are approved; PH-24.15 — El ritmo del empuje is active.**
+The Lab has the two controls the Human Owner asked for: the Empujar strip —
+a push retracts the drawn, unpublished tick and its N ticks arrive in a burst
+(PH-24.13) — and the exact close of the current candle; one engine per
+deployment (ADR-0018); the panel recovers by itself after an outage and **a
+gate never touches the served panel** (PH-24.14: the browser suites build into
+`.next-stat`; the operator's `.next` is written only by the launcher —
+`npm run build:web` then restart the panel to serve new front-end code).
+PH-24.15 adds the pace selector `normal | medio | rápido` to the push
+(`pace=` on the route; draws `e^(-1/6)` for medio; PH-24.13's `e^(-1/12)` for
+rápido; none for normal). Replay/mirror groundwork (`2ff8559`) stays parked.
+**The merge, hosted CI and Cycle Audit 8 wait until the Lab is complete**
+(`DECISION-LOG.md`, 2026-09-03). Browser suites run under
+`LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu`.
 
 **The next phase is the decision LA-03 names.** The Lab specification audit
 ([LAB-SPECIFICATION-AUDIT-001](docs/audits/LAB-SPECIFICATION-AUDIT-001.md))

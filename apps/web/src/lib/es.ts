@@ -115,6 +115,7 @@ export const es = {
       line: 'entorno de simulación — estado interno del motor y cursores del keystream; nunca un mercado con posiciones',
     },
     notRunning: 'No hay ningún Lab configurado',
+    unreachable: 'No se alcanza el Lab en este momento — reintentando cada segundo',
     tabs: {
       board: 'Tablero',
       market: 'Mercado',

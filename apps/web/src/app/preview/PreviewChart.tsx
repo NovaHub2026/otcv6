@@ -475,9 +475,11 @@ export function PreviewChart({
       };
     };
 
+    // PH-24.14: a first load that fails is retried like an interrupted stream —
+    // a chart opened during an outage draws itself when the engine answers again.
     void run().catch((error: unknown) => {
       if (controller.signal.aborted) return;
-      setStatus((error as Error).message);
+      retryLater((error as Error).message);
     });
 
     return () => {

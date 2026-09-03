@@ -22,6 +22,8 @@ import { afterAll, beforeAll, describe, expect, it, type TestContext } from 'vit
  * (CI). Same discipline as `panel.stat.test.ts`, whose helpers this mirrors.
  */
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+/** The suite's own build directory (PH-24.14): never the operator's `.next`. */
+const STAT_DIST_DIR = '.next-stat';
 const SECRET = 'ab'.repeat(32);
 const TOKEN = 'lab-test-token-'.padEnd(32, 'l');
 const BROWSER_LIBRARIES =
@@ -120,6 +122,7 @@ async function bootPanel(port: number, lab: number): Promise<void> {
     cwd: path.join(repoRoot, 'apps/web'),
     env: {
       ...process.env,
+      OTC_NEXT_DIST_DIR: STAT_DIST_DIR,
       OTC_API_BASE: `http://127.0.0.1:${lab}`,
       OTC_LAB_BASE: `http://127.0.0.1:${lab}`,
       OTC_ADMIN_TOKEN: TOKEN,
@@ -134,6 +137,7 @@ async function bootPanel(port: number, lab: number): Promise<void> {
 async function build(): Promise<void> {
   const child = spawn('npm', ['run', 'build:web'], {
     cwd: repoRoot,
+    env: { ...process.env, OTC_NEXT_DIST_DIR: STAT_DIST_DIR },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';

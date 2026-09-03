@@ -565,7 +565,12 @@ function NotRunning({ reason }: { reason: string }): ReactElement {
         lineHeight: 1.6,
       }}
     >
-      <strong>{es.lab.notRunning}</strong>
+      {/* PH-24.14: "not configured" only when the proxy says so; a transport failure is said as one. */}
+      <strong data-testid="lab-not-running-title">
+        {/OTC_LAB_BASE|not configured|no configurado/i.test(reason)
+          ? es.lab.notRunning
+          : es.lab.unreachable}
+      </strong>
       <Info text={reason} />
     </div>
   );

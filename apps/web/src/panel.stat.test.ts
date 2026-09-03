@@ -56,6 +56,8 @@ import { chromium, type Browser, type ConsoleMessage, type Page } from 'playwrig
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
+/** The suite's own build directory (PH-24.14): never the operator's `.next`. */
+const STAT_DIST_DIR = '.next-stat';
 const SECRET = 'e'.repeat(64);
 /** The operator's write credential, shared by the engine and the panel. Public: a test. */
 const TOKEN = 'panel-test-token-'.padEnd(32, 'p');
@@ -189,6 +191,7 @@ async function bootPanel(port: number, enginePort: number): Promise<void> {
     cwd: path.join(repoRoot, 'apps/web'),
     env: {
       ...process.env,
+      OTC_NEXT_DIST_DIR: STAT_DIST_DIR,
       OTC_API_BASE: `http://127.0.0.1:${enginePort}`,
       // The panel adds the token to every write on its server (a6-01); the
       // browser under test never holds it.
@@ -309,6 +312,7 @@ beforeAll(async () => {
 async function build(): Promise<void> {
   const child = spawn('npm', ['run', 'build:web'], {
     cwd: repoRoot,
+    env: { ...process.env, OTC_NEXT_DIST_DIR: STAT_DIST_DIR },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';
