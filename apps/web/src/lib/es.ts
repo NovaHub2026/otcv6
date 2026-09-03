@@ -145,6 +145,11 @@ export const es = {
         'INV-010 prohíbe publicarlos. Existen aquí y en ninguna respuesta de producción; por eso el Lab es un proceso aparte y no un interruptor.',
       regime: 'régimen de volatilidad',
       cascade: 'fase de la cascada',
+      net: 'desplazamiento neto',
+      netValue: (m1: number | null, m5: number | null) =>
+        `${m1 === null ? '—' : (m1 > 0 ? '+' : '') + String(m1)} en 1 min · ${m5 === null ? '—' : (m5 > 0 ? '+' : '') + String(m5)} en 5 min`,
+      netInfo:
+        'La «fuerza de la tendencia», como lo que es: pasos del retículo recorridos netos en el último minuto y los últimos cinco. El motor no tiene un mecanismo de tendencia (ADR-0003); una tendencia realizada es una excursión de un paseo justo, y esto es su tamaño.',
     },
     close: {
       title: 'Cierre de vela',
@@ -180,6 +185,8 @@ export const es = {
       armed: (n: number) => `ARMADO — quedan ${String(n)} signos`,
       keystream: 'keystream (nada armado)',
       lastApplied: 'último aplicado',
+      onBoundary:
+        'tick en la frontera: el gráfico lo muestra como apertura de la vela siguiente (ADR-0017)',
       pending: (target: string, when: string) => `objetivo ${target} a las ${when} — pendiente`,
       outcome: (target: string, closed: string, exact: boolean) =>
         `objetivo ${target} · cerró en ${closed} — ${exact ? 'EXACTO' : 'FALLÓ'}`,
@@ -342,6 +349,17 @@ export const es = {
       labEmpty: 'ninguna acción del Lab en esta sesión',
       info: 'Dos cronologías separadas por construcción, nunca mezcladas (§72–§73): una sesión del Lab tiene que poder leerse como evidencia sobre el motor, y una cronología que las mezclara no podría.',
       closes: 'cierres de esta sesión',
+      export: 'Exportar sesión (.jsonl)',
+      exportInfo:
+        'La sesión se escribe línea a línea en el directorio de estado del Lab y sobrevive a un reinicio (§78). El fichero lleva las dos cronologías con un campo que las distingue; la pantalla nunca las mezcla.',
+      positions: 'posiciones de esta sesión',
+      positionsInfo:
+        'La otra lectura §70: cómo acabaron las posiciones liquidadas, por resultado y por el preset que las decidió. Nueve de cada diez a un lado, sobre diez o más, es una mano y no un mercado.',
+      settled: 'posiciones liquidadas',
+      settledValue: (n: number, min: number) =>
+        `${String(n)} (un veredicto necesita ${String(min)})`,
+      wins: 'ganadas',
+      byPreset: 'por preset',
       closesInfo:
         'Los caminos que produce una selección no llevan firma — eso es la construcción. La mano que elige los cierres sí puede: una sesión que siempre cierra un paso más allá de la entrada tiene una distribución que ningún mercado natural tiene. Esto la mide y dice sobre cuántos cierres se apoya; con menos de diez no dice nada.',
       controlled: 'cierres controlados',

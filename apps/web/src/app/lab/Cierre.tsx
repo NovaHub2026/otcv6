@@ -228,6 +228,12 @@ export function Cierre({
                     control.lastApplied.exact === true,
                   )
             }
+            info={control.lastApplied.onBoundary === true ? es.lab.close.onBoundary : undefined}
+            testId={
+              control.lastApplied.onBoundary === true
+                ? 'lab-close-on-boundary'
+                : 'lab-close-outcome'
+            }
           />
         )}
       </div>

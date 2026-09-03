@@ -43,6 +43,7 @@ export interface LabState {
   readonly latticeLevel: number;
   readonly previousMagnitude: number;
   readonly previousIntervalMs: number;
+  readonly netDisplacement?: { readonly '1m': number | null; readonly '5m': number | null };
   readonly magnitudeState: {
     readonly modulators?: readonly ({
       regime?: string;
@@ -90,6 +91,7 @@ export interface Control {
     readonly closed: number | null;
     readonly closedPrice: string | null;
     readonly exact: boolean | null;
+    readonly onBoundary?: boolean;
   } | null;
 }
 
@@ -109,6 +111,16 @@ export interface ClosesView {
   readonly controlled: number;
   readonly distances: Readonly<Record<string, number>>;
   readonly oneStepFraction: number | null;
+  readonly minimumForVerdict: number;
+  readonly verdict: 'too-few-to-say' | 'no-pattern' | 'one-sided';
+  readonly note: string;
+}
+
+export interface PositionsView {
+  readonly settled: number;
+  readonly byOutcome: Readonly<Record<string, number>>;
+  readonly byPreset: Readonly<Record<string, Readonly<Record<string, number>>>>;
+  readonly winFraction: number | null;
   readonly minimumForVerdict: number;
   readonly verdict: 'too-few-to-say' | 'no-pattern' | 'one-sided';
   readonly note: string;

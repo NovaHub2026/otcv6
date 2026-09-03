@@ -224,6 +224,19 @@ describe('the Lab is marked wherever it appears', () => {
     expect(source).toMatch(/lab-session-lab/);
   });
 
+  it('lets a session leave and be read (PH-24.8)', () => {
+    const sesion = code('lab/Sesion.tsx');
+    expect(sesion).toMatch(/href="\/lab\/session\/export"/);
+    expect(sesion).toMatch(/lab-positions-diagnostic/);
+    expect(sesion).toMatch(/positions\.minimumForVerdict/);
+    expect(sesion).toMatch(/lab-positions-verdict/);
+    // The boundary tick named on the outcome line (ADR-0017), and trend strength
+    // as net displacement with the sentence that there is no trend mechanism.
+    expect(code('lab/Cierre.tsx')).toMatch(/onBoundary/);
+    expect(code('lab/Mercado.tsx')).toMatch(/lab-net-displacement/);
+    expect(read('../lib/es.ts')).toMatch(/no tiene un mecanismo de tendencia/);
+  });
+
   it('says the Lab is absent rather than hiding that it can be', () => {
     expect(lab()).toMatch(/lab-not-running/);
     expect(code('lab/[...path]/route.ts')).toMatch(/OTC_LAB_BASE/);

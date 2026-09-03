@@ -33,6 +33,15 @@ export function Mercado({ state }: { state: LabState | null }): ReactElement {
         <Row label={es.lab.market.magnitude} value={String(state.previousMagnitude)} />
         <Row label={es.lab.market.interval} value={`${String(state.previousIntervalMs)} ms`} />
         <Row
+          label={es.lab.market.net}
+          value={es.lab.market.netValue(
+            state.netDisplacement?.['1m'] ?? null,
+            state.netDisplacement?.['5m'] ?? null,
+          )}
+          info={es.lab.market.netInfo}
+          testId="lab-net-displacement"
+        />
+        <Row
           label={es.lab.market.regime}
           value={`${regime?.regime ?? '—'}${regime?.remainingMs !== undefined ? ` · ${String(Math.round(regime.remainingMs / 1000))} s` : ''}`}
         />

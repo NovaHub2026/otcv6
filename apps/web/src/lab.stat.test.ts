@@ -282,6 +282,31 @@ describe('Candle Close Control, from the panel', () => {
       expect(await text(page, 'lab-session-engine')).not.toMatch(
         /cierre aplicado|preset aplicado|escenario aplicado/,
       );
+      // PH-24.8: the session can leave, the positions have their own reading,
+      // and Mercado shows trend strength as net displacement.
+      await page.click('[data-testid="tab-session"]');
+      expect(await page.locator('[data-testid="lab-session-export"]').getAttribute('href')).toBe(
+        '/lab/session/export',
+      );
+      const exported = await page.evaluate(async () => {
+        const response = await fetch('/lab/session/export');
+        return {
+          status: response.status,
+          type: response.headers.get('content-type') ?? '',
+          text: await response.text(),
+        };
+      });
+      expect(exported.status).toBe(200);
+      expect(exported.type).toMatch(/ndjson/);
+      const lines = exported.text.trim().split('\n');
+      expect(JSON.parse(lines[0]!)).toMatchObject({
+        stream: 'meta',
+        environment: 'OTC LAB — SIMULATION ENVIRONMENT',
+      });
+      expect(lines.some((l) => /"stream":"lab"/.test(l) && /close\.apply/.test(l))).toBe(true);
+      expect(await text(page, 'lab-positions-diagnostic')).toMatch(/un veredicto necesita 10/);
+      await page.click('[data-testid="tab-market"]');
+      expect(await text(page, 'lab-net-displacement')).toMatch(/en 1 min · .* en 5 min/);
     } catch (error) {
       console.error(await dump());
       throw error;

@@ -16,6 +16,7 @@ import {
   type LabMarket,
   type LabPositionView,
   type LabState,
+  type PositionsView,
   type Quality,
   type ScenarioPlan,
   type ScenarioView,
@@ -72,6 +73,7 @@ export function Lab(): ReactElement {
   const [control, setControl] = useState<Control | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [closes, setCloses] = useState<ClosesView | null>(null);
+  const [positionsView, setPositionsView] = useState<PositionsView | null>(null);
   const [positions, setPositions] = useState<LabPositionView[]>([]);
   const [positionNotice, setPositionNotice] = useState<string | null>(null);
   const [scenarios, setScenarios] = useState<ScenarioView[]>([]);
@@ -106,12 +108,14 @@ export function Lab(): ReactElement {
     }
     setUnavailable(null);
     setState(body);
-    const [ctl, timelines, open, diagnostic] = await Promise.all([
+    const [ctl, timelines, open, diagnostic, settled] = await Promise.all([
       labGet<Control>(`markets/${asset}/control`),
       labGet<Session>('session'),
       labGet<{ positions: LabPositionView[] }>(`markets/${asset}/positions`),
       labGet<ClosesView>('session/closes'),
+      labGet<PositionsView>('session/positions'),
     ]);
+    if (!isUnavailable(settled)) setPositionsView(settled);
     if (!isUnavailable(ctl)) setControl(ctl);
     if (!isUnavailable(timelines)) setSession(timelines);
     if (!isUnavailable(open)) setPositions(open.positions);
@@ -387,7 +391,7 @@ export function Lab(): ReactElement {
               <QualityPanel quality={quality} busy={busy === 'quality'} onRun={runQuality} />
             </div>
             <div hidden={tab !== 'session'}>
-              <Sesion session={session} closes={closes} />
+              <Sesion session={session} closes={closes} positions={positionsView} />
             </div>
           </div>
         </div>

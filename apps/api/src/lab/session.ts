@@ -44,18 +44,74 @@ export interface LabAction {
   readonly diagnostics: Readonly<Record<string, unknown>>;
 }
 
+/**
+ * Where a session's lines go as they are recorded, and where they come from at
+ * boot. One line per record, JSON, a `stream` field telling the two apart **in
+ * the file only** — the class keeps its two arrays, and a reader that merges
+ * them has chosen to (PH-24.8 §2).
+ */
+export interface SessionSink {
+  append(line: string): void;
+}
+
 export class LabSession {
   readonly #events: EngineEvent[] = [];
   readonly #actions: LabAction[] = [];
+  #sink: SessionSink | null = null;
+
+  /**
+   * Persist from here on, after loading what a previous process left.
+   *
+   * A record that is not there in the morning is not an audit record (§78): a
+   * restart used to empty the session. Lines that do not parse are skipped and
+   * counted rather than failing the boot — a half-written last line is what a
+   * crash leaves, and the session before it is still evidence.
+   */
+  persistTo(existing: readonly string[], sink: SessionSink): { loaded: number; skipped: number } {
+    let loaded = 0;
+    let skipped = 0;
+    for (const line of existing) {
+      if (line.trim().length === 0) continue;
+      try {
+        const parsed = JSON.parse(line) as { stream?: string } & Record<string, unknown>;
+        if (parsed.stream === 'engine') {
+          const { stream: _s, ...event } = parsed;
+          this.#events.push(event as unknown as EngineEvent);
+          loaded += 1;
+        } else if (parsed.stream === 'lab') {
+          const { stream: _s, ...action } = parsed;
+          this.#actions.push(action as unknown as LabAction);
+          loaded += 1;
+        } else if (parsed.stream !== 'meta') {
+          // A `meta` line is the export's header; anything else is not a record.
+          skipped += 1;
+        }
+      } catch {
+        skipped += 1;
+      }
+    }
+    this.#sink = sink;
+    return { loaded, skipped };
+  }
 
   /** What the engine did. Only the engine's own behaviour reaches here. */
   recordEvent(event: EngineEvent): void {
     this.#events.push(event);
+    this.#sink?.append(JSON.stringify({ stream: 'engine', ...event }));
   }
 
   /** What an operator asked for. */
   recordAction(action: LabAction): void {
     this.#actions.push(action);
+    this.#sink?.append(JSON.stringify({ stream: 'lab', ...action }));
+  }
+
+  /** The session as its file would read: one JSON line per record, oldest first, per stream. */
+  toLines(): string[] {
+    return [
+      ...this.#events.map((e) => JSON.stringify({ stream: 'engine', ...e })),
+      ...this.#actions.map((a) => JSON.stringify({ stream: 'lab', ...a })),
+    ];
   }
 
   get engineEvents(): readonly EngineEvent[] {

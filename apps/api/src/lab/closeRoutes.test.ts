@@ -423,6 +423,62 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     await venue.stop();
   }, 60_000);
 
+  it('PH-24.8: names a close whose settlement tick lands exactly on the boundary (ADR-0017)', async () => {
+    // Constructed, not hoped for: the fork says when the next ticks come, so the
+    // expiry is set to the instant of the third one — the window's last tick lands
+    // exactly on it, and the chart's candle would show that tick as the next
+    // candle's open. The target is the fork's own price there, so the close is
+    // reachable in one draw. A second close expiring between ticks is not marked.
+    const { venue, clock, controller } = await labVenue();
+    await advance(venue, clock, 20_000);
+    const fork = venue.labFork(id)!;
+    const upcoming = [fork.next()!, fork.next()!, fork.next()!];
+    const third = upcoming[2]!;
+    const applied = (await controller.applyClose(
+      id,
+      undefined,
+      undefined,
+      undefined,
+      String(third.instant),
+      undefined,
+      String(third.price - fork.price),
+    )) as Applied & { target: number };
+    expect(applied.armed).toBe(true);
+    expect(applied.target).toBe(third.price);
+    await advance(venue, clock, third.instant - venue.now() + 5_000);
+    const marked = controller.control(id) as {
+      lastApplied: { exact: boolean | null; onBoundary?: boolean };
+    };
+    expect(marked.lastApplied.exact).toBe(true);
+    expect(marked.lastApplied.onBoundary, 'a settlement tick on the boundary was not named').toBe(
+      true,
+    );
+
+    // Between two ticks: settled on the tick before, not on the boundary.
+    const fork2 = venue.labFork(id)!;
+    const a = fork2.next()!;
+    const b = fork2.next()!;
+    const between = Math.floor((a.instant + b.instant) / 2);
+    expect(between).toBeGreaterThan(a.instant);
+    const applied2 = (await controller.applyClose(
+      id,
+      undefined,
+      undefined,
+      undefined,
+      String(between),
+      undefined,
+      String(a.price - fork2.price),
+    )) as Applied;
+    expect(applied2.armed).toBe(true);
+    await advance(venue, clock, between - venue.now() + 5_000);
+    const unmarked = controller.control(id) as {
+      lastApplied: { exact: boolean | null; onBoundary?: boolean };
+    };
+    expect(unmarked.lastApplied.exact).toBe(true);
+    expect(unmarked.lastApplied.onBoundary).toBe(false);
+    await venue.stop();
+  }, 60_000);
+
   it('answers 409 when the process was not composed as a Lab', async () => {
     const { venue, clock, controller } = await labVenue(false);
     await advance(venue, clock, 5_000);

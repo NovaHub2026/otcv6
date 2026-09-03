@@ -3,6 +3,7 @@ import {
   ConflictException,
   Controller,
   Get,
+  Header,
   NotFoundException,
   Param,
   Post,
@@ -30,6 +31,7 @@ import { VenueService } from '../venue.service.js';
 import { closeInstant, planClose, readWindow, resolveTarget } from './closeControl.js';
 import { isPreset, LabPositions, presetLevel, PRESETS, type LabPosition } from './positions.js';
 import { closesDiagnostic } from './closesDiagnostic.js';
+import { positionsDiagnostic, type SettledPosition } from './positionsDiagnostic.js';
 import { SCENARIOS, scenarioNamed, scenarioParameters, shapeOf } from './scenarios.js';
 import { SelectableSigns, SignSelector } from './selectableSigns.js';
 import { LabSession } from './session.js';
@@ -204,6 +206,13 @@ export class LabController {
       }).toFixed(asset.instrument.displayPrecision),
       previousMagnitude: snapshot.previousMagnitude,
       previousIntervalMs: snapshot.previousIntervalMs,
+      /**
+       * Trend strength, as what it is (PH-24.8 §1.4): net displacement in
+       * lattice steps over the last minute and five minutes, read from the
+       * Lab's own feed. The engine has no trend mechanism to expose; a realised
+       * trend is an excursion of a fair walk, and this is its size.
+       */
+      netDisplacement: this.netDisplacement(id, snapshot.instant),
       magnitudeState: snapshot.magnitudeState,
       arrivalState: snapshot.arrivalState,
       /** INV-010: this is the reason this route may not exist in production. */
@@ -553,6 +562,47 @@ export class LabController {
   @Get('session/closes')
   sessionCloses(): unknown {
     return { environment: LAB, ...closesDiagnostic(this.session.labActions) };
+  }
+
+  /**
+   * The session as its file reads (PH-24.8 §2): one JSON line per record, the
+   * two streams told apart by a field the class itself never carries.
+   */
+  @Get('session/export')
+  @Header('content-type', 'application/x-ndjson; charset=utf-8')
+  @Header('content-disposition', 'attachment; filename="otc-lab-session.jsonl"')
+  sessionExport(): string {
+    // The file says what it is on its first line, like every other answer here.
+    const header = JSON.stringify({
+      stream: 'meta',
+      environment: LAB,
+      exportedAt: this.venue.now(),
+    });
+    return `${[header, ...this.session.toLines()].join('\n')}\n`;
+  }
+
+  /**
+   * §70 over the positions: how the session's settled positions ended, by
+   * outcome and by the preset that decided them, with the count it rests on.
+   */
+  @Get('session/positions')
+  sessionPositions(): unknown {
+    const settled: SettledPosition[] = [];
+    for (const position of this.positions.list()) {
+      const actual = LabPositions.actual(position, this.recordTicks(position.contract.assetId));
+      if (actual === null) continue;
+      const preset = this.session.labActions
+        .filter(
+          (a) =>
+            a.action === 'preset.apply' &&
+            a.succeeded &&
+            a.parameters['position'] === position.contract.id,
+        )
+        .map((a) => String(a.parameters['preset']))
+        .pop();
+      settled.push({ id: position.contract.id, outcome: actual.outcome, preset: preset ?? null });
+    }
+    return { environment: LAB, ...positionsDiagnostic(settled) };
   }
 
   // ── Simulated positions and presets (PH-24.3) ───────────────────────────
@@ -1012,6 +1062,7 @@ export class LabController {
     closed: number | null;
     closedPrice: string | null;
     exact: boolean | null;
+    onBoundary?: boolean;
     unreadable?: string;
   } | null {
     const last = this.applied.get(id);
@@ -1043,12 +1094,15 @@ export class LabController {
     // said pending three minutes after the candle had ended. A window is at
     // most fifteen minutes; retention is hours.
     let closed: number | null = null;
+    let closedAt: number | null = null;
     try {
       const window = this.venue.feed.retained(id);
       const from = Math.max(last.fromSequence, window?.oldest ?? last.fromSequence);
       for (const tick of this.venue.feed.since(id, from)) {
-        if (tick.instant <= last.instant) closed = tick.price;
-        else break;
+        if (tick.instant <= last.instant) {
+          closed = tick.price;
+          closedAt = tick.instant;
+        } else break;
       }
     } catch (error) {
       return {
@@ -1068,7 +1122,26 @@ export class LabController {
       closed,
       closedPrice: closed === null ? null : render(closed),
       exact: closed === null ? null : closed === last.target,
+      // ADR-0017 on the screen: a settlement tick that landed exactly on the
+      // instant is the chart's *next* candle's open, so the candle an operator
+      // watches will not show this close — the outcome line says so.
+      onBoundary: closedAt === last.instant,
     };
+  }
+
+  private netDisplacement(id: string, now: number): { '1m': number | null; '5m': number | null } {
+    const ticks = this.recordTicks(id);
+    const last = ticks[ticks.length - 1];
+    if (last === undefined) return { '1m': null, '5m': null };
+    const over = (ms: number): number | null => {
+      let before: number | null = null;
+      for (const tick of ticks) {
+        if (tick.instant <= now - ms) before = tick.price;
+        else break;
+      }
+      return before === null ? null : last.price - before;
+    };
+    return { '1m': over(60_000), '5m': over(300_000) };
   }
 
   private wrapperFor(id: string): SelectableSigns {

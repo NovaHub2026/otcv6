@@ -55,14 +55,23 @@ describe('engine behaviour and Lab actions never share a stream', () => {
     // what happened to this test's first version, and to `labSurface.test.ts`
     // before it.
     const source = readFileSync(path.join(here, 'session.ts'), 'utf8');
-    const methods = [...source.matchAll(/^ {2}([a-zA-Z]+)\(/gm)].map((match) => match[1]!);
+    // The class body only: the `SessionSink` interface above it has an `append`
+    // that is not a method of the session.
+    const body = source.slice(source.indexOf('class LabSession'));
+    const methods = [...body.matchAll(/^ {2}([a-zA-Z]+)\(/gm)].map((match) => match[1]!);
     // The regex has to have found something. A pattern that matches no method
     // filters to `[]` and passes on a class that offers `mergedTimeline()` in
     // its first line — the vacuity this project has now written three times.
+    // `persistTo` and `toLines` are the file (PH-24.8 §2): one line per record,
+    // a `stream` field telling the two apart in the file only. Not an accessor
+    // that hands a caller the two streams interleaved — a reader that merges
+    // the file's lines has chosen to.
     expect(methods.sort(), 'the pattern parsed no methods, or new ones appeared').toEqual([
+      'persistTo',
       'recordAction',
       'recordEvent',
       'timelines',
+      'toLines',
     ]);
     expect(methods.filter((name) => /merge|combine|interleav|all/i.test(name))).toEqual([]);
     expect(source, 'the two streams are concatenated somewhere').not.toMatch(
@@ -93,5 +102,35 @@ describe('engine behaviour and Lab actions never share a stream', () => {
         new RegExp(`readonly ${field}\\?:`),
       );
     }
+  });
+
+  it('survives the process: lines written by one session are what the next one starts with (PH-24.8)', () => {
+    const lines: string[] = [];
+    const first = new LabSession();
+    first.persistTo([], { append: (l) => lines.push(l) });
+    first.recordEvent({ at: 1, asset: 'eurusd', kind: 'regime', detail: 'observed' });
+    first.recordAction({
+      at: 2,
+      asset: 'eurusd',
+      engineVersion: 'x',
+      action: 'close.apply',
+      parameters: {},
+      initialState: {},
+      resultingState: {},
+      succeeded: true,
+      diagnostics: {},
+    });
+    expect(lines).toHaveLength(2);
+    const second = new LabSession();
+    const restored = second.persistTo(
+      [JSON.stringify({ stream: 'meta', environment: 'x' }), ...lines, 'not json', ''],
+      { append: () => undefined },
+    );
+    expect(restored).toEqual({ loaded: 2, skipped: 1 });
+    expect(second.engineEvents).toHaveLength(1);
+    expect(second.labActions.map((a) => a.action)).toEqual(['close.apply']);
+    // The two streams stay two: `stream` lives in the file only.
+    expect(Object.keys(second.labActions[0]!)).not.toContain('stream');
+    expect(second.toLines()).toEqual(lines);
   });
 });
