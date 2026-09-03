@@ -130,8 +130,8 @@ state is exposed in the Lab and nowhere else).
 | Subphase | Title                                                          | State    |
 | -------- | -------------------------------------------------------------- | -------- |
 | PH-23.1  | Selection: an exact close, by search, on unmodified paths      | APPROVED |
-| PH-23.2  | The Lab surface: isolation, state, and what may never leave it | ACTIVE   |
-| PH-23.3  | The analysis already here, given a window                      | PLANNED  |
+| PH-23.2  | The Lab surface: isolation, state, and what may never leave it | APPROVED |
+| PH-23.3  | The analysis already here, given a window                      | ACTIVE   |
 | PH-23.4  | Interventions, scenarios and the session record                | PLANNED  |
 
 PH-23.1 is first because it is the only part whose feasibility is not obvious,

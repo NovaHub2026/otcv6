@@ -29,6 +29,12 @@ class ScriptedSigns implements RandomSource {
   nextFloat64(): number {
     return this.inner.nextFloat64();
   }
+  nextBoundedUint32(bound: number): number {
+    return this.inner.nextBoundedUint32(bound);
+  }
+  nextBytes(count: number): Uint8Array {
+    return this.inner.nextBytes(count);
+  }
   position() {
     return this.inner.position();
   }

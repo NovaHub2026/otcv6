@@ -118,6 +118,14 @@ const AMBIENT_STATE_ALLOWLIST = [
    */
   'apps/api/src/app.module.ts',
   'apps/api/src/main.ts',
+  /**
+   * The Lab's entry point, for the same reason as the one above it: an entry
+   * point reads the environment to learn where to listen, and confining that to
+   * the modules that wire an application together is what lets everything below
+   * them stay replayable. It composes the application rather than being part of
+   * it (ADR-0015 §3).
+   */
+  'apps/api/src/lab/lab.main.ts',
   'apps/api/src/publication.service.ts',
   /**
    * The tooling's entry points read `process.argv` and `process.env` to learn
