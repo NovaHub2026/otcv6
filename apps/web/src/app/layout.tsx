@@ -1,5 +1,6 @@
 import type { ReactElement, ReactNode } from 'react';
 import { Nav } from './Nav';
+import { LabModeBanner } from './LabModeBanner';
 
 export const metadata = {
   title: 'OTC engine — panel',
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: { children: ReactNode }): React
       >
         <Nav apiBase={API_BASE} />
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          <LabModeBanner />
           {children}
         </div>
       </body>

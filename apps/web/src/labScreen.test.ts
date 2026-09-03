@@ -90,8 +90,9 @@ describe('the Lab is marked wherever it appears', () => {
     // carrying positions. The screen asks the Lab which markets it hosts.
     const source = lab();
     expect(source).toMatch(/labGet<\{ markets: LabMarket\[\] \}>\('markets'\)/);
+    // PH-24.12: the chart's catalogue comes from the Lab's own engine routes, never from /engine.
     expect(source, 'the screen reads the production catalogue').not.toMatch(
-      /fetchCatalogue|apiBase/,
+      /fetchCatalogue\('(?!\/labengine')|apiBase=(?!"\/labengine")/,
     );
     expect(code('lab/page.tsx'), 'the page hands the screen an engine URL').not.toMatch(/apiBase/);
   });
@@ -297,6 +298,33 @@ describe('the Lab is marked wherever it appears', () => {
     const lab = code('lab/Lab.tsx');
     const handler = /const push = async[\s\S]*?\n {2}\};/.exec(lab)?.[0] ?? '';
     expect(handler).toMatch(/finally \{\s*setBusy\(null\);/);
+  });
+
+  it('draws the chart from the Lab engine, never production, and declares Lab mode (PH-24.12)', () => {
+    const lab = code('lab/Lab.tsx');
+    expect(lab).toMatch(/<PreviewChart[^>]*apiBase="\/labengine"/);
+    expect(lab).toMatch(/fetchCatalogue\('\/labengine'\)/);
+    expect(lab, 'the Lab must never read /engine').not.toMatch(/['"`]\/engine/);
+    expect(lab).toMatch(/data-testid="lab-chart"/);
+    const proxy = code('labengine/[...path]/route.ts');
+    expect(proxy).toMatch(/process\.env\.OTC_LAB_BASE/);
+    expect(proxy, 'the Lab engine proxy must not know production').not.toMatch(
+      /OTC_API_BASE|OTC_ADMIN_TOKEN/,
+    );
+    expect(proxy).toMatch(/export async function GET/);
+    expect(proxy).not.toMatch(/export async function (POST|PATCH|PUT|DELETE)/);
+    // Environment is a runtime fact: the declaration is a dynamic route the banner asks on mount,
+    // never a module-level read that the build would bake as false.
+    const layout = code('layout.tsx');
+    expect(layout).toMatch(/<LabModeBanner \/>/);
+    expect(layout).not.toMatch(/process\.env\.OTC_LAB_BASE/);
+    const declaration = code('labmode/route.ts');
+    expect(declaration).toMatch(/export const dynamic = 'force-dynamic';/);
+    expect(declaration).toMatch(
+      /isLabMode\(process\.env\.OTC_LAB_BASE, process\.env\.OTC_API_BASE\)/,
+    );
+    const banner = code('LabModeBanner.tsx');
+    expect(banner).toMatch(/fetch\('\/labmode'/);
   });
 
   it('says the Lab is absent rather than hiding that it can be', () => {

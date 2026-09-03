@@ -583,7 +583,7 @@ on it — the boundary first, guarded before anything stands on it.
 | PH-24.9  | Varios activos a la vez: tablero, insignias, liberar todo                                                        | APPROVED |
 | PH-24.10 | Empujar y cerrar: pushes naturales de N ticks por botón, la pantalla alrededor de los dos controles              | APPROVED |
 | PH-24.11 | El empuje siempre responde: la capa de red no lanza, el empuje libera lo armado, Objetivo de precio a Escenarios | APPROVED |
-| PH-24.12 | Un solo motor: el Lab es el motor en modo simulación; el panel lo declara; el gráfico dentro del Lab             | ACTIVE   |
+| PH-24.12 | Un solo motor: el Lab es el motor en modo simulación; el panel lo declara; el gráfico dentro del Lab             | APPROVED |
 
 ### PH-23 — The OTC Market Lab
 

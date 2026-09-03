@@ -45,12 +45,15 @@ async function bootstrap(): Promise<void> {
   app.get(EngineEventObserver).start();
 
   const host = bindAddressFromEnvironment(process.env);
-  const port = Number.parseInt(process.env['OTC_LAB_PORT'] ?? '3100', 10);
+  // ADR-0018: one engine per deployment. A Lab-composed process is the whole
+  // engine in simulation mode, so it takes the engine's port unless told otherwise.
+  const port = Number.parseInt(process.env['OTC_LAB_PORT'] ?? process.env['PORT'] ?? '3100', 10);
   await app.listen(port, host);
   logger.warn(
     `OTC LAB — SIMULATION ENVIRONMENT on ${host}:${String(port)} ` +
       `(${isExposedBind(host) ? 'REACHABLE FROM OTHER MACHINES' : 'this machine only'}). ` +
-      `This process serves engine state and keystream cursors, which production never does.`,
+      `This process is the whole engine — catalogue, history, ticks — plus /lab, and it serves ` +
+      `engine state and keystream cursors, which production never does (ADR-0018).`,
   );
 }
 

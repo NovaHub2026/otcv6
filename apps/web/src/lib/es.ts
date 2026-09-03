@@ -7,6 +7,8 @@
  */
 export const es = {
   shell: {
+    labMode:
+      'este panel muestra el motor en modo Lab: lo que hagas en Lab es lo que ve Vista y el gráfico; ningún mercado aquí es real',
     brand: 'OTC ENGINE',
     nav: { preview: 'Vista', create: 'Crear activo', manage: 'Activos', lab: 'Lab' },
     labMark: 'SIM',
@@ -161,6 +163,10 @@ export const es = {
       releaseAll: 'Liberar todos',
       released: (n: number) => `${String(n)} mercado(s) liberado(s)`,
       nothing: 'ningún mercado armado',
+    },
+    chart: {
+      title: 'Gráfico',
+      info: 'Las velas del mercado que estás controlando, leídas del propio motor del Lab (nunca del motor de producción). Con un solo motor (ADR-0018) son las mismas velas que Vista.',
     },
     push: {
       title: 'Empujar',

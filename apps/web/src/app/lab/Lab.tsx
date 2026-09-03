@@ -28,6 +28,9 @@ import {
 import { Mercado } from './Mercado.js';
 import { Cierre } from './Cierre.js';
 import { Empujar } from './Empujar.js';
+import { PreviewChart } from '../preview/PreviewChart.js';
+import { PANEL_TIMEFRAMES, type PanelTimeframeId } from '@otc/chart';
+import { fetchCatalogue, type CatalogueEntry } from '../../lib/api.js';
 import { Posiciones } from './Posiciones.js';
 import { Escenarios } from './Escenarios.js';
 import { QualityPanel } from './Calidad.js';
@@ -83,12 +86,21 @@ export function Lab(): ReactElement {
   const [all, setAll] = useState<ControlAll | null>(null);
   const [lastPush, setLastPush] = useState<PushResult | null>(null);
   const [pushError, setPushError] = useState<string | null>(null);
+  const [catalogue, setCatalogue] = useState<CatalogueEntry[]>([]);
+  const [chartTf, setChartTf] = useState<PanelTimeframeId>('1m');
   const [positions, setPositions] = useState<LabPositionView[]>([]);
   const [positionNotice, setPositionNotice] = useState<string | null>(null);
   const [scenarios, setScenarios] = useState<ScenarioView[]>([]);
   const [scenarioPlan, setScenarioPlan] = useState<ScenarioPlan | null>(null);
   const [scenarioNotice, setScenarioNotice] = useState<string | null>(null);
   const [quality, setQuality] = useState<Quality | null>(null);
+
+  useEffect(() => {
+    // The chart's catalogue from the Lab's own engine routes (PH-24.12): never /engine.
+    fetchCatalogue('/labengine')
+      .then(setCatalogue)
+      .catch(() => setCatalogue([]));
+  }, []);
 
   useEffect(() => {
     void labGet<{ scenarios: ScenarioView[] }>('scenarios').then((body) => {
@@ -374,6 +386,11 @@ export function Lab(): ReactElement {
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
           <HeaderStrip state={state} regime={regime} control={control} />
           <Empujar control={control} last={lastPush} error={pushError} busy={busy} onPush={push} />
+          <LabChart
+            entry={catalogue.find((c) => c.id === selected) ?? null}
+            timeframe={chartTf}
+            onTimeframe={setChartTf}
+          />
           <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: '0 16px 16px' }}>
             <Tabs<Tab>
               tabs={[
@@ -458,6 +475,60 @@ export function Lab(): ReactElement {
 }
 
 /** The banner, in the frame rather than in the content (§3). */
+/**
+ * The selected market's candles, from the Lab's engine (PH-24.12, ADR-0018 §4).
+ *
+ * The same `PreviewChart` Vista uses, fed through `/labengine`: what a push or
+ * a close does is seen where it happens. With one engine per deployment these
+ * are Vista's candles; with two they are still the Lab's, never production's.
+ */
+function LabChart({
+  entry,
+  timeframe,
+  onTimeframe,
+}: {
+  entry: CatalogueEntry | null;
+  timeframe: PanelTimeframeId;
+  onTimeframe: (id: PanelTimeframeId) => void;
+}): ReactElement {
+  return (
+    <div data-testid="lab-chart" style={{ borderBottom: `1px solid ${T.line}`, flexShrink: 0 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '6px 16px' }}>
+        <span style={{ color: T.text, fontSize: 12, fontWeight: 600 }}>
+          {es.lab.chart.title} <Info text={es.lab.chart.info} />
+        </span>
+        {PANEL_TIMEFRAMES.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            data-testid={`lab-chart-tf-${t.id}`}
+            onClick={() => onTimeframe(t.id)}
+            style={{
+              padding: '2px 8px',
+              background: timeframe === t.id ? T.line : 'transparent',
+              color: timeframe === t.id ? T.text : T.muted,
+              border: `1px solid ${T.line}`,
+              borderRadius: 3,
+              font: 'inherit',
+              fontSize: 11,
+              cursor: 'pointer',
+            }}
+          >
+            {t.id}
+          </button>
+        ))}
+      </div>
+      <div style={{ height: 260, position: 'relative' }}>
+        {entry === null ? (
+          <div style={{ color: T.faint, fontSize: 11, padding: '0 16px' }}>—</div>
+        ) : (
+          <PreviewChart key={entry.id} apiBase="/labengine" asset={entry} timeframeId={timeframe} />
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Banner(): ReactElement {
   return (
     <div

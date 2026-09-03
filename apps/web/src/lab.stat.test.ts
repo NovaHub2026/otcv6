@@ -667,4 +667,59 @@ describe('Candle Close Control, from the panel', () => {
     expect(errors).toEqual([]);
     await page.close();
   }, 300_000);
+
+  it('PH-24.12: one engine — the Lab draws its chart from the Lab engine, and every screen declares Lab mode', async (ctx) => {
+    const page = await requireBrowser(ctx).newPage({ viewport: { width: 1280, height: 1200 } });
+    const { errors, dump } = instrument(page);
+    try {
+      await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
+      await page.waitForSelector('[data-testid="lab-control"]', { timeout: 30_000 });
+      // The chart is on the Lab screen and goes live from the Lab's engine routes.
+      expect(await page.locator('[data-testid="lab-chart"]').isVisible()).toBe(true);
+      await page.waitForFunction(
+        () =>
+          /en vivo|live/i.test(
+            document.querySelector('[data-testid="lab-chart"] [data-testid="stream-status"]')
+              ?.textContent ?? '',
+          ),
+        null,
+        { timeout: 60_000 },
+      );
+      expect(
+        await page.locator('[data-testid="lab-chart"] [data-testid="last-price"]').textContent(),
+      ).toMatch(/^[0-9]+\.[0-9]+$/);
+      // The proxy reaches the Lab's engine: the same markets /lab names.
+      const ids = await page.evaluate(async () => {
+        const viaProxy = (await (await fetch('/labengine/lab/markets')).json()) as {
+          markets: { id: string }[];
+        };
+        const direct = (await (await fetch('/lab/markets')).json()) as {
+          markets: { id: string }[];
+        };
+        const catalogue = (await (await fetch('/labengine/catalogue')).json()) as { id: string }[];
+        return {
+          proxy: viaProxy.markets.map((m) => m.id).sort(),
+          direct: direct.markets.map((m) => m.id).sort(),
+          catalogue: catalogue.map((c) => c.id).sort(),
+        };
+      });
+      expect(ids.proxy).toEqual(ids.direct);
+      expect(ids.catalogue).toEqual(ids.direct);
+      // A write through the read-only proxy is refused — probed outside the page, so the
+      // browser's own console line about a 405 is not counted as a page error.
+      expect(
+        (await page.request.post(`http://127.0.0.1:${webPort}/labengine/lab/release-all`)).status(),
+      ).toBe(405);
+      // The harness points both bases at one process: Vista declares Lab mode; the Lab screen does not repeat it.
+      expect(await page.locator('[data-testid="lab-mode-banner"]').count()).toBe(0);
+      await page.goto(`http://127.0.0.1:${webPort}/preview`, { waitUntil: 'networkidle' });
+      await page.waitForSelector('[data-testid="lab-mode-banner"]', { timeout: 30_000 });
+      expect(await text(page, 'lab-mode-banner')).toMatch(/OTC LAB/);
+    } catch (error) {
+      console.error(await dump());
+      throw error;
+    }
+    expect(errors).toEqual([]);
+    await page.close();
+  }, 300_000);
 });
