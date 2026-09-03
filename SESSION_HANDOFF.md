@@ -13,7 +13,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Remote             | `origin` → NovaHub2026/otcv6, public                                       |
 | Active cycle       | Cycle 8, **2 of 3** phases approved (PH-22, PH-23)                         |
 | Active phase       | PH-24 — The Lab's controls: applying a selection                           |
-| Active subphase    | none                                                                       |
+| Active subphase    | PH-24.12 — Un solo motor                                                   |
 | Cycle Audit        | **007 closed** 2026-09-03; the next is due after three approved phases     |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                         |
 
@@ -34,18 +34,19 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-24.10 — Empujar y cerrar is approved** (targeted gate exit 0; 8 browser
-flows). The Lab now has the two controls the Human Owner asked for on
-2026-09-03: the **Empujar** strip (`−10 −5 −3 −1 | +1 +3 +5 +10`; the next N
-ticks take that sign, magnitudes and intervals the engine's own; same direction
-extends, opposite replaces; refused while a close is armed and vice versa; the
-landing is announced from a fork and then read from the record) and the exact
-close of the current candle (Cierre, first tab). **Open for the Human Owner:**
-whether «Objetivo de precio» leaves the Cierre tab for Escenarios. Replay/mirror
-groundwork (`2ff8559`) stays parked as modules with no route. **The merge,
-hosted CI and Cycle Audit 8 wait until the Lab is complete** (`DECISION-LOG.md`,
-2026-09-03). Browser suites run under
-`LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu`.
+**PH-24.10 and PH-24.11 are approved; PH-24.12 — Un solo motor is active.**
+The Lab has the two controls the Human Owner asked for (the Empujar strip; the
+exact close of the current candle), the panel's API layer never throws and the
+strip is held only by its own request (PH-24.11). PH-24.12 answers _"el activo
+de lab tiene que ser el mismo del motor"_: the local launcher will run **one**
+Lab-composed process (`lab.main.js` on the engine's port and state), the panel
+declares Lab mode on every screen when both bases are one origin, and the Lab
+screen shows the market's chart from a `/labengine` proxy to `OTC_LAB_BASE`
+(ADR-0018). Until PH-24.12 lands, `~/.otc-local/start.sh` still starts two
+processes and Vista shows a different engine than the Lab. Replay/mirror
+groundwork (`2ff8559`) stays parked. **The merge, hosted CI and Cycle Audit 8
+wait until the Lab is complete** (`DECISION-LOG.md`, 2026-09-03). Browser suites
+run under `LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu`.
 
 **The next phase is the decision LA-03 names.** The Lab specification audit
 ([LAB-SPECIFICATION-AUDIT-001](docs/audits/LAB-SPECIFICATION-AUDIT-001.md))

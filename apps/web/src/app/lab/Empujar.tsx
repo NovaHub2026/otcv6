@@ -17,19 +17,20 @@ export const PUSH_SIZES = [1, 3, 5, 10] as const;
 export function Empujar({
   control,
   last,
-  refusal,
+  error,
   busy,
   onPush,
 }: {
   control: Control | null;
   last: PushResult | null;
-  refusal: string | null;
+  error: string | null;
   busy: string | null;
   onPush: (ticks: number) => Promise<void>;
 }): ReactElement {
   const p = es.lab.push;
   const pushing = control?.pushing ?? null;
-  const armedElsewhere = (control?.armed ?? false) && pushing === null;
+  // Held only by its own act (PH-24.11): never by a quality run, never by an armed close.
+  const held = busy === 'push';
   return (
     <div
       data-testid="lab-push"
@@ -53,7 +54,7 @@ export function Empujar({
           kind="danger"
           small
           testId={`lab-push--${String(n)}`}
-          disabled={busy !== null || armedElsewhere}
+          disabled={held}
           onClick={() => void onPush(-n)}
         >
           {`−${String(n)}`}
@@ -66,7 +67,7 @@ export function Empujar({
           kind="primary"
           small
           testId={`lab-push-+${String(n)}`}
-          disabled={busy !== null || armedElsewhere}
+          disabled={held}
           onClick={() => void onPush(n)}
         >
           {`+${String(n)}`}
@@ -100,9 +101,14 @@ export function Empujar({
             )}
           </span>
         )}
-      {refusal !== null && (
-        <Notice tone="bad" testId="lab-push-refused">
-          {refusal}
+      {last !== null && pushing !== null && last.released !== null && (
+        <span data-testid="lab-push-released" style={{ fontSize: 12, color: T.warn }}>
+          {p.released(last.released.discarded)}
+        </span>
+      )}
+      {error !== null && (
+        <Notice tone="bad" testId="lab-push-error">
+          {error}
         </Notice>
       )}
     </div>

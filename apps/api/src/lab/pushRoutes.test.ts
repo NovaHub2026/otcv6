@@ -149,7 +149,7 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     expect(lab.selector.for(id)!.armed).toBe(false);
   });
 
-  it('refuses a push while a close is armed and a close while a push runs, and records both refusals', async () => {
+  it('refuses a close while a push runs; a push over an armed close releases it, recorded (PH-24.11)', async () => {
     const lab = await labVenue();
     await advance(lab.venue, lab.clock, 60_000);
     await lab.controller.push(id, '4');
@@ -160,8 +160,7 @@ describe('PH-24.10 — a push is N natural ticks', () => {
       lab.controller.applyScenario(id, { name: 'sideways', window: '60000' }),
     ).rejects.toThrow(/PUSH_RUNNING/);
     lab.controller.release(id);
-    // Now arm a close (the reachable delta 0 is off-parity half the time; any
-    // armed vector will do, so try the two neighbours).
+    // Arm a close (delta 0 is off-parity half the time; any armed vector will do).
     let armed = false;
     for (const delta of ['0', '1', '-1']) {
       try {
@@ -173,9 +172,7 @@ describe('PH-24.10 — a push is N natural ticks', () => {
           undefined,
           undefined,
           delta,
-        )) as {
-          armed: boolean;
-        };
+        )) as { armed: boolean };
         if (r.armed) {
           armed = true;
           break;
@@ -185,13 +182,22 @@ describe('PH-24.10 — a push is N natural ticks', () => {
       }
     }
     expect(armed).toBe(true);
-    await expect(lab.controller.push(id, '2')).rejects.toThrow(/CLOSE_ARMED/);
-    const refused = lab.session
-      .toLines()
-      .filter(
-        (l) => /"succeeded":false/.test(l) && /"refused":"(PUSH_RUNNING|CLOSE_ARMED)"/.test(l),
-      );
-    expect(refused.length).toBe(3);
+    const beforePush = lab.controller.control(id) as { remaining: number; lastApplied: unknown };
+    expect(beforePush.remaining).toBeGreaterThan(0);
+    expect(beforePush.lastApplied).not.toBeNull();
+    // The push wins: the close is released, counted, and no longer judged.
+    const pushed = (await lab.controller.push(id, '2')) as Pushed & {
+      released: { discarded: number } | null;
+      lastApplied: unknown;
+    };
+    expect(pushed.released).toEqual({ discarded: beforePush.remaining });
+    expect(pushed.pushing).toEqual({ direction: 1, requested: 2, remaining: 2 });
+    expect(pushed.lastApplied).toBeNull();
+    const lines = lab.session.toLines();
+    expect(
+      lines.filter((l) => /"succeeded":false/.test(l) && /"refused":"PUSH_RUNNING"/.test(l)).length,
+    ).toBe(2);
+    expect(lines.some((l) => /"action":"release"/.test(l) && /"by":"push"/.test(l))).toBe(true);
   });
 
   it('rejects zero, non-integers and more than fifty ticks', async () => {

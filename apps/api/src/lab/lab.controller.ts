@@ -128,9 +128,6 @@ const LAB_MAX_SAMPLE_TICKS = 2_000_000;
 /** The most ticks one push may arm: past this the operator is drawing a chart, not pushing (PH-24.10). */
 const PUSH_MAX_TICKS = 50;
 
-const CLOSE_ARMED =
-  'CLOSE_ARMED: an exact close, preset or scenario is armed on this market; two scripts cannot ' +
-  'both describe the next tick. Release it first.';
 const PUSH_RUNNING =
   'PUSH_RUNNING: a push is running on this market and a plan computed on the keystream would ' +
   'not describe it. Wait for the push to end or release it.';
@@ -542,24 +539,30 @@ export class LabController {
     const before = this.controlState(id);
     const direction: 1 | -1 = ticks > 0 ? 1 : -1;
     const count = Math.abs(ticks);
-    if (wrapper.armed && !this.pushes.has(id)) {
-      this.session.recordAction({
-        at,
-        asset: id,
-        engineVersion: ENGINE_VERSION,
-        action: 'push',
-        parameters: { ticks },
-        initialState: before,
-        resultingState: before,
-        succeeded: false,
-        diagnostics: { refused: 'CLOSE_ARMED' },
-      });
-      throw new ConflictException(CLOSE_ARMED);
-    }
     const running = this.pushes.get(id);
     const extended = running !== undefined && running.direction === direction;
     const signs: (1 | -1)[] = Array.from({ length: count }, () => direction);
     const result = await this.venue.betweenAdvances(() => {
+      // PH-24.11: a push wins over a close, preset or scenario armed here. It is
+      // released — recorded, counted — and its pending outcome dropped: a close
+      // the operator superseded is not a close that failed.
+      let released: { discarded: number } | null = null;
+      if (wrapper.armed && !this.pushes.has(id)) {
+        const discarded = wrapper.release();
+        this.applied.delete(id);
+        this.session.recordAction({
+          at,
+          asset: id,
+          engineVersion: ENGINE_VERSION,
+          action: 'release',
+          parameters: { by: 'push', ticks },
+          initialState: before,
+          resultingState: this.controlState(id),
+          succeeded: true,
+          diagnostics: { discarded },
+        });
+        released = { discarded };
+      }
       // Everything the market will play from its next draw, in order.
       const script: (1 | -1)[] = extended ? [...wrapper.remainingScript(), ...signs] : signs;
       let forkSigns: SelectableSigns | null = null;
@@ -585,7 +588,7 @@ export class LabController {
       });
       // The fork started at the snapshot's sequence; the landing is script.length ticks on.
       const sequence = this.venue.hostedMarket(id)!.snapshotEngine().sequence + script.length;
-      return { level, landingInstant, afterTicks: script.length, sequence };
+      return { level, landingInstant, afterTicks: script.length, sequence, released };
     });
     const asset = this.venue.assetFor(id)!;
     const landing = {
@@ -614,7 +617,7 @@ export class LabController {
       initialState: before,
       resultingState: this.controlState(id),
       succeeded: true,
-      diagnostics: { extended, landing },
+      diagnostics: { extended, landing, released: result.released },
     });
     return {
       environment: LAB,
@@ -623,6 +626,7 @@ export class LabController {
       ticks: count,
       extended,
       landing,
+      released: result.released,
       ...this.controlState(id),
     };
   }

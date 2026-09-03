@@ -500,6 +500,8 @@ describe('Candle Close Control, from the panel', () => {
     const { errors, dump } = instrument(page);
     try {
       await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
+      // PH-24.11: Objetivo de precio lives on Escenarios.
+      await page.click('[data-testid="tab-scenarios"]');
       await page.waitForSelector('[data-testid="lab-target-steps"]', { timeout: 30_000 });
       await page.fill('[data-testid="lab-target-steps"]', '3');
       await page.click('[data-testid="lab-target-preview"]');
@@ -577,7 +579,7 @@ describe('Candle Close Control, from the panel', () => {
     await page.close();
   }, 300_000);
 
-  it('PH-24.10: pushes +3 from the strip — running, then landed where announced; disabled while a close is armed', async (ctx) => {
+  it('PH-24.10/24.11: pushes +3 from the strip — running, then landed where announced; a push over an armed close releases it', async (ctx) => {
     const page = await requireBrowser(ctx).newPage({ viewport: { width: 1280, height: 1200 } });
     const { errors, dump } = instrument(page);
     try {
@@ -624,7 +626,7 @@ describe('Candle Close Control, from the panel', () => {
       );
       expect(await text(page, 'lab-session-lab')).toMatch(/push/);
 
-      // A close armed on this market disables the push buttons; release re-enables them.
+      // PH-24.11: a push over an armed close releases it and says so on the strip.
       const markets = (await page.evaluate(
         async () => (await (await fetch('/lab/markets')).json()) as unknown,
       )) as { markets?: { id: string }[] };
@@ -644,19 +646,20 @@ describe('Candle Close Control, from the panel', () => {
       expect(armed, 'no relative close could be armed').toBe(true);
       await page.waitForFunction(
         () =>
-          document.querySelector<HTMLButtonElement>('[data-testid="lab-push-+1"]')?.disabled ===
-          true,
+          /ARMADO/.test(
+            document.querySelector('[data-testid="lab-header-armed"]')?.textContent ?? '',
+          ),
         null,
         { timeout: 30_000 },
       );
+      // The buttons are not held by the armed close.
+      expect(await page.locator('[data-testid="lab-push-+1"]').isDisabled()).toBe(false);
+      await page.click('[data-testid="lab-push-+1"]');
+      await page.waitForSelector('[data-testid="lab-push-released"]', { timeout: 30_000 });
+      expect(await text(page, 'lab-push-released')).toMatch(/se liberó lo que estaba armado/);
+      expect(await text(page, 'lab-push-state')).toMatch(/empujando ↑/i);
+      expect(await text(page, 'lab-session-lab')).toMatch(/liberado ✓ by=push/);
       await page.evaluate(() => fetch('/lab/release-all', { method: 'POST' }));
-      await page.waitForFunction(
-        () =>
-          document.querySelector<HTMLButtonElement>('[data-testid="lab-push-+1"]')?.disabled ===
-          false,
-        null,
-        { timeout: 30_000 },
-      );
     } catch (error) {
       console.error(await dump());
       throw error;

@@ -25,16 +25,16 @@ Last synchronized: 2026-09-03
 | ---------------------- | ------------------------------------------------ |
 | Active phase           | PH-24 — The Lab's controls: applying a selection |
 | Phase lifecycle        | ACTIVE                                           |
-| Active subphase        | none                                             |
-| Subphase lifecycle     | none                                             |
+| Active subphase        | PH-24.12 — Un solo motor                         |
+| Subphase lifecycle     | ACTIVE                                           |
 | Last approved phase    | PH-23 — The OTC Market Lab                       |
-| Last approved subphase | PH-24.10 — Empujar y cerrar                      |
+| Last approved subphase | PH-24.11 — El empuje siempre responde            |
 
-**PH-24 is active; ten subphases approved (PH-24.1–24.10)**. PH-24.10 built
-the Lab's two controls as the Human Owner re-stated them on 2026-09-03: natural
-pushes by buttons (the next N ticks take the chosen sign; magnitudes and
-intervals the engine's own) and the exact close of the current candle. The next
-Lab item awaits their alignment. The merge, hosted CI and Cycle Audit 8 wait
+**PH-24 is active; eleven subphases approved (PH-24.1–24.11); PH-24.12 — Un
+solo motor — active.** The Lab is the two controls the Human Owner asked for
+(natural pushes by buttons; the exact close of the current candle); PH-24.12
+makes the local deployment one Lab-composed engine so that Vista, the chart and
+the Lab show one market (ADR-0018). The merge, hosted CI and Cycle Audit 8 wait
 until the Lab is complete; PH-24's approval is Cycle 8's third phase.
 
 PH-23.5 closed the first item PH-23 §10 left open — the Lab now has a screen in

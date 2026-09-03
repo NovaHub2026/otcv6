@@ -14,19 +14,33 @@ export interface Unavailable {
 export const isUnavailable = (value: unknown): value is Unavailable =>
   typeof value === 'object' && value !== null && (value as { running?: unknown }).running === false;
 
+/**
+ * A failed request is an answer, never an exception (PH-24.11): the screen
+ * reads the reason and every button stays usable. A `busy` flag held by a
+ * request that never came back locked the strip on 2026-09-03.
+ */
+async function asJson<T>(request: Promise<Response>): Promise<T | Unavailable> {
+  try {
+    const response = await request;
+    return (await response.json()) as T | Unavailable;
+  } catch (error) {
+    return { running: false, reason: `no se alcanza el Lab: ${(error as Error).message}` };
+  }
+}
+
 export async function labGet<T>(path: string): Promise<T | Unavailable> {
-  const response = await fetch(`/lab/${path}`);
-  return (await response.json()) as T | Unavailable;
+  return asJson<T>(fetch(`/lab/${path}`));
 }
 
 /** The Lab's acts — apply, release, open, preset, scenario — as JSON writes carrying only the query. */
 export async function labPost<T>(path: string): Promise<T | Unavailable> {
-  const response = await fetch(`/lab/${path}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: '{}',
-  });
-  return (await response.json()) as T | Unavailable;
+  return asJson<T>(
+    fetch(`/lab/${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    }),
+  );
 }
 
 export interface LabMarket {
@@ -96,6 +110,7 @@ export interface PushResult extends Control {
     readonly price: string;
     readonly afterTicks: number;
   };
+  readonly released: { readonly discarded: number } | null;
 }
 
 export interface Control {

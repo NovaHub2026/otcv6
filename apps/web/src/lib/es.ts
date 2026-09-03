@@ -175,10 +175,11 @@ export const es = {
       extended: 'alargado',
       landed: (dir: 'up' | 'down', n: number, price: string, exact: boolean) =>
         `${dir === 'up' ? '↑' : '↓'} ${String(n)} ticks · llegó a ${price} ${exact ? '✓' : '✗ (no coincide con lo anunciado)'}`,
-      refusedClose:
-        'hay un cierre, preset o escenario armado en este mercado — libéralo antes de empujar',
+      released: (n: number) =>
+        `se liberó lo que estaba armado en este mercado (quedaban ${String(n)} signos) para empujar`,
       refusedPush:
         'hay un empuje en curso — espera a que termine o libéralo antes de fijar un cierre',
+      failed: (reason: string) => `el empuje no se envió: ${reason}`,
     },
     header: {
       price: 'precio',

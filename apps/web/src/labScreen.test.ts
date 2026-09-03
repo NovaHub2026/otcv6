@@ -141,7 +141,7 @@ describe('the Lab is marked wherever it appears', () => {
     expect(cierre).toMatch(/<option value="expiry">/);
     expect(cierre).toMatch(/(data-testid|testId)="lab-close-expiry"/);
     expect(code('lab/Lab.tsx')).toMatch(/expiry=\$\{String\(at\)\}/);
-    // Target Price is visibly apart from the close and never a close: no
+    // Target Price is on Escenarios (PH-24.11), visibly apart from the close and never a close: no
     // terminal condition, strength as the acceptance rate.
     for (const handle of [
       'lab-target',
@@ -151,15 +151,19 @@ describe('the Lab is marked wherever it appears', () => {
       'lab-target-apply',
       'lab-target-plan',
     ]) {
-      expect(cierre, `${handle} missing`).toMatch(new RegExp(`(data-testid|testId)="${handle}"`));
+      expect(escenarios, `${handle} missing`).toMatch(
+        new RegExp(`(data-testid|testId)="${handle}"`),
+      );
     }
-    expect(cierre).toMatch(/es\.lab\.close\.targetPrice/);
-    expect(cierre, 'the no-terminal-condition line is gone').toMatch(/\bnoEnd\b/);
-    expect(cierre).toMatch(/onTarget\('target-price'/);
-    expect(cierre, 'target price must not go through the close route').not.toMatch(/\/close\?/);
+    expect(escenarios).toMatch(/es\.lab\.close\.targetPrice/);
+    expect(escenarios, 'the no-terminal-condition line is gone').toMatch(/\bnoEnd\b/);
+    expect(escenarios).toMatch(/onTarget\('target-price'/);
+    expect(escenarios, 'target price must not go through the close route').not.toMatch(/\/close\?/);
+    // PH-24.11: Cierre is only the close of a candle.
+    expect(cierre).not.toMatch(/lab-target/);
     // The level as a price (PH-23.5 §6), the lattice index behind ⓘ.
-    expect(cierre).toMatch(/shown\.targetPrice/);
-    expect(cierre, 'a lattice index under the word nivel').not.toMatch(
+    expect(escenarios).toMatch(/shown\.targetPrice/);
+    expect(escenarios, 'a lattice index under the word nivel').not.toMatch(
       /value=\{\s*shown\.targetLevel/,
     );
     // The shock: locate, then direct — a size, a direction, and where it comes.
@@ -261,9 +265,11 @@ describe('the Lab is marked wherever it appears', () => {
     expect(strip).toMatch(/(?:data-testid|testId)="lab-push-state"/);
     expect(strip).toMatch(/(?:data-testid|testId)="lab-push-landing"/);
     expect(strip).toMatch(/(?:data-testid|testId)="lab-push-outcome"/);
-    expect(strip).toMatch(/lab-push-refused/);
-    // While a close is armed the buttons are disabled: two scripts cannot both describe the next tick.
-    expect(strip).toMatch(/disabled=\{busy !== null \|\| armedElsewhere\}/);
+    expect(strip).toMatch(/lab-push-released/);
+    expect(strip).toMatch(/lab-push-error/);
+    // PH-24.11: held only by its own request — never by a quality run or an armed close.
+    expect(strip).toMatch(/const held = busy === 'push';/);
+    expect(strip).not.toMatch(/armedElsewhere|busy !== null/);
     // The strip never posts anything itself; the shell does, to the push route and only there.
     expect(strip).not.toMatch(/labPost|labGet/);
     const lab = code('lab/Lab.tsx');
@@ -277,6 +283,20 @@ describe('the Lab is marked wherever it appears', () => {
     expect(lab).toMatch(/useState<Tab>\('close'\)/);
     // A refused close while pushing is said in the operator's words.
     expect(lab).toMatch(/PUSH_RUNNING/);
+  });
+
+  it('is never left held by a failed request (PH-24.11)', () => {
+    const api = code('lab/labApi.ts');
+    // Both verbs go through one catch: a failed fetch or body is an Unavailable answer.
+    expect(api).toMatch(/async function asJson</);
+    expect(api).toMatch(/catch \(error\) \{\s*return \{\s*running: false,\s*reason:/);
+    expect(api).toMatch(/return asJson<T>\(fetch\(`\/lab\/\$\{path\}`\)\);/);
+    expect(api).toMatch(/return asJson<T>\(\s*fetch\(`\/lab\/\$\{path\}`, \{\s*method: 'POST'/);
+    expect(api).not.toMatch(/return \(await response\.json\(\)\) as T \| Unavailable;\n\}/);
+    // The push handler clears busy whatever happened.
+    const lab = code('lab/Lab.tsx');
+    const handler = /const push = async[\s\S]*?\n {2}\};/.exec(lab)?.[0] ?? '';
+    expect(handler).toMatch(/finally \{\s*setBusy\(null\);/);
   });
 
   it('says the Lab is absent rather than hiding that it can be', () => {

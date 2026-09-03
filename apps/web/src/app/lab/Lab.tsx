@@ -82,7 +82,7 @@ export function Lab(): ReactElement {
   const [positionsView, setPositionsView] = useState<PositionsView | null>(null);
   const [all, setAll] = useState<ControlAll | null>(null);
   const [lastPush, setLastPush] = useState<PushResult | null>(null);
-  const [pushRefusal, setPushRefusal] = useState<string | null>(null);
+  const [pushError, setPushError] = useState<string | null>(null);
   const [positions, setPositions] = useState<LabPositionView[]>([]);
   const [positionNotice, setPositionNotice] = useState<string | null>(null);
   const [scenarios, setScenarios] = useState<ScenarioView[]>([]);
@@ -246,17 +246,20 @@ export function Lab(): ReactElement {
   const push = async (ticks: number): Promise<void> => {
     if (selected === null) return;
     setBusy('push');
-    setPushRefusal(null);
-    const body = await labPost<PushResult>(`markets/${selected}/push?ticks=${String(ticks)}`);
-    setBusy(null);
-    if (isUnavailable(body)) {
-      // A refusal is an answer, not an outage: CLOSE_ARMED names the reason.
-      if (/CLOSE_ARMED/.test(body.reason)) setPushRefusal(es.lab.push.refusedClose);
-      else setUnavailable(body.reason);
-      return;
+    setPushError(null);
+    try {
+      const body = await labPost<PushResult>(`markets/${selected}/push?ticks=${String(ticks)}`);
+      if (isUnavailable(body)) {
+        // A failed push is said on the strip; the screen and its buttons stay.
+        setPushError(es.lab.push.failed(body.reason));
+        return;
+      }
+      setLastPush(body);
+      void refreshState(selected);
+    } finally {
+      // PH-24.11: whatever happened, the strip is never left held.
+      setBusy(null);
     }
-    setLastPush(body);
-    void refreshState(selected);
   };
 
   const releaseAll = async (): Promise<void> => {
@@ -370,13 +373,7 @@ export function Lab(): ReactElement {
         <AssetList assets={assets} selected={selected} onSelect={setSelected} all={all} />
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
           <HeaderStrip state={state} regime={regime} control={control} />
-          <Empujar
-            control={control}
-            last={lastPush}
-            refusal={pushRefusal}
-            busy={busy}
-            onPush={push}
-          />
+          <Empujar control={control} last={lastPush} error={pushError} busy={busy} onPush={push} />
           <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: '0 16px 16px' }}>
             <Tabs<Tab>
               tabs={[
@@ -413,8 +410,6 @@ export function Lab(): ReactElement {
                 onBucket={setBucket}
                 expiryTime={expiryTime}
                 onExpiryTime={setExpiryTime}
-                onTarget={runScenario}
-                targetPlan={scenarioPlan}
                 price={price}
                 onPrice={setPrice}
                 onPreview={previewClose}
@@ -445,6 +440,8 @@ export function Lab(): ReactElement {
                 notice={scenarioNotice}
                 busy={busy}
                 onRun={runScenario}
+                onTarget={runScenario}
+                targetPlan={scenarioPlan}
               />
             </div>
             <div hidden={tab !== 'quality'}>
