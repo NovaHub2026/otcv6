@@ -9,12 +9,20 @@ import {
   Query,
 } from '@nestjs/common';
 import { displayPrice } from '@otc/chart';
-import { isTimeframeId, type TimeframeId } from '@otc/core';
+import {
+  epochMillis,
+  isTimeframeId,
+  logPrice,
+  type EpochMillis,
+  type LogPrice,
+  type Tick,
+} from '@otc/core';
 import { assessRealism, buildObserverDataset, runBattery } from '@otc/lab';
 import { selectClose } from '@otc/engine';
 import { STATE_RECORD_VERSION } from '@otc/runtime';
 import { VenueService } from '../venue.service.js';
-import { closeInstant, planClose, readWindow, resolveTarget, type Bucket } from './closeControl.js';
+import { closeInstant, planClose, readWindow, resolveTarget } from './closeControl.js';
+import { isPreset, LabPositions, presetLevel, PRESETS, type LabPosition } from './positions.js';
 import { SelectableSigns, SignSelector } from './selectableSigns.js';
 import { LabSession } from './session.js';
 
@@ -94,6 +102,7 @@ export class LabController {
     private readonly venue: VenueService,
     private readonly signs: SignSelector,
     private readonly session: LabSession,
+    private readonly positions: LabPositions = new LabPositions(),
   ) {}
 
   /**
@@ -360,9 +369,10 @@ export class LabController {
     @Query('price') price?: string,
     @Query('bucket') bucket?: string,
     @Query('timeframe') tf?: string,
+    @Query('expiry') expiry?: string,
   ): unknown {
-    const request = this.closeRequest(id, price, bucket, tf);
-    return { ...this.plan(request), armed: false };
+    const request = this.closeRequest(id, price, bucket, tf, expiry);
+    return { ...this.planAt(id, request.price, request.instant), environment: LAB, armed: false };
   }
 
   /**
@@ -380,13 +390,40 @@ export class LabController {
     @Query('price') price?: string,
     @Query('bucket') bucket?: string,
     @Query('timeframe') tf?: string,
+    @Query('expiry') expiry?: string,
   ): Promise<unknown> {
-    const request = this.closeRequest(id, price, bucket, tf);
+    const request = this.closeRequest(id, price, bucket, tf, expiry);
+    const result = await this.applyAt(
+      id,
+      { price: request.price, instant: request.instant },
+      'close.apply',
+      {
+        bucket: request.bucket,
+        timeframe: request.timeframe,
+      },
+    );
+    return { ...result.plan, environment: LAB, armed: result.armed };
+  }
+
+  /**
+   * Apply a close at an instant: the one path `close` and every preset share.
+   *
+   * Read, select and arm inside `betweenAdvances`, synchronously (PH-24.2 §2);
+   * record the act with §78's fields whether or not a vector was found — a
+   * refused close is an action too; remember what was armed so `control` can
+   * say what became of it.
+   */
+  private async applyAt(
+    id: string,
+    request: { price: string; instant: EpochMillis },
+    action: string,
+    parameters: Record<string, unknown>,
+  ): Promise<{ plan: ReturnType<LabController['planAt']>; armed: boolean }> {
     const wrapper = this.wrapperFor(id);
     const at = this.venue.now();
     const before = this.controlState(id);
     const result = await this.venue.betweenAdvances(() => {
-      const plan = this.plan(request);
+      const plan = this.planAt(id, request.price, request.instant);
       const signs = plan.selection;
       if (signs !== null && signs.length > 0) wrapper.arm(signs);
       return { plan, armed: signs !== null && signs.length > 0 };
@@ -395,8 +432,8 @@ export class LabController {
       at,
       asset: id,
       engineVersion: ENGINE_VERSION,
-      action: 'close.apply',
-      parameters: { price: request.price, bucket: request.bucket, timeframe: request.timeframe },
+      action,
+      parameters: { ...parameters, price: request.price, instant: request.instant },
       initialState: before,
       resultingState: this.controlState(id),
       succeeded: result.armed,
@@ -417,7 +454,7 @@ export class LabController {
         fromSequence: before.sequence,
       });
     }
-    return { ...result.plan, environment: LAB, armed: result.armed };
+    return result;
   }
 
   /**
@@ -466,6 +503,176 @@ export class LabController {
   @Get('session')
   sessionTimelines(): unknown {
     return this.session.timelines();
+  }
+
+  // ── Simulated positions and presets (PH-24.3) ───────────────────────────
+
+  /**
+   * Open a simulated position on a Lab market.
+   *
+   * A `Contract` from `packages/trading`, unchanged: the production shape,
+   * settled later by the production `settle` against this market's own record.
+   * Entry is now, and the entry price is the price in force now, read as
+   * settlement reads (ADR-0017). Kept in this process and nowhere else (O10).
+   */
+  @Post('markets/:id/positions')
+  openPosition(
+    @Param('id') id: string,
+    @Query('direction') direction?: string,
+    @Query('stake') stake?: string,
+    @Query('horizonMs') horizonMs?: string,
+  ): unknown {
+    if (this.venue.hostedMarket(id) === null)
+      throw new NotFoundException(`Asset ${id} is not hosted.`);
+    if (direction !== 'up' && direction !== 'down') {
+      throw new BadRequestException("direction must be 'up' (CALL) or 'down' (PUT).");
+    }
+    const stakeValue = Number(stake);
+    const horizon = Number(horizonMs);
+    try {
+      const position = this.positions.open(
+        { assetId: id, direction, stake: stakeValue, horizonMs: horizon },
+        this.venue.now(),
+        this.recordTicks(id),
+      );
+      this.session.recordAction({
+        at: this.venue.now(),
+        asset: id,
+        engineVersion: ENGINE_VERSION,
+        action: 'position.open',
+        parameters: { direction, stake: stakeValue, horizonMs: horizon },
+        initialState: {},
+        resultingState: { id: position.contract.id, entryPrice: position.entryPrice },
+        succeeded: true,
+        diagnostics: { expiryInstant: position.expiryInstant },
+      });
+      return { environment: LAB, asset: id, position: this.describe(position) };
+    } catch (error) {
+      throw new BadRequestException((error as Error).message);
+    }
+  }
+
+  /** Every position on this market, with what it is expected to be and what it was. */
+  @Get('markets/:id/positions')
+  listPositions(@Param('id') id: string): unknown {
+    if (this.venue.hostedMarket(id) === null)
+      throw new NotFoundException(`Asset ${id} is not hosted.`);
+    return {
+      environment: LAB,
+      asset: id,
+      positions: this.positions.list(id).map((position) => this.describe(position)),
+    };
+  }
+
+  /**
+   * Make a position end a chosen way: a close at the preset's level, at the
+   * position's expiry, through the same window, selection and critical section
+   * as `close`. Parity is not redefined: when `entry ± 1` is off-parity the
+   * reachable neighbours are named and nothing is armed.
+   */
+  @Post('markets/:id/positions/:pid/preset')
+  async applyPreset(
+    @Param('id') id: string,
+    @Param('pid') pid: string,
+    @Query('name') name?: string,
+  ): Promise<unknown> {
+    const position = this.positions.get(pid);
+    if (position === null || position.contract.assetId !== id) {
+      throw new NotFoundException(`Position ${pid} is not open on ${id}.`);
+    }
+    if (name === undefined || !isPreset(name)) {
+      throw new BadRequestException(`name must be one of ${PRESETS.join(', ')}.`);
+    }
+    if (this.venue.now() >= position.expiryInstant) {
+      throw new ConflictException(`Position ${pid} has expired; nothing to arm.`);
+    }
+    const level = presetLevel(name, position.entryPrice, position.contract.direction);
+    const asset = this.venue.assetFor(id)!;
+    const price = displayPrice(level, {
+      logQuantum: asset.instrument.logQuantum,
+      referencePrice: asset.instrument.referencePrice,
+      displayPrecision: asset.instrument.displayPrecision,
+    }).toFixed(asset.instrument.displayPrecision);
+    const result = await this.applyAt(
+      id,
+      { price, instant: position.expiryInstant },
+      'preset.apply',
+      {
+        preset: name,
+        position: pid,
+      },
+    );
+    return {
+      ...result.plan,
+      environment: LAB,
+      armed: result.armed,
+      preset: name,
+      position: this.describe(position),
+    };
+  }
+
+  /**
+   * Ticks this market's feed retains, oldest first: the Lab's record.
+   *
+   * From the feed's own `retained()` window, never from a guess at it. The
+   * first version walked back 49,000 sequences and stepped forward by a
+   * thousand until `since` stopped throwing — which, on a Lab restarted minutes
+   * earlier with a window a few hundred ticks wide, overshot to the newest tick
+   * and produced a record that started after every position's entry. `settle`
+   * refused, correctly, and the screen said "not expired" for ever while the
+   * control row beside it read `EXACT`. Found on the long-running local Lab;
+   * invisible to a test whose feed starts at sequence 1.
+   */
+  private recordTicks(id: string): readonly Tick[] {
+    const window = this.venue.feed.retained(id);
+    if (window === null) return [];
+    return this.venue.feed.since(id, window.oldest);
+  }
+
+  private describe(position: LabPosition): unknown {
+    const asset = this.venue.assetFor(position.contract.assetId)!;
+    const render = (level: number): string =>
+      displayPrice(level, {
+        logQuantum: asset.instrument.logQuantum,
+        referencePrice: asset.instrument.referencePrice,
+        displayPrecision: asset.instrument.displayPrecision,
+      }).toFixed(asset.instrument.displayPrecision);
+    const ticks = this.recordTicks(position.contract.assetId);
+    const armed = this.applied.get(position.contract.assetId);
+    const basis =
+      armed !== undefined && armed.instant === position.expiryInstant
+        ? 'armed-target'
+        : 'current-price';
+    const closeLevel: LogPrice =
+      basis === 'armed-target'
+        ? logPrice(armed!.target)
+        : (this.venue.hostedMarket(position.contract.assetId)?.snapshotEngine().price ??
+          position.entryPrice);
+    const expected = LabPositions.expected(position, closeLevel, basis);
+    const actual =
+      this.venue.now() > position.expiryInstant ? LabPositions.actual(position, ticks) : null;
+    return {
+      id: position.contract.id,
+      direction: position.contract.direction,
+      stake: position.contract.stake,
+      payoutRatio: position.contract.payoutRatio,
+      entryInstant: position.contract.entryInstant,
+      entryPrice: position.entryPrice,
+      entryDisplay: render(position.entryPrice),
+      expiryInstant: position.expiryInstant,
+      expected: { ...expected, closeDisplay: render(expected.close) },
+      actual:
+        actual === null
+          ? null
+          : {
+              outcome: actual.outcome,
+              expiryPrice: actual.expiryPrice,
+              expiryDisplay: render(actual.expiryPrice),
+              returned: actual.returned,
+              net: actual.net,
+              agrees: actual.outcome === expected.outcome,
+            },
+    };
   }
 
   /**
@@ -520,7 +727,9 @@ export class LabController {
     // most fifteen minutes; retention is hours.
     let closed: number | null = null;
     try {
-      for (const tick of this.venue.feed.since(id, Math.max(1, last.fromSequence))) {
+      const window = this.venue.feed.retained(id);
+      const from = Math.max(last.fromSequence, window?.oldest ?? last.fromSequence);
+      for (const tick of this.venue.feed.since(id, from)) {
         if (tick.instant <= last.instant) closed = tick.price;
         else break;
       }
@@ -575,30 +784,54 @@ export class LabController {
     };
   }
 
+  /**
+   * A close is addressed either to a candle — `bucket` and `timeframe` — or to
+   * an **instant** — `expiry`, epoch milliseconds — which is what a position's
+   * expiration is (PH-24.3 §2, the specification's I7). Both resolve to one
+   * instant and everything downstream is the same.
+   */
   private closeRequest(
     id: string,
     price: string | undefined,
     bucket: string | undefined,
     tf: string | undefined,
-  ): { id: string; price: string; bucket: Bucket; timeframe: TimeframeId } {
+    expiry: string | undefined,
+  ): { id: string; price: string; instant: EpochMillis; bucket: string; timeframe: string } {
     if (this.venue.hostedMarket(id) === null)
       throw new NotFoundException(`Asset ${id} is not hosted.`);
     if (price === undefined || price.trim().length === 0) {
       throw new BadRequestException('price is required: the close, in display units.');
     }
+    if (expiry !== undefined) {
+      const instant = Number(expiry);
+      if (!Number.isSafeInteger(instant) || instant <= this.venue.now()) {
+        throw new BadRequestException('expiry must be a future instant in epoch milliseconds.');
+      }
+      return { id, price, instant: epochMillis(instant), bucket: 'expiry', timeframe: '-' };
+    }
     if (bucket !== 'current' && bucket !== 'next') {
-      throw new BadRequestException("bucket must be 'current' or 'next'.");
+      throw new BadRequestException("bucket must be 'current' or 'next' (or give expiry=).");
     }
     if (tf === undefined || !isTimeframeId(tf)) {
       throw new BadRequestException(
         `timeframe must be one of the chart's timeframes, received ${tf}.`,
       );
     }
-    return { id, price, bucket, timeframe: tf };
+    return {
+      id,
+      price,
+      instant: closeInstant(this.venue.now(), tf, bucket),
+      bucket,
+      timeframe: tf,
+    };
   }
 
   /** The computation preview and apply share. Never arms. */
-  private plan(request: { id: string; price: string; bucket: Bucket; timeframe: TimeframeId }): {
+  private planAt(
+    id: string,
+    priceText: string,
+    instant: EpochMillis,
+  ): {
     environment: string;
     asset: string;
     price: string;
@@ -615,17 +848,17 @@ export class LabController {
     reachableNeighbours: readonly string[] | null;
     selection: readonly (1 | -1)[] | null;
   } {
-    const asset = this.venue.assetFor(request.id)!;
+    const asset = this.venue.assetFor(id)!;
     let resolved;
     try {
-      resolved = resolveTarget(asset.instrument, request.price);
+      resolved = resolveTarget(asset.instrument, priceText);
     } catch (error) {
       throw new BadRequestException((error as Error).message);
     }
     if (resolved.kind === 'between') {
       throw new ConflictException({
         environment: LAB,
-        asset: request.id,
+        asset: id,
         message:
           `${resolved.requested} is not a lattice level for this asset. The two around it are ` +
           `${resolved.below} and ${resolved.above}. Nothing was armed.`,
@@ -633,18 +866,12 @@ export class LabController {
         above: resolved.above,
       });
     }
-    const fork = this.venue.labFork(request.id)!;
-    const instant = closeInstant(this.venue.now(), request.timeframe, request.bucket);
+    const fork = this.venue.labFork(id)!;
     const window = readWindow(fork, instant);
-    const plan = planClose(
-      asset.instrument,
-      resolved.level,
-      window,
-      this.venue.labRandom(request.id),
-    );
+    const plan = planClose(asset.instrument, resolved.level, window, this.venue.labRandom(id));
     return {
       environment: LAB,
-      asset: request.id,
+      asset: id,
       price: plan.display,
       target: plan.target,
       instant,

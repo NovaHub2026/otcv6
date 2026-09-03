@@ -3,6 +3,7 @@ import { AppModule } from '../app.module.js';
 import { LabController } from './lab.controller.js';
 import { SignSelector } from './selectableSigns.js';
 import { LabSession } from './session.js';
+import { LabPositions } from './positions.js';
 
 /**
  * The Lab, composed **on top of** the application rather than inside it.
@@ -24,6 +25,6 @@ const selector = new SignSelector();
     AppModule.register({ signSource: (keystream, assetId) => selector.wrap(keystream, assetId) }),
   ],
   controllers: [LabController],
-  providers: [{ provide: SignSelector, useValue: selector }, LabSession],
+  providers: [{ provide: SignSelector, useValue: selector }, LabSession, LabPositions],
 })
 export class LabModule {}

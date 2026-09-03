@@ -255,6 +255,97 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     await venue.stop();
   }, 60_000);
 
+  it('PH-24.3: a preset closes a position the way it says, and the production settlement agrees', async () => {
+    const { venue, clock, controller } = await labVenue();
+    await advance(venue, clock, 20_000);
+    const opened = controller.openPosition(id, 'up', '100', '60000') as {
+      position: { id: string; expiryInstant: number; entryPrice: number };
+    };
+    const position = opened.position;
+    expect(position.expiryInstant).toBe(venue.now() + 60_000);
+
+    let applied = (await controller.applyPreset(id, position.id, 'win-minimum')) as Applied & {
+      impossible: string | null;
+      reachableNeighbours: readonly string[] | null;
+    };
+    if (!applied.armed) {
+      // Parity refused entry + 1; the preset names entry and entry + 2. "Minimum"
+      // is not redefined — the test takes the reachable neighbour above entry,
+      // through the close control addressed to the position's expiry.
+      expect(applied.impossible).toMatch(/parity/);
+      expect(applied.reachableNeighbours).toHaveLength(2);
+      applied = (await controller.applyClose(
+        id,
+        applied.reachableNeighbours![1],
+        undefined,
+        undefined,
+        String(position.expiryInstant),
+      )) as typeof applied;
+    }
+    expect(applied.armed).toBe(true);
+    expect(applied.instant).toBe(position.expiryInstant);
+
+    // Expected rests on the armed target and says so.
+    const listed = controller.listPositions(id) as {
+      positions: { id: string; expected: { outcome: string; basis: string }; actual: unknown }[];
+    };
+    const row = listed.positions.find((p) => p.id === position.id)!;
+    expect(row.expected).toMatchObject({ outcome: 'win', basis: 'armed-target' });
+    expect(row.actual).toBeNull();
+
+    await advance(venue, clock, 70_000);
+    const after = controller.listPositions(id) as {
+      positions: {
+        id: string;
+        actual: { outcome: string; agrees: boolean; expiryPrice: number } | null;
+      }[];
+    };
+    const settled = after.positions.find((p) => p.id === position.id)!.actual!;
+    expect(settled.outcome).toBe('win');
+    expect(settled.agrees).toBe(true);
+    expect(settled.expiryPrice).toBe(applied.target);
+    await venue.stop();
+  }, 60_000);
+
+  it('PH-24.3: settles a position on a feed whose window does not start at sequence 1', async () => {
+    // The long-running Lab's case: restarted, its feed retains only what it
+    // published since. The first `recordTicks` guessed at the window and built a
+    // record that began after every entry, so `settle` refused for ever.
+    const { venue, clock, controller } = await labVenue();
+    await advance(venue, clock, 30_000);
+    venue.feed.forget(id, 'test: the window restarts late');
+    await advance(venue, clock, 10_000);
+    expect(venue.feed.retained(id)!.oldest).toBeGreaterThan(1);
+    const opened = controller.openPosition(id, 'up', '50', '30000') as { position: { id: string } };
+    await advance(venue, clock, 40_000);
+    const after = controller.listPositions(id) as {
+      positions: { id: string; actual: { outcome: string } | null }[];
+    };
+    const row = after.positions.find((p) => p.id === opened.position.id)!;
+    expect(row.actual, 'settlement never happened on a late-starting feed').not.toBeNull();
+    expect(['win', 'loss', 'refund']).toContain(row.actual!.outcome);
+    await venue.stop();
+  }, 60_000);
+
+  it('PH-24.3: refuses a preset on an unknown or expired position, and a bad name', async () => {
+    const { venue, clock, controller } = await labVenue();
+    await advance(venue, clock, 20_000);
+    await expect(controller.applyPreset(id, 'lab-99', 'tie')).rejects.toMatchObject({
+      status: 404,
+    });
+    const opened = controller.openPosition(id, 'down', '10', '5000') as {
+      position: { id: string };
+    };
+    await expect(controller.applyPreset(id, opened.position.id, 'nonsense')).rejects.toMatchObject({
+      status: 400,
+    });
+    await advance(venue, clock, 10_000);
+    await expect(controller.applyPreset(id, opened.position.id, 'tie')).rejects.toMatchObject({
+      status: 409,
+    });
+    await venue.stop();
+  }, 60_000);
+
   it('answers 409 when the process was not composed as a Lab', async () => {
     const { venue, clock, controller } = await labVenue(false);
     await advance(venue, clock, 5_000);

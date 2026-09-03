@@ -574,8 +574,8 @@ on it — the boundary first, guarded before anything stands on it.
 | -------- | --------------------------------------------------------------------- | -------- |
 | PH-24.1  | The selectable sign source and its hook                               | APPROVED |
 | PH-24.2  | Candle Close Control on a real candle, apply, release, session record | APPROVED |
-| PH-24.3  | Presets and simulated positions, settled against the Lab's record     | ACTIVE   |
-| PH-24.4  | Scenarios, the ones sign selection cannot express, and the screen     | PLANNED  |
+| PH-24.3  | Presets and simulated positions, settled against the Lab's record     | APPROVED |
+| PH-24.4  | Scenarios, the ones sign selection cannot express, and the screen     | ACTIVE   |
 | PH-24.5  | The diagnostics the audit found missing                               | PLANNED  |
 
 ### PH-23 — The OTC Market Lab

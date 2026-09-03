@@ -195,25 +195,15 @@ describe('Candle Close Control, from the panel', () => {
     await page.fill('[data-testid="lab-close-price"]', price);
     await page.click('[data-testid="lab-close-preview"]');
     await page.waitForSelector('[data-testid="lab-close-plan"]', { timeout: 30_000 });
-    let plan = await text(page, 'lab-close-plan');
+    const plan = await text(page, 'lab-close-plan');
     if (/parity/.test(plan)) {
       // Half the lattice is off-parity for any window; the screen names the
-      // two reachable neighbours as buttons. Take one and preview again.
+      // two reachable neighbours as buttons, and choosing one *is* the apply.
       await page.locator('[data-testid="lab-close-plan"] button').first().click();
-      await page.click('[data-testid="lab-close-preview"]');
-      await page.waitForFunction(
-        () =>
-          !/parity/.test(
-            document.querySelector('[data-testid="lab-close-plan"]')?.textContent ?? 'parity',
-          ),
-        null,
-        { timeout: 30_000 },
-      );
-      plan = await text(page, 'lab-close-plan');
+    } else {
+      expect(plan).not.toMatch(/outside-natural-range/);
+      await page.click('[data-testid="lab-close-apply"]');
     }
-    expect(plan).not.toMatch(/outside-natural-range/);
-
-    await page.click('[data-testid="lab-close-apply"]');
     await page.waitForFunction(
       () => /ARMED/.test(document.querySelector('[data-testid="lab-control"]')?.textContent ?? ''),
       null,
@@ -237,6 +227,43 @@ describe('Candle Close Control, from the panel', () => {
     const session = await text(page, 'lab-session-lab');
     expect(session).toMatch(/close\.apply ✓/);
     expect(await text(page, 'lab-session-engine')).toMatch(/nothing recorded yet/);
+    expect(errors).toEqual([]);
+    await page.close();
+  }, 300_000);
+  it('opens a CALL, applies WIN by minimum distance, and settlement agrees', async (ctx) => {
+    const page = await requireBrowser(ctx).newPage({ viewport: { width: 1280, height: 1400 } });
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
+    await page.waitForSelector('[data-testid="lab-positions"]', { timeout: 30_000 });
+    await page.fill('[data-testid="lab-position-stake"]', '100');
+    await page.fill('[data-testid="lab-position-horizon"]', '45');
+    await page.click('[data-testid="lab-position-call"]');
+    await page.waitForSelector('[data-testid^="lab-position-lab-"]', { timeout: 30_000 });
+    const row = page.locator('[data-testid^="lab-position-lab-"]').first();
+    const id = (await row.getAttribute('data-testid'))!.replace('lab-position-', '');
+
+    // WIN by minimum distance; if parity refuses ±1 the Lab names ±2 and the
+    // test takes the plan the screen shows rather than redefining "minimum".
+    await page.click(`[data-testid="lab-preset-${id}-win-minimum"]`);
+    await page.waitForFunction(() => /ARMED|parity/.test(document.body.innerText), null, {
+      timeout: 30_000,
+    });
+    if (/parity/.test(await page.locator('body').innerText())) {
+      // The preset named entry and entry + 2; choosing the one above entry
+      // applies it at the position's expiry — the screen carries the instant.
+      await page.locator('[data-testid="lab-close-plan"] button').last().click();
+      await page.waitForFunction(
+        () =>
+          /ARMED/.test(document.querySelector('[data-testid="lab-control"]')?.textContent ?? ''),
+        null,
+        { timeout: 30_000 },
+      );
+    }
+    await page.waitForSelector(`[data-testid="lab-position-${id}-actual"]`, { timeout: 120_000 });
+    const actual = await page.locator(`[data-testid="lab-position-${id}-actual"]`).innerText();
+    expect(actual).toMatch(/agrees/);
+    expect(actual).not.toMatch(/DISAGREES/);
     expect(errors).toEqual([]);
     await page.close();
   }, 300_000);

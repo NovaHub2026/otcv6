@@ -95,6 +95,35 @@ interface Session {
   }[];
 }
 
+/** A simulated position, as the Lab describes it (PH-24.3). */
+interface LabPositionView {
+  readonly id: string;
+  readonly direction: 'up' | 'down';
+  readonly stake: number;
+  readonly entryDisplay: string;
+  readonly expiryInstant: number;
+  readonly expected: {
+    readonly outcome: string;
+    readonly basis: string;
+    readonly closeDisplay: string;
+  };
+  readonly actual: {
+    readonly outcome: string;
+    readonly expiryDisplay: string;
+    readonly net: number;
+    readonly agrees: boolean;
+  } | null;
+}
+
+const PRESET_LABELS: readonly { name: string; label: string }[] = [
+  { name: 'win-minimum', label: 'WIN by min. distance' },
+  { name: 'loss-minimum', label: 'LOSS by min. distance' },
+  { name: 'tie', label: 'TIE' },
+  { name: 'entry-plus-tick', label: 'entry +1 tick' },
+  { name: 'entry-minus-tick', label: 'entry −1 tick' },
+  { name: 'exact-entry', label: 'exact entry' },
+];
+
 type CloseTimeframe = '30s' | '1m' | '5m' | '15m';
 const CLOSE_TIMEFRAMES: readonly CloseTimeframe[] = ['30s', '1m', '5m', '15m'];
 
@@ -160,6 +189,9 @@ export function Lab(): ReactElement {
   const [notice, setNotice] = useState<BetweenLevels | string | null>(null);
   const [control, setControl] = useState<Control | null>(null);
   const [session, setSession] = useState<Session | null>(null);
+  const [positions, setPositions] = useState<LabPositionView[]>([]);
+  const [planExpiry, setPlanExpiry] = useState<number | null>(null);
+  const [positionNotice, setPositionNotice] = useState<string | null>(null);
   const [quality, setQuality] = useState<Quality | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -189,12 +221,14 @@ export function Lab(): ReactElement {
     }
     setUnavailable(null);
     setState(body);
-    const [ctl, timelines] = await Promise.all([
+    const [ctl, timelines, open] = await Promise.all([
       labGet<Control>(`markets/${asset}/control`),
       labGet<Session>('session'),
+      labGet<{ positions: LabPositionView[] }>(`markets/${asset}/positions`),
     ]);
     if (!isUnavailable(ctl)) setControl(ctl);
     if (!isUnavailable(timelines)) setSession(timelines);
+    if (!isUnavailable(open)) setPositions(open.positions);
   }, []);
 
   useEffect(() => {
@@ -232,6 +266,7 @@ export function Lab(): ReactElement {
 
   const previewClose = async (): Promise<void> => {
     if (selected === null) return;
+    setPlanExpiry(null);
     setBusy('preview');
     settle(
       await labGet<ClosePlan | BetweenLevels>(`markets/${selected}/close/preview?${closeQuery()}`),
@@ -241,8 +276,62 @@ export function Lab(): ReactElement {
 
   const applyClose = async (): Promise<void> => {
     if (selected === null) return;
+    setPlanExpiry(null);
     setBusy('apply');
     settle(await labPost<ClosePlan | BetweenLevels>(`markets/${selected}/close?${closeQuery()}`));
+    setBusy(null);
+    void refreshState(selected);
+  };
+
+  const openPosition = async (
+    direction: 'up' | 'down',
+    stake: number,
+    horizonMs: number,
+  ): Promise<void> => {
+    if (selected === null) return;
+    setBusy('position');
+    const body = await labPost<{ position: LabPositionView } | { message?: string }>(
+      `markets/${selected}/positions?direction=${direction}&stake=${String(stake)}&horizonMs=${String(horizonMs)}`,
+    );
+    setBusy(null);
+    if (isUnavailable(body)) {
+      setUnavailable(body.reason);
+      return;
+    }
+    setPositionNotice(
+      'position' in body ? null : (body.message ?? 'The Lab refused the position.'),
+    );
+    void refreshState(selected);
+  };
+
+  const applyPreset = async (id: string, name: string): Promise<void> => {
+    if (selected === null) return;
+    // A preset's plan belongs to the position's expiry. When parity refuses
+    // entry ± 1 the plan names entry and entry ± 2, and choosing one of them
+    // must close at the *same* expiry — not at whatever candle the control's
+    // selectors happen to show. The neighbour buttons read this.
+    setPlanExpiry(positions.find((p) => p.id === id)?.expiryInstant ?? null);
+    setBusy('preset');
+    // A preset is a close at the position's expiry: the answer is a plan, and it
+    // lands in the close control's plan block like any other.
+    settle(
+      await labPost<ClosePlan | BetweenLevels>(
+        `markets/${selected}/positions/${id}/preset?name=${name}`,
+      ),
+    );
+    setBusy(null);
+    void refreshState(selected);
+  };
+
+  const applyNeighbour = async (level: string): Promise<void> => {
+    if (selected === null) return;
+    setPrice(level);
+    setBusy('apply');
+    const query =
+      planExpiry === null
+        ? `price=${encodeURIComponent(level)}&bucket=${bucket}&timeframe=${tf}`
+        : `price=${encodeURIComponent(level)}&expiry=${String(planExpiry)}`;
+    settle(await labPost<ClosePlan | BetweenLevels>(`markets/${selected}/close?${query}`));
     setBusy(null);
     void refreshState(selected);
   };
@@ -289,12 +378,20 @@ export function Lab(): ReactElement {
             onPrice={setPrice}
             onPreview={previewClose}
             onApply={applyClose}
+            onNeighbour={applyNeighbour}
             onRelease={releaseMarket}
             busy={busy}
             plan={plan}
             notice={notice}
             control={control}
             displayPrecision={state === null ? 7 : (state.price.split('.')[1] ?? '').length}
+          />
+          <PositionsPanel
+            positions={positions}
+            onOpen={openPosition}
+            onPreset={applyPreset}
+            busy={busy}
+            notice={positionNotice}
           />
           <SessionPanel session={session} />
           <QualityPanel quality={quality} busy={busy === 'quality'} onRun={runQuality} />
@@ -471,6 +568,7 @@ function CloseControl({
   onPrice,
   onPreview,
   onApply,
+  onNeighbour,
   onRelease,
   busy,
   plan,
@@ -486,6 +584,8 @@ function CloseControl({
   onPrice: (value: string) => void;
   onPreview: () => Promise<void>;
   onApply: () => Promise<void>;
+  /** A reachable price the Lab offered: applying it is the act, where the plan belongs. */
+  onNeighbour: (level: string) => Promise<void>;
   onRelease: () => Promise<void>;
   busy: string | null;
   plan: ClosePlan | null;
@@ -624,7 +724,7 @@ function CloseControl({
               key={level}
               type="button"
               onClick={() => {
-                onPrice(level);
+                void onNeighbour(level);
               }}
               style={{ ...button('neutral'), marginLeft: 6, padding: '1px 8px' }}
             >
@@ -661,7 +761,7 @@ function CloseControl({
                       key={level}
                       type="button"
                       onClick={() => {
-                        onPrice(level);
+                        void onNeighbour(level);
                       }}
                       style={{ ...button('neutral'), marginLeft: 6, padding: '1px 8px' }}
                     >
@@ -740,6 +840,160 @@ function SessionPanel({ session }: { session: Session | null }): ReactElement {
             ))
           )}
         </div>
+      </div>
+    </Section>
+  );
+}
+
+/**
+ * Simulated positions (§38–§45) and the presets that decide how they end (§41).
+ *
+ * Every row shows two outcomes: what the Lab expects — from the armed target if
+ * one is armed for that expiry, otherwise from the current price, and it says
+ * which — and what the production settlement returned against the Lab's own
+ * record once the position expired. They must agree; a row where they do not
+ * is a finding about the engine and is marked so.
+ */
+function PositionsPanel({
+  positions,
+  onOpen,
+  onPreset,
+  busy,
+  notice,
+}: {
+  positions: readonly LabPositionView[];
+  onOpen: (direction: 'up' | 'down', stake: number, horizonMs: number) => Promise<void>;
+  onPreset: (id: string, name: string) => Promise<void>;
+  busy: string | null;
+  notice: string | null;
+}): ReactElement {
+  const [stake, setStake] = useState('100');
+  const [horizon, setHorizon] = useState('60');
+  const when = (instant: number): string => new Date(instant).toISOString().slice(11, 19);
+  const field = {
+    background: '#0b0e14',
+    border: '1px solid #242c3d',
+    color: '#d7dce5',
+    padding: '4px 8px',
+    fontSize: 12,
+    width: 80,
+  } as const;
+  const small = {
+    background: '#161b26',
+    border: '1px solid #242c3d',
+    color: '#d7dce5',
+    padding: '2px 8px',
+    fontSize: 11,
+    cursor: busy !== null ? 'wait' : 'pointer',
+  } as const;
+  return (
+    <Section title="SIMULATED POSITIONS">
+      <div
+        style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}
+      >
+        <span style={{ color: '#5b6377', fontSize: 11 }}>stake</span>
+        <input
+          data-testid="lab-position-stake"
+          value={stake}
+          onChange={(e) => setStake(e.target.value)}
+          style={field}
+        />
+        <span style={{ color: '#5b6377', fontSize: 11 }}>expires in (s)</span>
+        <input
+          data-testid="lab-position-horizon"
+          value={horizon}
+          onChange={(e) => setHorizon(e.target.value)}
+          style={field}
+        />
+        <button
+          type="button"
+          data-testid="lab-position-call"
+          disabled={busy !== null}
+          onClick={() => void onOpen('up', Number(stake), Number(horizon) * 1000)}
+          style={{ ...small, border: '1px solid #3fb950' }}
+        >
+          open CALL
+        </button>
+        <button
+          type="button"
+          data-testid="lab-position-put"
+          disabled={busy !== null}
+          onClick={() => void onOpen('down', Number(stake), Number(horizon) * 1000)}
+          style={{ ...small, border: '1px solid #f85149' }}
+        >
+          open PUT
+        </button>
+      </div>
+      {notice !== null && (
+        <div
+          data-testid="lab-position-notice"
+          style={{ color: '#e3b341', fontSize: 11, lineHeight: 1.6, marginBottom: 6 }}
+        >
+          {notice}
+        </div>
+      )}
+      <div data-testid="lab-positions">
+        {positions.length === 0 && (
+          <div style={{ color: '#5b6377', fontSize: 11 }}>no simulated position</div>
+        )}
+        {positions.map((p) => (
+          <div
+            key={p.id}
+            data-testid={`lab-position-${p.id}`}
+            style={{
+              borderTop: '1px solid #1b2130',
+              padding: '6px 0',
+              fontSize: 11,
+              lineHeight: 1.7,
+            }}
+          >
+            <div style={{ color: '#d7dce5' }}>
+              <strong>{p.id}</strong> · {p.direction === 'up' ? 'CALL' : 'PUT'} · stake{' '}
+              {String(p.stake)} · entry {p.entryDisplay} · expires {when(p.expiryInstant)} UTC
+            </div>
+            <div style={{ color: '#8b93a7' }}>
+              expected <strong style={{ color: '#d7dce5' }}>{p.expected.outcome}</strong> at{' '}
+              {p.expected.closeDisplay}{' '}
+              <span style={{ color: '#5b6377' }}>({p.expected.basis})</span>
+              {' · '}
+              actual{' '}
+              {p.actual === null ? (
+                <span style={{ color: '#5b6377' }}>not expired</span>
+              ) : (
+                <span
+                  data-testid={`lab-position-${p.id}-actual`}
+                  style={{ color: p.actual.agrees ? '#3fb950' : '#f85149' }}
+                >
+                  <strong>{p.actual.outcome}</strong> at {p.actual.expiryDisplay} · net{' '}
+                  {String(p.actual.net)}{' '}
+                  {p.actual.agrees ? '— agrees' : '— DISAGREES WITH EXPECTED'}
+                </span>
+              )}
+            </div>
+            {p.actual === null && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                {PRESET_LABELS.map((preset) => (
+                  <button
+                    key={preset.name}
+                    type="button"
+                    data-testid={`lab-preset-${p.id}-${preset.name}`}
+                    disabled={busy !== null}
+                    onClick={() => void onPreset(p.id, preset.name)}
+                    style={small}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <div style={{ color: '#5b6377', fontSize: 11, marginTop: 8, lineHeight: 1.6 }}>
+        A preset is a close at the position&apos;s expiry — one lattice level from entry, which is
+        the asset&apos;s own tick. Settlement is the production engine against this Lab&apos;s
+        record; the two columns must agree, and a row where they do not is a finding, not a display
+        bug.
       </div>
     </Section>
   );

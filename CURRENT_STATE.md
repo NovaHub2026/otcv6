@@ -25,10 +25,10 @@ Last synchronized: 2026-09-03
 | ---------------------- | --------------------------------------------------------------------------- |
 | Active phase           | PH-24 — The Lab's controls: applying a selection                            |
 | Phase lifecycle        | ACTIVE                                                                      |
-| Active subphase        | PH-24.3 — Presets and simulated positions, settled against the Lab's record |
+| Active subphase        | PH-24.4 — Scenarios, the ones sign selection cannot express, and the screen |
 | Subphase lifecycle     | ACTIVE                                                                      |
 | Last approved phase    | PH-23 — The OTC Market Lab                                                  |
-| Last approved subphase | PH-24.2 — Candle Close Control on a real candle                             |
+| Last approved subphase | PH-24.3 — Presets and simulated positions, settled against the Lab's record |
 
 **PH-24 is active**, on `feature/ph-24-the-labs-controls`. PH-24.1 built the
 boundary — a sign source that plays a chosen vector in lockstep with the

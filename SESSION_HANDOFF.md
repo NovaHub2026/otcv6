@@ -13,7 +13,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Remote             | `origin` → NovaHub2026/otcv6, public                                        |
 | Active cycle       | Cycle 8, **2 of 3** phases approved (PH-22, PH-23)                          |
 | Active phase       | PH-24 — The Lab's controls: applying a selection                            |
-| Active subphase    | PH-24.3 — Presets and simulated positions, settled against the Lab's record |
+| Active subphase    | PH-24.4 — Scenarios, the ones sign selection cannot express, and the screen |
 | Cycle Audit        | **007 closed** 2026-09-03; the next is due after three approved phases      |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                          |
 
@@ -34,18 +34,17 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-24.2 is approved; PH-24.3 is active**
-([PH-24.3](docs/phases/PH-24.3-presets-and-simulated-positions.md)). Candle
-Close Control works from the panel on a real candle — `lab.stat.test.ts` drives
-it in Chromium against a Lab process booted from `lab.main.js` — and building
-the screen found four last-mile defects the route tests could not (PH-24.2
-§10). PH-24.3 adds simulated positions (`packages/trading`'s `Contract`,
-settled by the production `settle` against the Lab's record) and the §41
-presets as closes at a position's expiry; drafts of `positions.ts`, its test,
-the routes and the screen section are in this session's scratchpad and are
-being moved into the tree. Hosted CI on `main` at `8f62e4b` was green on both
-gates. Cycle 8 stands at 2 of 3 approved phases; PH-24's approval opens Cycle
-Audit 8.
+**PH-24.3 is approved; PH-24.4 is active**
+([PH-24.4](docs/phases/PH-24.4-scenarios-and-the-screen.md)). Simulated
+positions are `packages/trading` contracts settled by the production `settle`
+against the Lab's record, presets are closes at a position's expiry, and both
+browser flows pass against a Lab booted from `lab.main.js`. Two defects were
+found only on the long-running local Lab (PH-24.3 §9) — a feed window that does
+not start at 1 is the class to test for. PH-24.4 adds the nine missing scenario
+criteria to `INTERVENTIONS`, declares P15/P16 not selectable with the reason,
+wires scenario routes, and puts the section on the screen; the LA-01 guard
+extends to every new criterion by construction. Cycle 8 stands at 2 of 3
+approved phases; PH-24's approval opens Cycle Audit 8.
 
 **The next phase is the decision LA-03 names.** The Lab specification audit
 ([LAB-SPECIFICATION-AUDIT-001](docs/audits/LAB-SPECIFICATION-AUDIT-001.md))

@@ -120,6 +120,15 @@ describe('the Lab is marked wherever it appears', () => {
     // that set the field — never a silent rounding.
     expect(source).toMatch(/lab-close-notice/);
     expect(source).toMatch(/\[notice\.below, notice\.above\]\.map/);
+    // Choosing an offered neighbour is the act, and it lands where the plan
+    // belongs: at a position's expiry after a preset, not at whatever candle the
+    // selectors show. The first version set the field and left the operator to
+    // click Apply on the wrong instant.
+    expect(source).toMatch(/void onNeighbour\(level\)/);
+    expect(source, 'a neighbour only fills the field').not.toMatch(
+      /onClick=\{\(\) => \{\s*onPrice\(level\);/,
+    );
+    expect(source).toMatch(/&expiry=\$\{String\(planExpiry\)\}/);
     // The outcome of the last applied close is shown, and says EXACT or MISSED:
     // "applied" is a claim about the future, and this is the line that checks it.
     expect(source).toMatch(/lastApplied/);
@@ -138,6 +147,31 @@ describe('the Lab is marked wherever it appears', () => {
     expect(source).toMatch(/lab-session-lab/);
     // The proxy forwards the acts.
     expect(code('lab/[...path]/route.ts')).toMatch(/export async function POST/);
+  });
+
+  it('shows simulated positions with expected and actual side by side (PH-24.3)', () => {
+    const source = code('lab/Lab.tsx');
+    for (const handle of ['lab-position-call', 'lab-position-put', 'lab-positions']) {
+      expect(source, `${handle} missing`).toMatch(new RegExp(`data-testid="${handle}"`));
+    }
+    // Both columns, and the disagreement named as what it is: a finding.
+    expect(source).toMatch(/p\.expected\.outcome/);
+    expect(source).toMatch(/p\.actual\.outcome/);
+    expect(source).toMatch(/DISAGREES WITH EXPECTED/);
+    // Expected says what it rests on — an armed target or merely the current price.
+    expect(source).toMatch(/p\.expected\.basis/);
+    // Every preset the specification names, and presets only on open positions.
+    for (const preset of [
+      'win-minimum',
+      'loss-minimum',
+      'tie',
+      'entry-plus-tick',
+      'entry-minus-tick',
+      'exact-entry',
+    ]) {
+      expect(source, `preset ${preset} missing`).toMatch(new RegExp(`name: '${preset}'`));
+    }
+    expect(source).toMatch(/p\.actual === null && \(/);
   });
 
   it('says the Lab is absent rather than hiding that it can be', () => {
