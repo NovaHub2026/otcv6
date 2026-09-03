@@ -661,6 +661,97 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     expect(future.body()).toMatch(/event: gap/);
   });
 
+  it('carries several assets on one connection, each with its own position (PH-22.2)', () => {
+    // The optimisation is easy and the contract is the hard part. SSE has one
+    // `Last-Event-ID` per connection; eight assets have eight positions, and
+    // the moment one number stands for eight, a reconnect either replays or
+    // skips — and a gap served in silence is indistinguishable from the market.
+    const feed = new TickFeed({ retainTicks: 50 });
+    feed.publish('eurusd', ticks(6));
+    feed.publish('gbpjpy', ticks(4));
+    const venue = { ...venueStub(['eurusd', 'gbpjpy']), feed } as unknown as VenueService;
+    const controller = new MarketController(venue);
+
+    const out = recording();
+    controller.multiplexed(out.res, request(), 'eurusd,gbpjpy');
+    expect(out.status()).toBe(200);
+
+    // Every event names its asset, so a client demultiplexes what it parses.
+    feed.publish('eurusd', [
+      { sequence: 7, instant: epochMillis(ORIGIN + 42_000), price: logPrice(1_001) },
+    ]);
+    feed.publish('gbpjpy', [
+      { sequence: 5, instant: epochMillis(ORIGIN + 43_000), price: logPrice(1_002) },
+    ]);
+    const frames = out
+      .body()
+      .split('\n\n')
+      .filter((entry) => entry.length > 0);
+    const named = frames.map((frame) => {
+      const data = /data: (.*)$/m.exec(frame)?.[1] ?? '{}';
+      return JSON.parse(data) as { asset?: string; sequence?: number };
+    });
+    expect(named.some((entry) => entry.asset === 'eurusd' && entry.sequence === 7)).toBe(true);
+    expect(named.some((entry) => entry.asset === 'gbpjpy' && entry.sequence === 5)).toBe(true);
+
+    // And the id carries the whole stream's position, per asset.
+    const lastId = [...out.body().matchAll(/^id: (.*)$/gm)].pop()?.[1] ?? '';
+    expect(lastId).toContain('eurusd:7');
+    expect(lastId).toContain('gbpjpy:5');
+  });
+
+  it('resumes each asset at its own sequence, exactly (PH-22.2)', () => {
+    const feed = new TickFeed({ retainTicks: 50 });
+    feed.publish('eurusd', ticks(6));
+    feed.publish('gbpjpy', ticks(4));
+    const venue = { ...venueStub(['eurusd', 'gbpjpy']), feed } as unknown as VenueService;
+    const controller = new MarketController(venue);
+
+    const out = recording();
+    controller.multiplexed(out.res, request(), 'eurusd,gbpjpy', 'eurusd:5,gbpjpy:3');
+    const delivered = [...out.body().matchAll(/data: (.*)$/gm)]
+      .map((match) => JSON.parse(match[1]!) as { asset: string; sequence: number })
+      .filter((entry) => entry.sequence !== undefined);
+    expect(delivered.filter((e) => e.asset === 'eurusd').map((e) => e.sequence)).toEqual([5, 6]);
+    expect(delivered.filter((e) => e.asset === 'gbpjpy').map((e) => e.sequence)).toEqual([3, 4]);
+  });
+
+  it('gaps one asset without tearing down the other seven (PH-22.2)', () => {
+    // One asset's eviction is one asset's problem. A stream that closed for all
+    // of them would make an eviction on a quiet market look like an outage on a
+    // busy one.
+    const feed = new TickFeed({ retainTicks: 3 });
+    feed.publish('eurusd', ticks(10));
+    feed.publish('gbpjpy', ticks(4));
+    const venue = { ...venueStub(['eurusd', 'gbpjpy']), feed } as unknown as VenueService;
+    const controller = new MarketController(venue);
+
+    const out = recording();
+    controller.multiplexed(out.res, request(), 'eurusd,gbpjpy', 'eurusd:1,gbpjpy:2', 'live');
+    expect(out.status()).toBe(200);
+    const gap = /event: gap\ndata: (.*)/.exec(out.body())?.[1];
+    expect(gap, 'no gap event').toBeDefined();
+    expect(JSON.parse(gap!)).toMatchObject({ asset: 'eurusd', requested: 1 });
+    // gbpjpy was servable and was served.
+    expect(out.body()).toMatch(/"asset":"gbpjpy","sequence":2/);
+  });
+
+  it('refuses a from that names an asset the stream does not carry (PH-22.2)', () => {
+    const { feed } = streaming();
+    const venue = { ...venueStub(['eurusd', 'gbpjpy']), feed } as unknown as VenueService;
+    const controller = new MarketController(venue);
+    expect(() => controller.multiplexed(untouched(), request(), 'eurusd', 'gbpjpy:3')).toThrow(
+      /does not carry/,
+    );
+    expect(() => controller.multiplexed(untouched(), request(), 'eurusd', 'eurusd:x')).toThrow(
+      /asset:sequence/,
+    );
+    expect(() => controller.multiplexed(untouched(), request(), '')).toThrow(/at least one asset/);
+    expect(() => controller.multiplexed(untouched(), request(), 'eurusd,eurusd')).toThrow(
+      /more than once/,
+    );
+  });
+
   it('refuses a gap policy it does not have, by name', () => {
     // A mistyped policy that fell through to "refuse" would be a client
     // believing it had asked to be told, and finding out as a dead stream.

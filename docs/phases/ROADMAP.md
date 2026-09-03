@@ -564,8 +564,8 @@ larger.
 | Subphase | Title                                                    | State    |
 | -------- | -------------------------------------------------------- | -------- |
 | PH-22.1  | An instrument that can hold thousands of connections     | APPROVED |
-| PH-22.2  | Many assets, one connection, the same resume contract    | ACTIVE   |
-| PH-22.3  | What happens when ten thousand clients come back at once | PLANNED  |
+| PH-22.2  | Many assets, one connection, the same resume contract    | APPROVED |
+| PH-22.3  | What happens when ten thousand clients come back at once | ACTIVE   |
 
 Nobody has ever opened two simultaneous clients against this engine. Everything
 below is therefore a hypothesis with a number attached, and the phase exists to

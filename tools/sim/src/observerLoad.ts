@@ -51,6 +51,13 @@ export interface ObserverLoadOptions {
   readonly enginePid?: number;
   /** How long to wait for an observer's first byte before calling it refused. */
   readonly connectTimeoutMs?: number;
+  /**
+   * Assets per connection. One is the single-asset endpoint; more than one
+   * opens the multiplexed stream (PH-22.2) and demultiplexes by the asset each
+   * event names, tracking gaps and duplicates **per asset** rather than per
+   * connection — because that is what the contract is about.
+   */
+  readonly assetsPerConnection?: number;
 }
 
 export interface ObserverLoadReport {
@@ -89,7 +96,8 @@ interface ObserverState {
   ticks: number;
   gaps: number;
   duplicates: number;
-  lastSequence: number | null;
+  /** Per asset, so a multiplexed stream is checked the way it is contracted. */
+  lastSequence: Map<string, number>;
   failure: string | null;
 }
 
@@ -143,12 +151,21 @@ export async function runObserverLoad(options: ObserverLoadOptions): Promise<Obs
         ticks: 0,
         gaps: 0,
         duplicates: 0,
-        lastSequence: null,
+        lastSequence: new Map(),
         failure: null,
       };
       states[index] = state;
-      const assetId = options.assetIds[index % options.assetIds.length]!;
-      const url = new URL(`${options.baseUrl}/markets/${assetId}/stream`);
+      const perConnection = Math.max(1, options.assetsPerConnection ?? 1);
+      const carried = Array.from(
+        { length: Math.min(perConnection, options.assetIds.length) },
+        (_, offset) =>
+          options.assetIds[(index * perConnection + offset) % options.assetIds.length]!,
+      );
+      const unique = [...new Set(carried)];
+      const url =
+        perConnection === 1
+          ? new URL(`${options.baseUrl}/markets/${unique[0]!}/stream`)
+          : new URL(`${options.baseUrl}/markets/stream?assets=${unique.join(',')}`);
       let settled = false;
       const settle = (): void => {
         if (settled) return;
@@ -165,7 +182,13 @@ export async function runObserverLoad(options: ObserverLoadOptions): Promise<Obs
       }, connectTimeoutMs);
 
       const request = httpRequest(
-        { hostname: url.hostname, port: url.port, path: url.pathname, agent, method: 'GET' },
+        {
+          hostname: url.hostname,
+          port: url.port,
+          path: `${url.pathname}${url.search}`,
+          agent,
+          method: 'GET',
+        },
         (response) => {
           if (response.statusCode !== 200) {
             state.failure = `HTTP ${String(response.statusCode)}`;
@@ -195,15 +218,22 @@ export async function runObserverLoad(options: ObserverLoadOptions): Promise<Obs
                   const tick = JSON.parse(line.slice(6)) as {
                     sequence?: number;
                     instant?: number;
+                    asset?: string;
                   };
                   if (typeof tick.sequence === 'number' && typeof tick.instant === 'number') {
                     state.ticks += 1;
                     latencies.push(Date.now() - tick.instant);
-                    if (state.lastSequence !== null) {
-                      if (tick.sequence === state.lastSequence) state.duplicates += 1;
-                      else if (tick.sequence !== state.lastSequence + 1) state.gaps += 1;
+                    // Keyed on the asset the event names: on a multiplexed
+                    // stream the sequences of eight assets interleave, and
+                    // checking them as one series would report seven gaps per
+                    // tick and hide a real one.
+                    const key = tick.asset ?? unique[0]!;
+                    const previous = state.lastSequence.get(key);
+                    if (previous !== undefined) {
+                      if (tick.sequence === previous) state.duplicates += 1;
+                      else if (tick.sequence !== previous + 1) state.gaps += 1;
                     }
-                    state.lastSequence = tick.sequence;
+                    state.lastSequence.set(key, tick.sequence);
                   }
                 } catch {
                   state.failure = 'unparseable frame';

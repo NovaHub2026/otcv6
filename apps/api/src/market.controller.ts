@@ -16,7 +16,7 @@ import {
   type BeforeApplicationShutdown,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { EvictedError, UnknownSequenceError } from '@otc/distribution';
+import { EvictedError, UnknownSequenceError, type FeedSink } from '@otc/distribution';
 import {
   ASSET_ARCHETYPES,
   archetypeById,
@@ -61,6 +61,12 @@ export const BOOT_NONCE = 'BOOT_NONCE';
  * published, or asks a job to run, and none of them can reach the price path
  * (INV-001).
  */
+/** A composite `Last-Event-ID`, when the browser reconnected on its own. */
+function asLastEventId(request: Request): string | undefined {
+  const header = request.headers['last-event-id'];
+  return typeof header === 'string' ? header : undefined;
+}
+
 @Controller()
 export class MarketController implements BeforeApplicationShutdown {
   /**
@@ -117,6 +123,189 @@ export class MarketController implements BeforeApplicationShutdown {
   @Get('markets')
   markets(): unknown {
     return this.venue.assetIds.map((id) => this.describe(id));
+  }
+
+  /**
+   * One connection, several assets, and the same resume contract per asset.
+   *
+   * **PH-22.2.** PH-22.1 measured the server holding two thousand observers at
+   * 8.7% of a core with no gaps and no duplicates, and left one ceiling
+   * standing: a browser gets **six connections per origin** on HTTP/1.1, so the
+   * eight charts per client this product is for do not fit, whatever the server
+   * can serve.
+   *
+   * The optimisation is easy and the contract is the hard part. SSE carries one
+   * `Last-Event-ID` per connection; a stream carrying eight assets has eight
+   * positions. The moment one number stands for eight, a reconnect either
+   * replays what a client already has or skips what it does not — and a gap
+   * served in silence is indistinguishable from the market (INV-002).
+   *
+   * So the position is per asset, everywhere:
+   *
+   * ```
+   * GET /markets/stream?assets=eurusd,btcusd
+   * GET /markets/stream?assets=eurusd,btcusd&from=eurusd:481775,btcusd:9912&onGap=live
+   * ```
+   *
+   * - Every event names its asset in the payload, so a client demultiplexes by
+   *   reading what it already parses.
+   * - An asset absent from `from` starts at the live edge, which is what adding
+   *   a chart mid-session means.
+   * - `onGap=live` keeps its meaning, and the `gap` event **names the asset**.
+   *   One asset's eviction does not tear down the other seven.
+   * - The `id:` field carries the whole stream's position, `asset:sequence`
+   *   comma-separated, so the browser's own `Last-Event-ID` reconnect is
+   *   exactly as informative as an explicit `from` — the property CA6-32
+   *   measured a 19-tick silent skip against.
+   *
+   * The single-asset endpoint is untouched. This is an addition.
+   */
+  @Get('markets/stream')
+  multiplexed(
+    @Res() res: Response,
+    @Req() request: Request,
+    @Query('assets') assets?: string,
+    @Query('from') from?: string,
+    @Query('onGap') onGap?: string,
+  ): void {
+    if (onGap !== undefined && onGap !== 'live') {
+      throw new BadRequestException(`onGap must be 'live' if present, received ${onGap}.`);
+    }
+    const liveOnGap = onGap === 'live';
+
+    const requested = (assets ?? '')
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    if (requested.length === 0) {
+      throw new BadRequestException('assets must name at least one asset, comma-separated.');
+    }
+    const duplicated = requested.filter((id, index) => requested.indexOf(id) !== index);
+    if (duplicated.length > 0) {
+      // Subscribing twice to one asset would deliver every tick twice on one
+      // stream, which a client cannot tell from the feed doing it.
+      throw new BadRequestException(`assets names ${duplicated[0]!} more than once.`);
+    }
+    if (requested.length > MAX_MULTIPLEXED_ASSETS) {
+      throw new BadRequestException(
+        `assets names ${String(requested.length)} assets; the most one stream may carry is ` +
+          `${String(MAX_MULTIPLEXED_ASSETS)}.`,
+      );
+    }
+    for (const id of requested) {
+      if (!this.venue.assetIds.includes(id)) throw new NotFoundException(`Unknown asset ${id}.`);
+    }
+
+    // `from` is per asset, and a position for an asset the stream does not carry
+    // is a client that believes it asked for something else.
+    const resumeAt = new Map<string, number>();
+    const composite = from ?? asLastEventId(request);
+    if (composite !== undefined && composite.trim().length > 0) {
+      for (const entry of composite.split(',')) {
+        const [id, raw] = entry.split(':');
+        if (id === undefined || raw === undefined || !/^\d+$/.test(raw)) {
+          throw new BadRequestException(
+            `from must be a comma-separated list of asset:sequence, received ${entry}.`,
+          );
+        }
+        if (!requested.includes(id)) {
+          throw new BadRequestException(`from names ${id}, which this stream does not carry.`);
+        }
+        resumeAt.set(id, Number.parseInt(raw, 10));
+      }
+    }
+
+    let headersSent = false;
+    let bufferedBytes = 0;
+    const buffered: string[] = [];
+    const write = (chunk: string): void => {
+      if (headersSent) res.write(chunk);
+      else {
+        buffered.push(chunk);
+        bufferedBytes += chunk.length;
+      }
+    };
+
+    /** The stream's position: one sequence per asset, so a reconnect is exact. */
+    const position = new Map<string, number>();
+    const positionId = (): string =>
+      requested
+        .filter((id) => position.has(id))
+        .map((id) => `${id}:${String(position.get(id))}`)
+        .join(',');
+
+    const subscriptions: { cancel: (reason?: string) => void }[] = [];
+    const sinkFor = (assetId: string): FeedSink => ({
+      deliver: (_id, ticks): boolean => {
+        for (const tick of ticks) {
+          if (!headersSent && bufferedBytes >= MAX_REPLAY_BYTES) return false;
+          position.set(assetId, tick.sequence);
+          write(`id: ${positionId()}\ndata: ${JSON.stringify({ asset: assetId, ...tick })}\n\n`);
+        }
+        return headersSent ? !res.writableNeedDrain : bufferedBytes < MAX_REPLAY_BYTES;
+      },
+      close: (reason): void => {
+        // One asset ending is not the stream ending: the client is told which,
+        // and the others keep delivering.
+        write(`event: close\ndata: ${JSON.stringify({ asset: assetId, reason })}\n\n`);
+      },
+    });
+
+    try {
+      for (const assetId of requested) {
+        const at = resumeAt.get(assetId);
+        try {
+          subscriptions.push(this.venue.feed.subscribe(assetId, sinkFor(assetId), at));
+        } catch (error) {
+          if (!(error instanceof EvictedError || error instanceof UnknownSequenceError))
+            throw error;
+          if (!liveOnGap) throw new BadRequestException(`${assetId}: ${error.message}`);
+          subscriptions.push(this.venue.feed.subscribe(assetId, sinkFor(assetId)));
+          write(
+            `event: gap\ndata: ${JSON.stringify({
+              asset: assetId,
+              requested: at,
+              reason: error.message,
+            })}\n\n`,
+          );
+        }
+      }
+    } catch (error) {
+      for (const subscription of subscriptions) subscription.cancel('stream refused');
+      throw error;
+    }
+
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+    });
+    headersSent = true;
+    let full = false;
+    for (const chunk of buffered) {
+      res.write(chunk);
+      if (res.writableNeedDrain) full = true;
+    }
+    buffered.length = 0;
+
+    const live = {
+      cancel: (reason?: string): void => {
+        for (const subscription of subscriptions) subscription.cancel(reason);
+      },
+    };
+    if (full) {
+      res.write(
+        `event: close\ndata: ${JSON.stringify({ reason: 'client fell behind during replay' })}\n\n`,
+      );
+      live.cancel('client fell behind during replay');
+      res.end();
+      return;
+    }
+    this.streams.add(live);
+    res.on('close', () => {
+      this.streams.delete(live);
+      live.cancel('client disconnected');
+    });
   }
 
   @Get('markets/:id')
@@ -648,6 +837,17 @@ const MAX_CANDLES_PER_REQUEST = 20_000;
  * short of what a fan-out of reconnects would cost (Cycle Audit 7, CA7-04).
  */
 const MAX_REPLAY_BYTES = 1_000_000;
+
+/**
+ * The most assets one stream may carry.
+ *
+ * Sized against what a client is for — the panel's densest view is a handful of
+ * charts, and the Human Owner's plan is eight — with room to spare, rather than
+ * against what the server survives. An unbounded list would let one request
+ * subscribe to the whole catalogue and make the replay bound above a per-asset
+ * quantity instead of a per-connection one.
+ */
+const MAX_MULTIPLEXED_ASSETS = 32;
 
 /**
  * The longest display name an asset may carry.

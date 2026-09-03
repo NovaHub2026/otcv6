@@ -21,14 +21,14 @@ Last synchronized: 2026-09-02
 
 ## Phase and subphase
 
-| Field                  | Value                                                           |
-| ---------------------- | --------------------------------------------------------------- |
-| Active phase           | PH-22 — Distribution under thousands of observers               |
-| Phase lifecycle        | ACTIVE                                                          |
-| Active subphase        | PH-22.2 — Many assets, one connection, the same resume contract |
-| Subphase lifecycle     | ACTIVE                                                          |
-| Last approved phase    | PH-21 — The catalogue at scale                                  |
-| Last approved subphase | PH-22.1 — An instrument that can hold thousands of connections  |
+| Field                  | Value                                                              |
+| ---------------------- | ------------------------------------------------------------------ |
+| Active phase           | PH-22 — Distribution under thousands of observers                  |
+| Phase lifecycle        | ACTIVE                                                             |
+| Active subphase        | PH-22.3 — What happens when ten thousand clients come back at once |
+| Subphase lifecycle     | ACTIVE                                                             |
+| Last approved phase    | PH-21 — The catalogue at scale                                     |
+| Last approved subphase | PH-22.2 — Many assets, one connection, the same resume contract    |
 
 Nothing is active because PH-21 closed and the cycle boundary is here: three
 approved phases, and `GOVERNANCE.md` §28 turns the work from building to
@@ -219,6 +219,7 @@ coverage has not been re-measured since 2026-08-31 (Issue #2).
 | ADR-0013 | Governance says what is true (PROPOSED — the Human Owner's to apply, Issue #14)                                                                                                                                                    |
 | ADR-0014 | Chart library and repository licence: Lightweight Charts, Apache-2.0 (APPROVED)                                                                                                                                                    |
 | ADR-0015 | The Lab may amend the rules that describe the system, not the guarantees it validates (APPROVED, Human Owner)                                                                                                                      |
+| ADR-0016 | Server-sent events stay; the cost is a syscall and every transport pays it (APPROVED)                                                                                                                                              |
 | Backlog  | [GitHub Issues](https://github.com/NovaHub2026/otcv6/issues) #1–#22; #1 and #13 closed. Two remain the Human Owner's: #3 and #14                                                                                                   |
 | Roadmap  | `docs/phases/ROADMAP.md`                                                                                                                                                                                                           |
 | Branch   | `main`. PH-21 merged at `3e4ec7e`; Cycle Audit 7 fixes merged after it. PH-21.1 sits under two hashes (`3a5f0a5`, `36bbf89`) because the branch was merged rather than rebased; both are ancestors and the duplication is cosmetic |

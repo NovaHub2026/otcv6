@@ -94,8 +94,8 @@ stream per asset — multiplexing changes the pipe, never the source), INV-001
 | Subphase | Title                                                    | State    |
 | -------- | -------------------------------------------------------- | -------- |
 | PH-22.1  | An instrument that can hold thousands of connections     | APPROVED |
-| PH-22.2  | Many assets, one connection, the same resume contract    | ACTIVE   |
-| PH-22.3  | What happens when ten thousand clients come back at once | PLANNED  |
+| PH-22.2  | Many assets, one connection, the same resume contract    | APPROVED |
+| PH-22.3  | What happens when ten thousand clients come back at once | ACTIVE   |
 
 **"One tick, serialised once" was planned here and is not being built.** PH-22.1
 measured the thing it would have optimised: building an SSE frame costs 0.187 µs

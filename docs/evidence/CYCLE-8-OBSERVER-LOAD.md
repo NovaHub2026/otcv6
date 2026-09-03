@@ -120,3 +120,42 @@ harness processes, and that is the next honest step, not an extrapolation.
 
 **Memory per connection is not in this table.** Feed retention was measured by
 Cycle Audit 7; socket buffers at eighty thousand connections were not.
+
+---
+
+## PH-22.2 — the same clients, with and without multiplexing
+
+One connection per chart against one connection per client, five assets each,
+same engine, same twenty-second window, zero-observer baseline subtracted.
+
+| clients | charts/connection | connections | ticks in window | engine CPU | marginal | µs/delivery | p99  | gaps | duplicates |
+| ------- | ----------------- | ----------- | --------------- | ---------- | -------- | ----------- | ---- | ---- | ---------- |
+| 500     | 1                 | 2,500       | 60,000          | 2.47 s     | 2.38 s   | 39.7        | 26ms | 0    | 0          |
+| 500     | 5                 | **500**     | 62,500          | 1.87 s     | 1.78 s   | 28.5        | 27ms | 0    | 0          |
+| 1,000   | 1                 | 5,000       | 147,313         | 4.51 s     | 4.42 s   | 30.0        | 60ms | 0    | 0          |
+| 1,000   | 5                 | **1,000**   | 145,000         | 3.05 s     | 2.96 s   | 20.4        | 36ms | 0    | 0          |
+
+**Multiplexing wins on three axes at once**, and only one of them was the point:
+
+- **Connections fall by the number of charts** — 5,000 to 1,000. That was the
+  objective: a browser gets six per origin, so this is what makes eight charts
+  per client possible at all.
+- **Engine CPU falls 24–32%**, for the same ticks delivered. Not what it was
+  built for. Five deliveries to five sockets become five writes to _one_, and
+  the operating system coalesces what lands in the same event-loop turn into one
+  `writev` — the syscall PH-22.1 measured as the whole cost.
+- **Tail latency improves 40%** at a thousand clients, 60 ms to 36 ms, for the
+  same reason.
+
+Zero gaps and zero duplicates at every size, with sequences checked **per asset**
+on the multiplexed streams — five interleaved series on one connection, each
+continuous.
+
+**Five thousand connections were held** on the single-asset side of this
+comparison, which is past the two thousand PH-22.1 measured.
+
+The contrast with the optimisation that was planned and abandoned is the lesson
+worth keeping. Sharing a serialised frame across subscribers — Issue #15 — was
+worth a measured 0.7%. Sharing a _socket_ across an observer's charts is worth
+30%, and nobody proposed it as a throughput change: it was filed as a fix for a
+browser limit.
