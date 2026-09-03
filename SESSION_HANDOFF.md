@@ -24,38 +24,30 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 `CURRENT_STATE.md` is authoritative for where the project stands; this file is
 only what a fresh session needs first.
 
-**PH-23.5 is approved** — the Lab has a screen in the panel behind a menu entry
-marked `SIM` ([PH-23.5](docs/phases/PH-23.5-the-lab-in-the-panel.md)). It was
-gated on this tree (`GATE_EXIT=0`, 2,347 + 268 tests) and the browser suite was
-run separately with the library prefix (8 of 8), because the gate skips it
-without one:
+**PH-23.5 and PH-23.6 are approved** on this branch, gated on this tree and
+pushed; hosted CI is corroborating `3582d04` (`GOVERNANCE.md` §40.1). The
+browser suite skips under a bare `npm run gate` on this machine and executes
+with the library prefix — run the gate as:
 
 ```
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**The next legal action is to fix the two defects the Lab specification audit
-found**, then merge the branch and let hosted CI corroborate
-([LAB-SPECIFICATION-AUDIT-001](docs/audits/LAB-SPECIFICATION-AUDIT-001.md)):
+**The next legal action is to merge `feature/ph-23-otc-market-lab` into `main`
+once CI is green**, then open the next phase on its own branch. Cycle 8 stands
+at 2 of 3 approved phases; the third opens Cycle Audit 8.
 
-- **LA-01.** `INTERVENTIONS.shock(size)` does not depend on the signs: a
-  single-tick displacement is `sign × step` and its absolute value is the step,
-  so the criterion accepts the first draw or none. Executed: `shock(9)` accepts
-  at attempt 1 under five seeds, `shock(10)` exhausts under five seeds. It is a
-  detector, not an intervention, and its docstring says otherwise.
-- **LA-02.** A tick on the boundary millisecond is the chart's next open
-  (`bucketStart` floors it into the new bucket) and the settlement's expiry
-  price (`priceAtOrBefore` is inclusive). Reproduced with a folded candle
-  closing at 110 against a settlement of 120; measured on the shipped engine at
-  one 1m candle in 1,163 (EUR/USD) and 471 (BTC/USD). No test relates the two
-  rules. Candle Close Control must decide which one it guarantees before it is
-  wired to a candle.
-
-After those: the audit's LA-03 to LA-08 are the distance between mechanism and
-product — nothing is ever applied to a hosted market, no candle/expiration
-addressing, no presets, no simulated positions, seven scenario predicates
-against sixteen named, no §70 diagnostic, no `NON-NATURAL TEST` mode. PH-23 §10
-names most of them.
+**The next phase is the decision LA-03 names.** The Lab specification audit
+([LAB-SPECIFICATION-AUDIT-001](docs/audits/LAB-SPECIFICATION-AUDIT-001.md))
+found a correct mechanism and no controls: nothing is ever applied to a hosted
+market. Every remaining section — candle close control on a real candle,
+presets, simulated positions, scenarios, release — waits on one design: how a
+chosen sign vector is played into a hosted Lab engine for the remaining ticks
+and the keystream resumed at its cursor afterwards. The engine's sign source is
+substitutable at construction (`createMarketEngine({streams: {sign}})`) and
+nowhere else; `LabSession` is written and never fed. ADR-0017 fixes what
+"close" means before that work starts: the price in force at the expiry
+instant, inclusive.
 
 ## Local services
 
