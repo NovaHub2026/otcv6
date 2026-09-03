@@ -430,3 +430,29 @@ tests green, 6 of 43 statistical files run) and will be re-run on the final tree
 
 **Revisit if:** the phase grows past what one audit can examine — then the
 Human Owner may prefer to approve a first half and let §28 run.
+
+## 2026-09-03 — The Lab is two controls; a push is N signs, never an added amount
+
+**Decided:** The Human Owner re-stated what the Lab is for — _"realmente yo
+solo necesito hacer varias cosas"_: push or pull the price by buttons (`+1 +3
++5 +10` and their negatives), repeatable, the market otherwise free; and make
+the current candle close at a chosen price — with the condition that pushes
+_"deben ser naturales … los movimientos que él hace después deben ser
+naturales"_. So a push of `+N` is the next `N` ticks taking the upward sign,
+magnitudes and intervals the engine's own, then the keystream (PH-24.10). The
+alternative first proposed — an offset added to every published tick — was
+withdrawn on that condition: an added amount is not a movement the engine made.
+
+**Alternative:** `+N` as a target displacement in price units reached naturally.
+Refused for now: at this engine's tick sizes a visible displacement takes
+minutes to hours of same-sign ticks, and a button that lands minutes later is
+not the control described. The natural unit of a natural push is the tick.
+
+**Consequence:** the Lab's screen is reorganised around the two controls; the
+replay/mirror groundwork (`2ff8559`) is parked as modules with no route or tab;
+large runs as jobs (§67) leave the Lab's scope. Nothing built for PH-24.1–24.9
+is removed — it moves one tab back.
+
+**Revisit if:** the Human Owner wants a push sized in price rather than ticks —
+then it is a selection with a target and a window, like an exact close with an
+open end, and can be built on `selectContinuation`.

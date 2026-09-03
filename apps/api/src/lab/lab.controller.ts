@@ -125,6 +125,16 @@ const LAB_MIN_HYPOTHESES = 100;
 /** The ceiling on a request-bound run. Beyond this belongs to a job with a record (§67). */
 const LAB_MAX_SAMPLE_TICKS = 2_000_000;
 
+/** The most ticks one push may arm: past this the operator is drawing a chart, not pushing (PH-24.10). */
+const PUSH_MAX_TICKS = 50;
+
+const CLOSE_ARMED =
+  'CLOSE_ARMED: an exact close, preset or scenario is armed on this market; two scripts cannot ' +
+  'both describe the next tick. Release it first.';
+const PUSH_RUNNING =
+  'PUSH_RUNNING: a push is running on this market and a plan computed on the keystream would ' +
+  'not describe it. Wait for the push to end or release it.';
+
 @Controller('lab')
 export class LabController {
   constructor(
@@ -468,6 +478,7 @@ export class LabController {
     const wrapper = this.wrapperFor(id);
     const at = this.venue.now();
     const before = this.controlState(id);
+    this.refuseWhilePushing(id, wrapper, action, parameters, before);
     const result = await this.venue.betweenAdvances(() => {
       const plan = this.planAt(id, request.price, request.instant, request.delta ?? null);
       const signs = plan.selection;
@@ -504,6 +515,179 @@ export class LabController {
   }
 
   /**
+   * Push or pull the price by `N` ticks — naturally (PH-24.10).
+   *
+   * Nothing is added to a price. The next `|N|` draws take the sign asked for;
+   * the magnitudes and intervals are the engine's own, drawn as they would have
+   * been, and then the keystream resumes. A push while one runs extends it in
+   * the same direction and replaces what remains in the other. The landing is
+   * computed on a fork playing the same signs: the Lab may look.
+   */
+  @Post('markets/:id/push')
+  async push(@Param('id') id: string, @Query('ticks') ticksText?: string): Promise<unknown> {
+    const ticks = Number(ticksText);
+    if (
+      ticksText === undefined ||
+      !/^[+-]?\d+$/.test(ticksText.trim()) ||
+      !Number.isSafeInteger(ticks) ||
+      ticks === 0 ||
+      Math.abs(ticks) > PUSH_MAX_TICKS
+    ) {
+      throw new BadRequestException(
+        `ticks must be a whole number of ticks, 1..${String(PUSH_MAX_TICKS)} or its negative.`,
+      );
+    }
+    const wrapper = this.wrapperFor(id);
+    const at = this.venue.now();
+    const before = this.controlState(id);
+    const direction: 1 | -1 = ticks > 0 ? 1 : -1;
+    const count = Math.abs(ticks);
+    if (wrapper.armed && !this.pushes.has(id)) {
+      this.session.recordAction({
+        at,
+        asset: id,
+        engineVersion: ENGINE_VERSION,
+        action: 'push',
+        parameters: { ticks },
+        initialState: before,
+        resultingState: before,
+        succeeded: false,
+        diagnostics: { refused: 'CLOSE_ARMED' },
+      });
+      throw new ConflictException(CLOSE_ARMED);
+    }
+    const running = this.pushes.get(id);
+    const extended = running !== undefined && running.direction === direction;
+    const signs: (1 | -1)[] = Array.from({ length: count }, () => direction);
+    const result = await this.venue.betweenAdvances(() => {
+      // Everything the market will play from its next draw, in order.
+      const script: (1 | -1)[] = extended ? [...wrapper.remainingScript(), ...signs] : signs;
+      let forkSigns: SelectableSigns | null = null;
+      const fork = this.venue.labFork(id, (keystream) => {
+        forkSigns = new SelectableSigns(keystream, id);
+        return forkSigns;
+      })!;
+      // Armed after the fork restored: a restore seeks, and a seek releases.
+      (forkSigns as SelectableSigns | null)!.arm(script);
+      let level = fork.price;
+      let landingInstant = fork.instant;
+      for (let i = 0; i < script.length; i += 1) {
+        const tick = fork.next();
+        if (tick === null) break;
+        level = tick.price;
+        landingInstant = tick.instant;
+      }
+      if (extended) wrapper.extend(signs);
+      else wrapper.arm(signs);
+      this.pushes.set(id, {
+        direction,
+        requested: extended ? running.requested + count : count,
+      });
+      // The fork started at the snapshot's sequence; the landing is script.length ticks on.
+      const sequence = this.venue.hostedMarket(id)!.snapshotEngine().sequence + script.length;
+      return { level, landingInstant, afterTicks: script.length, sequence };
+    });
+    const asset = this.venue.assetFor(id)!;
+    const landing = {
+      latticeLevel: result.level,
+      price: displayPrice(result.level, {
+        logQuantum: asset.instrument.logQuantum,
+        referencePrice: asset.instrument.referencePrice,
+        displayPrecision: asset.instrument.displayPrecision,
+      }).toFixed(asset.instrument.displayPrecision),
+      instant: result.landingInstant,
+      afterTicks: result.afterTicks,
+    };
+    this.pushLandings.set(id, {
+      direction,
+      ticks: result.afterTicks,
+      sequence: result.sequence,
+      level: result.level,
+      price: landing.price,
+    });
+    this.session.recordAction({
+      at,
+      asset: id,
+      engineVersion: ENGINE_VERSION,
+      action: 'push',
+      parameters: { ticks },
+      initialState: before,
+      resultingState: this.controlState(id),
+      succeeded: true,
+      diagnostics: { extended, landing },
+    });
+    return {
+      environment: LAB,
+      asset: id,
+      direction: direction === 1 ? 'up' : 'down',
+      ticks: count,
+      extended,
+      landing,
+      ...this.controlState(id),
+    };
+  }
+
+  /**
+   * What became of the last push: the record's price at the sequence the
+   * landing named, once published — `exact` when it is the price announced.
+   * Read from the record like a close's outcome; nothing here is a claim.
+   */
+  private pushOutcome(id: string): ReturnType<LabController['controlState']>['lastPush'] {
+    const landing = this.pushLandings.get(id);
+    if (landing === undefined) return null;
+    const asset = this.venue.assetFor(id);
+    if (asset === null) return null;
+    let landed: Tick | null = null;
+    try {
+      for (const tick of this.venue.feed.since(id, landing.sequence)) {
+        if (tick.sequence === landing.sequence) landed = tick;
+        break;
+      }
+    } catch {
+      landed = null;
+    }
+    const landedPrice =
+      landed === null
+        ? null
+        : displayPrice(landed.price, {
+            logQuantum: asset.instrument.logQuantum,
+            referencePrice: asset.instrument.referencePrice,
+            displayPrecision: asset.instrument.displayPrecision,
+          }).toFixed(asset.instrument.displayPrecision);
+    return {
+      direction: landing.direction,
+      ticks: landing.ticks,
+      sequence: landing.sequence,
+      landingPrice: landing.price,
+      landedPrice,
+      exact: landed === null ? null : landed.price === landing.level,
+    };
+  }
+
+  /** A plan drawn on the keystream cannot describe a market playing a push (PH-24.10). */
+  private refuseWhilePushing(
+    id: string,
+    wrapper: SelectableSigns,
+    action: string,
+    parameters: Record<string, unknown>,
+    before: ReturnType<LabController['controlState']>,
+  ): void {
+    if (!wrapper.armed || !this.pushes.has(id)) return;
+    this.session.recordAction({
+      at: this.venue.now(),
+      asset: id,
+      engineVersion: ENGINE_VERSION,
+      action,
+      parameters,
+      initialState: before,
+      resultingState: before,
+      succeeded: false,
+      diagnostics: { refused: 'PUSH_RUNNING' },
+    });
+    throw new ConflictException(PUSH_RUNNING);
+  }
+
+  /**
    * Back to the keystream. Says how many scripted signs were never drawn.
    *
    * And which tick, if any, is already drawn: a hosted market holds one drawn,
@@ -517,6 +701,7 @@ export class LabController {
     const before = this.controlState(id);
     const pendingTick = this.venue.hostedMarket(id)?.pending?.sequence ?? null;
     const discarded = wrapper.release();
+    this.pushes.delete(id);
     this.session.recordAction({
       at: this.venue.now(),
       asset: id,
@@ -587,6 +772,7 @@ export class LabController {
       const before = this.controlState(id);
       const pendingTick = this.venue.hostedMarket(id)?.pending?.sequence ?? null;
       const discarded = wrapper.release();
+      this.pushes.delete(id);
       this.session.recordAction({
         at: this.venue.now(),
         asset: id,
@@ -899,6 +1085,7 @@ export class LabController {
     const wrapper = this.wrapperFor(id);
     const at = this.venue.now();
     const before = this.controlState(id);
+    this.refuseWhilePushing(id, wrapper, 'scenario.apply', { scenario: request.name }, before);
     const result = await this.venue.betweenAdvances(() => {
       const plan = this.planScenario(id, request);
       if (plan.selection !== null && plan.selection.length > 0) wrapper.arm(plan.selection);
@@ -1120,6 +1307,15 @@ export class LabController {
     { instant: number; target: number; fromSequence: number }
   >();
 
+  /** Pushes running per market (PH-24.10): direction and how many ticks were asked in all. */
+  private readonly pushes = new Map<string, { direction: 1 | -1; requested: number }>();
+
+  /** Where the last push said it would land, so `control` can read the record there (PH-24.10). */
+  private readonly pushLandings = new Map<
+    string,
+    { direction: 1 | -1; ticks: number; sequence: number; level: number; price: string }
+  >();
+
   private outcomeFor(id: string): {
     instant: number;
     target: number;
@@ -1226,14 +1422,35 @@ export class LabController {
   private controlState(id: string): {
     armed: boolean;
     remaining: number;
+    pushing: { direction: 1 | -1; requested: number; remaining: number } | null;
+    lastPush: {
+      direction: 1 | -1;
+      ticks: number;
+      sequence: number;
+      landingPrice: string;
+      landedPrice: string | null;
+      exact: boolean | null;
+    } | null;
     sequence: number;
     lastApplied: ReturnType<LabController['outcomeFor']>;
   } {
     const wrapper = this.signs.for(id);
     const market = this.venue.hostedMarket(id);
+    // A push that played out is over; the wrapper is the truth, the map a memo.
+    if (wrapper !== null && !wrapper.armed) this.pushes.delete(id);
+    const push = this.pushes.get(id);
     return {
       armed: wrapper?.armed ?? false,
       remaining: wrapper?.remaining ?? 0,
+      pushing:
+        push === undefined
+          ? null
+          : {
+              direction: push.direction,
+              requested: push.requested,
+              remaining: wrapper?.remaining ?? 0,
+            },
+      lastPush: this.pushOutcome(id),
       sequence: market?.snapshotEngine().sequence ?? -1,
       lastApplied: this.outcomeFor(id),
     };

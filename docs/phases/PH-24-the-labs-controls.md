@@ -113,7 +113,7 @@ state), INV-009 (a Lab settlement recomputes from the Lab's record), INV-010.
 | PH-24.7  | Los controles que faltan en pantalla: shock, expiración, Target Price                                                           | F1–F3, I7, G1–G8 on the screen                          |
 | PH-24.8  | Sesión persistente y los diagnósticos que faltan                                                                                | §78 persistence, §70 over positions, ADR-0017 on screen |
 | PH-24.9  | Varios activos a la vez: tablero, insignias, liberar todo                                                                       | the session across markets, as one thing                |
-| PH-24.10 | Reproducir y el espejo: snapshots, replay contra el registro, dos forks                                                         | §74–§77 on the screen                                   |
+| PH-24.10 | Empujar y cerrar: pushes naturales de N ticks por botón, la pantalla alrededor de los dos controles                             | APPROVED                                                | [PH-24.10](PH-24.10-empujar-y-cerrar.md) |
 
 Each subphase owes its plants. PH-24.1 owes one that arms in the production
 composition and is caught.

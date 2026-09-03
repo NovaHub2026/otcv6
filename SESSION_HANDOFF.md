@@ -13,7 +13,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Remote             | `origin` → NovaHub2026/otcv6, public                                       |
 | Active cycle       | Cycle 8, **2 of 3** phases approved (PH-22, PH-23)                         |
 | Active phase       | PH-24 — The Lab's controls: applying a selection                           |
-| Active subphase    | PH-24.10 — Reproducir y el espejo                                          |
+| Active subphase    | none — PH-24.10 approved; the next Lab item awaits the Human Owner         |
 | Cycle Audit        | **007 closed** 2026-09-03; the next is due after three approved phases     |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                         |
 
@@ -34,19 +34,17 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-24.9 is approved; PH-24.10 is active and paused at the Human Owner's
-request** — _"cuando termines PH-24.9 y lo apruebes vamos a pararnos por aquí
-para alinear varias cosas del lab"_ (2026-09-03). What PH-24.10 has so far,
-committed as groundwork: `apps/api/src/lab/snapshots.ts` (kept snapshots with
-the armed script), `replay.ts` (replay against the record on a fork; the mirror
-of two forks), `SelectableSigns.remainingScript()`, the `Reproducir` screen
-component and its strings and API types. **Not yet**: the controller routes
-(`snapshots`, `replay`, `mirror`), keeping snapshots on arm/release/time, the
-tab wired into `Lab.tsx`, tests, plants, browser flow, gate — so the panel shows
-no Reproducir tab until it is real. Resume from
-[PH-24.10](docs/phases/PH-24.10-reproducir-y-el-espejo.md) §2 after the
-alignment. **The merge, hosted CI and Cycle Audit 8 wait until the Lab is
-complete** (`DECISION-LOG.md`, 2026-09-03). Browser suites run under
+**PH-24.10 — Empujar y cerrar is approved** (targeted gate exit 0; 8 browser
+flows). The Lab now has the two controls the Human Owner asked for on
+2026-09-03: the **Empujar** strip (`−10 −5 −3 −1 | +1 +3 +5 +10`; the next N
+ticks take that sign, magnitudes and intervals the engine's own; same direction
+extends, opposite replaces; refused while a close is armed and vice versa; the
+landing is announced from a fork and then read from the record) and the exact
+close of the current candle (Cierre, first tab). **Open for the Human Owner:**
+whether «Objetivo de precio» leaves the Cierre tab for Escenarios. Replay/mirror
+groundwork (`2ff8559`) stays parked as modules with no route. **The merge,
+hosted CI and Cycle Audit 8 wait until the Lab is complete** (`DECISION-LOG.md`,
+2026-09-03). Browser suites run under
 `LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu`.
 
 **The next phase is the decision LA-03 names.** The Lab specification audit

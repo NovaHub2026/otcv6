@@ -162,6 +162,24 @@ export const es = {
       released: (n: number) => `${String(n)} mercado(s) liberado(s)`,
       nothing: 'ningún mercado armado',
     },
+    push: {
+      title: 'Empujar',
+      info: 'Cada botón hace que los próximos N ticks del mercado tomen ese signo — subir o bajar — con las magnitudes y los intervalos que el motor iba a generar de todos modos. No se suma nada al precio: el movimiento es del motor, solo la dirección es tuya. Al terminar, el mercado sigue su camino. Pulsar de nuevo en la misma dirección alarga el empuje; en la contraria, lo sustituye.',
+      up: 'subir',
+      down: 'bajar',
+      unit: 'ticks',
+      running: (dir: 'up' | 'down', n: number) =>
+        `empujando ${dir === 'up' ? '↑' : '↓'} · ${String(n)} ticks por jugar`,
+      idle: 'sin empuje — el mercado sigue su camino',
+      landing: (price: string, n: number) => `llegará a ${price} tras ${String(n)} ticks`,
+      extended: 'alargado',
+      landed: (dir: 'up' | 'down', n: number, price: string, exact: boolean) =>
+        `${dir === 'up' ? '↑' : '↓'} ${String(n)} ticks · llegó a ${price} ${exact ? '✓' : '✗ (no coincide con lo anunciado)'}`,
+      refusedClose:
+        'hay un cierre, preset o escenario armado en este mercado — libéralo antes de empujar',
+      refusedPush:
+        'hay un empuje en curso — espera a que termine o libéralo antes de fijar un cierre',
+    },
     header: {
       price: 'precio',
       regime: 'régimen',

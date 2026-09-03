@@ -25,16 +25,17 @@ Last synchronized: 2026-09-03
 | ---------------------- | ------------------------------------------------ |
 | Active phase           | PH-24 — The Lab's controls: applying a selection |
 | Phase lifecycle        | ACTIVE                                           |
-| Active subphase        | PH-24.10 — Reproducir y el espejo                |
+| Active subphase        | none — PH-24.10 approved; next Lab item pending  |
 | Subphase lifecycle     | ACTIVE                                           |
 | Last approved phase    | PH-23 — The OTC Market Lab                       |
 | Last approved subphase | PH-24.9 — Varios activos a la vez                |
 
-**PH-24 is active; nine subphases approved (PH-24.1–24.9) and PH-24.10 open
-and paused** at the Human Owner's request to align the Lab's direction. Its
-groundwork is committed and nothing of it is on the screen yet. The merge,
-hosted CI and Cycle Audit 8 wait until the Lab is complete; PH-24's approval is
-Cycle 8's third phase.
+**PH-24 is active; ten subphases approved (PH-24.1–24.10)**. PH-24.10 built
+the Lab's two controls as the Human Owner re-stated them on 2026-09-03: natural
+pushes by buttons (the next N ticks take the chosen sign; magnitudes and
+intervals the engine's own) and the exact close of the current candle. The next
+Lab item awaits their alignment. The merge, hosted CI and Cycle Audit 8 wait
+until the Lab is complete; PH-24's approval is Cycle 8's third phase.
 
 PH-23.5 closed the first item PH-23 §10 left open — the Lab now has a screen in
 the panel, behind a menu entry marked `SIM`. Building it found three defects

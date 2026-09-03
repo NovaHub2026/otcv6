@@ -81,9 +81,35 @@ export interface BetweenLevels {
 export const isBetween = (value: unknown): value is BetweenLevels =>
   typeof value === 'object' && value !== null && 'below' in value && 'above' in value;
 
+export interface Pushing {
+  readonly direction: 1 | -1;
+  readonly requested: number;
+  readonly remaining: number;
+}
+
+export interface PushResult extends Control {
+  readonly direction: 'up' | 'down';
+  readonly ticks: number;
+  readonly extended: boolean;
+  readonly landing: {
+    readonly latticeLevel: number;
+    readonly price: string;
+    readonly afterTicks: number;
+  };
+}
+
 export interface Control {
   readonly armed: boolean;
   readonly remaining: number;
+  readonly pushing?: Pushing | null;
+  readonly lastPush?: {
+    readonly direction: 1 | -1;
+    readonly ticks: number;
+    readonly sequence: number;
+    readonly landingPrice: string;
+    readonly landedPrice: string | null;
+    readonly exact: boolean | null;
+  } | null;
   readonly lastApplied: {
     readonly instant: number;
     readonly target: number;

@@ -252,6 +252,33 @@ describe('the Lab is marked wherever it appears', () => {
     expect(lab).toMatch(/labPost<\{ released: unknown\[\] \}>\('release-all'\)/);
   });
 
+  it('pushes by buttons — N natural ticks through the push route, visible on every tab (PH-24.10)', () => {
+    const strip = code('lab/Empujar.tsx');
+    // The four sizes the Human Owner named, in both directions, as buttons.
+    expect(strip).toMatch(/PUSH_SIZES = \[1, 3, 5, 10\]/);
+    expect(strip).toMatch(/testId=\{`lab-push--\$\{String\(n\)\}`\}/);
+    expect(strip).toMatch(/testId=\{`lab-push-\+\$\{String\(n\)\}`\}/);
+    expect(strip).toMatch(/(?:data-testid|testId)="lab-push-state"/);
+    expect(strip).toMatch(/(?:data-testid|testId)="lab-push-landing"/);
+    expect(strip).toMatch(/(?:data-testid|testId)="lab-push-outcome"/);
+    expect(strip).toMatch(/lab-push-refused/);
+    // While a close is armed the buttons are disabled: two scripts cannot both describe the next tick.
+    expect(strip).toMatch(/disabled=\{busy !== null \|\| armedElsewhere\}/);
+    // The strip never posts anything itself; the shell does, to the push route and only there.
+    expect(strip).not.toMatch(/labPost|labGet/);
+    const lab = code('lab/Lab.tsx');
+    expect(lab).toMatch(/markets\/\$\{selected\}\/push\?ticks=\$\{String\(ticks\)\}/);
+    // Outside every tab: rendered before the Tabs, not inside a hidden div.
+    const stripAt = lab.indexOf('<Empujar');
+    expect(stripAt).toBeGreaterThan(0);
+    expect(stripAt).toBeLessThan(lab.indexOf('<Tabs<Tab>'));
+    // Cierre is the first tab and the default.
+    expect(lab).toMatch(/tabs=\{\[\s*\{ key: 'close'/);
+    expect(lab).toMatch(/useState<Tab>\('close'\)/);
+    // A refused close while pushing is said in the operator's words.
+    expect(lab).toMatch(/PUSH_RUNNING/);
+  });
+
   it('says the Lab is absent rather than hiding that it can be', () => {
     expect(lab()).toMatch(/lab-not-running/);
     expect(code('lab/[...path]/route.ts')).toMatch(/OTC_LAB_BASE/);

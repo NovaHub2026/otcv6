@@ -576,4 +576,92 @@ describe('Candle Close Control, from the panel', () => {
     expect(errors).toEqual([]);
     await page.close();
   }, 300_000);
+
+  it('PH-24.10: pushes +3 from the strip — running, then landed where announced; disabled while a close is armed', async (ctx) => {
+    const page = await requireBrowser(ctx).newPage({ viewport: { width: 1280, height: 1200 } });
+    const { errors, dump } = instrument(page);
+    try {
+      await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
+      await page.waitForSelector('[data-testid="lab-control"]', { timeout: 30_000 });
+      await page.waitForFunction(
+        () =>
+          /^[0-9]+\.[0-9]+$/.test(
+            document.querySelector('[data-testid="lab-header-price"]')?.textContent ?? '',
+          ),
+        null,
+        { timeout: 30_000 },
+      );
+      // Nothing armed from an earlier flow: the proxy signs the write.
+      await page.evaluate(() => fetch('/lab/release-all', { method: 'POST' }));
+      await page.waitForFunction(
+        () =>
+          /sin empuje/.test(
+            document.querySelector('[data-testid="lab-push-state"]')?.textContent ?? '',
+          ),
+        null,
+        { timeout: 30_000 },
+      );
+      // The strip is on every tab.
+      await page.click('[data-testid="tab-board"]');
+      expect(await page.locator('[data-testid="lab-push"]').isVisible()).toBe(true);
+      await page.click('[data-testid="tab-close"]');
+
+      await page.click('[data-testid="lab-push-+3"]');
+      await page.waitForSelector('[data-testid="lab-push-landing"]', { timeout: 30_000 });
+      const landing = /llegará a ([0-9.]+) tras (\d+) ticks/.exec(
+        await text(page, 'lab-push-landing'),
+      );
+      expect(landing, 'the strip did not announce a landing').not.toBeNull();
+      expect(landing![2]).toBe('3');
+      expect(await text(page, 'lab-push-state')).toMatch(/empujando ↑/i);
+
+      // Three ticks later the record is read at the landing's sequence.
+      await page.waitForSelector('[data-testid="lab-push-outcome"]', { timeout: 120_000 });
+      const outcome = await text(page, 'lab-push-outcome');
+      expect(outcome).toMatch(/↑ 3 ticks · llegó a/);
+      expect(outcome, `landed elsewhere than ${landing![1]!}`).toContain(
+        `llegó a ${landing![1]!} ✓`,
+      );
+      expect(await text(page, 'lab-session-lab')).toMatch(/push/);
+
+      // A close armed on this market disables the push buttons; release re-enables them.
+      const markets = (await page.evaluate(
+        async () => (await (await fetch('/lab/markets')).json()) as unknown,
+      )) as { markets?: { id: string }[] };
+      const id = markets.markets?.[0]?.id;
+      expect(id).toBeDefined();
+      let armed = false;
+      for (const delta of ['2', '1', '-1', '3']) {
+        const body = (await page.evaluate(
+          async (url) => (await (await fetch(url, { method: 'POST' })).json()) as unknown,
+          `/lab/markets/${id!}/close?delta=${delta}&bucket=next&timeframe=1m`,
+        )) as { armed?: boolean };
+        if (body.armed === true) {
+          armed = true;
+          break;
+        }
+      }
+      expect(armed, 'no relative close could be armed').toBe(true);
+      await page.waitForFunction(
+        () =>
+          document.querySelector<HTMLButtonElement>('[data-testid="lab-push-+1"]')?.disabled ===
+          true,
+        null,
+        { timeout: 30_000 },
+      );
+      await page.evaluate(() => fetch('/lab/release-all', { method: 'POST' }));
+      await page.waitForFunction(
+        () =>
+          document.querySelector<HTMLButtonElement>('[data-testid="lab-push-+1"]')?.disabled ===
+          false,
+        null,
+        { timeout: 30_000 },
+      );
+    } catch (error) {
+      console.error(await dump());
+      throw error;
+    }
+    expect(errors).toEqual([]);
+    await page.close();
+  }, 300_000);
 });

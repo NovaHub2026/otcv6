@@ -425,7 +425,10 @@ export class VenueService implements OnModuleDestroy {
    * exactly the alignment PH-24.2 needs for an armed vector to begin on the
    * right tick.
    */
-  labFork(assetId: string): {
+  labFork(
+    assetId: string,
+    wrapSign?: (keystream: RandomSource) => RandomSource,
+  ): {
     readonly price: LogPrice;
     readonly instant: EpochMillis;
     next(): Tick | null;
@@ -434,11 +437,32 @@ export class VenueService implements OnModuleDestroy {
     const asset = this.assetFor(assetId);
     if (market === null || asset === null) return null;
     const snapshot = market.snapshotEngine();
+    const config = configFor(asset);
+    // PH-24.10: a fork whose signs the Lab chooses — the landing of a push is
+    // the engine's own magnitudes under the pushed signs. Only the sign stream
+    // is substituted, as the mirror harness does; `restore` seeks it, so a
+    // wrapper that releases on seek must be armed after this returns.
+    const streams =
+      wrapSign === undefined
+        ? {}
+        : {
+            streams: {
+              sign: wrapSign(
+                this.keyring.derive({
+                  env: 'production',
+                  asset: config.instrument.id,
+                  purpose: 'sign',
+                  keyEpoch: 0,
+                }),
+              ),
+            },
+          };
     const fork = createMarketEngine({
-      config: configFor(asset),
+      config,
       keyring: this.keyring,
       environment: 'production',
       start: { instant: epochMillis(snapshot.instant), price: logPrice(snapshot.price) },
+      ...streams,
     });
     fork.restore(snapshot);
     return {

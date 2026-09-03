@@ -14,6 +14,7 @@ import {
   type CloseTimeframe,
   type Control,
   type ControlAll,
+  type PushResult,
   type LabMarket,
   type MarketControl,
   type LabPositionView,
@@ -26,6 +27,7 @@ import {
 } from './labApi.js';
 import { Mercado } from './Mercado.js';
 import { Cierre } from './Cierre.js';
+import { Empujar } from './Empujar.js';
 import { Posiciones } from './Posiciones.js';
 import { Escenarios } from './Escenarios.js';
 import { QualityPanel } from './Calidad.js';
@@ -79,6 +81,8 @@ export function Lab(): ReactElement {
   const [closes, setCloses] = useState<ClosesView | null>(null);
   const [positionsView, setPositionsView] = useState<PositionsView | null>(null);
   const [all, setAll] = useState<ControlAll | null>(null);
+  const [lastPush, setLastPush] = useState<PushResult | null>(null);
+  const [pushRefusal, setPushRefusal] = useState<string | null>(null);
   const [positions, setPositions] = useState<LabPositionView[]>([]);
   const [positionNotice, setPositionNotice] = useState<string | null>(null);
   const [scenarios, setScenarios] = useState<ScenarioView[]>([]);
@@ -183,7 +187,9 @@ export function Lab(): ReactElement {
       return;
     }
     setPlan(null);
-    setNotice(typeof body.message === 'string' ? body.message : 'El Lab rechazó la petición.');
+    const message = typeof body.message === 'string' ? body.message : 'El Lab rechazó la petición.';
+    // PH-24.10: a close refused because a push is running, in the operator's words.
+    setNotice(/PUSH_RUNNING/.test(message) ? es.lab.push.refusedPush : message);
   };
 
   const previewClose = async (): Promise<void> => {
@@ -235,6 +241,22 @@ export function Lab(): ReactElement {
     );
     setBusy(null);
     if (apply) void refreshState(selected);
+  };
+
+  const push = async (ticks: number): Promise<void> => {
+    if (selected === null) return;
+    setBusy('push');
+    setPushRefusal(null);
+    const body = await labPost<PushResult>(`markets/${selected}/push?ticks=${String(ticks)}`);
+    setBusy(null);
+    if (isUnavailable(body)) {
+      // A refusal is an answer, not an outage: CLOSE_ARMED names the reason.
+      if (/CLOSE_ARMED/.test(body.reason)) setPushRefusal(es.lab.push.refusedClose);
+      else setUnavailable(body.reason);
+      return;
+    }
+    setLastPush(body);
+    void refreshState(selected);
   };
 
   const releaseAll = async (): Promise<void> => {
@@ -348,12 +370,19 @@ export function Lab(): ReactElement {
         <AssetList assets={assets} selected={selected} onSelect={setSelected} all={all} />
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
           <HeaderStrip state={state} regime={regime} control={control} />
+          <Empujar
+            control={control}
+            last={lastPush}
+            refusal={pushRefusal}
+            busy={busy}
+            onPush={push}
+          />
           <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: '0 16px 16px' }}>
             <Tabs<Tab>
               tabs={[
+                { key: 'close', label: es.lab.tabs.close },
                 { key: 'board', label: es.lab.tabs.board },
                 { key: 'market', label: es.lab.tabs.market },
-                { key: 'close', label: es.lab.tabs.close },
                 { key: 'positions', label: es.lab.tabs.positions },
                 { key: 'scenarios', label: es.lab.tabs.scenarios },
                 { key: 'quality', label: es.lab.tabs.quality },
@@ -578,9 +607,12 @@ function HeaderStrip({
 function MarketBadge({ market }: { market: MarketControl | null }): ReactElement | null {
   if (market === null) return null;
   if (market.armed) {
+    const push = market.pushing ?? null;
     return (
       <Badge tone="lab" testId={`lab-asset-badge-${market.id}`}>
-        {`${es.lab.header.armed} · ${String(market.remaining)}`}
+        {push !== null
+          ? `${push.direction === 1 ? '↑' : '↓'} ${String(push.remaining)}`
+          : `${es.lab.header.armed} · ${String(market.remaining)}`}
       </Badge>
     );
   }

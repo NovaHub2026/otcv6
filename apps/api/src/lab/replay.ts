@@ -64,11 +64,13 @@ export function replayAgainst(
   script: readonly (1 | -1)[],
   published: readonly Tick[],
 ): ReplayVerdict {
+  // Armed after the fork restores: a restore seeks, and a seek releases.
+  let signs: SelectableSigns | null = null;
   const fork = forkFrom(asset, keyring, snapshot, (keystream) => {
-    const signs = new SelectableSigns(keystream, asset.definition.id);
-    if (script.length > 0) signs.arm(script);
+    signs = new SelectableSigns(keystream, asset.definition.id);
     return signs;
   });
+  if (script.length > 0) (signs as SelectableSigns | null)?.arm(script);
   const record = published.filter((t) => t.sequence > snapshot.sequence);
   let replayed = 0;
   for (const expected of record) {

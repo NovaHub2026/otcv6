@@ -68,6 +68,23 @@ export class SelectableSigns implements RandomSource {
     this.#at = 0;
   }
 
+  /**
+   * Play these signs after the ones still to be drawn (PH-24.10).
+   *
+   * A second push in the same direction while one runs: the operator kept
+   * pressing, and the market keeps going. Nothing already drawn is touched;
+   * transparent, this is `arm`.
+   */
+  extend(signs: readonly (1 | -1)[]): void {
+    if (signs.length === 0) throw new RangeError('An extension must contain at least one sign.');
+    if (this.#script === null) {
+      this.arm(signs);
+      return;
+    }
+    this.#script = [...this.#script.slice(this.#at), ...signs];
+    this.#at = 0;
+  }
+
   /** Back to the keystream. Returns how many scripted signs were never drawn. */
   release(): number {
     const remaining = this.remaining;

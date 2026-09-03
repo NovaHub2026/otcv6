@@ -169,4 +169,23 @@ describe('SignSelector', () => {
     expect(selector.for('spx')).toBeNull();
     expect(selector.assetIds).toEqual(['btcusd', 'eurusd']);
   });
+
+  it('extends a running script without touching what is still to be drawn (PH-24.10)', () => {
+    const signs = new SelectableSigns(keystreamSign(), asset.definition.id);
+    signs.arm([1, 1, 1]);
+    expect(signs.nextBoolean()).toBe(true);
+    signs.extend([-1, -1]);
+    expect(signs.remaining).toBe(4);
+    expect([
+      signs.nextBoolean(),
+      signs.nextBoolean(),
+      signs.nextBoolean(),
+      signs.nextBoolean(),
+    ]).toEqual([true, true, false, false]);
+    expect(signs.armed).toBe(false);
+    // Transparent, an extension is an arm.
+    signs.extend([1]);
+    expect(signs.remaining).toBe(1);
+    expect(() => signs.extend([])).toThrow(RangeError);
+  });
 });
