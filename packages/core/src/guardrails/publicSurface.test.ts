@@ -82,6 +82,7 @@ const INTERNAL: Record<string, readonly string[]> = {
     // runners beside it. Its contract is guarded by `observerLoad.test.ts`,
     // which drives it against five deliberately broken servers.
     'observerLoad.ts',
+    'observerLoadRun.ts',
     'venueScale.ts',
   ],
 };

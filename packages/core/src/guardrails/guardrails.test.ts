@@ -128,6 +128,7 @@ const AMBIENT_STATE_ALLOWLIST = [
   'tools/sim/src/cli.ts',
   'tools/sim/src/dispersionEvidence.ts',
   'tools/sim/src/horizonEvidence.ts',
+  'tools/sim/src/observerLoadRun.ts',
   'tools/sim/src/venueScale.ts',
 ];
 
@@ -164,6 +165,7 @@ const AMBIENT_TIME_ALLOWLIST = [
    * it was taken from.
    */
   'tools/sim/src/observerLoad.ts',
+  'tools/sim/src/observerLoadRun.ts',
 ];
 
 interface Source {
