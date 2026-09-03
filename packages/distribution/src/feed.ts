@@ -88,7 +88,27 @@ export interface TickFeedOptions {
   readonly retainTicks?: number;
 }
 
+/**
+ * Ticks retained per asset, and what that costs.
+ *
+ * **Cycle Audit 7, CA7-33.** Measured rather than estimated: 50,000 ticks of a
+ * real feed is **5.01 MB per asset** (105.1 bytes retained per tick), so
+ * PH-21's hundred-asset catalogue holds **501 MB** in this map alone — 22% of
+ * the 2,240 MB heap Node defaults to on the machine that measured it — and
+ * roughly 446 assets exhausts the heap before any market state, history
+ * recorder, publication buffer or framework overhead. Nothing configures a
+ * heap for the service anywhere in the repository.
+ *
+ * The number is not changed here. It is the resume window every reconnecting
+ * client depends on, and shrinking it silently trades a memory problem for a
+ * correctness one. What changes is that it is now written down with its cost,
+ * pinned by a test, and named in `MULTI_NODE_AND_OPERATIONS.md` as the first
+ * thing PH-22 has to size deliberately rather than inherit.
+ */
 export const DEFAULT_RETAIN_TICKS = 50_000;
+
+/** Measured bytes retained per tick, at the default window. */
+export const MEASURED_BYTES_PER_TICK = 105;
 
 /**
  * The sequence of the first tick any market publishes.
@@ -170,6 +190,22 @@ export class TickFeed {
     for (const subscription of this.#subscriptions.get(assetId) ?? []) {
       subscription.push(ticks);
     }
+  }
+
+  /**
+   * Stop carrying an asset: drop its retained ticks and close its subscribers.
+   *
+   * **Cycle Audit 7, CA7-35.** There was no way to do this, so a retired market
+   * kept its full 50,000-tick window — 5 MB — for the life of the process, and
+   * its subscribers were left holding a stream that would never produce another
+   * tick. A venue that retires and registers over a long run leaked both.
+   */
+  forget(assetId: string, reason = 'asset retired'): void {
+    for (const subscription of [...(this.#subscriptions.get(assetId) ?? [])]) {
+      subscription.cancel(reason);
+    }
+    this.#subscriptions.delete(assetId);
+    this.#history.delete(assetId);
   }
 
   /** Retained ticks from `fromSequence` onwards, inclusive. */

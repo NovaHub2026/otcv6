@@ -292,6 +292,9 @@ export class VenueService implements OnModuleDestroy {
     this.stalledLogged.delete(assetId);
     this.latest.delete(assetId);
     this.recovery.delete(assetId);
+    // And the feed's window, which is 5 MB per asset (CA7-35). Its subscribers
+    // are told rather than left holding a stream that will never tick again.
+    this.feed.forget(assetId, 'asset retired');
     this.logger.log(`${assetId}: retired — no longer hosted, record untouched`);
   }
 

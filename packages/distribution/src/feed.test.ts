@@ -1,7 +1,13 @@
 // Invariant evidence: INV-002 (shared market), INV-009 (reproducible settlement).
 import { describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, type Tick } from '@otc/core';
-import { EvictedError, TickFeed, UnknownSequenceError, type FeedSink } from './feed.js';
+import {
+  DEFAULT_RETAIN_TICKS,
+  EvictedError,
+  TickFeed,
+  UnknownSequenceError,
+  type FeedSink,
+} from './feed.js';
 
 function tick(sequence: number): Tick {
   return {
@@ -254,6 +260,38 @@ describe('the guards have teeth', () => {
       threw = error instanceof EvictedError;
     }
     expect(threw, 'silent truncation would be invisible to the client').toBe(true);
+  });
+});
+
+describe('what the feed costs, and what it releases', () => {
+  it('holds the window its docstring says, at the cost it says (CA7-33)', () => {
+    // Measured, not estimated: 5.01 MB per asset at the default window, so a
+    // hundred assets is 501 MB — 22% of the heap Node defaults to — and about
+    // 446 assets exhausts it before any other subsystem. The constant is not
+    // changed, because it is the resume window every reconnecting client
+    // depends on; it is pinned so that changing it is a decision.
+    expect(DEFAULT_RETAIN_TICKS).toBe(50_000);
+    const feed = new TickFeed();
+    feed.publish('eurusd', ticks(1, DEFAULT_RETAIN_TICKS + 10));
+    expect(feed.retained('eurusd')).toEqual({ oldest: 11, newest: 50_010 });
+  });
+
+  it('releases an asset it is told to forget, and tells its subscribers (CA7-35)', () => {
+    // A retired market kept its full window for the life of the process, and
+    // its subscribers were left holding a stream that would never tick again.
+    const feed = new TickFeed();
+    feed.publish('eurusd', ticks(1, 100));
+    const sink = recorder();
+    feed.subscribe('eurusd', sink);
+    expect(feed.retained('eurusd')).not.toBeNull();
+
+    feed.forget('eurusd');
+
+    expect(feed.retained('eurusd')).toBeNull();
+    expect(sink.closedWith).toBe('asset retired');
+    // And it is a clean slate rather than a hole: the asset may be hosted again.
+    feed.publish('eurusd', ticks(1, 3));
+    expect(feed.retained('eurusd')).toEqual({ oldest: 1, newest: 3 });
   });
 });
 

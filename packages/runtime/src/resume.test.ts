@@ -227,6 +227,71 @@ describe('staleness is the age of the checkpoint, not the age of the last tick (
   });
 });
 
+describe('every branch of the record check is exercised (CA7-08)', () => {
+  /**
+   * **Cycle Audit 7.** Three of the five branches of `assertUsableRecord` had
+   * no test: an auditor disabled each in a way that preserves TypeScript
+   * narrowing and ran the whole runtime suite — 429 tests, exit 0, three times.
+   * They are not vacuous; each one, with honest code, turns a record that would
+   * silently resume into an explicit seam. A check nobody has watched reject
+   * is a check nobody knows works.
+   */
+  async function usableRecord(): Promise<{
+    record: Awaited<ReturnType<typeof checkpointMarket>>;
+    store: MemoryStateStore;
+    clock: SteppableClock;
+  }> {
+    const store = new MemoryStateStore();
+    const clock = new SteppableClock(GENESIS);
+    const first = await resumeMarket(base(store, clock));
+    clock.advance(durationMillis(60_000));
+    first.market.advance();
+    return {
+      record: checkpointMarket(first.market, asset.definition.id, clock.now()),
+      store,
+      clock,
+    };
+  }
+
+  it('seams a record with no leased cursors', async () => {
+    const { record, store, clock } = await usableRecord();
+    await store.save({ ...record, leasedBlocks: {} });
+    const resumed = await resumeMarket(base(store, new SteppableClock(clock.now())));
+    expect(resumed.outcome.kind).toBe('seam');
+    expect(resumed.outcome.kind === 'seam' && resumed.outcome.reason).toMatch(/no leased cursors/);
+  });
+
+  it('seams a degraded record: a pending tick with no published history (HOSTED-002)', async () => {
+    const { record, store, clock } = await usableRecord();
+    expect(record.pending, 'the fixture needs a pending tick').not.toBeNull();
+    await store.save({
+      ...record,
+      lastPublished: null,
+      pending: { ...record.pending!, sequence: 4 },
+    });
+    const resumed = await resumeMarket(base(store, new SteppableClock(clock.now())));
+    expect(resumed.outcome.kind).toBe('seam');
+    expect(resumed.outcome.kind === 'seam' && resumed.outcome.reason).toMatch(
+      /no published history/,
+    );
+  });
+
+  it('seams a record whose pending tick does not follow its last published', async () => {
+    const { record, store, clock } = await usableRecord();
+    expect(record.pending).not.toBeNull();
+    expect(record.lastPublished).not.toBeNull();
+    await store.save({
+      ...record,
+      pending: { ...record.pending!, sequence: record.lastPublished!.sequence + 7 },
+    });
+    const resumed = await resumeMarket(base(store, new SteppableClock(clock.now())));
+    expect(resumed.outcome.kind).toBe('seam');
+    expect(resumed.outcome.kind === 'seam' && resumed.outcome.reason).toMatch(
+      /does not follow last published/,
+    );
+  });
+});
+
 describe('an unusable record takes the seam, and says so', () => {
   it('refuses to start at all when the record will not parse', async () => {
     const store = new MemoryStateStore();
