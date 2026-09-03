@@ -162,6 +162,71 @@ describe('restarting from an intact snapshot continues the same market', () => {
   });
 });
 
+describe('staleness is the age of the checkpoint, not the age of the last tick (CA7-07, CA7-09)', () => {
+  /** The real bound, so a stale checkpoint is actually stale. */
+  const BOUND = 15_000;
+
+  it('does not seam a market whose checkpoint is fresh but whose last tick is not', async () => {
+    // Markets tick irregularly by design: `spx` averages 3.4 seconds and its
+    // quiet stretches run far longer. Measuring the last tick's age and calling
+    // it the checkpoint's age made an ordinary quiet stretch look like an
+    // outage — a market advanced every second, refusing nothing, seamed on the
+    // next restart, and the reason it gave was false about its own subject.
+    const store = new MemoryStateStore();
+    const clock = new SteppableClock(GENESIS);
+    const first = await resumeMarket({ ...base(store, clock), maxCatchUpMs: BOUND });
+
+    // Run it forward in small steps so it is demonstrably healthy.
+    for (let step = 0; step < 30; step += 1) {
+      clock.advance(durationMillis(1_000));
+      first.market.advance();
+    }
+    const record = checkpointMarket(first.market, asset.definition.id, clock.now());
+    expect(record.lastPublished, 'the fixture must have published').not.toBeNull();
+
+    // The quiet stretch, made deterministic: the checkpoint is written now, and
+    // the newest tick in it is four times the bound old. That is an ordinary
+    // market — `spx` averages 3.4 seconds between ticks — not an outage.
+    const quiet = {
+      ...record,
+      lastPublished: {
+        ...record.lastPublished!,
+        instant: epochMillis(record.lastPublished!.instant - BOUND * 4),
+      },
+    };
+    await store.save(quiet);
+
+    clock.advance(durationMillis(1_000));
+    const second = await resumeMarket({ ...base(store, clock), maxCatchUpMs: BOUND });
+    expect(
+      second.outcome.kind,
+      `checkpoint 1s old, newest tick ${String(BOUND * 4)}ms old — that is a quiet market, not an outage`,
+    ).toBe('resumed');
+  });
+
+  it('seams a market that never published rather than wedging it for ever', async () => {
+    // `lastPublished === null ? 0` declared a never-published record perfectly
+    // fresh however old its snapshot. `HostedMarket` then floored on that stale
+    // snapshot and refused every advance; the checkpoint re-saved the same
+    // null, and the next boot repeated it identically. Five restarts, every one
+    // reporting `resumed`, every one refusing — a wedge no restart could clear.
+    const store = new MemoryStateStore();
+    const clock = new SteppableClock(GENESIS);
+    const first = await resumeMarket({ ...base(store, clock), maxCatchUpMs: BOUND });
+    // Checkpoint before the market has published anything.
+    const record = checkpointMarket(first.market, asset.definition.id, clock.now());
+    expect(record.lastPublished, 'the fixture must be a never-published record').toBeNull();
+    await store.save(record);
+
+    clock.advance(durationMillis(BOUND * 4));
+    const second = await resumeMarket({ ...base(store, clock), maxCatchUpMs: BOUND });
+    expect(second.outcome.kind).toBe('seam');
+    // And the seam is enough to make it advance rather than refuse for ever.
+    clock.advance(durationMillis(1_000));
+    expect(() => second.market.advance()).not.toThrow();
+  });
+});
+
 describe('an unusable record takes the seam, and says so', () => {
   it('refuses to start at all when the record will not parse', async () => {
     const store = new MemoryStateStore();
