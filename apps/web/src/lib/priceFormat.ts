@@ -57,14 +57,56 @@ export interface PriceFormatOptions {
  * Derived, because the two numbers are one decision: the smallest movement the
  * asset can show is one unit of its last displayed digit.
  */
-export function priceFormatFor(asset: { readonly displayPrecision: number }): PriceFormatOptions {
+export function priceFormatFor(asset: {
+  readonly displayPrecision: number;
+  readonly referencePrice?: number;
+}): PriceFormatOptions {
   const precision = asset.displayPrecision;
   if (!Number.isInteger(precision) || precision < 0 || precision > MAX_DISPLAY_PRECISION) {
     throw new RangeError(
       `displayPrecision must be an integer in [0, ${MAX_DISPLAY_PRECISION}], received ${precision}.`,
     );
   }
-  return { type: 'price', precision, minMove: minMoveFor(precision) };
+  return {
+    type: 'price',
+    precision: renderablePrecision(precision, asset.referencePrice),
+    minMove: minMoveFor(renderablePrecision(precision, asset.referencePrice)),
+  };
+}
+
+/** Significant digits a double actually carries. */
+const SIGNIFICANT_DIGITS = 16;
+
+/**
+ * The precision a price of this magnitude can honestly be shown to.
+ *
+ * **Cycle Audit 7, CA7-29.** `referencePrice` and `displayPrecision` are each
+ * bounded at registration and their *product* is not, so a combination inside
+ * both bounds — `{referencePrice: 1e15, displayPrecision: 18}` — is accepted,
+ * and the panel then printed `1000000000000099.864691128455135200`: 34 digits,
+ * of which roughly sixteen are a price and the rest are the binary residue of
+ * the double. The screen showed movements the asset cannot have.
+ *
+ * Registration is left alone deliberately. Eighteen decimals is legitimate for
+ * a reference price near 1e-15, and `MAX_DISPLAY_PRECISION` is pinned against
+ * the lattice the core can represent. What is not legitimate is *rendering*
+ * digits the number does not contain, so the cap belongs here, at the boundary
+ * where the dishonesty appears.
+ */
+export function renderablePrecision(precision: number, referencePrice?: number): number {
+  if (referencePrice === undefined || !Number.isFinite(referencePrice) || referencePrice === 0) {
+    return precision;
+  }
+  // The count is taken from the decimal exponent rather than from a digit
+  // count, because `Math.ceil(Math.log10(1e15 + 1))` is 15 and not 16 — the
+  // addition disappears into the double before the logarithm sees it, which is
+  // the same class of error this function exists to prevent.
+  //
+  // Significant digits used = decimals shown + exponent + 1. A price below one
+  // therefore keeps every decimal it asked for: at 1e-15, eighteen decimals is
+  // four significant digits, not thirty-four.
+  const exponent = Math.floor(Math.log10(Math.abs(referencePrice)));
+  return Math.max(0, Math.min(precision, SIGNIFICANT_DIGITS - exponent - 1));
 }
 
 /** One unit of the last displayed digit: `10^-precision`, exactly. */

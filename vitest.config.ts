@@ -130,6 +130,9 @@ export default defineConfig({
           exclude: [...commonExclude, '**/*.stat.test.ts'],
           // Inline projects do not inherit root options (a1-03).
           disableConsoleIntercept: true,
+          // See the statistical project below: a stray `.only` fails the run
+          // rather than silencing its siblings (CA7-17).
+          allowOnly: false,
           testTimeout: unitTimeoutMs,
         },
       },
@@ -147,6 +150,17 @@ export default defineConfig({
           exclude: commonExclude,
           // Inline projects do not inherit root options (a1-03).
           disableConsoleIntercept: true,
+          /**
+           * A stray `.only` is a failure, not a filter.
+           *
+           * **Cycle Audit 7, CA7-17.** Vitest defaults `allowOnly` to
+           * `!process.env.CI`, so a file carrying `it.only` silenced its
+           * failing siblings locally — exit 0, "2204 passed | 1 skipped" — and
+           * only turned red on a push to `main`. The local gate is what an
+           * approval is recorded from (`GOVERNANCE.md` §40.1), so the layer
+           * that can be fooled was the authoritative one.
+           */
+          allowOnly: false,
           /**
            * The round-trip guard and the lag watchdog. The first fails a file
            * that keeps a main-thread request unanswered for thirty seconds —

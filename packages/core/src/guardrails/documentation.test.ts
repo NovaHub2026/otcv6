@@ -110,6 +110,39 @@ describe('the roadmap tracks every phase document', () => {
       .filter((id) => !roadmap.includes(id));
     expect(missing).toEqual([]);
   });
+
+  it('and every identifier the roadmap tracks has a document (CA7-12)', () => {
+    // **Cycle Audit 7.** The check above runs one way only: it enumerates the
+    // *files* and asks whether the roadmap knows them. Delete an approved
+    // subphase's Technical Document and there is simply one case fewer — the
+    // gate stays green and the test count drops from 2,203 to 2,202, which
+    // nothing reads. An approved subphase whose document is gone is exactly
+    // what `GOVERNANCE.md` §71 says a fresh agent must be able to reconstruct.
+    //
+    // Rows are read from the roadmap's own tables, so a phase that is planned
+    // but not yet documented has to be written as prose rather than as a row.
+    const present = new Set(
+      phaseDocuments.map((name) => /^(PH-\d+(?:\.\d+)?)/.exec(name)?.[1] ?? name),
+    );
+    const rows = [
+      ...roadmap.matchAll(/^\|\s*(PH-\d+(?:\.\d+)?)\s*\|[^|]*\|\s*([^|]*?)\s*\|/gm),
+    ].map((match) => ({
+      id: match[1]!,
+      state: match[2]!.replaceAll('*', '').trim().toLowerCase(),
+    }));
+    expect(rows.length, 'no roadmap rows were parsed; the tables changed shape').toBeGreaterThan(
+      20,
+    );
+
+    // A phase that has been started owes a document. One that is only planned
+    // does not — PH-22 is a row and a paragraph of intent, and that is correct.
+    const started = rows.filter((row) => row.state !== 'not started' && row.state !== 'next');
+    expect(started.length, 'no started rows were parsed').toBeGreaterThan(20);
+    const undocumented = [...new Set(started.map((row) => row.id))].filter(
+      (id) => !present.has(id),
+    );
+    expect(undocumented, 'the roadmap tracks these as started, and no document exists').toEqual([]);
+  });
 });
 
 describe('phase states agree between documents and the roadmap', () => {
@@ -181,10 +214,19 @@ describe('every repo-relative link resolves', () => {
     'PROJECT_CONTEXT.md',
     'CURRENT_STATE.md',
     'SESSION_HANDOFF.md',
+    // **Cycle Audit 7, CA7-30.** Three of the places a fresh agent is sent
+    // were not checked: `GOVERNANCE.md` — the first document CLAUDE.md tells
+    // it to read — and the whole of `docs/audits/` and `docs/evidence/`, which
+    // are where every finding and every measured number live. Four planted
+    // broken links in those files were invisible to the gate.
+    'GOVERNANCE.md',
+    'PROJECT_INTRODUCTION.md',
     'docs/phases/ROADMAP.md',
     ...listMarkdown('docs/decisions').map((name) => `docs/decisions/${name}`),
     ...listMarkdown('docs/architecture').map((name) => `docs/architecture/${name}`),
     ...listMarkdown('docs/phases').map((name) => `docs/phases/${name}`),
+    ...listMarkdown('docs/audits').map((name) => `docs/audits/${name}`),
+    ...listMarkdown('docs/evidence').map((name) => `docs/evidence/${name}`),
   ];
 
   it.each(documents)('%s', (document) => {
