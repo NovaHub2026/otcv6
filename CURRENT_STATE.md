@@ -25,10 +25,10 @@ Last synchronized: 2026-09-03
 | ---------------------- | ------------------------------------------------ |
 | Active phase           | PH-24 — The Lab's controls: applying a selection |
 | Phase lifecycle        | ACTIVE                                           |
-| Active subphase        | none — PH-24.10 approved; next Lab item pending  |
-| Subphase lifecycle     | ACTIVE                                           |
+| Active subphase        | none                                             |
+| Subphase lifecycle     | none                                             |
 | Last approved phase    | PH-23 — The OTC Market Lab                       |
-| Last approved subphase | PH-24.9 — Varios activos a la vez                |
+| Last approved subphase | PH-24.10 — Empujar y cerrar                      |
 
 **PH-24 is active; ten subphases approved (PH-24.1–24.10)**. PH-24.10 built
 the Lab's two controls as the Human Owner re-stated them on 2026-09-03: natural

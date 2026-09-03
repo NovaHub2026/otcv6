@@ -13,7 +13,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Remote             | `origin` → NovaHub2026/otcv6, public                                       |
 | Active cycle       | Cycle 8, **2 of 3** phases approved (PH-22, PH-23)                         |
 | Active phase       | PH-24 — The Lab's controls: applying a selection                           |
-| Active subphase    | none — PH-24.10 approved; the next Lab item awaits the Human Owner         |
+| Active subphase    | none                                                                       |
 | Cycle Audit        | **007 closed** 2026-09-03; the next is due after three approved phases     |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                         |
 
