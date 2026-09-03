@@ -2,7 +2,7 @@
 
 Type: CURRENT STATE
 Status: Authoritative record of current project state
-Last synchronized: 2026-09-02
+Last synchronized: 2026-09-03
 
 > This document is not a diary. It records where the project is **now** and what
 > the **exact next legal action** is. History lives in Git, phase documents and
@@ -21,18 +21,23 @@ Last synchronized: 2026-09-02
 
 ## Phase and subphase
 
-| Field                  | Value                                                     |
-| ---------------------- | --------------------------------------------------------- |
-| Active phase           | none                                                      |
-| Phase lifecycle        | none                                                      |
-| Active subphase        | none                                                      |
-| Subphase lifecycle     | none                                                      |
-| Last approved phase    | PH-23 — The OTC Market Lab                                |
-| Last approved subphase | PH-23.4 — Interventions, scenarios and the session record |
+| Field                  | Value                           |
+| ---------------------- | ------------------------------- |
+| Active phase           | none                            |
+| Phase lifecycle        | none                            |
+| Active subphase        | none                            |
+| Subphase lifecycle     | none                            |
+| Last approved phase    | PH-23 — The OTC Market Lab      |
+| Last approved subphase | PH-23.5 — The Lab, in the panel |
 
-Nothing is active because PH-21 closed and the cycle boundary is here: three
-approved phases, and `GOVERNANCE.md` §28 turns the work from building to
-examining. Cycle Audit 7 is the next action, and it is not a phase.
+Nothing is active. Cycle 8 stands at two approved phases of three; a third
+opens the next Cycle Audit.
+
+PH-23.5 closed the first item PH-23 §10 left open — the Lab now has a screen in
+the panel, behind a menu entry marked `SIM`. Building it found three defects
+that reading the API could not: a `clean` predictability verdict resting on two
+hypotheses out of eight hundred, a realism verdict that flipped between forks of
+the same market, and a lattice index printed under the word `price`.
 
 ## Cycle 1 result
 

@@ -55,7 +55,15 @@ describe('engine behaviour and Lab actions never share a stream', () => {
     // what happened to this test's first version, and to `labSurface.test.ts`
     // before it.
     const source = readFileSync(path.join(here, 'session.ts'), 'utf8');
-    const methods = [...source.matchAll(/^  ([a-zA-Z]+)\(/gm)].map((match) => match[1]!);
+    const methods = [...source.matchAll(/^ {2}([a-zA-Z]+)\(/gm)].map((match) => match[1]!);
+    // The regex has to have found something. A pattern that matches no method
+    // filters to `[]` and passes on a class that offers `mergedTimeline()` in
+    // its first line — the vacuity this project has now written three times.
+    expect(methods.sort(), 'the pattern parsed no methods, or new ones appeared').toEqual([
+      'recordAction',
+      'recordEvent',
+      'timelines',
+    ]);
     expect(methods.filter((name) => /merge|combine|interleav|all/i.test(name))).toEqual([]);
     expect(source, 'the two streams are concatenated somewhere').not.toMatch(
       /#events[\s\S]{0,40}\.concat\(|\.\.\.this\.#events,\s*\.\.\.this\.#actions/,

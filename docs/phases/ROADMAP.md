@@ -589,6 +589,7 @@ measured probability rather than a heuristic.
 | PH-23.2  | The Lab surface: isolation, state, and what may never leave it | APPROVED |
 | PH-23.3  | The analysis already here, given a window                      | APPROVED |
 | PH-23.4  | Interventions, scenarios and the session record                | APPROVED |
+| PH-23.5  | The Lab, in the panel                                          | APPROVED |
 
 ### PH-22 — Distribution Under Thousands Of Observers
 

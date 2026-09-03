@@ -96,7 +96,7 @@ describe('the production composition cannot reach the Lab', () => {
     // looked is worse than no dashboard: it invites the reliance
     // `differentiation.ts` warns about, in writing.
     const controller = read('lab/lab.controller.ts');
-    const block = /predictability:\s*\{([\s\S]*?)\n      \},/.exec(controller)?.[1];
+    const block = /predictability:\s*\{([\s\S]*?)\n {6}\},/.exec(controller)?.[1];
     expect(block, 'no predictability block found').toBeDefined();
     expect(block!, 'the verdict is served').toMatch(/clean:/);
     expect(block!, 'and its sensitivity travels with it').toMatch(/sensitivity:/);

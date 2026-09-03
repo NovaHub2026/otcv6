@@ -187,15 +187,18 @@ and settlement is already INV-003 and already true.
 
 ## 10. What the phase leaves open
 
-**No UI.** Every subphase built API and boundary; §5–§7's screen is not built.
-That was deliberate — the screen is worth less than what is underneath it — but
-it is the visible half of what was asked for, and it is not done.
+**~~No UI.~~ Closed by [PH-23.5](PH-23.5-the-lab-in-the-panel.md)**, 2026-09-03.
+The screen is in the panel, behind a menu entry marked `SIM`. Building it found
+three defects that reading could not: a `clean` verdict resting on two
+hypotheses out of eight hundred, a realism verdict that flipped between forks of
+the same market, and a lattice index printed under the word `price`.
 
 **Interventions are not wired into the controller.** The mechanism and its
 record exist and are guarded; the routes are not (PH-23.4 §8, criterion 5).
 
-**§67's large runs are not jobs.** `/lab/markets/:id/quality` is bounded at
-40,000 ticks and says so. A twenty-four-million-tick battery belongs to a job
+**§67's large runs are not jobs.** `/lab/markets/:id/quality` is bounded — at a
+million ticks since PH-23.5, which is where the recorded evidence's own floor
+sits — and says so. A twenty-four-million-tick battery belongs to a job
 with an id and a record, like registration (PH-23.3 §6, criterion 5).
 
 **No replay or snapshot UI** (§74–§77). The determinism it would rest on exists

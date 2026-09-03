@@ -8,6 +8,20 @@ const ENTRIES = [
   { href: '/preview', label: 'Preview' },
   { href: '/assets/new', label: 'Create asset' },
   { href: '/assets/manage', label: 'Assets' },
+  /**
+   * The Lab, marked in the menu as well as on its own screen.
+   *
+   * §3 of the specification requires `OTC LAB` and `SIMULATION ENVIRONMENT` to
+   * be permanently displayed, and the menu is where an operator decides to go
+   * there. A row that looked like the others would be the first place the
+   * distinction is lost.
+   *
+   * The entry is always present, even with no Lab running. The screen then says
+   * so and says how to start one, which is the honest state: the Lab is a
+   * separate process by design (ADR-0015 §3), and a menu that hid the entry
+   * until one existed would make the boundary look like a bug.
+   */
+  { href: '/lab', label: 'Lab', lab: true },
 ] as const;
 
 /**
@@ -81,15 +95,27 @@ export function Nav({ apiBase }: { apiBase: string }): ReactElement {
             href={entry.href}
             data-testid={`nav-${entry.href.replaceAll('/', '-')}`}
             style={{
-              display: 'block',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
               padding: '8px 14px',
               color: active ? '#d7dce5' : '#8b93a7',
               textDecoration: 'none',
-              borderLeft: `3px solid ${active ? '#3fb950' : 'transparent'}`,
+              borderLeft: `3px solid ${
+                active ? ('lab' in entry ? '#f85149' : '#3fb950') : 'transparent'
+              }`,
               background: active ? '#161b26' : 'transparent',
             }}
           >
-            {entry.label}
+            <span>{entry.label}</span>
+            {'lab' in entry && (
+              <span
+                data-testid="nav-lab-marker"
+                style={{ color: '#f85149', fontSize: 9, letterSpacing: 0.5 }}
+              >
+                SIM
+              </span>
+            )}
           </a>
         );
       })}
