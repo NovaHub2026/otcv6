@@ -279,6 +279,22 @@ export function Lab(): ReactElement {
     }
   };
 
+  const setBias = async (direction: 'up' | 'down' | 'off'): Promise<void> => {
+    if (selected === null) return;
+    setBusy('bias');
+    try {
+      const body = await labPost<Control>(`markets/${selected}/bias?direction=${direction}`);
+      if (isUnavailable(body)) {
+        setPushError(es.lab.push.failed(body.reason));
+        return;
+      }
+      setControl(body);
+      void refreshState(selected);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const releaseAll = async (): Promise<void> => {
     setBusy('release-all');
     const body = await labPost<{ released: unknown[] }>('release-all');
@@ -398,6 +414,7 @@ export function Lab(): ReactElement {
             onPush={push}
             pace={pace}
             onPace={setPace}
+            onBias={setBias}
           />
           <LabChart
             entry={catalogue.find((c) => c.id === selected) ?? null}

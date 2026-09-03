@@ -26,9 +26,19 @@ import type { RandomSource, StreamCursor } from '@otc/core';
  * `LabModule` through `AppModule.register({signSource})` — `main.ts` registers
  * nothing, and `composition.test.ts` asserts it (ADR-0015 §3).
  */
+/** The sustained direction (PH-24.16): runs for it, shorter runs against it. */
+export const BIAS_RUN_MIN = 2;
+export const BIAS_RUN_MAX = 6;
+
 export class SelectableSigns implements RandomSource {
   #script: readonly (1 | -1)[] | null = null;
   #at = 0;
+  #bias: 1 | -1 | null = null;
+  #biasRandom: RandomSource | null = null;
+  /** The run being played under the bias: its sign and how many ticks remain. */
+  #runSign: 1 | -1 = 1;
+  #runLeft = 0;
+  #lastForLength = 0;
 
   constructor(
     private readonly inner: RandomSource,
@@ -85,18 +95,66 @@ export class SelectableSigns implements RandomSource {
     this.#at = 0;
   }
 
-  /** Back to the keystream. Returns how many scripted signs were never drawn. */
+  /** The sustained direction, or null when the keystream decides. */
+  get bias(): 1 | -1 | null {
+    return this.#bias;
+  }
+
+  /**
+   * Prioritise a direction until told otherwise (PH-24.16).
+   *
+   * Runs, not a coin with a thumb on it: a run for the direction of 2–6 ticks,
+   * then a run against it strictly shorter than the run before, and so on —
+   * down 3, up 2, down 5, up 3. The lengths come from a Lab-only random stream;
+   * the keystream keeps advancing in lockstep as always. A script armed on top
+   * plays first; the bias resumes after it.
+   */
+  setBias(direction: 1 | -1, random: RandomSource): void {
+    this.#bias = direction;
+    this.#biasRandom = random;
+    this.#runLeft = 0;
+    this.#lastForLength = 0;
+  }
+
+  clearBias(): void {
+    this.#bias = null;
+    this.#biasRandom = null;
+    this.#runLeft = 0;
+    this.#lastForLength = 0;
+  }
+
+  /** Back to the keystream, script and bias alike. Returns how many scripted signs were never drawn. */
   release(): number {
     const remaining = this.remaining;
     this.#script = null;
     this.#at = 0;
+    this.clearBias();
     return remaining;
+  }
+
+  #biasedSign(): 1 | -1 {
+    const random = this.#biasRandom!;
+    const bias = this.#bias!;
+    if (this.#runLeft === 0) {
+      if (this.#lastForLength === 0 || this.#runSign !== bias) {
+        // A run for the direction.
+        this.#runSign = bias;
+        this.#runLeft = BIAS_RUN_MIN + random.nextBoundedUint32(BIAS_RUN_MAX - BIAS_RUN_MIN + 1);
+        this.#lastForLength = this.#runLeft;
+      } else {
+        // A run against it, strictly shorter than the run before.
+        this.#runSign = bias === 1 ? -1 : 1;
+        this.#runLeft = 1 + random.nextBoundedUint32(Math.max(1, this.#lastForLength - 1));
+      }
+    }
+    this.#runLeft -= 1;
+    return this.#runSign;
   }
 
   nextBoolean(): boolean {
     // Always: the keystream advances whether or not its draw is used.
     const draw = this.inner.nextBoolean();
-    if (this.#script === null) return draw;
+    if (this.#script === null) return this.#bias === null ? draw : this.#biasedSign() === 1;
     const sign = this.#script[this.#at]!;
     this.#at += 1;
     if (this.#at >= this.#script.length) {

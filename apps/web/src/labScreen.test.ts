@@ -386,6 +386,18 @@ describe('the Lab is marked wherever it appears', () => {
     expect(lab).toMatch(/push\?ticks=\$\{String\(ticks\)\}&pace=\$\{pace\}/);
   });
 
+  it('offers sube / baja as toggles that go to the bias route (PH-24.16)', () => {
+    const strip = code('lab/Empujar.tsx');
+    expect(strip).toMatch(/testId="lab-bias-up"/);
+    expect(strip).toMatch(/testId="lab-bias-down"/);
+    // A second click on the active direction turns it off.
+    expect(strip).toMatch(/onBias\(bias === 1 \? 'off' : 'up'\)/);
+    expect(strip).toMatch(/onBias\(bias === -1 \? 'off' : 'down'\)/);
+    expect(strip).toMatch(/p\.bias\.active\(/);
+    const lab = code('lab/Lab.tsx');
+    expect(lab).toMatch(/markets\/\$\{selected\}\/bias\?direction=\$\{direction\}/);
+  });
+
   it('says the Lab is absent rather than hiding that it can be', () => {
     expect(lab()).toMatch(/lab-not-running/);
     expect(code('lab/[...path]/route.ts')).toMatch(/OTC_LAB_BASE/);

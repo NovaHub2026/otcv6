@@ -121,6 +121,8 @@ export interface Control {
   readonly armed: boolean;
   readonly remaining: number;
   readonly pushing?: Pushing | null;
+  /** PH-24.16: the sustained direction, or null. */
+  readonly bias?: 1 | -1 | null;
   readonly lastPush?: {
     readonly direction: 1 | -1;
     readonly ticks: number;

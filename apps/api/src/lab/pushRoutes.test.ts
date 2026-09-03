@@ -30,7 +30,7 @@ interface Pushed {
   direction: 'up' | 'down';
   ticks: number;
   extended: boolean;
-  landing: { latticeLevel: number; price: string; afterTicks: number };
+  landing: { latticeLevel: number; price: string; afterTicks: number; instant: number };
   retracted: boolean;
   pace: string;
   armed: boolean;
@@ -90,6 +90,7 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     const pending = lab.venue.hostedMarket(id)!.pending!;
     expect(pending.sequence).toBe(lastPublished.sequence + 1);
 
+    const gap = lab.clock.now() - lastPublished.instant;
     const pushed = (await lab.controller.push(id, '+3')) as Pushed;
     expect(pushed).toMatchObject({
       direction: 'up',
@@ -113,10 +114,13 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     const labIntervals = intervals(labTicks, lastPublished);
     // Criterion 2: the burst — at most base / BURST_DIVISOR apart, every sign up.
     const base = configFor(asset).arrival.baseIntervalMs;
-    for (let i = 0; i < 3; i += 1) {
-      expect(labIntervals[i]!).toBeLessThanOrEqual(Math.max(1, Math.floor(base / BURST_DIVISOR)));
-      expect(labDeltas[i]!).toBeGreaterThanOrEqual(0);
-    }
+    const step = Math.max(1, Math.floor(base / BURST_DIVISOR));
+    // PH-24.16: the first pushed tick is anchored at now — its interval is the gap
+    // since the last published tick plus one burst step; the rest are burst steps.
+    expect(labIntervals[0]!).toBeGreaterThanOrEqual(gap);
+    expect(labIntervals[0]!).toBeLessThanOrEqual(gap + step + 1);
+    for (let i = 1; i < 3; i += 1) expect(labIntervals[i]!).toBeLessThanOrEqual(step);
+    for (let i = 0; i < 3; i += 1) expect(labDeltas[i]!).toBeGreaterThanOrEqual(0);
     // The landing announced is the third pushed tick's price.
     expect(labTicks[2]!.price).toBe(pushed.landing.latticeLevel);
 
@@ -233,6 +237,7 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     await advance(lab.venue, lab.clock, 120_000);
     await advance(plain.venue, plain.clock, 120_000);
     const lastPublished = record(lab.venue)[record(lab.venue).length - 1]!;
+    const gapNormal = lab.clock.now() - lastPublished.instant;
     const pushed = (await lab.controller.push(id, '+3', 'normal')) as Pushed;
     expect(pushed.pace).toBe('normal');
     expect(pushed.retracted).toBe(true);
@@ -240,12 +245,28 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     await advance(plain.venue, plain.clock, 60_000);
     const labTicks = after(record(lab.venue), lastPublished.sequence);
     const plainTicks = after(record(plain.venue), lastPublished.sequence);
-    expect(intervals(labTicks, lastPublished).slice(0, 3)).toEqual(
-      intervals(plainTicks, lastPublished).slice(0, 3),
-    );
-    expect(deltas(labTicks, lastPublished).slice(0, 3)).toEqual(
-      deltas(plainTicks, lastPublished).slice(0, 3).map(Math.abs),
-    );
+    // PH-24.16: the first interval is the keystream's own plus the gap to now (within
+    // the model's millisecond); from the second tick the intervals are the unpushed venue's.
+    const labIntervals = intervals(labTicks, lastPublished);
+    const plainIntervals = intervals(plainTicks, lastPublished);
+    expect(Math.abs(labIntervals[0]! - (plainIntervals[0]! + gapNormal))).toBeLessThanOrEqual(1);
+    // The draws are the keystream's; the intervals differ only by the Hawkes decay
+    // over a longer first interval — the engine's own law, within a percent.
+    for (let i = 1; i < 3; i += 1) {
+      expect(Math.abs(labIntervals[i]! - plainIntervals[i]!)).toBeLessThanOrEqual(
+        Math.max(2, plainIntervals[i]! * 0.02),
+      );
+    }
+    // Signs up throughout. The first magnitude answers a longer interval (duration
+    // coupling), so magnitudes are compared from the second tick, within a few percent.
+    const labDeltasN = deltas(labTicks, lastPublished).slice(0, 3);
+    const plainDeltasN = deltas(plainTicks, lastPublished).slice(0, 3).map(Math.abs);
+    for (const d of labDeltasN) expect(d).toBeGreaterThanOrEqual(0);
+    for (let i = 1; i < 3; i += 1) {
+      expect(Math.abs(labDeltasN[i]! - plainDeltasN[i]!)).toBeLessThanOrEqual(
+        Math.max(1, plainDeltasN[i]! * 0.05),
+      );
+    }
     expect(
       lab.session.toLines().some((l) => /"action":"push"/.test(l) && /"pace":"normal"/.test(l)),
     ).toBe(true);
@@ -254,15 +275,50 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     const medio = await labVenue();
     await advance(medio.venue, medio.clock, 120_000);
     const last2 = record(medio.venue)[record(medio.venue).length - 1]!;
+    const gapMedio = medio.clock.now() - last2.instant;
     const m = (await medio.controller.push(id, '-4', 'medio')) as Pushed;
     expect(m.pushing).toEqual({ direction: -1, requested: 4, remaining: 4, pace: 'medio' });
     await advance(medio.venue, medio.clock, 5_000);
     const mTicks = after(record(medio.venue), last2.sequence);
     const bound = Math.max(1, Math.floor(base / PACE_DIVISORS.medio!));
-    for (const ms of intervals(mTicks, last2).slice(0, 4)) expect(ms).toBeLessThanOrEqual(bound);
+    // PH-24.16: the first pushed tick is anchored at now (gap + step); the rest at the pace.
+    const mIntervals = intervals(mTicks, last2).slice(0, 4);
+    expect(mIntervals[0]!).toBeLessThanOrEqual(gapMedio + bound + 1);
+    for (const ms of mIntervals.slice(1)) expect(ms).toBeLessThanOrEqual(bound);
     for (const d of deltas(mTicks, last2).slice(0, 4)) expect(d).toBeLessThanOrEqual(0);
 
     // An unknown pace is refused.
     await expect(medio.controller.push(id, '1', 'turbo')).rejects.toThrow(/pace must be one of/);
+  });
+
+  it('PH-24.16: pushed ticks are due one after another from now, at the pace, never before the push', async () => {
+    const base = configFor(asset).arrival.baseIntervalMs;
+    for (const [pace, divisor] of [
+      ['rapido', BURST_DIVISOR],
+      ['medio', PACE_DIVISORS.medio!],
+    ] as const) {
+      const lab = await labVenue();
+      await advance(lab.venue, lab.clock, 120_000);
+      const lastPublished = record(lab.venue)[record(lab.venue).length - 1]!;
+      const now = lab.clock.now();
+      const pushed = (await lab.controller.push(id, '+5', pace)) as Pushed;
+      const step = Math.max(1, Math.floor(base / divisor));
+      // The landing is five ticks ahead of now, not of the last published instant.
+      expect(pushed.landing.instant).toBeGreaterThanOrEqual(now + step);
+      expect(pushed.landing.instant).toBeLessThanOrEqual(now + 6 * step + 1);
+      await advance(lab.venue, lab.clock, 10_000);
+      const ticks = after(record(lab.venue), lastPublished.sequence).slice(0, 5);
+      expect(ticks[0]!.instant).toBeGreaterThanOrEqual(now);
+      expect(ticks[0]!.instant).toBeLessThanOrEqual(now + step + 1);
+      for (let i = 1; i < 5; i += 1) {
+        expect(ticks[i]!.instant - ticks[i - 1]!.instant).toBeLessThanOrEqual(step);
+      }
+    }
+    // normal: the first tick is at or after now as well, at the keystream's own interval.
+    const lab = await labVenue();
+    await advance(lab.venue, lab.clock, 120_000);
+    const now = lab.clock.now();
+    const pushed = (await lab.controller.push(id, '+2', 'normal')) as Pushed;
+    expect(pushed.landing.instant).toBeGreaterThan(now);
   });
 });

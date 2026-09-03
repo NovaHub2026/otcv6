@@ -22,6 +22,7 @@ export function Empujar({
   onPush,
   pace,
   onPace,
+  onBias,
 }: {
   control: Control | null;
   last: PushResult | null;
@@ -31,11 +32,14 @@ export function Empujar({
   /** PH-24.15: the pace the next pushes play. */
   pace: Pace;
   onPace: (pace: Pace) => void;
+  /** PH-24.16: sube / baja. */
+  onBias: (direction: 'up' | 'down' | 'off') => Promise<void>;
 }): ReactElement {
   const p = es.lab.push;
   const pushing = control?.pushing ?? null;
   // Held only by its own act (PH-24.11): never by a quality run, never by an armed close.
   const held = busy === 'push';
+  const bias = control?.bias ?? null;
   return (
     <div
       data-testid="lab-push"
@@ -102,10 +106,33 @@ export function Empujar({
           {p.pace[key]}
         </button>
       ))}
-      <Badge tone={pushing !== null ? 'lab' : 'muted'} testId="lab-push-state">
+      <span style={{ color: T.faint, fontSize: 11, marginLeft: 6 }}>
+        <Info text={p.bias.info} />
+      </span>
+      <Button
+        kind={bias === 1 ? 'primary' : 'ghost'}
+        small
+        testId="lab-bias-up"
+        disabled={busy === 'bias'}
+        onClick={() => void onBias(bias === 1 ? 'off' : 'up')}
+      >
+        {p.bias.up}
+      </Button>
+      <Button
+        kind={bias === -1 ? 'danger' : 'ghost'}
+        small
+        testId="lab-bias-down"
+        disabled={busy === 'bias'}
+        onClick={() => void onBias(bias === -1 ? 'off' : 'down')}
+      >
+        {p.bias.down}
+      </Button>
+      <Badge tone={pushing !== null || bias !== null ? 'lab' : 'muted'} testId="lab-push-state">
         {pushing !== null
           ? p.running(pushing.direction === 1 ? 'up' : 'down', pushing.remaining)
-          : p.idle}
+          : bias !== null
+            ? p.bias.active(bias === 1 ? 'up' : 'down')
+            : p.idle}
       </Badge>
       {/* The last act's announcement stays: a burst lands before the strip's next poll (PH-24.13). */}
       {last !== null && (

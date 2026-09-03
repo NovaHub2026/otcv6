@@ -34,19 +34,20 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-24.10–24.15 are approved; no subphase is active.** The Lab has the two
-controls the Human Owner asked for: the Empujar strip — a push retracts the
-drawn, unpublished tick and its N ticks arrive at the chosen pace (`normal`:
-the keystream's intervals; `medio`: `e^(-1/6)`; `rápido`: `e^(-1/12)`), the
-pace on the route (`pace=`), in the state and in every session action — and
-the exact close of the current candle. One engine per deployment (ADR-0018);
-the panel recovers by itself; **a gate never touches the served panel**
-(suites build in `.next-stat`; `tsconfig.json` lists both type globs;
-`next-env.d.ts` untracked; ESLint ignores `.next-stat`). To serve new front-end
-code locally: `npm run build:web`, then restart the panel. Replay/mirror
-groundwork (`2ff8559`) stays parked. **The next Lab item awaits the Human
-Owner; the merge, hosted CI and Cycle Audit 8 wait until the Lab is complete**
-(`DECISION-LOG.md`, 2026-09-03). Browser suites run under
+**PH-24.10–24.16 are approved; no subphase is active.** The Lab: the Empujar
+strip — a push retracts the drawn, unpublished tick, its **first tick is
+anchored at now** (arrival draw found by bisection on forks, PH-24.16) and the
+rest arrive at the chosen pace (`normal | medio | rápido`), progressively; the
+sustained direction **sube / baja** (`POST …/bias?direction=up|down|off`;
+runs for the direction of 2–6 ticks and strictly shorter runs against, from a
+Lab-only random stream; scripts play first; `release` ends it) — and the exact
+close of the current candle. One engine per deployment (ADR-0018); the panel
+recovers by itself; a gate never touches the served panel (suites build in
+`.next-stat`). To serve new front-end code locally: `npm run build:web`, then
+restart the panel; API changes need the engine restarted (`start.sh`).
+Replay/mirror groundwork (`2ff8559`) stays parked. **The next Lab item awaits
+the Human Owner; the merge, hosted CI and Cycle Audit 8 wait until the Lab is
+complete** (`DECISION-LOG.md`, 2026-09-03). Browser suites run under
 `LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu`.
 
 **The next phase is the decision LA-03 names.** The Lab specification audit

@@ -25,6 +25,7 @@ import {
   selectClose,
   selectContinuation,
   type Continuation,
+  configFor,
 } from '@otc/engine';
 import { STATE_RECORD_VERSION } from '@otc/runtime';
 import { VenueService } from '../venue.service.js';
@@ -36,6 +37,7 @@ import { SCENARIOS, scenarioNamed, scenarioParameters, shapeOf } from './scenari
 import { SelectableSigns, SignSelector } from './selectableSigns.js';
 import {
   ArrivalSelector,
+  PACE_DIVISORS,
   PACES,
   paceDraw,
   SelectableArrival,
@@ -591,11 +593,18 @@ export class LabController {
       const carriedDraws: (number | null)[] =
         extended && arrival !== null ? [...arrival.remainingScript()] : [];
       const retracted = market.retractPending();
-      // Everything the market will play from its next draw, in order.
       const script: (1 | -1)[] = [...carried, ...signs];
-      // One arrival entry per pushed tick, aligned with the signs; null is the keystream's own draw.
       const draw = paceDraw(pace);
-      const draws: (number | null)[] = [...carriedDraws, ...signs.map(() => draw)];
+      const paced: (number | null)[] = signs.map(() => draw);
+      // PH-24.16: the first pushed tick is anchored at now. Its draw is found on
+      // forks so that its interval is the gap since the last published tick plus
+      // the pace's own interval — otherwise a burst redrawn from a seconds-old
+      // instant is due all at once and publishes as a jump. A running push is
+      // not re-anchored: its next tick is already ahead of now.
+      const draws: (number | null)[] =
+        carriedDraws.length > 0
+          ? [...carriedDraws, ...paced]
+          : [this.anchoredFirstDraw(id, at, pace, arrival !== null), ...paced.slice(1)];
       let forkSigns: SelectableSigns | null = null;
       let forkArrival: SelectableArrival | null = null;
       const fork = this.venue.labFork(
@@ -714,6 +723,81 @@ export class LabController {
       landedPrice,
       exact: landed === null ? null : landed.price === landing.level,
     };
+  }
+
+  /**
+   * The arrival draw that puts the first pushed tick at now plus the pace's
+   * interval (PH-24.16), found by bisection on forks — the model is the
+   * engine's own, so the fork's answer is the market's.
+   */
+  private anchoredFirstDraw(
+    id: string,
+    at: EpochMillis,
+    pace: Pace,
+    selectable: boolean,
+  ): number | null {
+    if (!selectable) return null;
+    const asset = this.venue.assetFor(id)!;
+    const base = configFor(asset).arrival.baseIntervalMs;
+    const firstIntervalWith = (draw: number | null): number => {
+      let armed: SelectableArrival | null = null;
+      const fork = this.venue.labFork(id, undefined, (keystream) => {
+        armed = new SelectableArrival(keystream, id);
+        return armed;
+      })!;
+      (armed as SelectableArrival | null)!.arm([draw]);
+      const tick = fork.next();
+      return tick === null ? Number.POSITIVE_INFINITY : tick.instant - fork.instant;
+    };
+    const divisor = PACE_DIVISORS[pace];
+    const own =
+      divisor === null ? firstIntervalWith(null) : Math.max(1, Math.floor(base / divisor));
+    const snapshot = this.venue.hostedMarket(id)!.snapshotEngine();
+    const gap = Math.max(0, at - snapshot.instant);
+    const target = gap + own;
+    // The interval grows with the draw: bisect until it is within a millisecond.
+    let lo = 0;
+    let hi = 1 - 1e-12;
+    let best = hi;
+    for (let i = 0; i < 40; i += 1) {
+      const mid = (lo + hi) / 2;
+      const interval = firstIntervalWith(mid);
+      best = mid;
+      if (Math.abs(interval - target) <= 1) break;
+      if (interval < target) lo = mid;
+      else hi = mid;
+    }
+    return best;
+  }
+
+  /**
+   * Sube / baja (PH-24.16): prioritise a direction until told otherwise.
+   * Runs for it and shorter runs against it, at the market's own pace.
+   */
+  @Post('markets/:id/bias')
+  async bias(@Param('id') id: string, @Query('direction') direction?: string): Promise<unknown> {
+    if (direction !== 'up' && direction !== 'down' && direction !== 'off') {
+      throw new BadRequestException("direction must be 'up', 'down' or 'off'.");
+    }
+    const wrapper = this.wrapperFor(id);
+    const at = this.venue.now();
+    const before = this.controlState(id);
+    await this.venue.betweenAdvances(() => {
+      if (direction === 'off') wrapper.clearBias();
+      else wrapper.setBias(direction === 'up' ? 1 : -1, this.venue.labRandom(id));
+    });
+    this.session.recordAction({
+      at,
+      asset: id,
+      engineVersion: ENGINE_VERSION,
+      action: 'bias',
+      parameters: { direction },
+      initialState: before,
+      resultingState: this.controlState(id),
+      succeeded: true,
+      diagnostics: {},
+    });
+    return { environment: LAB, asset: id, direction, ...this.controlState(id) };
   }
 
   /** A plan drawn on the keystream cannot describe a market playing a push (PH-24.10). */
@@ -1485,6 +1569,7 @@ export class LabController {
       landedPrice: string | null;
       exact: boolean | null;
     } | null;
+    bias: 1 | -1 | null;
     sequence: number;
     lastApplied: ReturnType<LabController['outcomeFor']>;
   } {
@@ -1506,6 +1591,7 @@ export class LabController {
               pace: push.pace,
             },
       lastPush: this.pushOutcome(id),
+      bias: wrapper?.bias ?? null,
       sequence: market?.snapshotEngine().sequence ?? -1,
       lastApplied: this.outcomeFor(id),
     };

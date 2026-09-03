@@ -656,6 +656,33 @@ describe('Candle Close Control, from the panel', () => {
         { timeout: 30_000 },
       );
 
+      // PH-24.16: baja stays active on the strip and in the session; a second click ends it.
+      await page.click('[data-testid="lab-bias-down"]');
+      await page.waitForFunction(
+        () =>
+          /BAJA activo/i.test(
+            document.querySelector('[data-testid="lab-push-state"]')?.textContent ?? '',
+          ),
+        null,
+        { timeout: 30_000 },
+      );
+      await page.waitForFunction(
+        () =>
+          /direction=down/.test(
+            document.querySelector('[data-testid="lab-session-lab"]')?.textContent ?? '',
+          ),
+        null,
+        { timeout: 30_000 },
+      );
+      await page.click('[data-testid="lab-bias-down"]');
+      await page.waitForFunction(
+        () =>
+          !/BAJA activo/i.test(
+            document.querySelector('[data-testid="lab-push-state"]')?.textContent ?? '',
+          ),
+        null,
+        { timeout: 30_000 },
+      );
       // PH-24.15: a medio push lands too, and the session records its pace.
       await page.click('[data-testid="lab-push-pace-medio"]');
       await page.click('[data-testid="lab-push--1"]');

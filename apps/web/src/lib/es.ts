@@ -187,6 +187,13 @@ export const es = {
       refusedPush:
         'hay un empuje en curso — espera a que termine o libéralo antes de fijar un cierre',
       failed: (reason: string) => `el empuje no se envió: ${reason}`,
+      bias: {
+        up: 'sube',
+        down: 'baja',
+        info: 'Mientras está activo, el mercado prioriza esa dirección: rachas de 2 a 6 ticks a favor y rachas más cortas en contra — baja 3, sube 2, baja 5, sube 3 — con las magnitudes y el ritmo normal del motor. Un empuje, un cierre o un escenario se juega primero y el sesgo continúa después. Volver a pulsar lo apaga; liberar el mercado también. Sin nada activo, el motor va solo.',
+        active: (dir: 'up' | 'down') =>
+          `${dir === 'up' ? 'SUBE' : 'BAJA'} activo · el mercado prioriza ${dir === 'up' ? 'subir' : 'bajar'}`,
+      },
       pace: {
         label: 'ritmo',
         normal: 'normal',
