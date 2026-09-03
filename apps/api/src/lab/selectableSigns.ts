@@ -49,6 +49,11 @@ export class SelectableSigns implements RandomSource {
     return this.#script === null ? 0 : this.#script.length - this.#at;
   }
 
+  /** The scripted signs not yet drawn, so a replay can play what this market will (PH-24.10). */
+  remainingScript(): readonly (1 | -1)[] {
+    return this.#script === null ? [] : this.#script.slice(this.#at);
+  }
+
   /**
    * Play these signs for the next `signs.length` draws.
    *

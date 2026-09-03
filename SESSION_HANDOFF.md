@@ -34,13 +34,19 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-24.9 is approved; PH-24.10 is active**
-([PH-24.10](docs/phases/PH-24.10-reproducir-y-el-espejo.md)). Every market's
-state is on the asset list and the Tablero, and release-all is the one batched
-act. PH-24.10 gives §74–§77 a screen: kept snapshots, a replay checked against
-the record, and the mirror — two forks from one state, signs flipped, only the
-signs differ. **The merge, hosted CI and Cycle Audit 8 wait until the Lab is
-complete** (`DECISION-LOG.md`, 2026-09-03). Run the browser suites under
+**PH-24.9 is approved; PH-24.10 is active and paused at the Human Owner's
+request** — _"cuando termines PH-24.9 y lo apruebes vamos a pararnos por aquí
+para alinear varias cosas del lab"_ (2026-09-03). What PH-24.10 has so far,
+committed as groundwork: `apps/api/src/lab/snapshots.ts` (kept snapshots with
+the armed script), `replay.ts` (replay against the record on a fork; the mirror
+of two forks), `SelectableSigns.remainingScript()`, the `Reproducir` screen
+component and its strings and API types. **Not yet**: the controller routes
+(`snapshots`, `replay`, `mirror`), keeping snapshots on arm/release/time, the
+tab wired into `Lab.tsx`, tests, plants, browser flow, gate — so the panel shows
+no Reproducir tab until it is real. Resume from
+[PH-24.10](docs/phases/PH-24.10-reproducir-y-el-espejo.md) §2 after the
+alignment. **The merge, hosted CI and Cycle Audit 8 wait until the Lab is
+complete** (`DECISION-LOG.md`, 2026-09-03). Browser suites run under
 `LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu`.
 
 **The next phase is the decision LA-03 names.** The Lab specification audit

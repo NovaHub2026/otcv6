@@ -116,11 +116,38 @@ export const es = {
     tabs: {
       board: 'Tablero',
       market: 'Mercado',
+      replay: 'Reproducir',
       close: 'Cierre',
       positions: 'Posiciones',
       scenarios: 'Escenarios',
       quality: 'Calidad',
       session: 'Sesión',
+    },
+    replay: {
+      title: 'Reproducir — el registro, otra vez, desde un estado guardado',
+      info: 'El Lab guarda estados del motor de cada mercado: uno en cada armado y liberación, y uno por minuto. Reproducir toma uno, lo restaura en una copia (el mercado nunca retrocede) y vuelve a generar hasta ahora — con el vector que estaba armado en ese momento — comparando tick a tick con lo publicado. Idéntico es lo que promete INV-009; una divergencia sería un hallazgo sobre el motor, y se mostraría.',
+      snapshots: 'estados guardados',
+      why: { arm: 'armado', release: 'liberación', time: 'minuto' } as Record<string, string>,
+      replayFrom: 'Reproducir desde aquí',
+      verdict: 'veredicto',
+      identical: (n: number) =>
+        `IDÉNTICO — ${String(n)} ticks reproducidos coinciden con el registro`,
+      divergent: (n: number, at: number) =>
+        `DIVERGE en la secuencia ${String(at)} tras ${String(n)} ticks — un hallazgo sobre el motor`,
+      nothing: 'nada que reproducir aún: el estado guardado es el más reciente',
+      scriptPlayed: (n: number) => `${String(n)} signos armados reproducidos`,
+      mirror: {
+        title: 'El espejo — dos futuros desde este estado, con los signos invertidos',
+        info: 'La prueba del producto, en este mercado, ahora: dos copias del motor desde el mismo estado, una con los signos del keystream y otra con cada signo invertido. Las magnitudes y los intervalos tienen que ser idénticos y los desplazamientos exactamente opuestos, porque el motor de magnitudes no puede ver un signo (ADR-0003). Es lo que el gate comprueba en cada ejecución, aquí visible.',
+        ticks: 'ticks',
+        run: 'Ver el espejo',
+        plain: 'con los signos del keystream',
+        flipped: 'con los signos invertidos',
+        summary: (net: number, high: number, low: number) =>
+          `neto ${String(net)} · máx ${String(high)} · mín ${String(low)}`,
+        same: 'SOLO CAMBIAN LOS SIGNOS — magnitudes e intervalos idénticos, desplazamientos opuestos',
+        differ: 'LAS MAGNITUDES O LOS INTERVALOS DIFIEREN — un hallazgo sobre el motor',
+      },
     },
     board: {
       title: 'Tablero — todos los mercados del Lab',

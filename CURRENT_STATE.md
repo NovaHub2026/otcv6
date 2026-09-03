@@ -30,10 +30,11 @@ Last synchronized: 2026-09-03
 | Last approved phase    | PH-23 — The OTC Market Lab                       |
 | Last approved subphase | PH-24.9 — Varios activos a la vez                |
 
-**PH-24 is active; five subphases approved and a sixth opened at the Human
-Owner's direction**: PH-24.6 redesigns the panel's and the Lab's UX — Spanish,
-cleaner, explanations behind ⓘ — before the phase closes. The merge, hosted CI
-and Cycle Audit 8 wait for it. PH-24's approval is Cycle 8's third phase.
+**PH-24 is active; nine subphases approved (PH-24.1–24.9) and PH-24.10 open
+and paused** at the Human Owner's request to align the Lab's direction. Its
+groundwork is committed and nothing of it is on the screen yet. The merge,
+hosted CI and Cycle Audit 8 wait until the Lab is complete; PH-24's approval is
+Cycle 8's third phase.
 
 PH-23.5 closed the first item PH-23 §10 left open — the Lab now has a screen in
 the panel, behind a menu entry marked `SIM`. Building it found three defects

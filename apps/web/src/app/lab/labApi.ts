@@ -107,6 +107,29 @@ export interface ControlAll {
   readonly markets: readonly MarketControl[];
 }
 
+export interface KeptSnapshotView {
+  readonly sequence: number;
+  readonly instant: number;
+  readonly keptAt: number;
+  readonly why: 'arm' | 'release' | 'time';
+  readonly script: number;
+}
+
+export interface ReplayView {
+  readonly fromSequence: number;
+  readonly toSequence: number;
+  readonly replayed: number;
+  readonly identical: boolean;
+  readonly firstDivergence: { sequence: number } | null;
+  readonly scriptPlayed: number;
+}
+
+export interface MirrorView {
+  readonly plain: { ticks: number; net: number; high: number; low: number };
+  readonly mirror: { ticks: number; net: number; high: number; low: number };
+  readonly onlySignsDiffer: boolean;
+}
+
 export interface Session {
   readonly engine: readonly { at: number; asset: string; kind: string; detail: string }[];
   readonly lab: readonly {

@@ -56,7 +56,8 @@ import { Tablero } from './Tablero.js';
  * El Lab es un proceso aparte y esto apunta a él solo si `OTC_LAB_BASE` lo
  * nombra. Sin Lab la pantalla lo dice, y dice cómo arrancar uno (ADR-0015 §3).
  */
-type Tab = 'board' | 'market' | 'close' | 'positions' | 'scenarios' | 'quality' | 'session';
+type Tab =
+  'board' | 'replay' | 'market' | 'close' | 'positions' | 'scenarios' | 'quality' | 'session';
 
 export function Lab(): ReactElement {
   const [assets, setAssets] = useState<LabMarket[]>([]);
