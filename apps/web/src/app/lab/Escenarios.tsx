@@ -23,6 +23,7 @@ export function Escenarios({
   onTarget,
   targetPlan,
   unitSteps,
+  unitPrice,
 }: {
   scenarios: readonly ScenarioView[];
   plan: ScenarioPlan | null;
@@ -44,6 +45,8 @@ export function Escenarios({
   targetPlan: ScenarioPlan | null;
   /** PH-24.18: lattice steps in one unit; distance parameters are entered in units. */
   unitSteps: number;
+  /** The same unit priced, for the legend beside the fields entered in it. */
+  unitPrice?: string | undefined;
 }): ReactElement {
   const [windowSeconds, setWindowSeconds] = useState('60');
   const [shockSize, setShockSize] = useState('2');
@@ -135,6 +138,15 @@ export function Escenarios({
                 style={FIELD}
               />
             </Field>
+            {scenario.parameters.some((p) => DISTANCE_PARAMS.has(p.name)) &&
+              unitPrice !== undefined && (
+                <span
+                  data-testid="lab-scenario-unit"
+                  style={{ color: T.faint, fontSize: 11, alignSelf: 'center' }}
+                >
+                  {es.lab.scenarios.unitNote(unitPrice)}
+                </span>
+              )}
             {scenario.parameters.map((p) => (
               <Field key={p.name} label={es.lab.scenarios.params[p.name] ?? p.label} width={150}>
                 <input

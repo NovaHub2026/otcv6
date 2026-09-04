@@ -540,6 +540,34 @@ describe('the Lab is marked wherever it appears', () => {
     expect(chart).toMatch(/zIndex: [1-9]/);
   });
 
+  it('every field entered in units says «unidades», and none says «pasos» (a5)', () => {
+    // **Cycle Audit 8 (a5).** PH-24.18 made the scenarios' displacement
+    // parameters, the shock size and the target price be entered in candle
+    // units and multiplied by `unitSteps` on the screen — and left every label
+    // reading «pasos». An operator asking for a net displacement of 20 was
+    // asking for twenty units, roughly a thousand to four thousand lattice
+    // steps: five candles where they meant a fraction of one.
+    const strings = read('../lib/es.ts');
+    const params = /params: \{([\s\S]*?)\} as Record<string, string>,/.exec(strings)?.[1] ?? '';
+    expect(params, 'the scenarios parameter labels').not.toBe('');
+    for (const name of ['net', 'range', 'rise', 'fall', 'level', 'hold']) {
+      const label = new RegExp(`${name}: '([^']*)'`).exec(params)?.[1] ?? '';
+      expect(label, `${name} has no label`).not.toBe('');
+      expect(label, `${name} is entered in units and labelled «${label}»`).toMatch(/unidades/);
+      expect(label, `${name} still says «pasos»`).not.toMatch(/pasos/);
+    }
+    // depth is a fraction and changes a count: neither is converted, neither
+    // carries a unit — and the guard would be vacuous if it did not say so.
+    expect(/depth: '([^']*)'/.exec(params)?.[1]).not.toMatch(/unidades|pasos/);
+    expect(/changes: '([^']*)'/.exec(params)?.[1]).not.toMatch(/unidades|pasos/);
+    // The shock size and the target price's relative field are converted too.
+    expect(/size: '([^']*)'/.exec(strings)?.[1]).toMatch(/unidades/);
+    expect(/steps: 'o ([^']*)'/.exec(strings)?.[1]).toMatch(/unidades/);
+    // And the screen says what a unit is, where the fields are.
+    expect(code('lab/Escenarios.tsx')).toMatch(/data-testid="lab-scenario-unit"/);
+    expect(code('lab/Escenarios.tsx')).toMatch(/es\.lab\.scenarios\.unitNote\(unitPrice\)/);
+  });
+
   it('a sustained direction shows what it has left, and one clock formats every countdown (PH-24.24)', () => {
     const controles = code('lab/Controles.tsx');
     expect(controles).toMatch(/data-testid="lab-direction-left"/);

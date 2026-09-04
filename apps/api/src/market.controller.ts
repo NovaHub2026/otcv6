@@ -224,6 +224,19 @@ export class MarketController implements BeforeApplicationShutdown {
     // `from` is per asset, and a position for an asset the stream does not carry
     // is a client that believes it asked for something else.
     const resumeAt = new Map<string, number>();
+    /**
+     * The two spellings mean different things, and this endpoint used to
+     * conflate them (Cycle Audit 8, a3).
+     *
+     * `?from=` is "the next sequence I want" — an inclusive start, which is what
+     * `observerLoad` and the admin surface test rely on. `Last-Event-ID` is the
+     * SSE mechanism, and it carries **the last event the client was given**. The
+     * single-asset endpoint has always distinguished them (`parsed + 1`); this
+     * one did not, so every automatic browser reconnect redelivered one tick per
+     * asset. A duplicate is the mirror image of CA6-32's silent skip: the client
+     * cannot tell it from the market.
+     */
+    const fromHeader = from === undefined;
     const composite = from ?? asLastEventId(request);
     if (composite !== undefined && composite.trim().length > 0) {
       for (const entry of composite.split(',')) {
@@ -236,7 +249,7 @@ export class MarketController implements BeforeApplicationShutdown {
         if (!requested.includes(id)) {
           throw new BadRequestException(`from names ${id}, which this stream does not carry.`);
         }
-        resumeAt.set(id, Number.parseInt(raw, 10));
+        resumeAt.set(id, Number.parseInt(raw, 10) + (fromHeader ? 1 : 0));
       }
     }
 

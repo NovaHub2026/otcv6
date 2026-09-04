@@ -743,6 +743,53 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     expect(delivered.filter((e) => e.asset === 'gbpjpy').map((e) => e.sequence)).toEqual([3, 4]);
   });
 
+  it('resumes a browser reconnect after the last event it was given, not on it (a3)', () => {
+    // **Cycle Audit 8 (a3).** `?from=` is "the next sequence I want"; the
+    // `Last-Event-ID` header is "the last one you gave me". This endpoint read
+    // both as the first, so every automatic `EventSource` reconnect redelivered
+    // one tick per asset — a duplicate the client cannot tell from the market,
+    // the mirror image of CA6-32's silent skip. The single-asset endpoint has
+    // always distinguished them.
+    const feed = new TickFeed({ retainTicks: 50 });
+    feed.publish('eurusd', ticks(6));
+    feed.publish('gbpjpy', ticks(4));
+    const venue = { ...venueStub(['eurusd', 'gbpjpy']), feed } as unknown as VenueService;
+    const controller = new MarketController(venue);
+
+    const sequences = (body: string, asset: string): number[] =>
+      [...body.matchAll(/data: (.*)$/gm)]
+        .map((match) => JSON.parse(match[1]!) as { asset: string; sequence?: number })
+        .filter((entry) => entry.asset === asset && entry.sequence !== undefined)
+        .map((entry) => entry.sequence!);
+
+    // The header names what was already delivered: the next tick is 6 and 4.
+    const resumed = recording();
+    controller.multiplexed(
+      resumed.res,
+      request({ 'last-event-id': 'eurusd:5,gbpjpy:3' }),
+      'eurusd,gbpjpy',
+    );
+    expect(sequences(resumed.body(), 'eurusd'), 'eurusd:5 was delivered twice').toEqual([6]);
+    expect(sequences(resumed.body(), 'gbpjpy'), 'gbpjpy:3 was delivered twice').toEqual([4]);
+
+    // And `?from=` keeps its inclusive meaning, which the harnesses rely on.
+    const asked = recording();
+    controller.multiplexed(asked.res, request(), 'eurusd,gbpjpy', 'eurusd:5,gbpjpy:3');
+    expect(sequences(asked.body(), 'eurusd')).toEqual([5, 6]);
+    expect(sequences(asked.body(), 'gbpjpy')).toEqual([3, 4]);
+
+    // An explicit `from` wins over a stale header, and is still inclusive.
+    const both = recording();
+    controller.multiplexed(
+      both.res,
+      request({ 'last-event-id': 'eurusd:1,gbpjpy:1' }),
+      'eurusd,gbpjpy',
+      'eurusd:6,gbpjpy:4',
+    );
+    expect(sequences(both.body(), 'eurusd')).toEqual([6]);
+    expect(sequences(both.body(), 'gbpjpy')).toEqual([4]);
+  });
+
   it('gaps one asset without tearing down the other seven (PH-22.2)', () => {
     // One asset's eviction is one asset's problem. A stream that closed for all
     // of them would make an eviction on a quiet market look like an outage on a

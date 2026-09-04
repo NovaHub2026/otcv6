@@ -590,6 +590,7 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
                   onTarget={runScenario}
                   targetPlan={scenarioPlan}
                   unitSteps={state?.distance?.unitSteps ?? 1}
+                  unitPrice={state?.distance?.unitPrice}
                 />
               </div>
               <div hidden={tab !== 'quality'}>

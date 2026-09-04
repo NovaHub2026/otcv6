@@ -286,7 +286,7 @@ export const es = {
         title: 'Objetivo de precio — tocar un nivel, sin hora fija',
         info: 'Distinto del cierre exacto: aquí el mercado tiene que alcanzar el nivel en algún momento de la ventana, sin condición sobre dónde termina (§G). La fuerza no es un modo: es la tasa de aceptación, la fracción de futuros del propio motor que lo tocan.',
         price: 'precio a tocar',
-        steps: 'o pasos desde aquí (± arriba/abajo)',
+        steps: 'o unidades desde aquí (± arriba/abajo)',
         window: 'ventana (s)',
         preview: 'Previsualizar',
         apply: 'Aplicar',
@@ -383,7 +383,7 @@ export const es = {
       shock: {
         title: 'Shock — localizar el próximo paso grande y elegir su dirección',
         info: 'Un shock es un paso de magnitud excepcional en un solo tick, y la magnitud la decide el motor, no los signos (ADR-0003). El Lab no puede encargarlo: busca en la ventana si el motor está a punto de producir uno de al menos este tamaño y, si lo está, elige su dirección — una moneda que la moneda justa pudo haber sacado.',
-        size: 'paso ≥ (pasos del retículo)',
+        size: 'paso ≥ (unidades)',
         direction: 'dirección',
         up: 'sube',
         down: 'baja',
@@ -417,16 +417,25 @@ export const es = {
         'extreme-volatility': 'Volatilidad extrema',
         'low-activity': 'Actividad baja',
       } as Record<string, string>,
+      /**
+       * En unidades, que es lo que la pantalla envía (PH-24.18) — no en pasos
+       * del retículo. Las etiquetas decían «pasos» y el campo se multiplicaba
+       * por `unitSteps`, así que quien pedía 20 pedía entre mil y cuatro mil
+       * pasos: cinco velas donde creía pedir una fracción de una (Auditoría de
+       * Ciclo 8, a5). `depth` es una fracción y `changes` una cuenta: no se
+       * convierten y no llevan unidad.
+       */
       params: {
-        net: 'desplazamiento neto ≥ (pasos)',
-        range: 'rango realizado (pasos)',
-        rise: 'subida ≥ (pasos)',
-        fall: 'caída ≥ (pasos)',
+        net: 'desplazamiento neto ≥ (unidades)',
+        range: 'rango realizado (unidades)',
+        rise: 'subida ≥ (unidades)',
+        fall: 'caída ≥ (unidades)',
         depth: 'profundidad del retroceso (fracción)',
-        level: 'nivel (pasos desde aquí)',
-        hold: 'puede ceder como mucho (pasos)',
+        level: 'nivel (unidades desde aquí)',
+        hold: 'puede ceder como mucho (unidades)',
         changes: 'cambios de dirección ≥',
       } as Record<string, string>,
+      unitNote: (price: string) => `1 unidad = ¼ de la vela de 1m de este mercado ≈ ${price}`,
       shape: 'forma elegida',
       shapeValue: (net: number, high: number, low: number, range: number, changes: number) =>
         `neto ${String(net)} · máx ${String(high)} · mín ${String(low)} · rango ${String(range)} · ${String(changes)} cambios de dirección`,

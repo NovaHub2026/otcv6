@@ -110,8 +110,13 @@ describe('the production composition cannot reach the Lab', () => {
     // The sharpest thing the Lab exposes, and the reason the boundary is
     // structural rather than a check.
     expect(read('lab/lab.controller.ts')).toMatch(/cursors:/);
+    // **Cycle Audit 8 (a1).** This carried two exemptions for `venue.service.ts`:
+    // one dead — `!/^venue\.service\.ts$/.test('x')`, a regex tested against a
+    // string literal, so always true — and one real and uncommented. The module
+    // exempted is the one that owns `snapshotEngine()`, `labTicksAhead` and
+    // `labFork`: an auditor added a production method there returning the
+    // cursors and this test passed. Both are gone; nothing is exempt.
     const leaked = productionSources()
-      .filter(({ file }) => file !== 'venue.service.ts')
       .filter(({ source }) => /return[\s\S]{0,400}cursors/.test(source))
       .map(({ file }) => file);
     expect(leaked, 'a production response carries keystream cursors (INV-010)').toEqual([]);
