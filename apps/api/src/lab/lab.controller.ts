@@ -133,20 +133,24 @@ const ENGINE_VERSION = `state-record/${String(STATE_RECORD_VERSION)}`;
  *
  * The battery drops any bucket holding fewer than 500 decided outcomes, so a
  * small sample does not weaken the verdict — it shrinks the number of
- * hypotheses behind it, and "clean" reads identically at 2 and at 378. Measured
- * on this engine, EUR/USD, on 2026-09-03:
+ * hypotheses behind it, and "clean" reads identically at 2 and at 378.
  *
- * |     ticks | hypotheses | seconds |
- * | --------: | ---------: | ------: |
- * |    40,000 |          2 |     1.4 |
- * |   200,000 |         92 |     7.0 |
- * | 1,000,000 |        378 |     5.7 |
- * | 2,000,000 |        575 |     7.3 |
+ * Measured on this engine, EUR/USD. The 2026-09-03 column was taken before
+ * PH-24.17 divided the tempo by four; the 2026-09-04 column after, by
+ * `labMarkets.test.ts`, which prints it on every run so it cannot rot again —
+ * Cycle Audit 8 (a8) found the first column being read as current:
  *
- * The first row is what this route served until that table existed: a green
- * `clean` resting on two hypotheses out of the eight hundred the battery
- * defines. The recorded evidence runs above 300 (`report.stat.test.ts`), which
- * is where the default now sits, and it costs six seconds.
+ * |     ticks | 2026-09-03 | 2026-09-04 |
+ * | --------: | ---------: | ---------: |
+ * |    40,000 |          2 |          0 |
+ * |   400,000 |          — |         23 |
+ * | 1,000,000 |        378 |        129 |
+ *
+ * A tick is a quarter of what it was, so a sample counted in ticks buys a
+ * quarter of the market life it used to and a fraction of the hypotheses. The
+ * first row is what this route served until the floor existed: a green `clean`
+ * resting on two hypotheses out of the eight hundred the battery defines — and
+ * today that same sample supports none at all.
  */
 const LAB_MIN_HYPOTHESES = 100;
 

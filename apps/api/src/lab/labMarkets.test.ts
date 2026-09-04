@@ -113,6 +113,56 @@ describe('a bounded battery run says what it could not see', () => {
     await venue.stop();
   }, 120_000);
 
+  /**
+   * **Cycle Audit 8 (a8): the floor above was pinned by nothing.**
+   *
+   * After PH-24.17 a 40,000-tick sample tests **zero** hypotheses, so
+   * `tested < floor` holds for every floor at or above one and the assertion
+   * stopped saying anything about the value. Dropping `LAB_MIN_HYPOTHESES` to 1
+   * restored the exact CA7-05 defect — a screen printing a verdict off a
+   * handful of hypotheses — with a green gate.
+   *
+   * This case sits inside the band instead: a sample that survives *some*
+   * hypotheses and not enough. It fails at a floor of 1, where the same sample
+   * would be called clean.
+   */
+  it('holds the floor at a sample that tests some hypotheses but not enough (a8)', async () => {
+    const venue = await labVenue();
+    const body = (await new LabController(venue, new SignSelector(), new LabSession()).quality(
+      'eurusd',
+      '400000',
+    )) as QualityBody;
+    const tested = body.predictability.hypothesesTested;
+    expect(tested, 'the sample tests nothing, so it pins no floor').toBeGreaterThan(0);
+    expect(tested, 'the sample clears the floor, so it pins nothing either').toBeLessThan(100);
+    expect(
+      body.predictability.verdict,
+      `${String(tested)} hypotheses read as a verdict rather than as too little evidence`,
+    ).toBe('inconclusive');
+    await venue.stop();
+  }, 300_000);
+
+  it('records what each sample size actually tests, so the docstring cannot rot (a8)', async () => {
+    // **Cycle Audit 8 (a8).** The table in `lab.controller.ts` was measured
+    // before PH-24.17 divided the tempo by four, and every row of it moved: a
+    // 40,000-tick sample tested two hypotheses then and none now. A table
+    // nothing re-measures is a table that describes an engine the project no
+    // longer runs, and this one is the argument for the floor beneath it.
+    const venue = await labVenue();
+    const controller = new LabController(venue, new SignSelector(), new LabSession());
+    const measured: [number, number][] = [];
+    for (const ticks of [40_000, 400_000, 1_000_000]) {
+      const body = (await controller.quality('eurusd', String(ticks))) as QualityBody;
+      measured.push([ticks, body.predictability.hypothesesTested]);
+    }
+    console.log(`hypotheses by sample: ${JSON.stringify(measured)}`);
+    // Monotone in the sample, and the default clears the floor with room.
+    expect(measured[0]![1]).toBeLessThanOrEqual(measured[1]![1]);
+    expect(measured[1]![1]).toBeLessThanOrEqual(measured[2]![1]);
+    expect(measured[2]![1], 'the default sample no longer supports a verdict').toBeGreaterThan(100);
+    await venue.stop();
+  }, 600_000);
+
   it('refuses a sample size outside the stated bounds', async () => {
     const venue = await labVenue();
     const controller = new LabController(venue, new SignSelector(), new LabSession());
