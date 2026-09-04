@@ -46,7 +46,15 @@ const GRAIN: Record<string, { readonly factor: number; readonly previousTempoMs:
 
 describe("a recalibrated personality restores the previous one's snapshot", () => {
   it.each(ASSET_CATALOGUE.map((a) => [a.definition.id, a] as const))('%s', (id, asset) => {
-    const { factor, previousTempoMs } = GRAIN[id]!;
+    // PH-26.1: an asset with no row here used to throw `Cannot destructure` two
+    // lines after the id was last visible. It refuses by name now.
+    const grain = GRAIN[id];
+    if (grain === undefined) {
+      throw new Error(
+        `GRAIN has no record for ${id}: the recalibration record covers only the assets it names.`,
+      );
+    }
+    const { factor, previousTempoMs } = grain;
     const registration = MasterKeyring.forTesting(registrationKeyLabel(id));
     const derive = (purpose: string) =>
       registration.derive({ env: 'simulation', asset: id, purpose, keyEpoch: 0 });

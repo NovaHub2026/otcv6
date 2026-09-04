@@ -21,14 +21,14 @@ Last synchronized: 2026-09-04
 
 ## Phase and subphase
 
-| Field                  | Value                                                 |
-| ---------------------- | ----------------------------------------------------- |
-| Active phase           | **PH-26 — The catalogue of thirty**                   |
-| Phase lifecycle        | ACTIVE                                                |
-| Active subphase        | PH-26.1 — the suites scale                            |
-| Subphase lifecycle     | ACTIVE                                                |
-| Last approved phase    | PH-24 — The Lab's controls: applying a selection      |
-| Last approved subphase | PH-24.24 — El recorrido retirado, el sesgo con límite |
+| Field                  | Value                                            |
+| ---------------------- | ------------------------------------------------ |
+| Active phase           | **PH-26 — The catalogue of thirty**              |
+| Phase lifecycle        | ACTIVE                                           |
+| Active subphase        | PH-26.2 — the thirty personalities               |
+| Subphase lifecycle     | ACTIVE                                           |
+| Last approved phase    | PH-24 — The Lab's controls: applying a selection |
+| Last approved subphase | PH-26.1 — The suites scale                       |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
@@ -195,36 +195,27 @@ the wrong thing.
 
 ## EXACT NEXT LEGAL ACTION
 
-**PH-26.1 — make the statistical suites survive a catalogue six times larger.**
+**PH-26.2 — the thirty personalities: seats, drawn under seed, checked as
+archetypes are.**
 
-Cycle Audit 8 is closed; all 60 confirmed findings are resolved, and the gate
-above is the run that says so. Cycle 9 is open and its first phase is **PH-26,
-the catalogue of thirty** — the Human Owner's library of thirty predefined OTC
-assets replacing the five hand-authored ones, with three decisions recorded as
-theirs: equities are declared `etf`, no archetype is added, the five incumbents
-go away.
+PH-26.1 is approved: the three heavy statistical suites measure a fixed,
+stratified sample of five and say what they did not measure, the six id-keyed
+tables refuse by name, the differentiation thresholds are multiples of chance
+with the control sized to the catalogue, and at five assets every verdict is the
+one it was (`TARGETED_GATE_EXIT=0`, 134 unit files / 2,675 tests, three
+statistical files / 33 tests in 529 s).
 
-PH-26.1 comes before any asset is written, because without it none of the rest
-can be executed:
-
-1. **The three expensive suites are stratified.** `multiAsset`, `latticeTies`
-   and `catalogue.stat` carry 97.5% of the catalogue-scaling cost — 184 M of
-   188.7 M simulated ticks at five assets, six to seven hours at thirty, against
-   a 180-minute hosted ceiling. Each samples with a recorded stratum and says in
-   its own output which assets it measured and which it did not (§68).
-2. **Six per-asset-id tables stop throwing.** `MEASURED_LATTICE_TIE_RATES`,
-   `GRAIN`, `PH4_TICK_RMS`, `PH4_MEAN_INTERVAL_MS`, `GRAIN_FACTOR`,
-   `PH4_EXCESS_KURTOSIS`, `REALISM_WINDOW_SECONDS` and `PH4_CARRIED` are indexed
-   with non-null assertions under `it.each` over `ASSET_CATALOGUE`.
-3. **Two differentiation thresholds stop depending on N = 5.** Classifier chance
-   falls from 1/5 to 1/30; the thresholds become multiples of chance or paired
-   lifts over the identical-personality control.
-4. **`horizonCoverage`'s row count becomes reachable.** It asserts recorded rows
-   == assets × 8 against a recorded evidence document; thirty assets needs 240
-   rows.
-
-Each with a guard watched failing against a planted defect before it is
-believed, on `feature/ph-26-catalogue-of-thirty`.
+PH-26.2 records the thirty **seats** — a narrowing of each asset's archetype,
+from which its personality is drawn under a stream seeded by its own id — and
+the guard that checks every seat exactly the way `families.test.ts` checks every
+archetype: inside its parent on every trait, feasible at its worst corner, its
+budget departure declared, and no two seats close enough for the
+differentiation check to refuse a draw. Nothing is added to `ASSET_ARCHETYPES`
+and no family is added: both are the Human Owner's decisions. The thirty ids
+carry `-otc`; `eurusd`, `gbpjpy`, `btcusd`, `spx` and `xauusd` are retired and
+never reused, because a checkpoint carries no personality fingerprint and a
+state file written by the old personality must not be resumable by the new one
+under the same name.
 
 This section named **PH-22.1** — a subphase approved and merged two phases ago —
 until Cycle Audit 8 (a7) found it. A fresh session following `CLAUDE.md` §1 read

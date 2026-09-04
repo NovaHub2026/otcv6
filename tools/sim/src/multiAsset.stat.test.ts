@@ -5,7 +5,9 @@ import {
   ASSET_CATALOGUE,
   configFor,
   createMarketEngine,
+  HEAVY_SUITE_SAMPLE,
   runMirrorTest,
+  sampleCatalogue,
   type MarketEngine,
 } from '@otc/engine';
 import {
@@ -105,33 +107,59 @@ describe('every registered asset is structurally sign-blind', () => {
   );
 });
 
+/**
+ * Which assets this run puts through the battery (PH-26.1).
+ *
+ * Forty-six simulated days plus a full battery per asset is 78.3 M simulated
+ * ticks at five assets — the single largest term in the statistical suite — and
+ * would be 470 M at thirty. The run measures a fixed, stratified sample and
+ * prints what it left out; every asset is put through the battery by the
+ * evidence run at the phase boundary. The mirror test above stays exhaustive:
+ * it is cheap, and it is the structural gate no asset may skip.
+ */
+const BATTERY_SAMPLE = sampleCatalogue(
+  ASSET_CATALOGUE,
+  (a) => a.definition.id,
+  MasterKeyring.forTesting('catalogue-sample').derive({
+    env: 'test',
+    asset: 'sample',
+    purpose: 'battery',
+    keyEpoch: 0,
+  }),
+  { size: HEAVY_SUITE_SAMPLE },
+);
+
 describe('every registered asset survives the battery on its own evidence', () => {
-  it.each(ASSET_CATALOGUE.map((a, i) => [a.definition.id, i] as const))(
-    '%s is clean and plausible',
-    async (id, index) => {
-      const maxTicks = ticksToSpan(index);
-      const dataset = await buildObserverDataset({
-        source: engineFor(index, maxTicks),
-        maxTicks,
-      });
-      const report = await runValidation(dataset, { battery: { trainingFraction: 0.3 } });
-      const shortest = report.predictability.sensitivity[0];
+  it('says which assets this run measured, and which it did not (§68)', () => {
+    console.info(`battery: ${BATTERY_SAMPLE.describe()}`);
+    expect(BATTERY_SAMPLE.measured).toHaveLength(
+      Math.min(HEAVY_SUITE_SAMPLE, ASSET_CATALOGUE.length),
+    );
+  });
 
-      console.info(
-        `${id}: ${report.acceptable ? 'ACCEPTABLE' : 'NOT ACCEPTABLE'} — ` +
-          `${report.simulatedDays.toFixed(0)} days, realism ${report.realism.passed}/` +
-          `${report.realism.metrics.length}, floor ` +
-          `${shortest?.minimumDetectableEffectPoints.toFixed(3) ?? 'n/a'}pp, ` +
-          `${dataset.tickCount.toLocaleString()} ticks` +
-          (report.realism.failed.length > 0
-            ? ` — failing: ${report.realism.failed.join(', ')}`
-            : ''),
-      );
+  it.each(
+    BATTERY_SAMPLE.measured.map((a) => [a.definition.id, ASSET_CATALOGUE.indexOf(a)] as const),
+  )('%s is clean and plausible', async (id, index) => {
+    const maxTicks = ticksToSpan(index);
+    const dataset = await buildObserverDataset({
+      source: engineFor(index, maxTicks),
+      maxTicks,
+    });
+    const report = await runValidation(dataset, { battery: { trainingFraction: 0.3 } });
+    const shortest = report.predictability.sensitivity[0];
 
-      expect(report.predictability.clean, `${id} predictability`).toBe(true);
-      expect(report.realism.plausible, `${id} realism`).toBe(true);
-    },
-  );
+    console.info(
+      `${id}: ${report.acceptable ? 'ACCEPTABLE' : 'NOT ACCEPTABLE'} — ` +
+        `${report.simulatedDays.toFixed(0)} days, realism ${report.realism.passed}/` +
+        `${report.realism.metrics.length}, floor ` +
+        `${shortest?.minimumDetectableEffectPoints.toFixed(3) ?? 'n/a'}pp, ` +
+        `${dataset.tickCount.toLocaleString()} ticks` +
+        (report.realism.failed.length > 0 ? ` — failing: ${report.realism.failed.join(', ')}` : ''),
+    );
+
+    expect(report.predictability.clean, `${id} predictability`).toBe(true);
+    expect(report.realism.plausible, `${id} realism`).toBe(true);
+  });
 });
 
 describe('the assets are measurably different markets', () => {
@@ -161,6 +189,8 @@ describe('the assets are measurably different markets', () => {
    * One draw of a noisy quantity is not the quantity.
    */
   const SEEDS = ['multi-asset', 'seed-a', 'seed-b'] as const;
+  /** What a classifier scores by guessing: one in N. */
+  const CHANCE = 1 / ASSET_CATALOGUE.length;
 
   /** The real catalogue, and the identical-personality control, on one seed. */
   async function measureUnder(
@@ -184,13 +214,16 @@ describe('the assets are measurably different markets', () => {
       });
     }
 
-    // The null: the same personality five times, under five ids and therefore
-    // five stream families. This reproduces every dependence in the real
-    // measurement because it *is* the real measurement — the only difference is
-    // whether the personalities differ.
+    // The null: the same personality N times, under N ids and therefore N
+    // stream families — as many copies as the catalogue has assets, so the
+    // control is the same measurement at the same size. This reproduces every
+    // dependence in the real measurement because it *is* the real measurement
+    // — the only difference is whether the personalities differ. (PH-26.1: it
+    // read five copies by name, which was the catalogue size and not a
+    // property of the null.)
     const base = ASSET_CATALOGUE[0]!;
     const control = [];
-    for (const name of ['c1', 'c2', 'c3', 'c4', 'c5']) {
+    for (const name of ASSET_CATALOGUE.map((_, i) => `c${String(i + 1)}`)) {
       control.push({
         asset: name,
         signatures: await signaturesFor(() =>
@@ -254,8 +287,10 @@ describe('the assets are measurably different markets', () => {
 
     // And the control stays where a null belongs. Asserted as a band across
     // seeds rather than a single draw, because a single draw is what made the
-    // previous version of this test pass on luck.
-    expect(Math.max(...controlShape)).toBeLessThan(0.3);
+    // previous version of this test pass on luck. The band is a multiple of
+    // chance — 1.5 × 1/N, which is the 0.3 this read at five assets — so it
+    // means the same thing at thirty (PH-26.1).
+    expect(Math.max(...controlShape)).toBeLessThan(1.5 * CHANCE);
   });
 
   it('separates the assets on shape alone, and the separation is rhythm', async () => {
@@ -320,13 +355,18 @@ describe('the assets are measurably different markets', () => {
     );
 
     // The floor. PH-4.3 measured 30.0% here with a shared cascade, and the
-    // identical-personality control tops out at 25.0% across eight seeds.
-    expect(shape.accuracy).toBeGreaterThan(0.32);
+    // identical-personality control tops out at 25.0% across eight seeds. It is
+    // stated as a multiple of chance — 1.6 × 1/N, the 0.32 this read at five
+    // assets — because an absolute 0.32 at thirty assets, where chance is 1/30,
+    // would be a six-times-harder test of the same property and would fail on a
+    // catalogue that is more differentiated, not less (PH-26.1).
+    expect(shape.accuracy).toBeGreaterThan(1.6 * shape.chance);
 
     // The attribution: the five features PH-10 made per-asset carry the
     // separation, while the two it deliberately held fixed do not. If a future
     // change raises the headline by widening tails instead, this inverts.
     expect(rhythmOnly.accuracy).toBeGreaterThan(tailOnly.accuracy);
-    expect(rhythmOnly.accuracy).toBeGreaterThan(0.35);
+    // 1.75 × chance: 0.35 at five assets.
+    expect(rhythmOnly.accuracy).toBeGreaterThan(1.75 * rhythmOnly.chance);
   });
 });

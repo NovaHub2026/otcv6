@@ -183,6 +183,26 @@ describe('re-authoring changed rhythm and grain, never scale or tail weight', ()
    * with finer ticks and the same dispersion is the same market at a finer
    * grain; a market with more dispersion would be a different one.
    */
+  /**
+   * A recorded value for an asset, or a refusal that names both (PH-26.1).
+   *
+   * These tables are indexed by asset id under `it.each` over the catalogue,
+   * and were read with a non-null assertion: an asset with no row did not fail
+   * here, it produced `NaN` two lines later and failed an unrelated band with
+   * `expected NaN to be greater than 0.7`. The catalogue is about to change
+   * under these tables, and the first thing a reader must be told is which
+   * table has no record for which asset.
+   */
+  const recorded = <T>(table: Record<string, T>, id: string, name: string): T => {
+    const value = table[id];
+    if (value === undefined) {
+      throw new Error(
+        `${name} has no record for ${id}. Every asset in the catalogue needs a row here, ` +
+          `or the test that reads it needs to say why this asset is outside its subject.`,
+      );
+    }
+    return value;
+  };
   const PH4_TICK_RMS: Record<string, number> = {
     eurusd: 0.000013932458128335953,
     gbpjpy: 0.00004234061764642874,
@@ -219,7 +239,9 @@ describe('re-authoring changed rhythm and grain, never scale or tail weight', ()
     (id, asset) => {
       const realised = asset.definition.traits.volatility * cascadeRmsGain(asset.definition.traits);
       const perMs = (realised * realised) / asset.evidence.meanIntervalMs;
-      const ph4PerMs = (PH4_TICK_RMS[id]! * PH4_TICK_RMS[id]!) / PH4_MEAN_INTERVAL_MS[id]!;
+      const tickRms = recorded(PH4_TICK_RMS, id, 'PH4_TICK_RMS');
+      const ph4PerMs =
+        (tickRms * tickRms) / recorded(PH4_MEAN_INTERVAL_MS, id, 'PH4_MEAN_INTERVAL_MS');
       // The measured mean interval carries the arrival process's excitation, so
       // the ratio is a measurement, not an identity: the same 0.7-1.4 band
       // `catalogue.stat.test.ts` holds a fresh calibration's dispersion to.
@@ -231,7 +253,9 @@ describe('re-authoring changed rhythm and grain, never scale or tail weight', ()
   it.each(ASSET_CATALOGUE.map((a) => [a.definition.id, a] as const))(
     '%s keeps its tail weight within 6%',
     (id, asset) => {
-      const ratio = asset.evidence.predictedExcessKurtosis / PH4_EXCESS_KURTOSIS[id]!;
+      const ratio =
+        asset.evidence.predictedExcessKurtosis /
+        recorded(PH4_EXCESS_KURTOSIS, id, 'PH4_EXCESS_KURTOSIS');
       expect(ratio, `${id} kurtosis ratio`).toBeGreaterThan(0.94);
       expect(ratio, `${id} kurtosis ratio`).toBeLessThan(1.06);
     },
@@ -267,18 +291,16 @@ describe('re-authoring changed rhythm and grain, never scale or tail weight', ()
       // The measured interval is what the windows are made of, and it moved by
       // the factor the tempo did: a window unchanged in ticks is a question
       // changed in time.
-      const shrink = PH4_MEAN_INTERVAL_MS[id]! / meanIntervalMs;
-      expect(shrink, `${id} grain`).toBeGreaterThan(GRAIN_FACTOR[id]! * 0.95);
-      expect(shrink, `${id} grain`).toBeLessThan(GRAIN_FACTOR[id]! * 1.05);
+      const shrink = recorded(PH4_MEAN_INTERVAL_MS, id, 'PH4_MEAN_INTERVAL_MS') / meanIntervalMs;
+      const grain = recorded(GRAIN_FACTOR, id, 'GRAIN_FACTOR');
+      expect(shrink, `${id} grain`).toBeGreaterThan(grain * 0.95);
+      expect(shrink, `${id} grain`).toBeLessThan(grain * 1.05);
       const seconds = (ticks: number) => (ticks * meanIntervalMs) / 1_000;
-      const recorded = REALISM_WINDOW_SECONDS[id]!;
-      expect(seconds(50), `${id} absolute-return-decay-is-slow`).toBeCloseTo(recorded.decay!, 1);
-      expect(seconds(500), `${id} absolute-return-long-memory`).toBeCloseTo(
-        recorded.longMemory!,
-        1,
-      );
-      expect(seconds(60), `${id} aggregational-gaussianity`).toBeCloseTo(recorded.aggregation!, 1);
-      expect(seconds(300), `${id} regime window`).toBeCloseTo(recorded.regime!, 1);
+      const windows = recorded(REALISM_WINDOW_SECONDS, id, 'REALISM_WINDOW_SECONDS');
+      expect(seconds(50), `${id} absolute-return-decay-is-slow`).toBeCloseTo(windows.decay!, 1);
+      expect(seconds(500), `${id} absolute-return-long-memory`).toBeCloseTo(windows.longMemory!, 1);
+      expect(seconds(60), `${id} aggregational-gaussianity`).toBeCloseTo(windows.aggregation!, 1);
+      expect(seconds(300), `${id} regime window`).toBeCloseTo(windows.regime!, 1);
     },
   );
 
@@ -297,7 +319,7 @@ describe('re-authoring changed rhythm and grain, never scale or tail weight', ()
     };
     const drifted: string[] = [];
     for (const asset of ASSET_CATALOGUE) {
-      const carried = PH4_CARRIED[asset.definition.id]!;
+      const carried = recorded(PH4_CARRIED, asset.definition.id, 'PH4_CARRIED');
       for (const [name, value] of Object.entries(carried)) {
         const actual = asset.definition.traits[name as keyof typeof asset.definition.traits];
         const expected = name === 'tempoMs' ? value / GRAIN_FACTOR[asset.definition.id]! : value;

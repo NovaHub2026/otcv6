@@ -136,6 +136,12 @@ export {
   minimumDispersionSpanMs,
 } from './dispersion.js';
 export {
+  HEAVY_SUITE_SAMPLE,
+  sampleCatalogue,
+  type CatalogueSample,
+  type CatalogueSampleOptions,
+} from './catalogueSample.js';
+export {
   ASSET_CATALOGUE,
   assetById,
   configFor,

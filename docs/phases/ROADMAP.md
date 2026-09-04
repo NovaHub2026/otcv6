@@ -747,8 +747,8 @@ they throw.
 
 | Subphase | Title                                                                     | State      |
 | -------- | ------------------------------------------------------------------------- | ---------- |
-| PH-26.1  | The suites scale: stratified sampling, id-keyed tables, N-free thresholds | **ACTIVE** |
-| PH-26.2  | The thirty personalities: drawn under seed, filtered by profile           | PLANNED    |
+| PH-26.1  | The suites scale: stratified sampling, id-keyed tables, N-free thresholds | APPROVED   |
+| PH-26.2  | The thirty personalities: drawn under seed, filtered by profile           | **ACTIVE** |
 | PH-26.3  | The catalogue compiled and calibrated, with its evidence recorded         | PLANNED    |
 | PH-26.4  | The integration library: the thirty as something a broker can consume     | PLANNED    |
 
