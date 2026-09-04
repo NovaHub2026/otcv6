@@ -35,7 +35,33 @@ export const isControl = (value: unknown): value is Control =>
 async function asJson<T>(request: Promise<Response>): Promise<T | Unavailable> {
   try {
     const response = await request;
-    return (await response.json()) as T | Unavailable;
+    const body: unknown = await response.json();
+    /**
+     * **Cycle Audit 8 (a8).** An HTTP error body was returned as if it were the
+     * thing asked for. `GET markets/:id/state` answers 404
+     * `{message, error, statusCode}` for a market the Lab no longer hosts — an
+     * asset retired through the panel's own screen, or a Lab restarted against
+     * another state directory — and the screen stored that object as the market
+     * state. The next render read `state.price.split('.')` on an object with no
+     * `price` and took the whole Lab down: a white screen, once a second, for
+     * every poll. The same shape reached `positions`, `closes` and the rest.
+     *
+     * A failed request is an answer (PH-24.11), so it becomes the answer every
+     * call site already checks for. The Lab's own «not running» bodies pass
+     * through unchanged, because they say more than a status code can.
+     */
+    if (!response.ok) {
+      if (isUnavailable(body)) return body;
+      const message = (body as { message?: unknown }).message;
+      return {
+        running: false,
+        reason:
+          typeof message === 'string' && message.length > 0
+            ? message
+            : `el Lab respondió ${String(response.status)}`,
+      };
+    }
+    return body as T;
   } catch (error) {
     return { running: false, reason: `no se alcanza el Lab: ${(error as Error).message}` };
   }

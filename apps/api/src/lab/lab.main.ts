@@ -1,8 +1,9 @@
 import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import type { AssetRegistry } from '@otc/runtime';
+import { STATE_RECORD_VERSION, type AssetRegistry } from '@otc/runtime';
 import { bindAddressFromEnvironment, isExposedBind } from '../bind.js';
+import { markLabState } from '../labState.js';
 import { VenueService } from '../venue.service.js';
 import { LabModule } from './lab.module.js';
 import { EngineEventObserver } from './engineEvents.js';
@@ -29,13 +30,21 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(LabModule, { bufferLogs: false });
   app.enableShutdownHooks();
 
+  // The state directory is the Lab's own — the launcher gives it one.
+  const stateDir = process.env['OTC_STATE_DIR'] ?? './.otc-state';
+  // Cycle Audit 8 (a4, a6): mark it **before the first tick is published**, so a
+  // Lab that ran for an hour and was never touched still cannot be mistaken for
+  // production later. Production refuses to resume a marked directory.
+  const marker = markLabState(stateDir, Date.now(), `state-record/${String(STATE_RECORD_VERSION)}`);
+  logger.log(`this state directory is a simulation's: ${marker}`);
+
   const venue = app.get(VenueService);
   venue.applyOverlays(await app.get<AssetRegistry>('ASSET_REGISTRY').overlays());
   await venue.start();
   // The session survives the process (PH-24.8): what a previous Lab in this
   // state directory recorded is loaded, and every record from here on is
-  // appended. The state directory is the Lab's own — the launcher gives it one.
-  const sessionFile = new SessionFile(process.env['OTC_STATE_DIR'] ?? './.otc-state');
+  // appended.
+  const sessionFile = new SessionFile(stateDir);
   const restored = app.get(LabSession).persistTo(sessionFile.existing(), sessionFile);
   logger.log(
     `session file ${sessionFile.file}: ${String(restored.loaded)} record(s) restored` +

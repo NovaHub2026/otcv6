@@ -670,9 +670,17 @@ export class LabController {
       // PH-24.11: a push wins over a close, preset or scenario armed here. It is
       // released — recorded, counted — and its pending outcome dropped: a close
       // the operator superseded is not a close that failed.
+      //
+      // **The script, not the bias** (Cycle Audit 8, a6). `release()` is
+      // `releaseScript()` plus `clearBias()`, so this branch killed a sustained
+      // direction nobody had asked to stop, and the next read of `control` then
+      // wrote a `bias.expired` into the session for an expiry two minutes in its
+      // own future. A push supersedes a vector armed against one particular
+      // future; a bias is a rule with a deadline, and PH-24.24 already settled
+      // that a seek leaves it alone.
       let released: { discarded: number } | null = null;
       if (wrapper.armed && !this.pushes.has(id)) {
-        const discarded = wrapper.release();
+        const discarded = wrapper.releaseScript();
         this.arrivals.for(id)?.release();
         this.applied.delete(id);
         this.session.recordAction({
@@ -793,8 +801,9 @@ export class LabController {
         arrival?.arm(draws);
         this.pushes.set(id, { direction: survivor, requested, pace: survivorPace });
       } else {
-        // Nothing survives: the market is the keystream's again, both scripts let go.
-        wrapper.release();
+        // Nothing survives: the market is the keystream's again, both scripts let
+        // go — the scripts only, for the reason above.
+        wrapper.releaseScript();
         arrival?.release();
         this.pushes.delete(id);
         this.pushLandings.delete(id);

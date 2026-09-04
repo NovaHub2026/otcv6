@@ -6,6 +6,7 @@ import { ADMIN_TOKEN } from './adminAuth.guard.js';
 import { AppModule } from './app.module.js';
 import { VenueService } from './venue.service.js';
 import { bindAddressFromEnvironment, isExposedBind } from './bind.js';
+import { refuseLabState } from './labState.js';
 
 /**
  * Boot the venue, then serve.
@@ -35,6 +36,16 @@ import { bindAddressFromEnvironment, isExposedBind } from './bind.js';
  */
 async function bootstrap(): Promise<void> {
   const logger = new Logger('bootstrap');
+  // Cycle Audit 8 (a4, a6): a Lab-composed engine and this one are pointed at
+  // the same directory by one environment variable, and until this line nothing
+  // noticed. A record an operator steered must not become production's by a
+  // redeploy — see `labState.ts` for what the mark is and why there is no
+  // variable to wave it through.
+  const refusal = refuseLabState(process.env.OTC_STATE_DIR ?? './.otc-state');
+  if (refusal !== null) {
+    logger.error(refusal);
+    process.exit(1);
+  }
   // Bare: production registers no sign source (PH-24.1, `composition.test.ts`).
   const app = await NestFactory.create(AppModule.register(), {
     bufferLogs: false,

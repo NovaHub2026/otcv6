@@ -53,12 +53,31 @@ describe('production registers no sign source (PH-24.1, ADR-0015 §3)', () => {
     expect(app, 'app.module.ts constructs a sign source itself').not.toMatch(
       /SelectableSigns|SignSelector|new .*Signs\(/,
     );
+    // **Cycle Audit 8 (a4).** `main.ts` may not name the Lab at all — not in an
+    // import, not behind a flag, not in a dynamic `import()`. ADR-0015 §3: "a
+    // flag is a thing that can be wrong and a missing module is not".
+    const main = code('main.ts');
+    expect(main, 'main.ts names the Lab').not.toMatch(/\bLab(Module|Controller|Service|Session)\b/);
+    expect(main, 'main.ts reaches a module under lab/').not.toMatch(/['"`]\.{1,2}\/lab\//);
   });
 
-  it('nothing outside lab/ names the wrapper', () => {
-    const production = readdirSync(here).filter(
-      (name) => /\.ts$/.test(name) && !/\.test\.ts$/.test(name) && !/\.stat\.test\.ts$/.test(name),
-    );
+  it('nothing outside lab/ names the wrapper, at any depth', () => {
+    // **Cycle Audit 8 (a1).** This listed the top level only, and an auditor put
+    // a steering sign source under `apps/api/src/ops/`, substituted at the two
+    // `resumeMarket` call sites: every hosted market in the shipped service
+    // directionally biased, 2,555 tests green. Depth is not a detail here — the
+    // claim this test makes is about the whole production composition.
+    const walk = (dir: string, prefix = ''): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const relative = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
+        if (entry.isDirectory()) {
+          return entry.name === 'lab' || entry.name === 'dist' || entry.name === 'node_modules'
+            ? []
+            : walk(path.join(dir, entry.name), relative);
+        }
+        return /\.ts$/.test(entry.name) && !/\.test\.ts$/.test(entry.name) ? [relative] : [];
+      });
+    const production = walk(here);
     expect(production.length).toBeGreaterThan(5);
     for (const file of production) {
       expect(code(file), `${file} reaches the Lab's sign source`).not.toMatch(

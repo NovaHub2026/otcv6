@@ -45,7 +45,46 @@ async function forward(
   if (base === null) {
     return Response.json(NOT_RUNNING, { status: 503 });
   }
+  /**
+   * Two checks this proxy did not make, both found by Cycle Audit 8 (a4).
+   *
+   * **It stays inside `/lab/`.** `URL` normalises `..`, and Next hands the
+   * catch-all its segments already decoded, so `POST /lab/..%2fassets/eurusd/retire`
+   * built `${base}/lab/../assets/eurusd/retire` — which normalises to
+   * `${base}/assets/eurusd/retire`, the engine's admin surface, and this handler
+   * then attached the operator's bearer token. Under ADR-0018 `OTC_LAB_BASE`
+   * *is* the deployment's engine, so that was an authenticated retirement of a
+   * live asset, and a retirement cannot be undone. The containment test is on
+   * the normalised href, because the traversal arrives inside one segment and a
+   * `segment === '..'` test does not see it.
+   *
+   * **It does not upgrade a request the browser would have had to preflight.**
+   * The handler used to set `content-type: application/json` whatever the
+   * caller sent. A cross-origin `fetch` with `content-type: text/plain` is a
+   * CORS *simple request* — no preflight — and this proxy turned it into a
+   * well-formed authenticated JSON write that `AdminWriteGuard` accepts. Every
+   * Lab act was drivable that way by any page the operator had open. The engine
+   * proxy was immune because it forwards the caller's own content-type; this one
+   * now refuses instead, with the same 415 and for the same reason.
+   */
   const url = new URL(`${base}/lab/${path.join('/')}`);
+  if (!url.href.startsWith(new URL(`${base}/lab/`).href)) {
+    return Response.json({ ...NOT_RUNNING, reason: 'Not a Lab path.' }, { status: 400 });
+  }
+  if (method !== 'GET') {
+    const sent = request.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase();
+    if (sent !== 'application/json') {
+      return Response.json(
+        {
+          ...NOT_RUNNING,
+          reason:
+            'Writes take Content-Type: application/json only. A write a browser could send ' +
+            'without a preflight would be a write any page could make.',
+        },
+        { status: 415 },
+      );
+    }
+  }
   url.search = request.nextUrl.search;
   try {
     // POST for the Lab's acts — apply, release — carrying only the query: the

@@ -248,6 +248,52 @@ describe('PH-24.16 — sube / baja', () => {
     expect(expired[0]!.initialState.bias).toBe(-1);
   });
 
+  it('Cycle Audit 8 (a6): a push over an armed close leaves the sustained direction alone, and writes no expiry', async () => {
+    const lab = await labVenue();
+    await advance(lab.venue, lab.clock, 60_000);
+    const set = lab.venue.now();
+    await lab.controller.bias(id, 'down');
+    // Arm a close on top, the way an operator does: the bias keeps running under it.
+    const state = lab.controller.state(id) as { price: string };
+    await lab.controller.applyClose(id, state.price, 'next', '1m');
+    expect((lab.controller.control(id) as { armed: boolean; bias: number | null }).armed).toBe(
+      true,
+    );
+    // The push supersedes the armed close — and until Cycle Audit 8 it also
+    // killed the bias, then reported a two-minute expiry that had not happened.
+    const pushed = (await lab.controller.push(id, '+2')) as {
+      released: { discarded: number } | null;
+      bias: number | null;
+    };
+    expect(pushed.released, 'the armed close was not released').not.toBeNull();
+    expect(pushed.released!.discarded).toBeGreaterThan(0);
+    expect(pushed.bias, 'the push ended the sustained direction').toBe(-1);
+    expect(lab.selector.for(id)!.bias).toBe(-1);
+    const after = lab.controller.control(id) as { bias: number | null; biasMsLeft: number };
+    expect(after.bias).toBe(-1);
+    // On its original deadline: a push neither extends nor shortens it.
+    expect(after.biasMsLeft).toBe(BIAS_MAX_MS - (lab.venue.now() - set));
+    expect(
+      lab.session.toLines().some((l) => /"action":"bias.expired"/.test(l)),
+      'an expiry was recorded for a bias that is still running',
+    ).toBe(false);
+
+    // And the other push path: an opposite push that nets the running one to
+    // nothing (PH-24.21) leaves the market free of scripts — and still biased.
+    const remaining = (lab.controller.control(id) as { remaining: number }).remaining;
+    expect(remaining).toBeGreaterThan(0);
+    const netted = (await lab.controller.push(id, `-${String(remaining)}`)) as {
+      remaining: number;
+      armed: boolean;
+      bias: number | null;
+    };
+    expect(netted.remaining, 'the opposite push did not net to nothing').toBe(0);
+    expect(netted.armed).toBe(false);
+    expect(netted.bias, 'netting to nothing ended the sustained direction').toBe(-1);
+    expect(lab.selector.for(id)!.bias).toBe(-1);
+    expect(lab.session.toLines().some((l) => /"action":"bias.expired"/.test(l))).toBe(false);
+  });
+
   it('PH-24.24: an expiry is recorded even when the act that follows would erase it', async () => {
     for (const ending of ['off', 'release', 'release-all'] as const) {
       const lab = await labVenue();

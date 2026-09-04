@@ -670,7 +670,12 @@ describe('Candle Close Control, from the panel', () => {
       const pressed = (testId: string): Promise<string | null> =>
         page.locator(`[data-testid="${testId}"]`).getAttribute('aria-pressed');
       // Nothing armed from an earlier flow: the proxy signs the write.
-      await page.evaluate(() => fetch('/lab/release-all', { method: 'POST' }));
+      await page.evaluate(() =>
+        fetch('/lab/release-all', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
       await until((c) => !c.armed && (c.pushing ?? null) === null, 'a free market', 30_000);
 
       // PH-24.20: two cards of controls and nothing else.
@@ -840,7 +845,12 @@ describe('Candle Close Control, from the panel', () => {
       await page.click('[data-testid="lab-push-+1"]');
       await sessionHas('"by":"push"');
       await page.waitForSelector('[data-testid="lab-close-apply"]', { timeout: 30_000 });
-      await page.evaluate(() => fetch('/lab/release-all', { method: 'POST' }));
+      await page.evaluate(() =>
+        fetch('/lab/release-all', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
     } catch (error) {
       console.error(await dump());
       throw error;

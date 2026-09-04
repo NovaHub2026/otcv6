@@ -1,4 +1,5 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -19,27 +20,67 @@ import { describe, expect, it } from 'vitest';
 const src = path.dirname(fileURLToPath(import.meta.url));
 const read = (file: string): string => readFileSync(path.join(src, file), 'utf8');
 
-/** Every production source file: everything under `apps/api/src` except the Lab. */
-function productionSources(): { file: string; source: string }[] {
+/**
+ * Every production source file: everything under `apps/api/src` except the Lab.
+ *
+ * **Recursive since Cycle Audit 8 (a1, a4).** It listed the top level only, so
+ * a subdirectory was outside every guard in this file: an auditor put a
+ * steering sign source under `apps/api/src/ops/` and a route serving the
+ * keystream cursors beside it, and the whole suite stayed green. A guard whose
+ * scope is one directory deep is a guard against tidy defects.
+ */
+function productionSources(dir = src, prefix = ''): { file: string; source: string }[] {
   const out: { file: string; source: string }[] = [];
-  for (const name of readdirSync(src)) {
-    if (!name.endsWith('.ts') || name.endsWith('.test.ts')) continue;
-    out.push({ file: name, source: read(name) });
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const relative = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) {
+      if (entry.name === 'lab' || entry.name === 'dist' || entry.name === 'node_modules') continue;
+      out.push(...productionSources(path.join(dir, entry.name), relative));
+      continue;
+    }
+    if (!entry.name.endsWith('.ts') || entry.name.endsWith('.test.ts')) continue;
+    out.push({ file: relative, source: readFileSync(path.join(dir, entry.name), 'utf8') });
   }
   return out;
 }
 
 describe('the production composition cannot reach the Lab', () => {
-  it('has a Lab to be absent', () => {
+  it('has a Lab to be absent, and looks below the top level', () => {
     // A guard that finds nothing passes on everything.
     expect(
       readdirSync(path.join(src, 'lab')).filter((n) => n.endsWith('.ts')).length,
     ).toBeGreaterThan(2);
+    // And the scan reaches subdirectories. There is no non-Lab subdirectory in
+    // the tree today, which is exactly how the hole survived: the assertion is
+    // made against a directory shaped like the one an auditor planted.
+    const probe = mkdtempSync(path.join(tmpdir(), 'otc-scan-'));
+    try {
+      mkdirSync(path.join(probe, 'ops'), { recursive: true });
+      mkdirSync(path.join(probe, 'lab'), { recursive: true });
+      writeFileSync(path.join(probe, 'top.ts'), '');
+      writeFileSync(path.join(probe, 'ops', 'steering.ts'), '');
+      writeFileSync(path.join(probe, 'ops', 'steering.test.ts'), '');
+      writeFileSync(path.join(probe, 'lab', 'inside.ts'), '');
+      const seen = productionSources(probe)
+        .map(({ file }) => file)
+        .sort();
+      expect(seen, 'the scan misses a nested source, or descends into lab/').toEqual([
+        'ops/steering.ts',
+        'top.ts',
+      ]);
+    } finally {
+      rmSync(probe, { recursive: true, force: true });
+    }
   });
 
   it('no production module imports anything under lab/', () => {
+    // The specifier, however it is reached: `import … from './lab/x.js'`,
+    // `await import('./lab/x.js')` and `require('../lab/x.js')` are the same
+    // door. Cycle Audit 8 (a4) planted the dynamic form into `main.ts` — the
+    // `OTC_LAB_ENABLED` arrangement ADR-0015 §3 forbids by name — and this
+    // guard, anchored on `from '`, saw nothing.
     const offenders = productionSources()
-      .filter(({ source }) => /from '\.\/lab\//.test(source) || /from '\.\.\/lab\//.test(source))
+      .filter(({ source }) => /['"`]\.{1,2}\/lab\//.test(source))
       .map(({ file }) => file);
     expect(
       offenders,
@@ -70,11 +111,41 @@ describe('the production composition cannot reach the Lab', () => {
     // structural rather than a check.
     expect(read('lab/lab.controller.ts')).toMatch(/cursors:/);
     const leaked = productionSources()
-      .filter(({ source }) => /cursors/.test(source) && !/^venue\.service\.ts$/.test('x'))
       .filter(({ file }) => file !== 'venue.service.ts')
       .filter(({ source }) => /return[\s\S]{0,400}cursors/.test(source))
       .map(({ file }) => file);
     expect(leaked, 'a production response carries keystream cursors (INV-010)').toEqual([]);
+  });
+
+  /**
+   * **Cycle Audit 8 (a1).** The guard above looks for the word `cursors`, and a
+   * defect does not have to write it: an auditor added a production route that
+   * spread `snapshotEngine()` into its response — a status page, a debug
+   * endpoint, a support tool — and served all seven cursors and the whole latent
+   * magnitude and arrival state with the suite green. INV-010 is about the
+   * value, not the identifier, so the guard is about the value too.
+   *
+   * The engine snapshot may be *read* in production — `venue.service.ts` takes
+   * the price, the sequence and the instant off it four times — but it may never
+   * be spread, returned whole, or serialised. Naming the fields is the act that
+   * makes a leak deliberate.
+   */
+  it('no production source hands out an engine snapshot whole (INV-010)', () => {
+    const offenders = productionSources()
+      .filter(({ source }) =>
+        // `...snapshotEngine()`, `...snapshot`, `return snapshot`, `JSON.stringify(snapshot)`
+        /\.\.\.[\w.]*snapshot|\.\.\.\s*\(?[\w.]*\.snapshotEngine\(\)|return\s+snapshot\b|stringify\([\w.]*snapshot/i.test(
+          source,
+        ),
+      )
+      .map(({ file }) => file);
+    expect(
+      offenders,
+      'a production source passes an engine snapshot on whole; name the fields it needs — the ' +
+        'snapshot carries the keystream cursors and the latent state (INV-010)',
+    ).toEqual([]);
+    // And the Lab, which may, still does — so this guard has a subject.
+    expect(read('lab/lab.controller.ts')).toMatch(/snapshotEngine\(\)/);
   });
 
   it('every Lab response says what it is', () => {
