@@ -133,6 +133,14 @@ export default defineConfig({
           // See the statistical project below: a stray `.only` fails the run
           // rather than silencing its siblings (CA7-17).
           allowOnly: false,
+          /**
+           * One event-loop turn between tests, so a worker running a file of
+           * back-to-back synchronous tests still reads the main thread's reply
+           * inside the sixty seconds it is given. Hosted CI failed on
+           * 2026-09-04 with every test green and exit 1; the setup file carries
+           * the reproduction.
+           */
+          setupFiles: [path.resolve(root, 'vitest.setup.unit.ts')],
           testTimeout: unitTimeoutMs,
         },
       },
