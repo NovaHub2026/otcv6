@@ -11,10 +11,10 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Last clean session | 2026-09-03                                                                 |
 | Branch             | `feature/ph-24-the-labs-controls` — off `main` at `8f62e4b` (PH-23 merged) |
 | Remote             | `origin` → NovaHub2026/otcv6, public                                       |
-| Active cycle       | Cycle 8, **2 of 3** phases approved (PH-22, PH-23)                         |
-| Active phase       | PH-24 — The Lab's controls: applying a selection                           |
+| Active cycle       | Cycle 8, **3 of 3** phases approved (PH-22, PH-23, PH-24)                  |
+| Active phase       | none — Cycle Audit 8 is what happens next (§28)                            |
 | Active subphase    | none                                                                       |
-| Cycle Audit        | **007 closed** 2026-09-03; the next is due after three approved phases     |
+| Cycle Audit        | **008 due now**; 007 closed 2026-09-03                                     |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                         |
 
 ---
@@ -34,15 +34,9 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-24.10–24.23 are approved; no subphase is active.** The push card also
-carries a **route** (PH-24.23): a price box, «+» for up to five points, the
-numbered list, «Buscar» and «×». `POST markets/:id/route?points=&pace=` walks
-them on a fork with the texture of sube / baja (`RecordingSigns` keeps the
-signs the fork drew; they are the script the live market plays), so each
-point's sequence is known and `control.route` says which are reached. Nothing
-is tied to the candle — a close is the Cierre card's act — and a close during a
-route is refused (`ROUTE_RUNNING`), while a push or a sube / baja interrupts
-it. The chart carries a
+**PH-24.10–24.22 are approved; PH-24.23 was approved and then REVERTED at the
+Human Owner's request; PH-24.24 (the revert, and a two-minute cap on sube /
+baja) is active.** The chart carries a
 countdown to the end of the candle now forming, on the market's clock and the
 kernel's bucket alignment (PH-24.22, `PreviewChart`, shared with Vista). `/lab` is the control
 panel: `Lab({ mode })` renders either the panel (`TopBar` with the markets as

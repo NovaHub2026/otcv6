@@ -604,7 +604,13 @@ async function isolatedCopy(): Promise<string> {
   workspaces.push(dir);
   await run('bash', [
     '-c',
-    `tar -cf - --exclude=node_modules --exclude=dist --exclude=.next --exclude=.git --exclude=coverage --exclude=artifacts -C ${repoRoot} . | tar -xf - -C ${dir}`,
+    // `--exclude=.next` matches that name and nothing else, so when the browser
+    // suites got their own build directory (`.next-stat`, PH-24.14) every copy
+    // started carrying ~90 MB of webpack cache. One copy per guardrail, on a
+    // 4 GB tmpfs, filled the disk and failed this file with "No space left on
+    // device" — a green suite reported as a broken guardrail. The glob covers
+    // both, and anything else Next.js names that way.
+    `tar -cf - --exclude=node_modules --exclude=dist --exclude='.next*' --exclude=.git --exclude=coverage --exclude=artifacts -C ${repoRoot} . | tar -xf - -C ${dir}`,
   ]);
   symlinkSync(path.join(repoRoot, 'node_modules'), path.join(dir, 'node_modules'));
   return dir;

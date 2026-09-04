@@ -248,7 +248,7 @@ describe('the Lab is marked wherever it appears', () => {
     expect(tablero).toMatch(/lab-board-state-/);
     expect(tablero).toMatch(/(data-testid|testId)="lab-release-all"/);
     // Release-all is disabled when nothing is armed: releasing keystreams releases nothing.
-    expect(tablero).toMatch(/disabled=\{busy !== null \|\| armed === 0\}/);
+    expect(tablero).toMatch(/disabled=\{busy !== null \|\| running === 0\}/);
     // The board never arms: the only act on it is release.
     expect(tablero, 'the board arms something').not.toMatch(/\/close|\/scenario|preset/);
     const lab = code('lab/Lab.tsx');
@@ -513,11 +513,11 @@ describe('the Lab is marked wherever it appears', () => {
     const chart = code('preview/PreviewChart.tsx');
     expect(chart).toMatch(/subscribeClick\(/);
     expect(chart).toMatch(/coordinateToPrice\(param\.point\.y\)/);
-    expect(chart).toMatch(/removePriceLine\(line\)/);
+    expect(chart).toMatch(/removePriceLine\(markLine\.current\)/);
     const lab = code('lab/Lab.tsx');
     expect(lab).toMatch(/nearestLevelPrice\(lattice, picked\)/);
     expect(lab).toMatch(/onPick=\{pickPrice\}/);
-    expect(lab).toMatch(/marks=\{marks\}/);
+    expect(lab).toMatch(/mark=\{marked\}/);
     expect(lab).toMatch(/&condition=\$\{closeCondition\}/);
   });
 
@@ -540,29 +540,34 @@ describe('the Lab is marked wherever it appears', () => {
     expect(chart).toMatch(/zIndex: [1-9]/);
   });
 
-  it("the route: up to five points, Buscar and ×, each box claiming the chart's click (PH-24.23)", () => {
+  it('a sustained direction shows what it has left, and one clock formats every countdown (PH-24.24)', () => {
     const controles = code('lab/Controles.tsx');
-    for (const id of [
-      'lab-route-price',
-      'lab-route-add',
-      'lab-route-points',
-      'lab-route-go',
-      'lab-route-cancel',
-    ]) {
-      expect(controles, `${id} missing`).toMatch(new RegExp(`data-testid="${id}"|testId="${id}"`));
-    }
-    expect(controles).toMatch(/lab-route-point-\$\{String\(i \+ 1\)\}/);
-    expect(controles).toMatch(/lab-route-remove-\$\{String\(i \+ 1\)\}/);
-    expect(controles).toMatch(/routePoints\.length < 5/);
-    // The leg in force wins the direction state; each box claims the chart's click on focus.
-    expect(controles).toMatch(/route\?\.direction \?\? pushing\?\.direction \?\? bias/);
-    expect(controles).toMatch(/onFocus=\{\(\) => onFocusPick\('route'\)\}/);
-    expect(controles).toMatch(/onFocus=\{\(\) => onFocusPick\('close'\)\}/);
-    const lab = code('lab/Lab.tsx');
-    expect(lab).toMatch(/markets\/\$\{selected\}\/route\?points=/);
-    expect(lab).toMatch(/if \(pickTarget === 'route'\) setRouteDraft\(snapped\)/);
-    expect(lab).toMatch(/es\.lab\.panel\.route\.mark\(i \+ 1\)/);
-    expect(lab).toMatch(/ROUTE_RUNNING/);
+    expect(controles).toMatch(/data-testid="lab-direction-left"/);
+    // Only when the Lab said how long is left: a missing field is not «0:00».
+    expect(controles).toMatch(
+      /typeof msLeft !== 'number' \|\| msLeft <= 0 \? null : formatCountdown/,
+    );
+    // The instrument's own toggles carry it too, because the ⓘ promises it there.
+    expect(code('lab/Empujar.tsx')).toMatch(/data-testid=\{bias === 1 && biasLeft !== null/);
+    // The board counts a sustained direction as something running, and releasable.
+    const board = code('lab/Tablero.tsx');
+    expect(board).toMatch(/m\.armed \|\| \(m\.bias \?\? null\) !== null/);
+    expect(board).not.toMatch(/\barmed === 0\b/);
+    // A stale poll or an error body is never rendered as this market's control.
+    const lab2 = code('lab/Lab.tsx');
+    // Both awaits, not one: the state read and the batch that follows it.
+    expect(lab2.match(/if \(selectedRef\.current !== asset\) return;/g) ?? []).toHaveLength(2);
+    expect(lab2).toMatch(/if \(isControl\(ctl\)\) setControl\(ctl\);/);
+    // And the safety event has a name in the operator's language.
+    expect(read('../lib/es.ts')).toMatch(/'bias\.expired':/);
+    expect(controles).toMatch(/import \{ formatCountdown \} from '\.\.\/\.\.\/lib\/countdown\.js'/);
+    // One implementation, shared with the chart's candle countdown (PH-24.22).
+    expect(code('preview/PreviewChart.tsx')).toMatch(
+      /import \{ formatCountdown \} from '\.\.\/\.\.\/lib\/countdown\.js'/,
+    );
+    expect(code('preview/PreviewChart.tsx')).not.toMatch(/function formatCountdown/);
+    // And the operator is told the cap in words, where the act is explained.
+    expect(read('../lib/es.ts')).toMatch(/dos minutos como máximo/);
   });
 
   it('says the Lab is absent rather than hiding that it can be', () => {

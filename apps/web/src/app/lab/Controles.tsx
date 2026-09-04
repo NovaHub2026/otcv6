@@ -2,6 +2,7 @@
 
 import type { ReactElement, ReactNode } from 'react';
 import { es } from '../../lib/es.js';
+import { formatCountdown } from '../../lib/countdown.js';
 import { FIELD, Info, T } from '../ui/kit.js';
 import { PUSH_SIZES } from './Empujar.js';
 import type {
@@ -220,14 +221,6 @@ export function Controles({
   onRelease,
   condition,
   onCondition,
-  routeDraft,
-  onRouteDraft,
-  routePoints,
-  onRouteAdd,
-  onRouteRemove,
-  onRouteGo,
-  onRouteCancel,
-  onFocusPick,
   plan,
   notice,
 }: {
@@ -251,16 +244,6 @@ export function Controles({
   /** PH-24.21: = ▲ ▼ — where the candle must end relative to the mark. */
   condition: CloseCondition;
   onCondition: (value: CloseCondition) => void;
-  /** PH-24.23: the route — a price being typed, the points listed, and the acts. */
-  routeDraft: string;
-  onRouteDraft: (value: string) => void;
-  routePoints: readonly string[];
-  onRouteAdd: () => void;
-  onRouteRemove: (index: number) => void;
-  onRouteGo: () => Promise<void>;
-  onRouteCancel: () => Promise<void>;
-  /** PH-24.23: which box a click on the chart fills — the last one focused. */
-  onFocusPick: (target: 'close' | 'route') => void;
   plan: ClosePlan | null;
   notice: BetweenLevels | string | null;
 }): ReactElement {
@@ -271,11 +254,15 @@ export function Controles({
   const held = busy === 'push';
   const armedClose = (control?.armed ?? false) && pushing === null;
   const now = state?.price;
-  // PH-24.21/24.23: the direction in force — a route's leg, a push playing, or sube / baja held.
-  const route = control?.route ?? null;
-  const direction: 1 | -1 | null = route?.direction ?? pushing?.direction ?? bias;
-  const canAdd =
-    routePoints.length < 5 && routeDraft.trim() !== '' && Number.isFinite(Number(routeDraft));
+  // PH-24.21: the direction in force — a push playing, or sube / baja held.
+  const direction: 1 | -1 | null = pushing?.direction ?? bias;
+  // PH-24.24: a sustained direction always ends, and says when. The toggle
+  // carries what is left of it, so the operator never has to remember.
+  // Only when the Lab actually said how long is left: rendering a missing field
+  // as «sube 0:00» would be a claim about a bias that is still running.
+  const msLeft = control?.biasMsLeft;
+  const biasLeft =
+    bias === null || typeof msLeft !== 'number' || msLeft <= 0 ? null : formatCountdown(msLeft);
   // A refusal, in one line: a push running, a typed price between two levels
   // (the two named), an unreachable target.
   const refusal =
@@ -329,7 +316,11 @@ export function Controles({
             title={es.lab.push.bias.info}
             onClick={() => void onBias(bias === 1 ? 'off' : 'up')}
           >
-            {es.lab.push.bias.up}
+            {bias === 1 && biasLeft !== null ? (
+              <span data-testid="lab-direction-left">{`${es.lab.push.bias.up} ${biasLeft}`}</span>
+            ) : (
+              es.lab.push.bias.up
+            )}
           </Key>
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
@@ -352,122 +343,13 @@ export function Controles({
             title={es.lab.push.bias.info}
             onClick={() => void onBias(bias === -1 ? 'off' : 'down')}
           >
-            {es.lab.push.bias.down}
+            {bias === -1 && biasLeft !== null ? (
+              <span data-testid="lab-direction-left">{`${es.lab.push.bias.down} ${biasLeft}`}</span>
+            ) : (
+              es.lab.push.bias.down
+            )}
           </Key>
         </div>
-        <div style={{ display: 'flex', gap: 4 }}>
-          <input
-            data-testid="lab-route-price"
-            value={routeDraft}
-            onChange={(e) => onRouteDraft(e.target.value)}
-            onFocus={() => onFocusPick('route')}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && canAdd) onRouteAdd();
-            }}
-            placeholder={p.route.placeholder}
-            aria-label={p.route.title}
-            title={p.route.info}
-            inputMode="decimal"
-            disabled={routePoints.length >= 5 || route !== null}
-            style={{ ...FIELD, flex: 1, minWidth: 0 }}
-          />
-          <button
-            type="button"
-            data-testid="lab-route-add"
-            title={routePoints.length >= 5 ? p.route.full : p.route.add}
-            disabled={!canAdd || route !== null}
-            onClick={onRouteAdd}
-            style={{
-              font: 'inherit',
-              width: 32,
-              background: T.raised,
-              border: `1px solid ${T.line}`,
-              color: canAdd && route === null ? T.text : T.faint,
-              fontSize: 14,
-              borderRadius: 3,
-              cursor: canAdd && route === null ? 'pointer' : 'not-allowed',
-            }}
-          >
-            +
-          </button>
-        </div>
-        {routePoints.length > 0 && (
-          <ol
-            data-testid="lab-route-points"
-            style={{
-              margin: 0,
-              padding: 0,
-              listStyle: 'none',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 2,
-            }}
-          >
-            {routePoints.map((point, i) => {
-              const reached = route?.points[i]?.reached ?? false;
-              return (
-                <li
-                  key={`${String(i)}-${point}`}
-                  data-testid={`lab-route-point-${String(i + 1)}`}
-                  style={{
-                    display: 'flex',
-                    gap: 8,
-                    alignItems: 'center',
-                    fontSize: 12,
-                    color: reached ? T.faint : T.text,
-                    textDecoration: reached ? 'line-through' : 'none',
-                  }}
-                >
-                  <span style={{ color: T.muted, width: 12 }}>{String(i + 1)}</span>
-                  <span style={{ flex: 1 }}>{point}</span>
-                  {route === null && (
-                    <button
-                      type="button"
-                      data-testid={`lab-route-remove-${String(i + 1)}`}
-                      title={p.route.remove}
-                      onClick={() => onRouteRemove(i)}
-                      style={{
-                        font: 'inherit',
-                        background: 'transparent',
-                        border: 'none',
-                        color: T.muted,
-                        cursor: 'pointer',
-                        fontSize: 12,
-                      }}
-                    >
-                      ×
-                    </button>
-                  )}
-                </li>
-              );
-            })}
-          </ol>
-        )}
-        {route !== null ? (
-          <Key
-            side={route.direction === -1 ? 'down' : 'up'}
-            block
-            testId="lab-route-cancel"
-            disabled={busy !== null}
-            title={p.route.cancel}
-            onClick={() => void onRouteCancel()}
-          >
-            {`× ${p.route.cancel}`}
-          </Key>
-        ) : (
-          routePoints.length > 0 && (
-            <Key
-              side="up"
-              block
-              testId="lab-route-go"
-              disabled={busy !== null}
-              title={p.route.info}
-              onClick={() => void onRouteGo()}
-            >
-              {p.route.go}
-            </Key>
-          )
-        )}
         {pushError !== null && (
           <div data-testid="lab-push-error" style={{ fontSize: 11, color: T.bad }}>
             {pushError}
@@ -485,7 +367,6 @@ export function Controles({
           data-testid="lab-close-price"
           value={price}
           onChange={(e) => onPrice(e.target.value)}
-          onFocus={() => onFocusPick('close')}
           placeholder={now ?? ''}
           aria-label={p.close.price}
           title={p.close.pick}

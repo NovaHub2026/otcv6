@@ -182,20 +182,9 @@ export const es = {
         close: 'Cierre de vela',
       },
       pushInfo:
-        'Tres ritmos — normal, medio, rápido — para el próximo empuje. La fila verde empuja hacia arriba y la roja hacia abajo: 1, 3, 5 o 10 unidades, cada una un cuarto de la vela de 1 minuto de este mercado, con las magnitudes del propio motor. Un empuje en sentido contrario se resta del que queda: lo que sobra sigue en el sentido del mayor, y si se igualan el mercado queda libre. Sube y baja mantienen esa dirección con rachas naturales hasta pulsarlos de nuevo; sin ninguno pulsado, el mercado va libre.',
+        'Tres ritmos — normal, medio, rápido — para el próximo empuje. La fila verde empuja hacia arriba y la roja hacia abajo: 1, 3, 5 o 10 unidades, cada una un cuarto de la vela de 1 minuto de este mercado, con las magnitudes del propio motor. Un empuje en sentido contrario se resta del que queda: lo que sobra sigue en el sentido del mayor, y si se igualan el mercado queda libre. Sube y baja mantienen esa dirección hasta pulsarlos de nuevo y, como mucho, dos minutos: el botón muestra el tiempo que le queda. Sin ninguno pulsado, el mercado va libre.',
       rising: 'SUBIENDO',
       falling: 'BAJANDO',
-      route: {
-        title: 'Recorrido',
-        info: 'Hasta cinco puntos que el precio va a buscar en orden, con la textura de sube / baja al ritmo elegido: rachas a favor y más cortas en contra hasta tocar cada punto, y de ahí al siguiente. El tiempo de cada tramo sale de la distancia y del ritmo; no depende de la vela — si quieres que cierre en un punto, márcalo en Cierre. Buscar libera lo que hubiera armado; un empuje o un sube / baja lo interrumpen. Escribe el punto o, con la casilla enfocada, haz clic en el gráfico.',
-        placeholder: 'punto',
-        add: 'añadir el punto',
-        full: 'cinco puntos como máximo',
-        go: 'Buscar',
-        cancel: 'cancelar el recorrido',
-        remove: 'quitar el punto',
-        mark: (n: number) => `punto ${String(n)}`,
-      },
       close: {
         info: 'La tasa se escribe en la casilla o se marca con un clic en el gráfico, a la altura del precio; queda señalada con una línea. La referencia dice dónde debe terminar la vela actual o la próxima, en el marco que muestra el gráfico: = exactamente en la tasa, ▲ en cualquier precio por encima, ▼ en cualquier precio por debajo — mientras dura la vela puede cruzarla. Con ▲ o ▼ el Lab deja el camino natural del mercado si ya termina en ese lado y, si no, elige uno natural que lo haga. Fijar arma el cierre y × lo cancela; con la casilla vacía, la tasa es el precio de ahora.',
         apply: 'Fijar cierre',
@@ -236,13 +225,11 @@ export const es = {
         `se liberó lo que estaba armado en este mercado (quedaban ${String(n)} signos) para empujar`,
       refusedPush:
         'hay un empuje en curso — espera a que termine o libéralo antes de fijar un cierre',
-      refusedRoute:
-        'hay un recorrido en curso — espera a que termine o cancélalo antes de fijar un cierre',
       failed: (reason: string) => `el empuje no se envió: ${reason}`,
       bias: {
         up: 'sube',
         down: 'baja',
-        info: 'Mientras está activo, el mercado prioriza esa dirección: rachas de 2 a 6 ticks a favor y rachas más cortas en contra — baja 3, sube 2, baja 5, sube 3 — con las magnitudes y el ritmo normal del motor. Un empuje, un cierre o un escenario se juega primero y el sesgo continúa después. Volver a pulsar lo apaga; liberar el mercado también. Sin nada activo, el motor va solo.',
+        info: 'Mientras está activo, el mercado prioriza esa dirección: rachas a favor y rachas más cortas en contra — baja 3, sube 2, baja 5, sube 3 — con las magnitudes y el ritmo normal del motor. Dura dos minutos como máximo, contados en el reloj desde que lo pulsas: el botón muestra lo que le queda y, al llegar a cero, el mercado vuelve solo a su camino. Un empuje, un cierre o un escenario se juega primero y el sesgo continúa después, sobre el mismo plazo — lo que dure ese acto cuenta dentro de los dos minutos. Volver a pulsar lo apaga; liberar el mercado también. Sin nada activo, el motor va solo.',
         active: (dir: 'up' | 'down') =>
           `${dir === 'up' ? 'SUBE' : 'BAJA'} activo · el mercado prioriza ${dir === 'up' ? 'subir' : 'bajar'}`,
       },
@@ -532,6 +519,7 @@ export const es = {
       'scenario.apply': 'escenario aplicado',
       release: 'liberado',
       'position.open': 'posición abierta',
+      'bias.expired': 'dirección sostenida terminada por el límite de dos minutos',
     } as Record<string, string>,
   },
 } as const;

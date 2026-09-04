@@ -2,8 +2,9 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-24
-Status: ACTIVE
+Status: APPROVED
 Created: 2026-09-03
+Approved: 2026-09-04
 Cycle: 8 (third phase — its approval opens Cycle Audit 8)
 
 ---
@@ -126,7 +127,8 @@ state), INV-009 (a Lab settlement recomputes from the Lab's record), INV-010.
 | PH-24.20 | El panel, segunda forma: dos tarjetas y solo controles — ritmo, filas verde y roja con sube / baja; vela actual / próxima, precio con = ▲ ▼, fijar / ×                 | APPROVED                                                | [PH-24.20](PH-24.20-el-panel-segunda-forma.md)                             |
 | PH-24.21 | Subiendo / bajando en la tarjeta; los empujes contrarios se restan; la tasa marcada con un clic en el gráfico; la condición de cierre = ▲ ▼ con selección condicionada | APPROVED                                                | [PH-24.21](PH-24.21-subiendo-bajando-la-resta-y-la-condicion-de-cierre.md) |
 | PH-24.22 | El cronómetro de la vela: cuánto falta para que cierre la vela en curso, en el marco del gráfico                                                                       | APPROVED                                                | [PH-24.22](PH-24.22-el-cronometro-de-la-vela.md)                           |
-| PH-24.23 | El recorrido: hasta cinco puntos que el precio va a buscar en orden, con la textura de sube / baja al ritmo elegido; marcados en el gráfico; Buscar y ×                | APPROVED                                                | [PH-24.23](PH-24.23-el-recorrido.md)                                       |
+| PH-24.23 | El recorrido: hasta cinco puntos que el precio va a buscar en orden, con la textura de sube / baja al ritmo elegido; marcados en el gráfico; Buscar y ×                | REVERTED                                                | [PH-24.23](PH-24.23-el-recorrido.md)                                       |
+| PH-24.24 | El recorrido retirado y el sesgo con límite: dos minutos como máximo, en el reloj del mercado, visible en el botón y registrado al expirar                             | APPROVED                                                | [PH-24.24](PH-24.24-el-recorrido-retirado-y-el-sesgo-con-limite.md)        |
 
 Each subphase owes its plants. PH-24.1 owes one that arms in the production
 composition and is caught.
@@ -144,3 +146,58 @@ composition and is caught.
 - **Scope of the screen.** PH-23.5's lesson: the visible half is part of done,
   and building it finds defects the API hides. Every control lands with its
   panel in the same subphase.
+
+## 8. What the phase delivered
+
+Twenty-four subphases, of which twenty-three stand (PH-24.23 was approved and
+then reverted at the Human Owner's request, and its document says so).
+
+**The mechanism became controls.** A close on a real candle, exact or on a side
+of a mark; presets and simulated positions settled against the Lab's own record;
+sixteen scenarios; a push that is N natural ticks at a chosen pace and in the
+market's own distance unit; a sustained direction with a two-minute cap; a
+board, a session record and the diagnostics the specification audit found
+missing. Nothing steers: every act is a **selection among the engine's own
+futures**, played by a sign source that consumes the keystream in lockstep, and
+every price is the engine's own.
+
+**The Lab got a screen an operator can hold.** `/lab` is a control panel — the
+chart at three quarters with a countdown to the candle's end, and at one quarter
+two cards of controls and no data. The instrument it grew from lives on
+`/lab/avanzado`. Both are in Spanish, every explanation behind ⓘ.
+
+**One engine per deployment** (ADR-0018): the Lab-composed process _is_ the
+engine in simulation mode, so what the Lab does is what the panel's chart shows.
+
+**The engine itself was recalibrated** (PH-24.17): three to four times as many
+ticks per candle at the same dispersion, because the Human Owner could see the
+gaps between candles. The catalogue's traits were re-authored, the lattice tie
+rates re-measured, and every sample defined in time rather than in ticks.
+
+## 9. What the phase leaves open
+
+- **`assessRealism` blocks the process** for seconds while a quality run
+  aggregates millions of ticks, which closes an idle keep-alive socket and cost
+  the gate a 502 (PH-24.19). The panel's proxy retries a read once; the real fix
+  is a yield between metrics.
+- **`aggregational-gaussianity` aggregates in ticks, not in time.** After
+  PH-24.17 that is a different question from the one the metric's name asks
+  (PH-24.17 §6).
+- **Replay and the mirror screen** (§74–§77) are still not built; the
+  groundwork sits parked on `2ff8559`.
+- **A bias does not survive a restart**, by design, and nothing in the persisted
+  record closes it — the `bias` action's diagnostics say when it could not have
+  outlived, and that is all (PH-24.24).
+
+## 10. Integration verification (2026-09-04)
+
+Beyond the subphase gates, run on the phase as a whole:
+
+| Check                                                                                                                                                                                                                                | Result                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Every subphase document APPROVED or REVERTED, and the roadmap agrees                                                                                                                                                                 | `documentation.test.ts` and `stateConsistency.test.ts` green                                                                                                                                                                                         |
+| The three guards §2 names — no Lab route in a production composition, no sign source without the Lab's factory, a Lab-composed process declared as one                                                                               | `composition.test.ts`, `labProviders.test.ts`, `productionComposition.test.ts` green                                                                                                                                                                 |
+| Integrated behaviour across subphases: a push over an armed close releases it; a close is refused while a push runs; a bias survives a push and still expires on its own deadline; release-all returns every market, biased or armed | `pushRoutes.test.ts`, `closeRoutes.test.ts`, `biasRoutes.test.ts`                                                                                                                                                                                    |
+| The screen an operator actually uses, in a browser, against a live Lab-composed engine                                                                                                                                               | `lab.stat.test.ts` 9 flows, `panel.stat.test.ts` 8 flows                                                                                                                                                                                             |
+| Anti-predictability after every change to the magnitude and timing path                                                                                                                                                              | the mirror tests and the full statistical battery, in the phase gate below                                                                                                                                                                           |
+| Phase quality gate `npm run gate`                                                                                                                                                                                                    | `PHASE_GATE_EXIT=0` — format, build, `typecheck:web`, `typecheck:config`, lint, unit 126 files / 2,555 tests, statistical 42 files / 285 tests (the mirror tests, the adversarial battery over 803 hypotheses, both browser suites), `GATE COMPLETE` |

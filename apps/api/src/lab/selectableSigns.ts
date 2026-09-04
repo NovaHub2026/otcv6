@@ -30,6 +30,22 @@ import type { RandomSource, StreamCursor } from '@otc/core';
 export const BIAS_RUN_MIN = 2;
 export const BIAS_RUN_MAX = 6;
 
+/**
+ * How long a sustained direction may last (PH-24.24).
+ *
+ * The Human Owner left sube on and "unas 15 velas subieron sin control antes de
+ * darme cuenta": a bias had no natural end, and every other Lab act has one — a
+ * push is N ticks, a close is one candle. Two minutes, on the clock the market
+ * itself runs on.
+ *
+ * Not a tick budget. Two minutes of a market's *recorded* mean interval is not
+ * two minutes of its life — arrivals cluster, and measured over a minute of a
+ * hosted EUR/USD the gap between ticks ran nearer 480 ms than the recorded 347,
+ * which would have made a 346-tick budget last almost three minutes. The cap is
+ * the thing the operator was promised, so it is measured in the unit they used.
+ */
+export const BIAS_MAX_MS = 120_000;
+
 export class SelectableSigns implements RandomSource {
   #script: readonly (1 | -1)[] | null = null;
   #at = 0;
@@ -41,6 +57,9 @@ export class SelectableSigns implements RandomSource {
   #lastForLength = 0;
   #runMin = BIAS_RUN_MIN;
   #runMax = BIAS_RUN_MAX;
+  /** PH-24.24: when the bias turns itself off, and the clock that says so. */
+  #biasExpiresAt = 0;
+  #biasNow: (() => number) | null = null;
 
   constructor(
     private readonly inner: RandomSource,
@@ -97,14 +116,30 @@ export class SelectableSigns implements RandomSource {
     this.#at = 0;
   }
 
-  /** The sustained direction, or null when the keystream decides. */
+  /**
+   * The sustained direction, or null when the keystream decides.
+   *
+   * A bias past its deadline (PH-24.24) reads as none from the moment it expires,
+   * not from the next draw: the screen asks this, and a control that says a
+   * market is being pushed when it is not is the failure this cap exists to end.
+   */
   get bias(): 1 | -1 | null {
-    return this.#bias;
+    return this.#bias === null || this.#biasExpired() ? null : this.#bias;
   }
 
   /** The run lengths a bias plays, in ticks. */
   get biasRuns(): { readonly min: number; readonly max: number } {
     return { min: this.#runMin, max: this.#runMax };
+  }
+
+  /** PH-24.24: how long this bias has left, in milliseconds; zero when there is none. */
+  get biasMsLeft(): number {
+    if (this.#bias === null || this.#biasNow === null) return 0;
+    return Math.max(0, this.#biasExpiresAt - this.#biasNow());
+  }
+
+  #biasExpired(): boolean {
+    return this.#biasNow !== null && this.#biasNow() >= this.#biasExpiresAt;
   }
 
   /**
@@ -115,15 +150,26 @@ export class SelectableSigns implements RandomSource {
    * down 3, up 2, down 5, up 3. The lengths come from a Lab-only random stream;
    * the keystream keeps advancing in lockstep as always. A script armed on top
    * plays first; the bias resumes after it.
+   *
+   * **It always ends.** `expiry` is when it turns itself off and the clock that
+   * decides — required, because the failure it prevents is a bias nobody turned
+   * off, and a default of "never" is exactly that failure. The clock is injected,
+   * as every clock in this project is: this wrapper reads no ambient time.
    */
   setBias(
     direction: 1 | -1,
     random: RandomSource,
-    runs: { readonly min: number; readonly max: number } = { min: BIAS_RUN_MIN, max: BIAS_RUN_MAX },
+    runs: { readonly min: number; readonly max: number },
+    expiry: { readonly at: number; readonly now: () => number },
   ): void {
     if (!(runs.min >= 2) || !(runs.max >= runs.min)) {
       throw new RangeError(
         `Bias runs must satisfy 2 <= min <= max, received ${String(runs.min)}..${String(runs.max)}.`,
+      );
+    }
+    if (!Number.isFinite(expiry.at) || expiry.at <= expiry.now()) {
+      throw new RangeError(
+        `A bias must expire: its deadline must be in the future, received ${String(expiry.at)}.`,
       );
     }
     this.#bias = direction;
@@ -132,6 +178,8 @@ export class SelectableSigns implements RandomSource {
     this.#runMax = runs.max;
     this.#runLeft = 0;
     this.#lastForLength = 0;
+    this.#biasExpiresAt = expiry.at;
+    this.#biasNow = expiry.now;
   }
 
   clearBias(): void {
@@ -139,14 +187,22 @@ export class SelectableSigns implements RandomSource {
     this.#biasRandom = null;
     this.#runLeft = 0;
     this.#lastForLength = 0;
+    this.#biasExpiresAt = 0;
+    this.#biasNow = null;
   }
 
   /** Back to the keystream, script and bias alike. Returns how many scripted signs were never drawn. */
   release(): number {
+    const remaining = this.releaseScript();
+    this.clearBias();
+    return remaining;
+  }
+
+  /** The script alone, the bias left running. Returns how many signs were never drawn. */
+  releaseScript(): number {
     const remaining = this.remaining;
     this.#script = null;
     this.#at = 0;
-    this.clearBias();
     return remaining;
   }
 
@@ -172,7 +228,11 @@ export class SelectableSigns implements RandomSource {
   nextBoolean(): boolean {
     // Always: the keystream advances whether or not its draw is used.
     const draw = this.inner.nextBoolean();
-    if (this.#script === null) return this.#bias === null ? draw : this.#biasedSign() === 1;
+    if (this.#script === null) {
+      // PH-24.24: the first draw at or after the deadline is the keystream's own.
+      if (this.#bias !== null && this.#biasExpired()) this.clearBias();
+      return this.#bias === null ? draw : this.#biasedSign() === 1;
+    }
     const sign = this.#script[this.#at]!;
     this.#at += 1;
     if (this.#at >= this.#script.length) {
@@ -207,13 +267,22 @@ export class SelectableSigns implements RandomSource {
   }
 
   /**
-   * A seek releases. A script was armed against one particular future — the
-   * next N draws from where the cursor stood — and a cursor that moves is no
-   * longer there. Restores go through here, which is the "restart is a
-   * release" rule made mechanical.
+   * A seek releases **the script**. A script was armed against one particular
+   * future — the next N draws from where the cursor stood — and a cursor that
+   * moves is no longer there. Restores go through here, which is the "restart
+   * is a release" rule made mechanical.
+   *
+   * A bias survives it, and that is the point (PH-24.24). A bias is not armed
+   * against a future: it is a rule about the next draws, whichever they are,
+   * with a deadline on the clock. Until this line every push seeked — it
+   * retracts the pending tick (PH-24.13), a retract restores, a restore seeks —
+   * so a push silently ended a sustained direction while the screen and the
+   * ⓘ both said it continued afterwards, and the expiry notice then wrote a
+   * two-minute expiry into the session that had never happened. A restart still
+   * drops it: a restarted market gets a new wrapper, not a seek.
    */
   seek(target: StreamCursor): void {
-    this.release();
+    this.releaseScript();
     this.inner.seek(target);
   }
 }
@@ -243,23 +312,5 @@ export class SignSelector {
 
   get assetIds(): readonly string[] {
     return [...this.#wrappers.keys()].sort();
-  }
-}
-
-/**
- * A sign source that remembers what it drew (PH-24.23).
- *
- * On a fork playing sube / baja towards a point, the signs the fork draws are
- * the script the live market will play: recorded here, armed there, and the
- * live path is the fork's path — the engine's magnitudes and intervals, the
- * Lab's signs, exactly as a push.
- */
-export class RecordingSigns extends SelectableSigns {
-  readonly drawn: (1 | -1)[] = [];
-
-  override nextBoolean(): boolean {
-    const up = super.nextBoolean();
-    this.drawn.push(up ? 1 : -1);
-    return up;
   }
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
 import { es } from '../../lib/es.js';
 import { Badge, Info, T, Tabs } from '../ui/kit.js';
 import {
@@ -18,7 +18,6 @@ import {
   type ControlAll,
   type Pace,
   type PushResult,
-  type RouteResult,
   type LabMarket,
   type MarketControl,
   type LabPositionView,
@@ -28,6 +27,7 @@ import {
   type ScenarioPlan,
   type ScenarioView,
   type Session,
+  isControl,
 } from './labApi.js';
 import { Mercado } from './Mercado.js';
 import { Cierre } from './Cierre.js';
@@ -84,11 +84,6 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
   const [price, setPrice] = useState('');
   // PH-24.21: where the close must end relative to the mark — the panel's = ▲ ▼.
   const [closeCondition, setCloseCondition] = useState<CloseCondition>('exact');
-  // PH-24.23: the route's points as the operator listed them, the price being typed,
-  // and which box a click on the chart fills — the last one focused.
-  const [routeDraft, setRouteDraft] = useState('');
-  const [routePoints, setRoutePoints] = useState<string[]>([]);
-  const [pickTarget, setPickTarget] = useState<'close' | 'route'>('close');
   const [plan, setPlan] = useState<ClosePlan | null>(null);
   const [notice, setNotice] = useState<BetweenLevels | string | null>(null);
   const [planExpiry, setPlanExpiry] = useState<number | null>(null);
@@ -134,8 +129,15 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
     });
   }, []);
 
+  // PH-24.24: which market the screen is on, read after every await. A poll for
+  // the market just left can answer after the switch, and its control would then
+  // be rendered under the new market's name — a countdown for somebody else.
+  const selectedRef = useRef<string | null>(null);
+  selectedRef.current = selected;
+
   const refreshState = useCallback(async (asset: string) => {
     const body = await labGet<LabState>(`markets/${asset}/state`);
+    if (selectedRef.current !== asset) return;
     if (isUnavailable(body)) {
       setUnavailable(body.reason);
       setState(null);
@@ -151,9 +153,11 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
       labGet<PositionsView>('session/positions'),
       labGet<ControlAll>('control'),
     ]);
+    if (selectedRef.current !== asset) return;
     if (!isUnavailable(settled)) setPositionsView(settled);
     if (!isUnavailable(everyMarket)) setAll(everyMarket);
-    if (!isUnavailable(ctl)) setControl(ctl);
+    // An error body is not a control: storing one would read as "nothing running".
+    if (isControl(ctl)) setControl(ctl);
     if (!isUnavailable(timelines)) setSession(timelines);
     if (!isUnavailable(open)) setPositions(open.positions);
     if (!isUnavailable(diagnostic)) setCloses(diagnostic);
@@ -213,61 +217,12 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
     const lattice = state?.instrument;
     if (lattice === undefined) return;
     const snapped = nearestLevelPrice(lattice, picked);
-    if (snapped === null) return;
-    if (pickTarget === 'route') setRouteDraft(snapped);
-    else setPrice(snapped);
+    if (snapped !== null) setPrice(snapped);
   };
-  const marks: { price: number; title: string }[] =
-    mode === 'control'
-      ? [
-          ...(price.trim() !== '' && Number.isFinite(Number(price))
-            ? [{ price: Number(price), title: es.lab.panel.close.mark }]
-            : []),
-          ...routePoints.map((point, i) => ({
-            price: Number(point),
-            title: es.lab.panel.route.mark(i + 1),
-          })),
-        ]
-      : [];
-  // PH-24.23: a point is added as the nearest lattice level, so the Lab takes it as typed.
-  const routeAdd = (): void => {
-    const lattice = state?.instrument;
-    const value = Number(routeDraft);
-    if (routePoints.length >= 5 || !Number.isFinite(value) || value <= 0) return;
-    const snapped =
-      lattice === undefined
-        ? routeDraft.trim()
-        : (nearestLevelPrice(lattice, value) ?? routeDraft.trim());
-    setRoutePoints([...routePoints, snapped]);
-    setRouteDraft('');
-  };
-  const routeRemove = (index: number): void => {
-    setRoutePoints(routePoints.filter((_, i) => i !== index));
-  };
-  const routeGo = async (): Promise<void> => {
-    if (selected === null || routePoints.length === 0) return;
-    setBusy('route');
-    setPushError(null);
-    try {
-      const body = await labPost<RouteResult | { message?: string }>(
-        `markets/${selected}/route?points=${encodeURIComponent(routePoints.join(','))}&pace=${pace}`,
-      );
-      if (isUnavailable(body)) {
-        setPushError(es.lab.push.failed(body.reason));
-        return;
-      }
-      if (!('armed' in body)) {
-        setPushError(
-          typeof body.message === 'string' ? body.message : 'El Lab rechazó el recorrido.',
-        );
-        return;
-      }
-      setControl(body);
-      void refreshState(selected);
-    } finally {
-      setBusy(null);
-    }
-  };
+  const marked =
+    mode === 'control' && price.trim() !== '' && Number.isFinite(Number(price))
+      ? { price: Number(price), title: es.lab.panel.close.mark }
+      : null;
 
   const settle = (
     body: ClosePlan | BetweenLevels | { running: false; reason: string } | { message?: string },
@@ -288,14 +243,8 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
     }
     setPlan(null);
     const message = typeof body.message === 'string' ? body.message : 'El Lab rechazó la petición.';
-    // PH-24.10/24.23: a close refused because a push or a route is running, in the operator's words.
-    setNotice(
-      /PUSH_RUNNING/.test(message)
-        ? es.lab.push.refusedPush
-        : /ROUTE_RUNNING/.test(message)
-          ? es.lab.push.refusedRoute
-          : message,
-    );
+    // PH-24.10: a close refused because a push is running, in the operator's words.
+    setNotice(/PUSH_RUNNING/.test(message) ? es.lab.push.refusedPush : message);
   };
 
   const previewClose = async (): Promise<void> => {
@@ -524,7 +473,7 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
               timeframe={chartTf}
               onTimeframe={setChartTf}
               onPick={pickPrice}
-              marks={marks}
+              mark={marked}
               fill
             />
             <Controles
@@ -545,14 +494,6 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
               onRelease={releaseMarket}
               condition={closeCondition}
               onCondition={setCloseCondition}
-              routeDraft={routeDraft}
-              onRouteDraft={setRouteDraft}
-              routePoints={routePoints}
-              onRouteAdd={routeAdd}
-              onRouteRemove={routeRemove}
-              onRouteGo={routeGo}
-              onRouteCancel={releaseMarket}
-              onFocusPick={setPickTarget}
               plan={plan}
               notice={notice}
             />
@@ -771,15 +712,15 @@ function LabChart({
   timeframe,
   onTimeframe,
   onPick,
-  marks = [],
+  mark = null,
   fill = false,
 }: {
   entry: CatalogueEntry | null;
   timeframe: PanelTimeframeId;
   onTimeframe: (id: PanelTimeframeId) => void;
-  /** PH-24.21/24.23: a click on the chart names the price at that height; the marks are the close asked and the route's points. */
+  /** PH-24.21: a click on the chart names the price at that height; the mark is the close asked. */
   onPick?: ((price: number) => void) | undefined;
-  marks?: readonly { readonly price: number; readonly title: string }[];
+  mark?: { readonly price: number; readonly title: string } | null;
   /** PH-24.19: the control panel gives the chart the whole column. */
   fill?: boolean;
 }): ReactElement {
@@ -838,7 +779,7 @@ function LabChart({
             asset={entry}
             timeframeId={timeframe}
             onPick={onPick}
-            marks={marks}
+            mark={mark}
           />
         )}
       </div>

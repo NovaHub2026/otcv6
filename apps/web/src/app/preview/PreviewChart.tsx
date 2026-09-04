@@ -14,6 +14,7 @@ import { Info, T } from '../ui/kit.js';
 import { bucketEnd, epochMillis, timeframe, type Tick } from '@otc/core/browser';
 import { fetchHistory, type CatalogueEntry } from '../../lib/api.js';
 import { priceFormatFor, toDisplayedPrice } from '../../lib/priceFormat.js';
+import { formatCountdown } from '../../lib/countdown.js';
 import {
   bucketStart,
   displayPrice,
@@ -86,29 +87,20 @@ const RESEED_INTERVAL_MS = 15_000;
 const RECONNECT_BACKOFF_MS = 1_000;
 const MAX_RECONNECT_BACKOFF_MS = 30_000;
 
-/** `m:ss`, or `h:mm:ss` on timeframes of an hour and up; whole seconds, rounded up. */
-export function formatCountdown(remainingMs: number, hours: boolean): string {
-  const total = Math.ceil(remainingMs / 1000);
-  const ss = String(total % 60).padStart(2, '0');
-  if (!hours) return `${String(Math.floor(total / 60))}:${ss}`;
-  const mm = String(Math.floor(total / 60) % 60).padStart(2, '0');
-  return `${String(Math.floor(total / 3600))}:${mm}:${ss}`;
-}
-
 export function PreviewChart({
   apiBase,
   asset,
   timeframeId,
   onPick,
-  marks = [],
+  mark = null,
 }: {
   apiBase: string;
   asset: CatalogueEntry;
   timeframeId: PanelTimeframeId;
   /** PH-24.21: a click anywhere on the chart names the price at that height. */
   onPick?: ((price: number) => void) | undefined;
-  /** PH-24.21/24.23: prices to mark with a line each — the close asked, the route's points. */
-  marks?: readonly { readonly price: number; readonly title: string }[] | undefined;
+  /** PH-24.21: a price to mark with a line — the close the Lab is being asked for. */
+  mark?: { readonly price: number; readonly title: string } | null | undefined;
 }): ReactElement {
   const container = useRef<HTMLDivElement | null>(null);
   const chart = useRef<IChartApi | null>(null);
@@ -116,7 +108,7 @@ export function PreviewChart({
   // The latest handler, read at click time: the chart is built once per asset.
   const pick = useRef(onPick);
   pick.current = onPick;
-  const markLines = useRef<IPriceLine[]>([]);
+  const markLine = useRef<IPriceLine | null>(null);
   const [status, setStatus] = useState<string>(es.preview.status.loading);
   const [bars, setBars] = useState<number>(0);
   const [last, setLast] = useState<{ price: number; at: number } | null>(null);
@@ -187,7 +179,7 @@ export function PreviewChart({
       created.remove();
       chart.current = null;
       series.current = null;
-      markLines.current = [];
+      markLine.current = null;
     };
     // Keyed on the asset, not on its display precision. Four of the five assets
     // in the catalogue share a precision, so keying on that kept the chart
@@ -195,23 +187,27 @@ export function PreviewChart({
     // until the next fetch returned.
   }, [asset.id, asset.displayPrecision]);
 
-  // PH-24.21/24.23: the marks — a line each, redrawn when the set changes, all
-  // removed when it is empty. Keyed on the asset too: a new chart has no lines.
+  // PH-24.21: the mark — one line, moved rather than re-created, removed when
+  // the price is cleared. Keyed on the asset too: a new chart has no lines.
   useEffect(() => {
     const target = series.current;
     if (target === null) return;
-    for (const line of markLines.current) target.removePriceLine(line);
-    markLines.current = marks.map((mark) =>
-      target.createPriceLine({
-        price: mark.price,
-        color: '#58a6ff',
-        lineWidth: 1,
-        lineStyle: 0,
-        axisLabelVisible: true,
-        title: mark.title,
-      }),
-    );
-  }, [marks, asset.id]);
+    if (mark === null) {
+      if (markLine.current !== null) target.removePriceLine(markLine.current);
+      markLine.current = null;
+      return;
+    }
+    const options = {
+      price: mark.price,
+      color: '#58a6ff',
+      lineWidth: 1 as const,
+      lineStyle: 0 as const,
+      axisLabelVisible: true,
+      title: mark.title,
+    };
+    if (markLine.current === null) markLine.current = target.createPriceLine(options);
+    else markLine.current.applyOptions(options);
+  }, [mark, asset.id]);
 
   // PH-24.22: how long the bucket now forming has left, on the chart's
   // timeframe — the kernel's own bucket end on the kernel's own timeframe, the

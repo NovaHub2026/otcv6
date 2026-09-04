@@ -3,6 +3,7 @@
 import type { ReactElement } from 'react';
 import { es } from '../../lib/es.js';
 import { Badge, Button, Info, Notice, T } from '../ui/kit.js';
+import { formatCountdown } from '../../lib/countdown.js';
 import type { Control, LabState, Pace, PushResult } from './labApi.js';
 
 export const PUSH_SIZES = [1, 3, 5, 10] as const;
@@ -46,6 +47,11 @@ export function Empujar({
   // Held only by its own act (PH-24.11): never by a quality run, never by an armed close.
   const held = busy === 'push';
   const bias = control?.bias ?? null;
+  // PH-24.24: the same countdown the panel's toggles carry — the ⓘ promises it
+  // on the button, and this screen has the same buttons.
+  const msLeft = control?.biasMsLeft;
+  const biasLeft =
+    bias === null || typeof msLeft !== 'number' || msLeft <= 0 ? null : formatCountdown(msLeft);
   return (
     <div
       data-testid="lab-push"
@@ -142,7 +148,9 @@ export function Empujar({
           disabled={busy === 'bias'}
           onClick={() => void onBias(bias === 1 ? 'off' : 'up')}
         >
-          {p.bias.up}
+          <span data-testid={bias === 1 && biasLeft !== null ? 'lab-direction-left' : undefined}>
+            {bias === 1 && biasLeft !== null ? `${p.bias.up} ${biasLeft}` : p.bias.up}
+          </span>
         </Button>
       }
       {
@@ -153,7 +161,9 @@ export function Empujar({
           disabled={busy === 'bias'}
           onClick={() => void onBias(bias === -1 ? 'off' : 'down')}
         >
-          {p.bias.down}
+          <span data-testid={bias === -1 && biasLeft !== null ? 'lab-direction-left' : undefined}>
+            {bias === -1 && biasLeft !== null ? `${p.bias.down} ${biasLeft}` : p.bias.down}
+          </span>
         </Button>
       }
       <Badge tone={pushing !== null || bias !== null ? 'lab' : 'muted'} testId="lab-push-state">

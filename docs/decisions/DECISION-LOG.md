@@ -527,3 +527,22 @@ selection is a few deterministic lines, tested in the existing harness, and its
 endpoint is drawn uniformly from the satisfying closes rather than glued to the
 mark (§28, §70). The rule's live-correction feel can be added on top later
 without undoing anything.
+
+## 2026-09-04 — The Lab is complete enough: merge, hosted CI and Cycle Audit 8 are released
+
+**Context.** On 2026-09-03 the Human Owner suspended the merge to `main`, hosted
+CI and Cycle Audit 8 until the Lab was finished, and every remaining item was
+added as a PH-24.x subphase. Fifteen subphases later (PH-24.10–24.24) they
+asked for the route to be reverted, for a two-minute cap on the sustained
+direction, and then — in the same message — for the merge, hosted CI and the
+audit to run, with every finding resolved afterwards.
+
+**Decision.** The pause is lifted. PH-24.24 closes PH-24; the phase is verified
+and gated in full, merged to `main`, hosted CI runs on that push, and Cycle
+Audit 8 follows immediately as §28 requires (PH-22, PH-23 and PH-24 are the
+cycle's three approved phases). Findings are fixed under §31.
+
+**Why.** The suspension was the Human Owner's and so is its end; it was stated
+in their own message alongside the work that closes the Lab. Nothing else about
+the loop changes: the audit is adversarial and independent (§28.1), and its
+findings are recorded whether or not they are convenient.

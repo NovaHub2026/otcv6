@@ -15,34 +15,32 @@ Last synchronized: 2026-09-03
 | Field                            | Value                                                                                                                  |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | Active development cycle         | Cycle 8                                                                                                                |
-| Approved phases in current cycle | **2 of 3** — PH-22, PH-23                                                                                              |
-| Cycle Audit state                | **007 closed** — 34 of 35 findings closed in the audit itself, one carried (Issue #22)                                 |
+| Approved phases in current cycle | **3 of 3** — PH-22, PH-23, PH-24                                                                                       |
+| Cycle Audit state                | **007 closed**; **008 due now** — Cycle 8's third phase is approved, so §28 runs the audit immediately                 |
 | Last Cycle Audit                 | [Cycle Audit 007](docs/audits/CYCLE-AUDIT-007.md) — recorded 2026-09-03, eight independent auditors, one worktree each |
 
 ## Phase and subphase
 
-| Field                  | Value                                            |
-| ---------------------- | ------------------------------------------------ |
-| Active phase           | PH-24 — The Lab's controls: applying a selection |
-| Phase lifecycle        | ACTIVE                                           |
-| Active subphase        | none                                             |
-| Subphase lifecycle     | none                                             |
-| Last approved phase    | PH-23 — The OTC Market Lab                       |
-| Last approved subphase | PH-24.23 — El recorrido                          |
+| Field                  | Value                                                 |
+| ---------------------- | ----------------------------------------------------- |
+| Active phase           | none — Cycle Audit 8                                  |
+| Phase lifecycle        | none                                                  |
+| Active subphase        | none                                                  |
+| Subphase lifecycle     | none                                                  |
+| Last approved phase    | PH-24 — The Lab's controls: applying a selection      |
+| Last approved subphase | PH-24.24 — El recorrido retirado, el sesgo con límite |
 
-**PH-24 is active; twenty-three subphases approved (PH-24.1–24.23).** The Lab's
-screen is a control panel — the chart at three quarters and, at one quarter,
-two cards of controls: the pace as three windows, a green row and a red row of
-pushes with sube / baja as toggles and SUBIENDO / BAJANDO while a direction is
-in force, opposite pushes netting (PH-24.21); the close's mark typed or picked
-with a click on the chart, its condition = ▲ ▼ honoured by a conditioned
-selection, fijar / × in one place. The instrument lives on `/lab/avanzado`.
-Under it: distances in the market's own unit (PH-24.18) and an engine ticking
-three to four times as often at the same dispersion (PH-24.17). The chart counts down to
-the end of the candle now forming (PH-24.22). The push card also takes a route of up to five points
-the price seeks in order, with the texture of sube / baja at the chosen pace
-(PH-24.23). The next item awaits the Human Owner. The merge, hosted CI and Cycle Audit 8 wait until the
-Lab is complete; PH-24's approval is Cycle 8's third phase.
+**PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
+now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
+approved and then reverted at the Human Owner's request. The Lab's mechanism
+became controls an operator can hold: a close on a real candle, exact or on a
+side of a mark; presets, positions and sixteen scenarios; a push in the
+market's own distance unit at a chosen pace; a sustained direction that ends by
+itself after two minutes; a control panel with the chart at three quarters and
+the instrument behind a link. The engine was recalibrated inside the phase
+(PH-24.17): three to four times as many ticks per candle at the same
+dispersion. On 2026-09-04 the Human Owner lifted the pause on the merge, hosted
+CI and this audit (`DECISION-LOG.md`).
 
 PH-23.5 closed the first item PH-23 §10 left open — the Lab now has a screen in
 the panel, behind a menu entry marked `SIM`. Building it found three defects
