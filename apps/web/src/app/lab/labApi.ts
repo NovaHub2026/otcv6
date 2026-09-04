@@ -62,6 +62,12 @@ export interface LabState {
   /** Rendered to the asset's display precision; the lattice level is beside it. */
   readonly price: string;
   readonly latticeLevel: number;
+  /** PH-24.20: the lattice, so the panel's ▲ ▼ step along it rather than in price. */
+  readonly instrument?: {
+    readonly logQuantum: number;
+    readonly referencePrice: number;
+    readonly displayPrecision: number;
+  };
   readonly previousMagnitude: number;
   readonly previousIntervalMs: number;
   readonly netDisplacement?: { readonly '1m': number | null; readonly '5m': number | null };

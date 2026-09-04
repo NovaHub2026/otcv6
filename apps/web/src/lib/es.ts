@@ -174,26 +174,24 @@ export const es = {
       advancedInfo:
         'El instrumento completo: tablero de todos los mercados, estado interno, cierre con hora concreta y plan, posiciones, escenarios, calidad y sesión. El panel de control se queda con lo que se usa al operar.',
       back: 'volver al panel de control',
-      free: 'libre — el mercado sigue su camino',
       cards: {
-        push: 'Empujar',
-        pace: 'Ritmo',
-        direction: 'Dirección',
+        push: 'Empuje',
         close: 'Cierre de vela',
       },
-      direction: {
-        free: 'libre',
-        info: 'Sube o baja mantienen la dirección con rachas naturales hasta que pulses libre; libre devuelve el mercado a su camino.',
-      },
+      pushInfo:
+        'Tres ritmos — normal, medio, rápido — para el próximo empuje. La fila verde empuja hacia arriba y la roja hacia abajo: 1, 3, 5 o 10 unidades, cada una un cuarto de la vela de 1 minuto de este mercado, con las magnitudes del propio motor. Sube y baja mantienen esa dirección con rachas naturales hasta pulsarlos de nuevo; sin ninguno pulsado, el mercado va libre.',
       close: {
-        info: 'La vela elegida cerrará exactamente en el precio que fijes. Si dejas el precio vacío, usa los botones relativos: ±1, ±2, ±3 unidades desde el precio actual. Fijar arma el cierre; liberar lo deshace.',
+        info: 'La vela actual o la próxima, en el marco que muestra el gráfico, cerrará exactamente en el precio de la casilla: = la iguala al precio de ahora, ▲ y ▼ la mueven una unidad (un cuarto de vela). Fijar arma el cierre — con la casilla vacía, en el precio de ahora — y × lo cancela.',
         apply: 'Fijar cierre',
-        release: 'Liberar',
-        armed: (target: string, at: string) => `armado — cerrará en ${target} a las ${at}`,
-        exact: (price: string) => `cerró en ${price} — EXACTO`,
-        failed: (target: string, price: string) => `objetivo ${target}, cerró en ${price} — FALLÓ`,
-        none: 'sin cierre fijado',
-        price: 'precio de cierre (vacío = relativo)',
+        cancel: 'cancelar el cierre',
+        equal: 'igualar al precio de ahora',
+        up: 'una unidad arriba',
+        down: 'una unidad abajo',
+        current: 'vela actual',
+        next: 'próxima vela',
+        price: 'precio de cierre',
+        noTimeframe:
+          'El cierre se fija sobre velas de 1m, 5m o 15m: elige uno de esos marcos en el gráfico.',
       },
     },
     push: {

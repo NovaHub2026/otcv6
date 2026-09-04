@@ -13,6 +13,9 @@ export const PUSH_SIZES = [1, 3, 5, 10] as const;
  * Ocho botones, el estado del empuje en curso y, tras un clic, el precio al
  * que llegará el mercado — calculado por el motor sobre una copia, con sus
  * propias magnitudes, porque el Lab elige la dirección y nada más.
+ *
+ * PH-24.20: la tira vive solo en /lab/avanzado; el panel tiene sus propias
+ * teclas (`Controles.tsx`) y comparte con ella `PUSH_SIZES`.
  */
 export function Empujar({
   control,
@@ -24,7 +27,6 @@ export function Empujar({
   onPace,
   onBias,
   state,
-  layout = 'strip',
 }: {
   control: Control | null;
   last: PushResult | null;
@@ -38,8 +40,6 @@ export function Empujar({
   onBias: (direction: 'up' | 'down' | 'off') => Promise<void>;
   /** PH-24.18: the market's distance unit, for the strip's label. */
   state: LabState | null;
-  /** PH-24.19: the control panel's column stacks the rows; the strip lays them in a line. */
-  layout?: 'strip' | 'column';
 }): ReactElement {
   const p = es.lab.push;
   const pushing = control?.pushing ?? null;
@@ -52,18 +52,18 @@ export function Empujar({
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: layout === 'column' ? 6 : 8,
-        padding: layout === 'column' ? '8px 12px' : '10px 16px',
-        borderBottom: layout === 'column' ? 'none' : `1px solid ${T.line}`,
+        gap: 8,
+        padding: '10px 16px',
+        borderBottom: `1px solid ${T.line}`,
         flexShrink: 0,
         flexWrap: 'wrap',
       }}
     >
-      {layout === 'strip' && (
+      {
         <span style={{ color: T.text, fontSize: 13, fontWeight: 600 }}>
           {p.title} <Info text={p.info} />
         </span>
-      )}
+      }
       <span style={{ color: T.faint, fontSize: 11 }}>{p.down}</span>
       {[...PUSH_SIZES].reverse().map((n) => (
         <Button
@@ -77,11 +77,7 @@ export function Empujar({
           {`−${String(n)}`}
         </Button>
       ))}
-      {layout === 'column' ? (
-        <span style={{ flexBasis: '100%', height: 0 }} />
-      ) : (
-        <span style={{ width: 10 }} />
-      )}
+      <span style={{ width: 10 }} />
       {PUSH_SIZES.map((n) => (
         <Button
           key={`+${String(n)}`}
@@ -108,38 +104,37 @@ export function Empujar({
           />
         </span>
       )}
-      {layout === 'strip' && (
+      {
         <span style={{ color: T.faint, fontSize: 11, marginLeft: 6 }}>
           {p.pace.label} <Info text={p.pace.info} />
         </span>
-      )}
-      {layout === 'strip' &&
-        (['normal', 'medio', 'rapido'] as const).map((key) => (
-          <button
-            key={key}
-            type="button"
-            data-testid={`lab-push-pace-${key}`}
-            onClick={() => onPace(key)}
-            style={{
-              padding: '2px 8px',
-              background: pace === key ? T.line : 'transparent',
-              color: pace === key ? T.text : T.muted,
-              border: `1px solid ${T.line}`,
-              borderRadius: 3,
-              font: 'inherit',
-              fontSize: 11,
-              cursor: 'pointer',
-            }}
-          >
-            {p.pace[key]}
-          </button>
-        ))}
-      {layout === 'strip' && (
+      }
+      {(['normal', 'medio', 'rapido'] as const).map((key) => (
+        <button
+          key={key}
+          type="button"
+          data-testid={`lab-push-pace-${key}`}
+          onClick={() => onPace(key)}
+          style={{
+            padding: '2px 8px',
+            background: pace === key ? T.line : 'transparent',
+            color: pace === key ? T.text : T.muted,
+            border: `1px solid ${T.line}`,
+            borderRadius: 3,
+            font: 'inherit',
+            fontSize: 11,
+            cursor: 'pointer',
+          }}
+        >
+          {p.pace[key]}
+        </button>
+      ))}
+      {
         <span style={{ color: T.faint, fontSize: 11, marginLeft: 6 }}>
           <Info text={p.bias.info} />
         </span>
-      )}
-      {layout === 'strip' && (
+      }
+      {
         <Button
           kind={bias === 1 ? 'primary' : 'ghost'}
           small
@@ -149,8 +144,8 @@ export function Empujar({
         >
           {p.bias.up}
         </Button>
-      )}
-      {layout === 'strip' && (
+      }
+      {
         <Button
           kind={bias === -1 ? 'danger' : 'ghost'}
           small
@@ -160,7 +155,7 @@ export function Empujar({
         >
           {p.bias.down}
         </Button>
-      )}
+      }
       <Badge tone={pushing !== null || bias !== null ? 'lab' : 'muted'} testId="lab-push-state">
         {pushing !== null
           ? p.running(pushing.direction === 1 ? 'up' : 'down', pushing.remaining)

@@ -209,6 +209,8 @@ describe('Candle Close Control, from the panel', () => {
           'lab-control',
           'lab-close-plan',
           'lab-close-notice',
+          'lab-close-error',
+          'lab-push-error',
           'lab-positions',
           'lab-scenario-plan',
           'lab-scenario-notice',
@@ -606,9 +608,21 @@ describe('Candle Close Control, from the panel', () => {
     await page.close();
   }, 300_000);
 
-  it('PH-24.10/24.11: pushes +3 from the strip — running, then landed where announced; a push over an armed close releases it', async (ctx) => {
-    const page = await requireBrowser(ctx).newPage({ viewport: { width: 1280, height: 1200 } });
+  it('PH-24.10/24.11/24.20: from the panel — a +3 push lands where the record says; baja is a toggle; the close card fixes and cancels; a push over an armed close releases it', async (ctx) => {
+    const page = await requireBrowser(ctx).newPage({ viewport: { width: 1600, height: 900 } });
     const { errors, dump } = instrument(page);
+    type PanelControl = {
+      armed: boolean;
+      bias?: 1 | -1 | null;
+      pushing?: unknown;
+      lastPush?: {
+        direction: 1 | -1;
+        sequence: number;
+        landingPrice: string;
+        landedPrice: string | null;
+        exact: boolean | null;
+      } | null;
+    };
     try {
       await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
       // PH-24.19: the control panel has no sign-source row; its column is the landmark.
@@ -621,139 +635,137 @@ describe('Candle Close Control, from the panel', () => {
         null,
         { timeout: 30_000 },
       );
+      const markets = (await page.evaluate(
+        async () => (await (await fetch('/lab/markets')).json()) as unknown,
+      )) as { markets: { id: string }[] };
+      const id = markets.markets[0]!.id;
+      // PH-24.20: the panel shows no status — each act is proved through the record.
+      const control = async (): Promise<PanelControl> =>
+        (await page.evaluate(
+          async (url) => (await (await fetch(url)).json()) as unknown,
+          `/lab/markets/${id}/control`,
+        )) as PanelControl;
+      const until = async (
+        pred: (c: PanelControl) => boolean,
+        what: string,
+        ms: number,
+      ): Promise<PanelControl> => {
+        const started = performance.now();
+        for (;;) {
+          const c = await control();
+          if (pred(c)) return c;
+          if (performance.now() - started > ms) {
+            throw new Error(`timed out waiting for ${what}: ${JSON.stringify(c)}`);
+          }
+          await page.waitForTimeout(250);
+        }
+      };
+      const sessionHas = (needle: string): Promise<unknown> =>
+        page.waitForFunction(
+          async (n) => new RegExp(n).test(await (await fetch('/lab/session')).text()),
+          needle,
+          { timeout: 30_000 },
+        );
+      const pressed = (testId: string): Promise<string | null> =>
+        page.locator(`[data-testid="${testId}"]`).getAttribute('aria-pressed');
       // Nothing armed from an earlier flow: the proxy signs the write.
       await page.evaluate(() => fetch('/lab/release-all', { method: 'POST' }));
-      await page.waitForFunction(
-        () =>
-          /sin empuje/.test(
-            document.querySelector('[data-testid="lab-push-state"]')?.textContent ?? '',
-          ),
-        null,
-        { timeout: 30_000 },
-      );
-      // PH-24.19: the control panel — the four cards beside the chart.
-      for (const card of [
-        'lab-card-push',
+      await until((c) => !c.armed && (c.pushing ?? null) === null, 'a free market', 30_000);
+
+      // PH-24.20: two cards of controls and nothing else.
+      expect(await page.locator('[data-testid="lab-card-push"]').isVisible()).toBe(true);
+      expect(await page.locator('[data-testid="lab-card-close"]').isVisible()).toBe(true);
+      for (const gone of [
         'lab-card-pace',
         'lab-card-direction',
-        'lab-card-close',
+        'lab-direction-free',
+        'lab-close-timeframe',
+        'lab-close-status',
+        'lab-push-state',
       ]) {
-        expect(await page.locator(`[data-testid="${card}"]`).isVisible()).toBe(true);
+        expect(await page.locator(`[data-testid="${gone}"]`).count(), `${gone} on the panel`).toBe(
+          0,
+        );
       }
 
-      // PH-24.15: the pace is chosen on the strip and travels with the push.
+      // PH-24.15: the pace is a window on the push card and travels with the push.
       await page.click('[data-testid="lab-pace-rapido"]');
+      expect(await pressed('lab-pace-rapido')).toBe('true');
+      const before = (await control()).lastPush?.sequence ?? -1;
       const clickedAt = performance.now();
       await page.click('[data-testid="lab-push-+3"]');
-      // PH-24.13: the burst lands in about a second, often before the strip's next
-      // poll — the running state is not waited for; the landing line stays on the
-      // strip until the record has the landing, and the outcome follows.
-      await page.waitForSelector('[data-testid="lab-push-landing"]', { timeout: 30_000 });
-      // PH-24.18: the buttons are distances — "llegará a X — 3 unidades en N ticks".
-      const landing = /llegará a ([0-9.]+) — (\d+) unidades en (\d+) ticks/.exec(
-        await text(page, 'lab-push-landing'),
+      // PH-24.13/24.18: the burst lands in seconds; the record says where, and that it was exact.
+      const landed = await until(
+        (c) =>
+          c.lastPush !== null &&
+          c.lastPush !== undefined &&
+          c.lastPush.sequence !== before &&
+          c.lastPush.landedPrice !== null,
+        'the +3 push to land',
+        120_000,
       );
-      expect(landing, 'the strip did not announce a landing in units').not.toBeNull();
-      expect(landing![2]).toBe('3');
-      expect(Number(landing![3])).toBeGreaterThanOrEqual(1);
-      expect(await text(page, 'lab-push-unit')).toMatch(/1 = ¼ vela ≈ [0-9.]+/);
-      expect(await text(page, 'lab-push-landing')).toMatch(/rápido/i);
-
-      // Three ticks later the record is read at the landing's sequence — and with
-      // PH-24.13's burst, "later" is seconds: the pending tick was retracted and the
-      // pushed ticks arrived at the engine's fastest pace.
-      await page.waitForSelector('[data-testid="lab-push-outcome"]', { timeout: 120_000 });
       const landedAfterMs = performance.now() - clickedAt;
       console.log(`PH-24.13 push landed ${String(Math.round(landedAfterMs))} ms after the click`);
       expect(landedAfterMs, 'a push should land within seconds').toBeLessThan(6_000);
-      const outcome = await text(page, 'lab-push-outcome');
-      expect(outcome).toMatch(/↑ \d+ ticks · llegó a/);
-      expect(outcome, `landed elsewhere than ${landing![1]!}`).toContain(
-        `llegó a ${landing![1]!} ✓`,
-      );
-      // The API's own account agrees: landed exactly where announced.
-      const own = (await page.evaluate(async () => {
-        const list = (await (await fetch('/lab/markets')).json()) as { markets: { id: string }[] };
-        const first = list.markets[0]!.id;
-        return (await (await fetch(`/lab/markets/${first}/control`)).json()) as unknown;
-      })) as {
-        lastPush: { exact: boolean | null; landingPrice: string; landedPrice: string | null };
-      };
-      expect(own.lastPush.exact).toBe(true);
-      expect(own.lastPush.landedPrice).toBe(landing![1]!);
-      await page.waitForFunction(
-        async (needle) => {
-          const body = await (await fetch('/lab/session')).text();
-          return new RegExp(needle).test(body);
-        },
-        '"action":"push"',
-        { timeout: 30_000 },
-      );
+      expect(landed.lastPush!.direction).toBe(1);
+      expect(landed.lastPush!.exact).toBe(true);
+      expect(landed.lastPush!.landedPrice).toBe(landed.lastPush!.landingPrice);
+      // PH-24.11: the buttons are never left held.
+      expect(await page.locator('[data-testid="lab-push-+3"]').isDisabled()).toBe(false);
+      await sessionHas('"action":"push"');
+      await sessionHas('"pace":"rapido"');
 
-      // PH-24.16: baja stays active on the strip and in the session; a second click ends it.
+      // PH-24.16/24.20: baja is a toggle — pressed it holds, pressed again the market is free.
       await page.click('[data-testid="lab-direction-down"]');
       await page.waitForFunction(
         () =>
-          /BAJA activo/i.test(
-            document.querySelector('[data-testid="lab-direction-state"]')?.textContent ?? '',
-          ),
+          document
+            .querySelector('[data-testid="lab-direction-down"]')
+            ?.getAttribute('aria-pressed') === 'true',
         null,
         { timeout: 30_000 },
       );
-      await page.waitForFunction(
-        async (needle) => {
-          const body = await (await fetch('/lab/session')).text();
-          return new RegExp(needle).test(body);
-        },
-        '"direction":"down"',
-        { timeout: 30_000 },
-      );
-      await page.click('[data-testid="lab-direction-free"]');
+      await sessionHas('"direction":"down"');
+      expect((await control()).bias).toBe(-1);
+      await page.click('[data-testid="lab-direction-down"]');
       await page.waitForFunction(
         () =>
-          !/BAJA activo/i.test(
-            document.querySelector('[data-testid="lab-direction-state"]')?.textContent ?? '',
-          ),
+          document
+            .querySelector('[data-testid="lab-direction-down"]')
+            ?.getAttribute('aria-pressed') === 'false',
         null,
         { timeout: 30_000 },
       );
-      // PH-24.15: a medio push lands too, and the session records its pace.
+      await until((c) => (c.bias ?? null) === null, 'a free direction', 30_000);
+
+      // PH-24.15: a medio push from the red row lands too, and the session records its pace.
       await page.click('[data-testid="lab-pace-medio"]');
+      const beforeDown = (await control()).lastPush?.sequence ?? -1;
       await page.click('[data-testid="lab-push--1"]');
-      await page.waitForFunction(
-        () =>
-          /↓ \d+ ticks · llegó a/.test(
-            document.querySelector('[data-testid="lab-push-outcome"]')?.textContent ?? '',
-          ),
-        null,
-        { timeout: 60_000 },
+      const down = await until(
+        (c) =>
+          c.lastPush !== null &&
+          c.lastPush !== undefined &&
+          c.lastPush.sequence !== beforeDown &&
+          c.lastPush.landedPrice !== null,
+        'the −1 push to land',
+        60_000,
       );
-      await page.waitForFunction(
-        async (needle) => {
-          const body = await (await fetch('/lab/session')).text();
-          return new RegExp(needle).test(body);
-        },
-        '"pace":"medio"',
-        { timeout: 30_000 },
-      );
-      // PH-24.11: a push over an armed close releases it and says so on the strip.
-      const markets = (await page.evaluate(
-        async () => (await (await fetch('/lab/markets')).json()) as unknown,
-      )) as { markets?: { id: string }[] };
-      const id = markets.markets?.[0]?.id;
-      expect(id).toBeDefined();
-      let armed = false;
-      for (const delta of ['2', '1', '-1', '3']) {
-        const body = (await page.evaluate(
-          async (url) => (await (await fetch(url, { method: 'POST' })).json()) as unknown,
-          `/lab/markets/${id!}/close?delta=${delta}&bucket=next&timeframe=1m`,
-        )) as { armed?: boolean };
-        if (body.armed === true) {
-          armed = true;
-          break;
-        }
-      }
-      expect(armed, 'no relative close could be armed').toBe(true);
+      expect(down.lastPush!.direction).toBe(-1);
+      await sessionHas('"pace":"medio"');
+
+      // PH-24.20: the close card — próxima vela; = fills the box with the price now and
+      // ▲ moves it one unit up; fijar arms and the button becomes ×; × cancels.
+      await page.click('[data-testid="lab-close-bucket-next"]');
+      expect(await pressed('lab-close-bucket-next')).toBe('true');
+      await page.click('[data-testid="lab-close-equal"]');
+      const equal = await page.inputValue('[data-testid="lab-close-price"]');
+      expect(equal).toMatch(/^[0-9]+\.[0-9]+$/);
+      await page.click('[data-testid="lab-close-up"]');
+      const up = await page.inputValue('[data-testid="lab-close-price"]');
+      expect(Number(up)).toBeGreaterThan(Number(equal));
+      await page.click('[data-testid="lab-close-apply"]');
+      await page.waitForSelector('[data-testid="lab-close-release"]', { timeout: 30_000 });
       await page.waitForFunction(
         () =>
           /ARMADO/.test(
@@ -762,20 +774,20 @@ describe('Candle Close Control, from the panel', () => {
         null,
         { timeout: 30_000 },
       );
+      expect((await control()).armed).toBe(true);
+      await page.click('[data-testid="lab-close-release"]');
+      await page.waitForSelector('[data-testid="lab-close-apply"]', { timeout: 30_000 });
+      await until((c) => !c.armed, 'the close to be cancelled', 30_000);
+
+      // PH-24.11: a push over an armed close releases it — the session says by whom.
+      await page.click('[data-testid="lab-close-equal"]');
+      await page.click('[data-testid="lab-close-apply"]');
+      await page.waitForSelector('[data-testid="lab-close-release"]', { timeout: 30_000 });
       // The buttons are not held by the armed close.
       expect(await page.locator('[data-testid="lab-push-+1"]').isDisabled()).toBe(false);
       await page.click('[data-testid="lab-push-+1"]');
-      await page.waitForSelector('[data-testid="lab-push-released"]', { timeout: 30_000 });
-      expect(await text(page, 'lab-push-released')).toMatch(/se liberó lo que estaba armado/);
-      // The timeline is the strip's next poll away; the release is in the record already.
-      await page.waitForFunction(
-        async (needle) => {
-          const body = await (await fetch('/lab/session')).text();
-          return new RegExp(needle).test(body);
-        },
-        '"by":"push"',
-        { timeout: 30_000 },
-      );
+      await sessionHas('"by":"push"');
+      await page.waitForSelector('[data-testid="lab-close-apply"]', { timeout: 30_000 });
       await page.evaluate(() => fetch('/lab/release-all', { method: 'POST' }));
     } catch (error) {
       console.error(await dump());

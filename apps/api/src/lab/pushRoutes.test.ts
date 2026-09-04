@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { durationMillis, epochMillis, MasterKeyring, SteppableClock, type Tick } from '@otc/core';
+import {
+  durationMillis,
+  epochMillis,
+  MasterKeyring,
+  SteppableClock,
+  type Tick,
+  logPrice,
+  toDisplayPrice,
+  type InstrumentSpec,
+} from '@otc/core';
 import { ASSET_CATALOGUE } from '@otc/engine';
 import { MemoryStateStore } from '@otc/runtime';
 import { PublicationService } from '../publication.service.js';
@@ -320,9 +329,26 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     await advance(lab.venue, lab.clock, 120_000);
     const state = lab.controller.state(id) as {
       latticeLevel: number;
+      price: string;
       distance: { unitSteps: number; candleRangeSteps: number; minutes: number };
+      instrument: { logQuantum: number; referencePrice: number; displayPrecision: number };
     };
     expect(state.distance.minutes).toBeGreaterThan(10);
+    // PH-24.20: the state carries the lattice — the asset's own, exactly (a plant
+    // that scaled logQuantum by 1.0001 survived the render check below: near the
+    // reference price the distortion is invisible at display precision) — and
+    // the level it names renders to its price.
+    const own = lab.venue.assetFor(id)!.instrument;
+    expect(state.instrument).toEqual({
+      logQuantum: own.logQuantum,
+      referencePrice: own.referencePrice,
+      displayPrecision: own.displayPrecision,
+    });
+    expect(
+      toDisplayPrice(state.instrument as InstrumentSpec, logPrice(state.latticeLevel)).toFixed(
+        state.instrument.displayPrecision,
+      ),
+    ).toBe(state.price);
     expect(state.distance.unitSteps).toBeGreaterThanOrEqual(1);
     const pushed = (await lab.controller.push(id, undefined, 'rapido', '+2')) as Pushed & {
       distance: { units: number; unitSteps: number; ticks: number; fromLevel: number } | null;

@@ -11,6 +11,7 @@ import {
   type BetweenLevels,
   type ClosePlan,
   type ClosesView,
+  CLOSE_TIMEFRAMES,
   type CloseTimeframe,
   type Control,
   type ControlAll,
@@ -176,14 +177,25 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
     if (at <= Date.now()) at += 86_400_000;
     return at;
   };
+  // PH-24.20: on the panel the close addresses the chart's own candle — a
+  // selector of its own would be redundant. The chart has no 30s and the close
+  // nothing wider than 15m, so outside the shared three the panel's fijar is
+  // disabled and says why.
+  const panelCloseTf: CloseTimeframe | null = (CLOSE_TIMEFRAMES as readonly string[]).includes(
+    chartTf,
+  )
+    ? (chartTf as CloseTimeframe)
+    : null;
+  const closeTf: CloseTimeframe = mode === 'control' ? (panelCloseTf ?? tf) : tf;
   const addressing = (): string => {
     if (bucket === 'expiry') {
       const at = expiryInstant();
-      return at === null ? `bucket=current&timeframe=${tf}` : `expiry=${String(at)}`;
+      return at === null ? `bucket=current&timeframe=${closeTf}` : `expiry=${String(at)}`;
     }
-    return `bucket=${bucket}&timeframe=${tf}`;
+    return `bucket=${bucket}&timeframe=${closeTf}`;
   };
-  const closeQuery = (): string => `price=${encodeURIComponent(price.trim())}&${addressing()}`;
+  const closeQuery = (at = price): string =>
+    `price=${encodeURIComponent(at.trim())}&${addressing()}`;
 
   const settle = (
     body: ClosePlan | BetweenLevels | { running: false; reason: string } | { message?: string },
@@ -218,11 +230,13 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
     setBusy(null);
   };
 
-  const applyClose = async (): Promise<void> => {
+  // PH-24.20: the panel's fijar with an empty box fixes the price the market stands at.
+  const applyClose = async (at?: string): Promise<void> => {
     if (selected === null) return;
+    if (at !== undefined) setPrice(at);
     setPlanExpiry(null);
     setBusy('apply');
-    settle(await labPost<ClosePlan | BetweenLevels>(`markets/${selected}/close?${closeQuery()}`));
+    settle(await labPost<ClosePlan | BetweenLevels>(`markets/${selected}/close?${closeQuery(at)}`));
     setBusy(null);
     void refreshState(selected);
   };
@@ -406,7 +420,8 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
       {unavailable !== null && <NotRunning reason={unavailable} />}
       {mode === 'control' ? (
         // PH-24.19: the control panel — the market's bar, the chart at three
-        // quarters, four cards at one quarter. The instrument is /lab/avanzado.
+        // quarters, the controls at one quarter (two cards, PH-24.20). The
+        // instrument is /lab/avanzado.
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
           <TopBar
             assets={assets}
@@ -435,26 +450,21 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
             <Controles
               state={state}
               control={control}
-              lastPush={lastPush}
               pushError={pushError}
               busy={busy}
               onPush={push}
               pace={pace}
               onPace={setPace}
               onBias={setBias}
-              timeframe={tf}
-              onTimeframe={setTf}
+              closeTimeframe={panelCloseTf}
               bucket={bucket}
               onBucket={setBucket}
               price={price}
               onPrice={setPrice}
               onApply={applyClose}
-              onDelta={applyDelta}
-              onNeighbour={applyNeighbour}
               onRelease={releaseMarket}
               plan={plan}
               notice={notice}
-              unitSteps={state?.distance?.unitSteps ?? 1}
             />
           </div>
         </div>

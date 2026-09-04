@@ -235,6 +235,18 @@ export class LabController {
         referencePrice: asset.instrument.referencePrice,
         displayPrecision: asset.instrument.displayPrecision,
       }).toFixed(asset.instrument.displayPrecision),
+      /**
+       * The lattice itself (PH-24.20): the panel's ▲ ▼ step a price one unit
+       * along it with the kernel's own conversions, so what they put in the
+       * box is a level that renders back to itself — a price plus a fixed
+       * increment is not, two times in three at EUR/USD's grain, and a close
+       * asked there is refused as between two levels.
+       */
+      instrument: {
+        logQuantum: asset.instrument.logQuantum,
+        referencePrice: asset.instrument.referencePrice,
+        displayPrecision: asset.instrument.displayPrecision,
+      },
       previousMagnitude: snapshot.previousMagnitude,
       previousIntervalMs: snapshot.previousIntervalMs,
       /**

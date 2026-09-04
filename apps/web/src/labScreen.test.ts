@@ -439,8 +439,8 @@ describe('the Lab is marked wherever it appears', () => {
     // The level the target route receives is the entered units times the unit (Prettier may wrap it).
     expect(escenarios).toMatch(/level: Math\.round\(\s*Number\([\s\S]*?\) \* unitSteps,?\s*\)/);
     const lab = code('lab/Lab.tsx');
-    // Cierre and Escenarios on the instrument, Controles on the panel (PH-24.19).
-    expect(lab.match(/unitSteps=\{state\?\.distance\?\.unitSteps \?\? 1\}/g) ?? []).toHaveLength(3);
+    // Cierre and Escenarios on the instrument; the panel's ▲ ▼ step in price, not in steps (PH-24.20).
+    expect(lab.match(/unitSteps=\{state\?\.distance\?\.unitSteps \?\? 1\}/g) ?? []).toHaveLength(2);
   });
 
   it('is a control panel: the chart at three quarters, four cards at one quarter, the instrument behind a link (PH-24.19)', () => {
@@ -451,14 +451,57 @@ describe('the Lab is marked wherever it appears', () => {
     expect(lab).toMatch(/data-testid="lab-advanced-link"/);
     expect(lab).toMatch(/href="\/lab\/avanzado"/);
     const controles = code('lab/Controles.tsx');
-    for (const card of ['lab-card-push', 'lab-card-pace', 'lab-card-direction', 'lab-card-close']) {
+    // Two cards since PH-24.20 (four in PH-24.19); never a table.
+    for (const card of ['lab-card-push', 'lab-card-close']) {
       expect(controles, `${card} missing`).toMatch(new RegExp(`testId="${card}"`));
     }
-    // One status line per card, never a table.
     expect(controles).not.toMatch(/<table|<Row\b/);
-    expect(controles).toMatch(/data-testid="lab-close-status"/);
     expect(code('lab/page.tsx')).toMatch(/<Lab mode="control" \/>/);
     expect(code('lab/avanzado/page.tsx')).toMatch(/<Lab mode="avanzado" \/>/);
+  });
+
+  it('the panel is two cards of controls and nothing else (PH-24.20)', () => {
+    const controles = code('lab/Controles.tsx');
+    expect(controles.match(/<Card /g) ?? []).toHaveLength(2);
+    // Empuje: the pace as three windows; a green row and a red row of the same
+    // sizes; sube and baja are toggles that release on the second press — no libre.
+    expect(controles).toMatch(/testPrefix="lab-pace"/);
+    expect(controles).toMatch(/testId=\{`lab-push-\+\$\{String\(n\)\}`\}/);
+    expect(controles).toMatch(/testId=\{`lab-push--\$\{String\(n\)\}`\}/);
+    expect(controles).toMatch(/onBias\(bias === 1 \? 'off' : 'up'\)/);
+    expect(controles).toMatch(/onBias\(bias === -1 \? 'off' : 'down'\)/);
+    expect(controles).toMatch(/aria-pressed=\{pressed\}/);
+    expect(controles).not.toMatch(
+      /lab-direction-free|lab-direction-state|lab-push-state|lab-push-unit|<Empujar|<Badge/,
+    );
+    // Cierre: two windows on the chart's own timeframe; = ▲ ▼ on the price box;
+    // fijar and × alternating in one place.
+    expect(controles).toMatch(/testPrefix="lab-close-bucket"/);
+    expect(controles).not.toMatch(/lab-close-timeframe|<select|lab-close-delta|lab-close-status/);
+    for (const tool of ['lab-close-equal', 'lab-close-up', 'lab-close-down']) {
+      expect(controles, `${tool} missing`).toMatch(new RegExp(`testId="${tool}"`));
+    }
+    // ▲ ▼ step along the lattice with the kernel's portable ln / exp — never a
+    // price plus a fixed increment, which lands between two levels and is refused.
+    expect(controles).toMatch(/import \{ exp, ln \} from '@otc\/core\/browser'/);
+    expect(controles).toMatch(
+      /Math\.round\(ln\(from \/ lattice\.referencePrice\) \/ lattice\.logQuantum\)/,
+    );
+    expect(controles).toMatch(/exp\(lattice\.logQuantum \* target\)/);
+    expect(controles).not.toMatch(/Number\(base\) \+ direction|Math\.(log|exp)\(/);
+    // A target between two levels is said, with the two.
+    expect(controles).toMatch(/es\.lab\.close\.between\(/);
+    expect(controles).toMatch(
+      /armedClose \? \([\s\S]*?testId="lab-close-release"[\s\S]*?\) : \([\s\S]*?testId="lab-close-apply"/,
+    );
+    const lab = code('lab/Lab.tsx');
+    expect(lab).toMatch(/closeTimeframe=\{panelCloseTf\}/);
+    expect(lab).toMatch(/timeframe=\$\{closeTf\}/);
+    expect(lab).not.toMatch(/timeframe=\$\{tf\}/);
+    const block = /<Controles[\s\S]*?\/>/.exec(lab)?.[0] ?? '';
+    expect(block).not.toMatch(/onTimeframe|onDelta|onNeighbour|unitSteps/);
+    // The strip is the instrument's alone again.
+    expect(code('lab/Empujar.tsx')).not.toMatch(/layout/);
   });
 
   it('says the Lab is absent rather than hiding that it can be', () => {
