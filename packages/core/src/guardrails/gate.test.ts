@@ -60,4 +60,26 @@ describe('the gate runs the tests that exist', () => {
     const occurrences = config.match(/allowOnly:\s*false/g) ?? [];
     expect(occurrences.length, 'both projects must pin allowOnly').toBe(2);
   });
+
+  it('excludes nothing from either project but the directories that hold no tests (a2)', () => {
+    // **Cycle Audit 8.** The two checks above guard the *include* lists. An
+    // `exclude` is the same defect from the other side and CA7-16's guard does
+    // not see it: an auditor added `'**/apps/web/src/*.stat.test.ts'` to the
+    // statistical project's exclude, the whole browser layer stopped being
+    // collected, and every step of the gate stayed green — a smaller suite
+    // reported as a pass, with nothing comparing against a baseline.
+    //
+    // Pinned by value rather than by shape, because the point is that the two
+    // lists are exactly what they are: the shared non-source directories, plus
+    // the one glob that separates the projects.
+    const excludes = [...config.matchAll(/^ {10}exclude: (.+),$/gm)].map((match) => match[1]);
+    expect(excludes, "the projects' exclude lists").toEqual([
+      "[...commonExclude, '**/*.stat.test.ts']",
+      'commonExclude',
+    ]);
+    // And `commonExclude` itself holds directories, never test files.
+    const common = /const commonExclude = \[([\s\S]*?)\];/.exec(config)?.[1] ?? '';
+    expect(common, 'commonExclude is not declared as a list').not.toBe('');
+    expect(common, 'commonExclude names a test file').not.toMatch(/\.test\.ts/);
+  });
 });

@@ -93,6 +93,13 @@ export interface CloseWindow {
   readonly signs: readonly (1 | -1)[];
   /** Instant of the last tick inside the window, or null when there is none. */
   readonly lastInstant: EpochMillis | null;
+  /**
+   * Whether the walk stopped at its tick bound rather than at the instant asked
+   * for (PH-24.2 by way of Cycle Audit 8). A plan computed on a truncated window
+   * would describe a different market from the one the request named, so a
+   * caller refuses rather than answering.
+   */
+  readonly truncated: boolean;
 }
 
 /** A source of the ticks a market will draw next, without drawing them for real. */
@@ -108,12 +115,38 @@ export interface ForkSource {
  * Inclusive at `instant` (ADR-0017): a tick exactly at the candle's end is the
  * close. The fork is consumed up to the first tick beyond it.
  */
-export function readWindow(fork: ForkSource, instant: EpochMillis): CloseWindow {
+/**
+ * The most ticks one request may make the Lab walk (Cycle Audit 8, a8).
+ *
+ * A fork never ends: `next()` keeps generating, so this loop was bounded only
+ * by the instant asked for. `expiry=` takes any future instant a safe integer
+ * can hold, and `bucket=next&timeframe=1d` asks for a day — 355,392 ticks at
+ * EUR/USD's grain, against 12,438 for an hour. And the Lab process **is** the
+ * engine (ADR-0018), on one thread: a walk of that size stops tick generation,
+ * publication, `/health` and every other route for as long as it runs. One
+ * unauthenticated GET measured 121 seconds of blocked event loop.
+ *
+ * Fifty thousand is about four hours of the fastest market in the catalogue and
+ * two days of the slowest — far past any close an operator addresses, and far
+ * short of an outage.
+ */
+export const LAB_MAX_WINDOW_TICKS = 50_000;
+
+export function readWindow(
+  fork: ForkSource,
+  instant: EpochMillis,
+  maxTicks: number = LAB_MAX_WINDOW_TICKS,
+): CloseWindow {
   const steps: number[] = [];
   const signs: (1 | -1)[] = [];
   let price = fork.price;
   let lastInstant: EpochMillis | null = null;
+  let truncated = false;
   for (;;) {
+    if (steps.length >= maxTicks) {
+      truncated = true;
+      break;
+    }
     const tick = fork.next();
     if (tick === null || tick.instant > instant) break;
     steps.push(Math.abs(tick.price - price));
@@ -121,7 +154,7 @@ export function readWindow(fork: ForkSource, instant: EpochMillis): CloseWindow 
     price = tick.price;
     lastInstant = tick.instant;
   }
-  return { instant, fromPrice: fork.price, steps, signs, lastInstant };
+  return { instant, fromPrice: fork.price, steps, signs, lastInstant, truncated };
 }
 
 export interface ClosePlan {

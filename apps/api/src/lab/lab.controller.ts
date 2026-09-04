@@ -30,6 +30,7 @@ import { STATE_RECORD_VERSION } from '@otc/runtime';
 import { VenueService } from '../venue.service.js';
 import {
   closeInstant,
+  LAB_MAX_WINDOW_TICKS,
   planClose,
   planConditionedClose,
   readWindow,
@@ -156,6 +157,21 @@ const LAB_MAX_SAMPLE_TICKS = 8_000_000;
 const PUSH_MAX_TICKS = 50;
 /** By distance the fork decides the count; this is how far it may look. */
 const PUSH_MAX_TICKS_BY_DISTANCE = 400;
+
+/**
+ * A window the Lab refused to walk (Cycle Audit 8, a8).
+ *
+ * The bound is `LAB_MAX_WINDOW_TICKS` in `closeControl.ts`; this is what a
+ * caller says when a request asks past it. A plan computed on a truncated
+ * window would describe a different market from the one the request named, so
+ * this is a refusal rather than an answer — and a refusal costs the process a
+ * bounded walk instead of the two minutes of blocked event loop an auditor
+ * measured from one unauthenticated GET.
+ */
+const WINDOW_TOO_LONG =
+  `WINDOW_TOO_LONG: reading this close would need more than ${String(LAB_MAX_WINDOW_TICKS)} ` +
+  `ticks of this market, which is longer than the Lab will hold the engine for. Ask for a ` +
+  `nearer candle, or a shorter window.`;
 
 const PUSH_RUNNING =
   'PUSH_RUNNING: a push is running on this market and a plan computed on the keystream would ' +
@@ -1698,6 +1714,7 @@ export class LabController {
   } {
     const instant = epochMillis(this.venue.now() + request.windowMs);
     const window = readWindow(this.venue.labFork(id)!, instant);
+    if (window.truncated) throw new BadRequestException(WINDOW_TOO_LONG);
     // Target Price: the level to touch, as a distance from where the market
     // stands now (the window's start), whichever way it was addressed.
     const targetLevel =
@@ -2104,6 +2121,7 @@ export class LabController {
         throw new BadRequestException('The mark could not be placed on the lattice.');
       }
       const window = readWindow(fork, instant);
+      if (window.truncated) throw new BadRequestException(WINDOW_TOO_LONG);
       const plan = planConditionedClose(
         asset.instrument,
         edge.level,
@@ -2144,6 +2162,7 @@ export class LabController {
       });
     }
     const window = readWindow(fork, instant);
+    if (window.truncated) throw new BadRequestException(WINDOW_TOO_LONG);
     const plan = planClose(asset.instrument, resolved.level, window, this.venue.labRandom(id));
     return {
       environment: LAB,

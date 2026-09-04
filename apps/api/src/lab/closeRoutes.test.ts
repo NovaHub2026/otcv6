@@ -639,6 +639,31 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     await venue.stop();
   }, 60_000);
 
+  it('Cycle Audit 8 (a8): refuses a close whose window would hold the engine, rather than walking it', async () => {
+    const { venue, clock, controller } = await labVenue();
+    await advance(venue, clock, 20_000);
+    const state = controller.state(id) as { price: string };
+    // A day's window: 355,392 ticks at this market's grain. One unauthenticated
+    // GET of this shape measured 121 seconds of blocked event loop, and the Lab
+    // process *is* the engine — tick generation, publication and /health with it.
+    const started = Date.now();
+    await expect(controller.applyClose(id, state.price, 'next', '1d')).rejects.toThrow(
+      /WINDOW_TOO_LONG|timeframe must be/,
+    );
+    // Bounded: whatever it answered, it answered quickly.
+    expect(Date.now() - started, 'the refusal itself took seconds').toBeLessThan(30_000);
+
+    // The preview form, addressed by a far instant, is bounded the same way.
+    const far = String(venue.now() + 30 * 86_400_000);
+    const preview = (): unknown =>
+      controller.closePreview(id, state.price, undefined, undefined, far);
+    expect(preview).toThrow(/WINDOW_TOO_LONG/);
+    // And a close an operator actually addresses still works.
+    const near = (await controller.applyClose(id, state.price, 'next', '1m')) as { armed: boolean };
+    expect(near.armed).toBe(true);
+    await venue.stop();
+  }, 120_000);
+
   it('answers 409 when the process was not composed as a Lab', async () => {
     const { venue, clock, controller } = await labVenue(false);
     await advance(venue, clock, 5_000);
