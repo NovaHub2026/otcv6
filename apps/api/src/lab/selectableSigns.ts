@@ -57,6 +57,17 @@ export class SelectableSigns implements RandomSource {
   #lastForLength = 0;
   #runMin = BIAS_RUN_MIN;
   #runMax = BIAS_RUN_MAX;
+  /**
+   * Whether this market's signs have been chosen since the last clean
+   * checkpoint (Cycle Audit 8, a6).
+   *
+   * Sticky, and cleared only by a checkpoint taken with nothing armed and no
+   * bias. A checkpoint carrying it tells the runtime not to continue from it:
+   * the ticks published after it were not the keystream's, and regenerating
+   * them would produce the same sequence numbers at different prices.
+   */
+  #controlled = false;
+
   /** PH-24.24: when the bias turns itself off, and the clock that says so. */
   #biasExpiresAt = 0;
   #biasNow: (() => number) | null = null;
@@ -73,6 +84,19 @@ export class SelectableSigns implements RandomSource {
   /** Whether a script is being played. */
   get armed(): boolean {
     return this.#script !== null;
+  }
+
+  /** Whether anything chose this market's signs since the last clean checkpoint. */
+  get controlledSinceCheckpoint(): boolean {
+    return this.#controlled || this.armed || this.bias !== null;
+  }
+
+  /**
+   * A checkpoint was written. Forgets the mark **only** if nothing is running,
+   * so a checkpoint taken mid-push still says the market was controlled.
+   */
+  checkpointTaken(): void {
+    if (!this.armed && this.bias === null) this.#controlled = false;
   }
 
   /** Scripted signs not yet drawn. Zero when transparent. */
@@ -97,6 +121,7 @@ export class SelectableSigns implements RandomSource {
     }
     this.#script = [...signs];
     this.#at = 0;
+    this.#controlled = true;
   }
 
   /**
@@ -114,6 +139,7 @@ export class SelectableSigns implements RandomSource {
     }
     this.#script = [...this.#script.slice(this.#at), ...signs];
     this.#at = 0;
+    this.#controlled = true;
   }
 
   /**
@@ -172,6 +198,7 @@ export class SelectableSigns implements RandomSource {
         `A bias must expire: its deadline must be in the future, received ${String(expiry.at)}.`,
       );
     }
+    this.#controlled = true;
     this.#bias = direction;
     this.#biasRandom = random;
     this.#runMin = runs.min;

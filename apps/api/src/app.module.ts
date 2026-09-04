@@ -45,6 +45,17 @@ export interface AppModuleOptions {
   readonly signSource?: SignSourceFactory;
   /** The same for the arrival stream (PH-24.13); passed through, never built here. */
   readonly arrivalSource?: SignSourceFactory;
+  /**
+   * Whether a composition chose a market's signs since its last clean
+   * checkpoint, and a way to tell it one was written (Cycle Audit 8, a6).
+   *
+   * Two plain functions, like the sources above: the application receives them
+   * and does not know whose. Absent in production, where nothing chooses signs.
+   */
+  readonly control?: {
+    readonly controlledSince: (assetId: string) => boolean;
+    readonly checkpointTaken: (assetId: string) => void;
+  };
 }
 
 @Module({})
@@ -160,6 +171,7 @@ export class AppModule {
               backfillDaysFromEnvironment(),
               options.signSource ?? null,
               options.arrivalSource ?? null,
+              options.control ?? null,
             ),
         },
         {

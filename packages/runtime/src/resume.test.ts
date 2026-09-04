@@ -166,6 +166,57 @@ describe('staleness is the age of the checkpoint, not the age of the last tick (
   /** The real bound, so a stale checkpoint is actually stale. */
   const BOUND = 15_000;
 
+  it('seams a market whose signs a composition was choosing, rather than regenerating them (a6)', async () => {
+    /**
+     * **Cycle Audit 8 (a6).** A restore continues by regenerating the ticks that
+     * were published but never persisted, and that is safe *because the
+     * regeneration is deterministic* — the same keystream positions give the
+     * same ticks. A Lab-composed process breaks the premise: its script is
+     * deliberately absent from the snapshot, so the regenerated ticks carry the
+     * keystream's own signs. Same asset, same sequence numbers, same instants,
+     * different prices; two observers either side of the restart hold
+     * irreconcilable histories.
+     */
+    const store = new MemoryStateStore();
+    const clock = new SteppableClock(GENESIS);
+    const first = await resumeMarket({ ...base(store, clock), maxCatchUpMs: BOUND });
+    for (let step = 0; step < 10; step += 1) {
+      clock.advance(durationMillis(1_000));
+      first.market.advance();
+    }
+
+    // The same checkpoint, written twice: once as production writes it, once as
+    // a composition choosing this market's signs makes the venue write it.
+    const plain = checkpointMarket(first.market, asset.definition.id, clock.now());
+    const controlled = checkpointMarket(
+      first.market,
+      asset.definition.id,
+      clock.now(),
+      undefined,
+      true,
+    );
+    expect(plain.controlled, 'production must not write the mark').toBeUndefined();
+    expect(controlled.controlled).toBe(true);
+
+    // Fresh, well inside the catch-up bound: the only reason to seam is the mark.
+    await store.save(plain);
+    clock.advance(durationMillis(1_000));
+    const continued = await resumeMarket({ ...base(store, clock), maxCatchUpMs: BOUND });
+    expect(continued.outcome.kind).toBe('resumed');
+
+    await store.save(controlled);
+    const seamed = await resumeMarket({ ...base(store, clock), maxCatchUpMs: BOUND });
+    expect(seamed.outcome.kind, 'a controlled record was continued').toBe('seam');
+    expect(seamed.outcome.kind === 'seam' ? seamed.outcome.reason : '').toMatch(
+      /choosing this market's signs/,
+    );
+    // And the seam is the honest one: it starts from what was published, so no
+    // sequence is spent twice.
+    expect(seamed.outcome.kind === 'seam' ? seamed.outcome.fromSequence : null).toBe(
+      controlled.lastPublished?.sequence ?? null,
+    );
+  });
+
   it('does not seam a market whose checkpoint is fresh but whose last tick is not', async () => {
     // Markets tick irregularly by design: `spx` averages 3.4 seconds and its
     // quiet stretches run far longer. Measuring the last tick's age and calling

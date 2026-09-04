@@ -49,6 +49,25 @@ export interface MarketStateRecord {
    */
   readonly leasedBlocks: Readonly<Record<string, string>>;
   /**
+   * Whether a composition outside the engine chose signs for this market since
+   * the previous clean checkpoint (Cycle Audit 8, a6). Absent means no.
+   *
+   * A restore continues by regenerating the ticks that were published but never
+   * persisted, and that is safe **because deterministic replay reproduces
+   * them** — the same keystream positions give the same ticks. A Lab-composed
+   * process breaks that premise: its script is deliberately absent from the
+   * snapshot ("a restart is a release"), so the regenerated ticks carry the
+   * keystream's own signs. Same asset, same sequence numbers, same instants,
+   * **different prices**, and two observers either side of the restart hold
+   * irreconcilable histories (INV-002) while a settled position points at a
+   * price the record no longer shows (INV-009).
+   *
+   * A record carrying this may not be continued; `resumeMarket` seams instead.
+   * Production never writes it — the field exists so the runtime can refuse
+   * without knowing what a Lab is.
+   */
+  readonly controlled?: boolean;
+  /**
    * Sequence number reserved ahead of use, for the same reason as the keystream.
    *
    * After an unclean crash the record lags what was actually published: it knows

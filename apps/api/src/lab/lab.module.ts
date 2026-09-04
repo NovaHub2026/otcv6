@@ -30,6 +30,17 @@ const arrivals = new ArrivalSelector();
     AppModule.register({
       signSource: (keystream, assetId) => selector.wrap(keystream, assetId),
       arrivalSource: (keystream, assetId) => arrivals.wrap(keystream, assetId),
+      /**
+       * Cycle Audit 8 (a6): every checkpoint says whether this market's signs
+       * were being chosen, so a restart seams instead of regenerating ticks the
+       * keystream would sign differently.
+       */
+      control: {
+        controlledSince: (assetId) => selector.for(assetId)?.controlledSinceCheckpoint ?? false,
+        checkpointTaken: (assetId) => {
+          selector.for(assetId)?.checkpointTaken();
+        },
+      },
     }),
   ],
   controllers: [LabController],

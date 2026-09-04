@@ -138,6 +138,18 @@ export class VenueService implements OnModuleDestroy {
     private readonly signSource: SignSourceFactory | null = null,
     /** PH-24.13: the arrival stream's wrapper, Lab only. With either source the markets are retractable. */
     private readonly arrivalSource: SignSourceFactory | null = null,
+    /**
+     * Whether a composition chose this market's signs since its last clean
+     * checkpoint, and a way to tell it one was written (Cycle Audit 8, a6).
+     *
+     * Two plain functions rather than a type from the Lab: this file may not
+     * name the Lab's wrapper, and `composition.test.ts` enforces that. Null in
+     * production, where nothing chooses signs and every checkpoint says so.
+     */
+    private readonly control: {
+      readonly controlledSince: (assetId: string) => boolean;
+      readonly checkpointTaken: (assetId: string) => void;
+    } | null = null,
   ) {}
 
   /** Resume every asset, then begin publishing. */
@@ -651,7 +663,14 @@ export class VenueService implements OnModuleDestroy {
     if (this.venue === null) return;
     const now = this.clock.now();
     for (const assetId of this.venue.assetIds) {
-      await this.store.save(checkpointMarket(this.venue.marketFor(assetId), assetId, now));
+      // The mark goes into the record before it is cleared, so a checkpoint
+      // taken mid-push carries it and the next boot seams rather than
+      // regenerating ticks the keystream would sign differently.
+      const controlled = this.control?.controlledSince(assetId) ?? false;
+      await this.store.save(
+        checkpointMarket(this.venue.marketFor(assetId), assetId, now, undefined, controlled),
+      );
+      this.control?.checkpointTaken(assetId);
     }
     // Bars that closed since the last checkpoint. On the same cadence because a
     // minute bar closes at most once a minute: flushing per tick would be

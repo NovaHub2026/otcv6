@@ -46,6 +46,77 @@ function ticks(engine: MarketEngine, count: number): Tick[] {
 
 const signOf = (delta: number): 1 | -1 | 0 => (delta > 0 ? 1 : delta < 0 ? -1 : 0);
 
+describe('a checkpoint records that this market was being steered (a6)', () => {
+  /**
+   * **Cycle Audit 8 (a6).** The mark is what lets the runtime refuse to
+   * continue from a checkpoint whose following ticks were scripted. It has to
+   * be sticky — a push that starts and ends between two checkpoints still
+   * changed the record — and it has to clear, or every checkpoint after the
+   * first push would seam for ever.
+   */
+  const wrap = (): SelectableSigns =>
+    new SelectableSigns(
+      MasterKeyring.forTesting('controlled-mark').derive({
+        env: 'test',
+        asset: 'eurusd',
+        purpose: 'sign',
+        keyEpoch: 0,
+      }),
+      'eurusd',
+    );
+
+  it('is clean until something chooses a sign', () => {
+    const signs = wrap();
+    expect(signs.controlledSinceCheckpoint).toBe(false);
+    signs.checkpointTaken();
+    expect(signs.controlledSinceCheckpoint).toBe(false);
+  });
+
+  it('remembers a push that began and ended between two checkpoints', () => {
+    const signs = wrap();
+    signs.arm([1, -1]);
+    signs.nextBoolean();
+    signs.nextBoolean();
+    expect(signs.armed, 'the script should be spent').toBe(false);
+    // Nothing is running now, and the checkpoint about to be written still
+    // covers the ticks that were.
+    expect(signs.controlledSinceCheckpoint).toBe(true);
+    signs.checkpointTaken();
+    expect(signs.controlledSinceCheckpoint).toBe(false);
+  });
+
+  it('does not clear while something is still running, and still covers the ticks that follow', () => {
+    const signs = wrap();
+    signs.arm([1, 1, 1]);
+    // A checkpoint written mid-push. The ticks *after* it are scripted too, so
+    // the mark has to survive it — the record it produced carries the mark
+    // because the venue reads the flag before clearing it, and the next record
+    // must carry it as well.
+    signs.checkpointTaken();
+    expect(signs.controlledSinceCheckpoint, 'a checkpoint mid-push cleared the mark').toBe(true);
+    for (let draw = 0; draw < 3; draw += 1) signs.nextBoolean();
+    expect(signs.armed, 'the script should be spent').toBe(false);
+    expect(
+      signs.controlledSinceCheckpoint,
+      'the ticks between the checkpoint and the end of the script were scripted, and the next ' +
+        'checkpoint would not have said so',
+    ).toBe(true);
+    signs.checkpointTaken();
+    expect(signs.controlledSinceCheckpoint).toBe(false);
+  });
+
+  it('counts a sustained direction, not only a script', () => {
+    const signs = wrap();
+    const now = (): number => 1_000;
+    signs.setBias(1, wrap(), { min: 2, max: 6 }, { at: 200_000, now });
+    signs.checkpointTaken();
+    expect(signs.controlledSinceCheckpoint, 'a bias is a chosen sign too').toBe(true);
+    signs.clearBias();
+    signs.checkpointTaken();
+    expect(signs.controlledSinceCheckpoint).toBe(false);
+  });
+});
+
 describe('SelectableSigns', () => {
   it('1. transparent, it is invisible: identical ticks, identical cursors', () => {
     const plain = plainEngine();

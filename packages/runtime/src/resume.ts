@@ -229,6 +229,28 @@ export async function resumeMarket(options: ResumeOptions): Promise<ResumeResult
   // The record carries `savedAt`, which is the quantity the comment above
   // always described: when this checkpoint was written. Every record has one,
   // published or not, so both cases collapse into the same honest question.
+  if (record.controlled === true) {
+    // **Cycle Audit 8 (a6).** Continuing means regenerating the ticks that were
+    // published and never persisted, and that is safe only because the
+    // regeneration is deterministic — the same keystream positions give the same
+    // ticks. A market whose signs a composition chose has no such guarantee: the
+    // script is deliberately absent from the snapshot ("a restart is a
+    // release"), so the same sequence numbers would come back with the
+    // keystream's own signs and different prices. Two observers either side of
+    // the restart would hold irreconcilable histories, and a position settled
+    // before it would point at a price the record no longer shows.
+    //
+    // The seam costs a jump in latent state and spends no keystream position
+    // twice, which is the trade this branch exists to make.
+    return seamFrom(
+      options,
+      record,
+      "the checkpoint was written while a composition was choosing this market's signs, so the " +
+        'ticks after it cannot be regenerated as they were published',
+      leaseBlocks,
+    );
+  }
+
   const maxCatchUpMs = options.maxCatchUpMs ?? DEFAULT_MAX_CATCH_UP_MS;
   const staleness = clock.now() - record.savedAt;
   if (staleness > maxCatchUpMs) {
@@ -389,6 +411,12 @@ export function checkpointMarket(
   assetId: string,
   savedAt: ReturnType<typeof epochMillis>,
   leaseBlocks: bigint = DEFAULT_LEASE_BLOCKS,
+  /**
+   * Whether a composition chose this market's signs since the previous clean
+   * checkpoint (Cycle Audit 8, a6). The runtime does not know what a Lab is; it
+   * is told, and `resumeMarket` refuses to continue a record that says yes.
+   */
+  controlled = false,
 ): MarketStateRecord {
   const snapshot = market.snapshotEngine();
   const leasedBlocks: Record<string, string> = {};
@@ -416,5 +444,6 @@ export function checkpointMarket(
       last === null ? null : { sequence: last.sequence, instant: last.instant, price: last.price },
     leasedBlocks,
     leasedSequence: highestKnown + DEFAULT_SEQUENCE_LEASE,
+    ...(controlled ? { controlled: true } : {}),
   };
 }
