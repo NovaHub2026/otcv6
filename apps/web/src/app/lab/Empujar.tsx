@@ -77,7 +77,11 @@ export function Empujar({
           {`−${String(n)}`}
         </Button>
       ))}
-      <span style={{ width: 10 }} />
+      {layout === 'column' ? (
+        <span style={{ flexBasis: '100%', height: 0 }} />
+      ) : (
+        <span style={{ width: 10 }} />
+      )}
       {PUSH_SIZES.map((n) => (
         <Button
           key={`+${String(n)}`}
