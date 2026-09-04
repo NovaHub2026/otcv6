@@ -12,12 +12,12 @@ Last synchronized: 2026-09-03
 
 ## Development cycle
 
-| Field                            | Value                                                                                                                  |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 8                                                                                                                |
-| Approved phases in current cycle | **3 of 3** — PH-22, PH-23, PH-24                                                                                       |
-| Cycle Audit state                | **007 closed**; **008 due now** — Cycle 8's third phase is approved, so §28 runs the audit immediately                 |
-| Last Cycle Audit                 | [Cycle Audit 007](docs/audits/CYCLE-AUDIT-007.md) — recorded 2026-09-03, eight independent auditors, one worktree each |
+| Field                            | Value                                                                                                         |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Active development cycle         | Cycle 8                                                                                                       |
+| Approved phases in current cycle | **3 of 3** — PH-22, PH-23, PH-24                                                                              |
+| Cycle Audit state                | **008 OPEN** — 86 findings, 60 confirmed, 18 closed in the audit, 42 tracked                                  |
+| Last Cycle Audit                 | [Cycle Audit 008](docs/audits/CYCLE-AUDIT-008.md) — 2026-09-04, eight independent auditors, one worktree each |
 
 ## Phase and subphase
 
@@ -250,28 +250,23 @@ coverage has not been re-measured since 2026-08-31 (Issue #2).
 
 ## EXACT NEXT LEGAL ACTION
 
-**PH-22.1 — an instrument that can hold thousands of connections.**
+**Close Cycle Audit 8: record it, and finish the findings it left open.**
 
-PH-22 is open and its phase document states what nobody knows
-([PH-22](docs/phases/PH-22-distribution-under-thousands-of-observers.md) §1).
-Nothing in this phase may be built on an argument, and there is nothing to
-measure with until the harness exists — so the harness is first, and it is
-audited as an instrument rather than as a tool.
+Cycle 8's three phases are approved — PH-22, PH-23, PH-24 — so `GOVERNANCE.md`
+§28 stops normal development at this boundary. The audit itself has run: eight
+independent auditors, one git worktree each, every finding put to an
+independent refuter told to default to refuted. **86 findings, 60 confirmed**
+(22 material, 38 minor). The confirmed ones are being fixed under §31, each with
+a guard watched failing against the defect it names; what remains open when the
+record is written is listed in the record and tracked.
 
-This project's most expensive class of defect is an instrument that silently
-stops measuring: a gate config in no TypeScript program, six browser tests
-reporting passed while launching no browser. A load harness that fails to open
-the connections it claims would produce exactly the reassuring numbers this
-phase must not generate, so PH-22.1 owes a planted defect against itself.
+Nothing else may start until the audit is recorded and closed (§32). After that
+the counter resets and the next phase is chosen autonomously — no authorization
+is required for any of it, and none should be requested.
 
-Two measurements Cycle Audit 7 produced while looking elsewhere are its
-starting point: **CA7-04**, a replay bound of 1 MB chosen rather than measured,
-and **CA7-33**, 5.01 MB of feed retention per asset — 501 MB at a hundred.
-
-Then the OTC Market Lab, specified by the Human Owner on 2026-09-03 and
-authorised in [ADR-0015](docs/decisions/ADR-0015-lab-authority-and-isolation.md).
-It follows PH-22 rather than preceding it because the Lab is a heavy observer —
-many charts, dense ticks — and building it on the delivery path PH-22 is about
-to rewrite would build it twice.
-
-No authorization is required for any of it and none should be requested.
+This section named **PH-22.1** — a subphase approved and merged two phases ago —
+until Cycle Audit 8 (a7) found it. A fresh session following `CLAUDE.md` §1 read
+it, and the same document's own table said `Active phase: none`, so there was no
+way to tell which half to believe. The guard that exists to prevent exactly that
+passed on an incidental mention of a past audit elsewhere in the file; it reads
+the stated action now.

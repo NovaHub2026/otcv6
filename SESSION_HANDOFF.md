@@ -14,7 +14,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Active cycle       | Cycle 8, **3 of 3** phases approved (PH-22, PH-23, PH-24)                  |
 | Active phase       | none — Cycle Audit 8 is what happens next (§28)                            |
 | Active subphase    | none                                                                       |
-| Cycle Audit        | **008 due now**; 007 closed 2026-09-03                                     |
+| Cycle Audit        | **008 OPEN** — 60 confirmed findings, 18 closed, 42 tracked                |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                         |
 
 ---
@@ -34,29 +34,20 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-24.10–24.22 are approved; PH-24.23 was approved and then REVERTED at the
-Human Owner's request; PH-24.24 (the revert, and a two-minute cap on sube /
-baja) is active.** The chart carries a
-countdown to the end of the candle now forming, on the market's clock and the
-kernel's bucket alignment (PH-24.22, `PreviewChart`, shared with Vista). `/lab` is the control
-panel: `Lab({ mode })` renders either the panel (`TopBar` with the markets as
-pills and the selected market's price/regime/state; a `3fr 1fr` grid with the
-chart at full height and `Controles.tsx` — two cards: **Empuje** with the pace
-as three windows, a green row `+1 +3 +5 +10 · sube` and a red row
-`+1 +3 +5 +10 · baja`, SUBIENDO / BAJANDO beside the title while a push or a
-held direction is in force, opposite pushes netting (PH-24.21: `netted` on the
-response and in the session); **Cierre de vela** with vela actual / próxima
-vela, the chart's timeframe, the mark typed or picked with a click on the chart
-(`lattice.ts` snaps it; `PreviewChart` marks it), the condition `= ▲ ▼`
-(`close?condition=above|below`, `planConditionedClose` / `selectCloseWhere`:
-the market's own path when it already ends on that side, else the first natural
-path that does), and fijar / × alternating) or the instrument on
-`/lab/avanzado` (the former tabs, unchanged). The panel's browser flow proves
-each act through `control` and `session`. To serve new front-end code locally:
-`npm run build:web`, then restart the panel (and the engine when `apps/api`
-changed). Replay/mirror groundwork (`2ff8559`) stays parked. **The next Lab
-item awaits the Human Owner; the merge, hosted CI and Cycle Audit 8 wait until
-the Lab is complete** (`DECISION-LOG.md`, 2026-09-03). Browser suites run under
+**PH-24 is APPROVED and merged (`d1aa02c`); Cycle Audit 8 has run and is OPEN.**
+Eight auditors, one worktree each under `~/.otc-audit8/`, every finding put to
+an independent refuter: 86 claims, 60 confirmed, 26 refuted. Eighteen are closed
+(`ce2a544`, `769ce80`, `396c0f4`, `fa362e4`, and the commit that recorded the
+audit); the rest are listed in
+[Cycle Audit 008](docs/audits/CYCLE-AUDIT-008.md) §8 with the six material ones
+in the order they should be taken. The full finding set, with every verdict, is
+in `~/.otc-audit8/all-findings.json`.
+
+Hosted CI needed two fixes of its own, neither a product defect: the unit
+project now yields an event-loop turn between tests (a worker that cannot read
+the main thread's reply inside sixty seconds turns a green suite into exit 1),
+and two per-test ceilings plus the job ceiling were raised to fit a suite that
+PH-24.17 made three to four times more expensive. Browser suites run under
 `LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu`.
 
 **The next phase is the decision LA-03 names.** The Lab specification audit

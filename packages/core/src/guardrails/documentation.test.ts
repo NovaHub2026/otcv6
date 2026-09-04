@@ -2,7 +2,12 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { isRecognisedStatus, normaliseStatus, STATUS_VOCABULARY } from './lifecycle.js';
+import {
+  isApprovedStatus,
+  isRecognisedStatus,
+  normaliseStatus,
+  STATUS_VOCABULARY,
+} from './lifecycle.js';
 
 /**
  * Documentation integrity.
@@ -237,12 +242,33 @@ describe('the cycle-audit boundary is a fact, not a label (CA7-11)', () => {
     expect(recorded.length).toBeGreaterThan(0);
   });
 
-  it('names the last closed audit as the highest record that exists', () => {
-    const claimed = /Cycle Audit state\s*\|\s*\*\*(\d+) closed\*\*/.exec(state)?.[1];
-    expect(claimed, 'CURRENT_STATE does not state a closed cycle-audit number').toBeDefined();
-    expect(Number.parseInt(claimed!, 10), 'the highest audit record on disk').toBe(
-      recorded[recorded.length - 1],
-    );
+  it('names the highest audit record that exists, with the state that record declares', () => {
+    /**
+     * **Cycle Audit 8.** This required the state to name a *closed* audit whose
+     * number equalled the highest record on disk, which is unsatisfiable the
+     * moment an audit is recorded before it is closed — the state has to
+     * choose between naming a record that exists and telling the truth about
+     * it. §32 explicitly allows an audit to stay open while findings are
+     * tracked, so the guard reads the record's own `Status:` line instead.
+     */
+    const highest = recorded[recorded.length - 1]!;
+    const number = String(highest).padStart(3, '0');
+    const record = read(`docs/audits/CYCLE-AUDIT-${number}.md`);
+    const status = /^Status:\s*(\w+)/m.exec(record)?.[1]?.toUpperCase();
+    expect(status, `CYCLE-AUDIT-${number}.md declares no status`).toBeDefined();
+    const claimed = new RegExp(
+      `Cycle Audit state\\s*\\|\\s*\\*\\*${number} (closed|OPEN)\\*\\*`,
+      'i',
+    ).exec(state)?.[1];
+    expect(
+      claimed,
+      `CURRENT_STATE must name audit ${number} — the highest record on disk — and say whether ` +
+        `it is closed or open`,
+    ).toBeDefined();
+    expect(
+      claimed!.toUpperCase() === 'OPEN' ? 'OPEN' : 'CLOSED',
+      `CURRENT_STATE and CYCLE-AUDIT-${number}.md disagree about that audit`,
+    ).toBe(status === 'OPEN' ? 'OPEN' : 'CLOSED');
   });
 
   it('counts the approved phases of the current cycle the way the roadmap does', () => {
@@ -285,9 +311,36 @@ describe('the cycle-audit boundary is a fact, not a label (CA7-11)', () => {
     // Three approved phases, and no record for this cycle: §28 says development
     // stops here, so the document a fresh agent reads has to say so.
     const action = /## EXACT NEXT LEGAL ACTION\n([\s\S]*)$/.exec(state)?.[1] ?? '';
-    expect(action, 'the cycle is full and unaudited; the next action must be the audit').toMatch(
-      /Cycle Audit/i,
-    );
+    /**
+     * **Cycle Audit 8 (a7).** This matched `/Cycle Audit/i` anywhere in the
+     * section, and the section named **PH-22.1** — a subphase approved and
+     * merged two phases earlier — while mentioning a past audit further down.
+     * The guard passed on the mention; a fresh session read the heading and
+     * started re-implementing an approved subphase, with the same document's own
+     * table saying `Active phase: none`.
+     *
+     * So the assertion is about the **stated action**: the first non-empty line
+     * under the heading, which is what a reader acts on, and it must name this
+     * cycle's audit by number.
+     */
+    const stated = action.split('\n').find((line) => line.trim().length > 0) ?? '';
+    expect(stated, 'the section states no action').not.toBe('');
+    expect(
+      stated,
+      `the cycle is full and unaudited; the first line under the heading must name Cycle Audit ` +
+        `${String(cycle)}, and it reads: ${stated}`,
+    ).toMatch(new RegExp(`Cycle Audit ${String(cycle)}\\b`, 'i'));
+    // And the stated action may not name a phase or subphase the roadmap already
+    // shows as approved: that is the shape the finding took.
+    const roadmap = read('docs/phases/ROADMAP.md');
+    for (const line of roadmap.split('\n')) {
+      const row = /^\|\s*(PH-[\d.]+)\s*\|(.*)\|\s*([^|]+?)\s*\|/.exec(line);
+      if (row === null || !isApprovedStatus(row[3]!)) continue;
+      expect(
+        stated,
+        `the stated action names ${row[1]!}, which the roadmap shows as APPROVED`,
+      ).not.toMatch(new RegExp(`\\b${row[1]!.replace(/\./g, '\\.')}\\b`));
+    }
   });
 });
 
