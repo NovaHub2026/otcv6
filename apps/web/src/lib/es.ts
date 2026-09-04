@@ -169,6 +169,33 @@ export const es = {
       title: 'Gráfico',
       info: 'Las velas del mercado que estás controlando, leídas del propio motor del Lab (nunca del motor de producción). Con un solo motor (ADR-0018) son las mismas velas que Vista.',
     },
+    panel: {
+      advanced: 'avanzado',
+      advancedInfo:
+        'El instrumento completo: tablero de todos los mercados, estado interno, cierre con hora concreta y plan, posiciones, escenarios, calidad y sesión. El panel de control se queda con lo que se usa al operar.',
+      back: 'volver al panel de control',
+      free: 'libre — el mercado sigue su camino',
+      cards: {
+        push: 'Empujar',
+        pace: 'Ritmo',
+        direction: 'Dirección',
+        close: 'Cierre de vela',
+      },
+      direction: {
+        free: 'libre',
+        info: 'Sube o baja mantienen la dirección con rachas naturales hasta que pulses libre; libre devuelve el mercado a su camino.',
+      },
+      close: {
+        info: 'La vela elegida cerrará exactamente en el precio que fijes. Si dejas el precio vacío, usa los botones relativos: ±1, ±2, ±3 unidades desde el precio actual. Fijar arma el cierre; liberar lo deshace.',
+        apply: 'Fijar cierre',
+        release: 'Liberar',
+        armed: (target: string, at: string) => `armado — cerrará en ${target} a las ${at}`,
+        exact: (price: string) => `cerró en ${price} — EXACTO`,
+        failed: (target: string, price: string) => `objetivo ${target}, cerró en ${price} — FALLÓ`,
+        none: 'sin cierre fijado',
+        price: 'precio de cierre (vacío = relativo)',
+      },
+    },
     push: {
       title: 'Empujar',
       info: 'Cada botón hace que los próximos N ticks del mercado tomen ese signo — subir o bajar — en ráfaga: llegan con los intervalos más rápidos del propio proceso de llegadas del motor, y con las magnitudes que el motor da a un tick rápido (algo más pequeñas, como en un impulso real). No se suma nada al precio: el movimiento es del motor, solo la dirección y el momento son tuyos. Al terminar, el mercado sigue su camino. Pulsar de nuevo en la misma dirección alarga el empuje; en la contraria, lo sustituye.',

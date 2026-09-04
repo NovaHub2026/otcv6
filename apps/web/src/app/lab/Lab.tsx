@@ -29,6 +29,7 @@ import {
 import { Mercado } from './Mercado.js';
 import { Cierre } from './Cierre.js';
 import { Empujar } from './Empujar.js';
+import { Controles } from './Controles.js';
 import { PreviewChart } from '../preview/PreviewChart.js';
 import { PANEL_TIMEFRAMES, type PanelTimeframeId } from '@otc/chart';
 import { fetchCatalogue, type CatalogueEntry } from '../../lib/api.js';
@@ -65,7 +66,7 @@ import { Tablero } from './Tablero.js';
 type Tab =
   'board' | 'replay' | 'market' | 'close' | 'positions' | 'scenarios' | 'quality' | 'session';
 
-export function Lab(): ReactElement {
+export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): ReactElement {
   const [assets, setAssets] = useState<LabMarket[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [state, setState] = useState<LabState | null>(null);
@@ -403,107 +404,256 @@ export function Lab(): ReactElement {
     <div data-testid="lab" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Banner />
       {unavailable !== null && <NotRunning reason={unavailable} />}
-      <div style={{ display: 'flex', gap: 0, flex: 1, minHeight: 0 }}>
-        <AssetList assets={assets} selected={selected} onSelect={setSelected} all={all} />
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-          <HeaderStrip state={state} regime={regime} control={control} />
-          <Empujar
-            control={control}
-            last={lastPush}
-            error={pushError}
-            busy={busy}
-            onPush={push}
-            pace={pace}
-            onPace={setPace}
-            onBias={setBias}
+      {mode === 'control' ? (
+        // PH-24.19: the control panel — the market's bar, the chart at three
+        // quarters, four cards at one quarter. The instrument is /lab/avanzado.
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+          <TopBar
+            assets={assets}
+            selected={selected}
+            onSelect={setSelected}
+            all={all}
             state={state}
+            regime={regime}
+            control={control}
           />
-          <LabChart
-            entry={catalogue.find((c) => c.id === selected) ?? null}
-            timeframe={chartTf}
-            onTimeframe={setChartTf}
-          />
-          <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: '0 16px 16px' }}>
-            <Tabs<Tab>
-              tabs={[
-                { key: 'close', label: es.lab.tabs.close },
-                { key: 'board', label: es.lab.tabs.board },
-                { key: 'market', label: es.lab.tabs.market },
-                { key: 'positions', label: es.lab.tabs.positions },
-                { key: 'scenarios', label: es.lab.tabs.scenarios },
-                { key: 'quality', label: es.lab.tabs.quality },
-                { key: 'session', label: es.lab.tabs.session },
-              ]}
-              active={tab}
-              onChange={setTab}
+          <div
+            data-testid="lab-panel"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '3fr 1fr',
+              flex: 1,
+              minHeight: 0,
+            }}
+          >
+            <LabChart
+              entry={catalogue.find((c) => c.id === selected) ?? null}
+              timeframe={chartTf}
+              onTimeframe={setChartTf}
+              fill
             />
-            <div hidden={tab !== 'board'}>
-              <Tablero
-                all={all}
-                busy={busy}
-                onReleaseAll={releaseAll}
-                onSelect={(id) => {
-                  setSelected(id);
-                  setTab('close');
-                }}
+            <Controles
+              state={state}
+              control={control}
+              lastPush={lastPush}
+              pushError={pushError}
+              busy={busy}
+              onPush={push}
+              pace={pace}
+              onPace={setPace}
+              onBias={setBias}
+              timeframe={tf}
+              onTimeframe={setTf}
+              bucket={bucket}
+              onBucket={setBucket}
+              price={price}
+              onPrice={setPrice}
+              onApply={applyClose}
+              onDelta={applyDelta}
+              onNeighbour={applyNeighbour}
+              onRelease={releaseMarket}
+              plan={plan}
+              notice={notice}
+              unitSteps={state?.distance?.unitSteps ?? 1}
+            />
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: 0, flex: 1, minHeight: 0 }}>
+          <AssetList assets={assets} selected={selected} onSelect={setSelected} all={all} />
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            <HeaderStrip state={state} regime={regime} control={control} />
+            <Empujar
+              control={control}
+              last={lastPush}
+              error={pushError}
+              busy={busy}
+              onPush={push}
+              pace={pace}
+              onPace={setPace}
+              onBias={setBias}
+              state={state}
+            />
+            <LabChart
+              entry={catalogue.find((c) => c.id === selected) ?? null}
+              timeframe={chartTf}
+              onTimeframe={setChartTf}
+            />
+            <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: '0 16px 16px' }}>
+              <Tabs<Tab>
+                tabs={[
+                  { key: 'close', label: es.lab.tabs.close },
+                  { key: 'board', label: es.lab.tabs.board },
+                  { key: 'market', label: es.lab.tabs.market },
+                  { key: 'positions', label: es.lab.tabs.positions },
+                  { key: 'scenarios', label: es.lab.tabs.scenarios },
+                  { key: 'quality', label: es.lab.tabs.quality },
+                  { key: 'session', label: es.lab.tabs.session },
+                ]}
+                active={tab}
+                onChange={setTab}
               />
-            </div>
-            <div hidden={tab !== 'market'}>
-              <Mercado state={state} />
-            </div>
-            <div hidden={tab !== 'close'}>
-              <Cierre
-                timeframe={tf}
-                onTimeframe={setTf}
-                bucket={bucket}
-                onBucket={setBucket}
-                expiryTime={expiryTime}
-                onExpiryTime={setExpiryTime}
-                price={price}
-                onPrice={setPrice}
-                onPreview={previewClose}
-                onApply={applyClose}
-                onNeighbour={applyNeighbour}
-                onDelta={applyDelta}
-                onRelease={releaseMarket}
-                busy={busy}
-                plan={plan}
-                notice={notice}
-                control={control}
-                displayPrecision={state === null ? 7 : (state.price.split('.')[1] ?? '').length}
-                unitSteps={state?.distance?.unitSteps ?? 1}
-              />
-            </div>
-            <div hidden={tab !== 'positions'}>
-              <Posiciones
-                positions={positions}
-                onOpen={openPosition}
-                onPreset={applyPreset}
-                busy={busy}
-                notice={positionNotice}
-              />
-            </div>
-            <div hidden={tab !== 'scenarios'}>
-              <Escenarios
-                scenarios={scenarios}
-                plan={scenarioPlan}
-                notice={scenarioNotice}
-                busy={busy}
-                onRun={runScenario}
-                onTarget={runScenario}
-                targetPlan={scenarioPlan}
-                unitSteps={state?.distance?.unitSteps ?? 1}
-              />
-            </div>
-            <div hidden={tab !== 'quality'}>
-              <QualityPanel quality={quality} busy={busy === 'quality'} onRun={runQuality} />
-            </div>
-            <div hidden={tab !== 'session'}>
-              <Sesion session={session} closes={closes} positions={positionsView} />
+              <div hidden={tab !== 'board'}>
+                <Tablero
+                  all={all}
+                  busy={busy}
+                  onReleaseAll={releaseAll}
+                  onSelect={(id) => {
+                    setSelected(id);
+                    setTab('close');
+                  }}
+                />
+              </div>
+              <div hidden={tab !== 'market'}>
+                <Mercado state={state} />
+              </div>
+              <div hidden={tab !== 'close'}>
+                <Cierre
+                  timeframe={tf}
+                  onTimeframe={setTf}
+                  bucket={bucket}
+                  onBucket={setBucket}
+                  expiryTime={expiryTime}
+                  onExpiryTime={setExpiryTime}
+                  price={price}
+                  onPrice={setPrice}
+                  onPreview={previewClose}
+                  onApply={applyClose}
+                  onNeighbour={applyNeighbour}
+                  onDelta={applyDelta}
+                  onRelease={releaseMarket}
+                  busy={busy}
+                  plan={plan}
+                  notice={notice}
+                  control={control}
+                  displayPrecision={state === null ? 7 : (state.price.split('.')[1] ?? '').length}
+                  unitSteps={state?.distance?.unitSteps ?? 1}
+                />
+              </div>
+              <div hidden={tab !== 'positions'}>
+                <Posiciones
+                  positions={positions}
+                  onOpen={openPosition}
+                  onPreset={applyPreset}
+                  busy={busy}
+                  notice={positionNotice}
+                />
+              </div>
+              <div hidden={tab !== 'scenarios'}>
+                <Escenarios
+                  scenarios={scenarios}
+                  plan={scenarioPlan}
+                  notice={scenarioNotice}
+                  busy={busy}
+                  onRun={runScenario}
+                  onTarget={runScenario}
+                  targetPlan={scenarioPlan}
+                  unitSteps={state?.distance?.unitSteps ?? 1}
+                />
+              </div>
+              <div hidden={tab !== 'quality'}>
+                <QualityPanel quality={quality} busy={busy === 'quality'} onRun={runQuality} />
+              </div>
+              <div hidden={tab !== 'session'}>
+                <Sesion session={session} closes={closes} positions={positionsView} />
+              </div>
             </div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The control panel's bar (PH-24.19): the markets as pills, and — for the
+ * selected one only — its price, regime and state. Plus the small door to the
+ * instrument.
+ */
+function TopBar({
+  assets,
+  selected,
+  onSelect,
+  all,
+  state,
+  regime,
+  control,
+}: {
+  assets: readonly LabMarket[];
+  selected: string | null;
+  onSelect: (id: string) => void;
+  all: ControlAll | null;
+  state: LabState | null;
+  regime: string | null;
+  control: Control | null;
+}): ReactElement {
+  const armed = control?.armed ?? false;
+  const last = control?.lastApplied ?? null;
+  return (
+    <div
+      data-testid="lab-topbar"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '8px 14px',
+        borderBottom: `1px solid ${T.line}`,
+        flexShrink: 0,
+        flexWrap: 'wrap',
+      }}
+    >
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+        {assets.map((asset) => {
+          const market = all?.markets.find((m) => m.id === asset.id) ?? null;
+          return (
+            <button
+              key={asset.id}
+              type="button"
+              data-testid={`lab-asset-${asset.id}`}
+              onClick={() => onSelect(asset.id)}
+              style={{
+                padding: '4px 10px',
+                background: selected === asset.id ? T.line : 'transparent',
+                color: selected === asset.id ? T.text : T.muted,
+                border: `1px solid ${selected === asset.id ? T.lab : T.line}`,
+                borderRadius: 14,
+                font: 'inherit',
+                fontSize: 12,
+                cursor: 'pointer',
+              }}
+            >
+              {asset.displayName}
+              {market !== null && market.armed ? ' ·' : ''}
+            </button>
+          );
+        })}
       </div>
+      <span style={{ fontSize: 22, color: T.text }} data-testid="lab-header-price">
+        {state?.price ?? '—'}
+      </span>
+      <span style={{ color: T.muted, fontSize: 12 }}>
+        {es.lab.header.regime}: <span style={{ color: T.text }}>{regime ?? '—'}</span>
+      </span>
+      <Badge tone={armed ? 'lab' : 'muted'} testId="lab-header-armed">
+        {armed
+          ? `${es.lab.header.armed} · ${es.lab.header.remaining(control?.remaining ?? 0)}`
+          : es.lab.header.keystream}
+      </Badge>
+      {last !== null && last.closedPrice !== null && (
+        <span
+          data-testid="lab-header-outcome"
+          style={{ fontSize: 12, color: last.exact ? T.ok : T.bad }}
+        >
+          {`${last.targetPrice} → ${last.closedPrice} ${last.exact ? 'EXACTO' : 'FALLÓ'}`}
+        </span>
+      )}
+      <a
+        href="/lab/avanzado"
+        data-testid="lab-advanced-link"
+        style={{ marginLeft: 'auto', color: T.muted, fontSize: 11, textDecoration: 'none' }}
+      >
+        {es.lab.panel.advanced} <Info text={es.lab.panel.advancedInfo} />
+      </a>
     </div>
   );
 }
@@ -520,13 +670,28 @@ function LabChart({
   entry,
   timeframe,
   onTimeframe,
+  fill = false,
 }: {
   entry: CatalogueEntry | null;
   timeframe: PanelTimeframeId;
   onTimeframe: (id: PanelTimeframeId) => void;
+  /** PH-24.19: the control panel gives the chart the whole column. */
+  fill?: boolean;
 }): ReactElement {
   return (
-    <div data-testid="lab-chart" style={{ borderBottom: `1px solid ${T.line}`, flexShrink: 0 }}>
+    <div
+      data-testid="lab-chart"
+      style={
+        fill
+          ? {
+              display: 'flex',
+              flexDirection: 'column',
+              minHeight: 0,
+              borderRight: `1px solid ${T.line}`,
+            }
+          : { borderBottom: `1px solid ${T.line}`, flexShrink: 0 }
+      }
+    >
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '6px 16px' }}>
         <span style={{ color: T.text, fontSize: 12, fontWeight: 600 }}>
           {es.lab.chart.title} <Info text={es.lab.chart.info} />
@@ -552,7 +717,13 @@ function LabChart({
           </button>
         ))}
       </div>
-      <div style={{ height: 260, position: 'relative' }}>
+      <div
+        style={
+          fill
+            ? { flex: 1, minHeight: 0, position: 'relative' }
+            : { height: 260, position: 'relative' }
+        }
+      >
         {entry === null ? (
           <div style={{ color: T.faint, fontSize: 11, padding: '0 16px' }}>—</div>
         ) : (

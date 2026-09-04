@@ -34,22 +34,18 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-24.10–24.18 are approved; no subphase is active.** PH-24.18 gave every
-market a distance unit (`apps/api/src/lab/distance.ts`: a quarter of the median
-1m range on a thirty-minute fork, cached five minutes; in `state.distance`),
-pushes by distance (`push?distance=±N`, the fork decides the ticks, ≤ 400),
-bias runs in market time (1–3 s of the mean interval), paces as fractions of
-the mean interval (`medio` ½, `rápido` ⅕, draws by bisection on a fork), and
-the screen converts the close's `±1 ±2 ±3`, the scenarios' distance parameters,
-the shock size and the target level from units to lattice steps (`unitSteps`
-from the state). Routes keep lattice steps. `labProviders.test.ts` guards that
-every controller constructor parameter has a provider. To serve new code
-locally: `npm run build:web`, restart the panel; API changes need the engine
-restarted (`start.sh`). Replay/mirror groundwork (`2ff8559`) stays parked.
-**The next Lab item awaits the Human Owner; the merge, hosted CI and Cycle
-Audit 8 wait until the Lab is complete** (`DECISION-LOG.md`, 2026-09-03).
-Browser suites run under
-`LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu`.
+**PH-24.10–24.19 are approved; no subphase is active.** PH-24.19 made `/lab`
+a control panel: `Lab({ mode })` renders either the panel (`TopBar` with the
+markets as pills and the selected market's price/regime/state; a `3fr 1fr`
+grid with the chart at full height and `Controles.tsx` — four cards: Empujar
+in column layout, Ritmo, Dirección, Cierre de vela — one status line each) or
+the instrument on `/lab/avanzado` (the former tabs, unchanged). The browser
+flows that exercise the instrument run on `/lab/avanzado`; the push flow runs
+on the panel. To serve new front-end code locally: `npm run build:web`, then
+restart the panel. Replay/mirror groundwork (`2ff8559`) stays parked. **The
+next Lab item awaits the Human Owner; the merge, hosted CI and Cycle Audit 8
+wait until the Lab is complete** (`DECISION-LOG.md`, 2026-09-03). Browser suites
+run under `LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu`.
 
 **The next phase is the decision LA-03 names.** The Lab specification audit
 ([LAB-SPECIFICATION-AUDIT-001](docs/audits/LAB-SPECIFICATION-AUDIT-001.md))

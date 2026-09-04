@@ -70,7 +70,16 @@ async function forward(
       headers.set('content-type', 'application/json');
       body = '{}';
     }
-    const upstream = await fetch(url, { method, headers, ...(body === undefined ? {} : { body }) });
+    const init = { method, headers, ...(body === undefined ? {} : { body }) };
+    // PH-24.19: a read is retried once on a transport error. The Lab process
+    // blocks for a few seconds while Calidad assesses millions of ticks, and a
+    // pooled keep-alive socket it closed meanwhile answers the next poll with a
+    // reset — one 502 on an otherwise healthy market. A write is never retried.
+    const upstream = await fetch(url, init).catch(async (error: unknown) => {
+      if (method !== 'GET') throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      return fetch(url, init);
+    });
     // The body is handed over unread, like the engine proxy: a Lab response can
     // be a long analysis and a buffered proxy would hold all of it.
     return new Response(upstream.body, {

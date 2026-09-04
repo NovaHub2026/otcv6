@@ -590,6 +590,7 @@ on it — the boundary first, guarded before anything stands on it.
 | PH-24.16 | Empujar progresivo y la dirección sostenida: el primer tick anclado en ahora; sube/baja como sesgo de rachas                                  | APPROVED |
 | PH-24.17 | Granularidad del tick: más ticks por vela con pasos menores a igual dispersión; medida en el Lab; gate completo                               | APPROVED |
 | PH-24.18 | Las distancias del Lab en unidades de vela: una unidad por mercado; empujes, cierres, escenarios en ella; sesgo y ritmos en tiempo de mercado | APPROVED |
+| PH-24.19 | El panel de control del Lab: gráfico a 3/4, cuatro tarjetas de control a 1/4, solo el activo elegido; el instrumento pasa a /lab/avanzado     | APPROVED |
 
 ### PH-23 — The OTC Market Lab
 

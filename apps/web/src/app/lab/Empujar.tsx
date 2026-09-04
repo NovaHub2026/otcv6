@@ -24,6 +24,7 @@ export function Empujar({
   onPace,
   onBias,
   state,
+  layout = 'strip',
 }: {
   control: Control | null;
   last: PushResult | null;
@@ -37,6 +38,8 @@ export function Empujar({
   onBias: (direction: 'up' | 'down' | 'off') => Promise<void>;
   /** PH-24.18: the market's distance unit, for the strip's label. */
   state: LabState | null;
+  /** PH-24.19: the control panel's column stacks the rows; the strip lays them in a line. */
+  layout?: 'strip' | 'column';
 }): ReactElement {
   const p = es.lab.push;
   const pushing = control?.pushing ?? null;
@@ -49,9 +52,9 @@ export function Empujar({
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
-        padding: '10px 16px',
-        borderBottom: `1px solid ${T.line}`,
+        gap: layout === 'column' ? 6 : 8,
+        padding: layout === 'column' ? '8px 12px' : '10px 16px',
+        borderBottom: layout === 'column' ? 'none' : `1px solid ${T.line}`,
         flexShrink: 0,
         flexWrap: 'wrap',
       }}
@@ -99,50 +102,59 @@ export function Empujar({
           />
         </span>
       )}
-      <span style={{ color: T.faint, fontSize: 11, marginLeft: 6 }}>
-        {p.pace.label} <Info text={p.pace.info} />
-      </span>
-      {(['normal', 'medio', 'rapido'] as const).map((key) => (
-        <button
-          key={key}
-          type="button"
-          data-testid={`lab-push-pace-${key}`}
-          onClick={() => onPace(key)}
-          style={{
-            padding: '2px 8px',
-            background: pace === key ? T.line : 'transparent',
-            color: pace === key ? T.text : T.muted,
-            border: `1px solid ${T.line}`,
-            borderRadius: 3,
-            font: 'inherit',
-            fontSize: 11,
-            cursor: 'pointer',
-          }}
+      {layout === 'strip' && (
+        <span style={{ color: T.faint, fontSize: 11, marginLeft: 6 }}>
+          {p.pace.label} <Info text={p.pace.info} />
+        </span>
+      )}
+      {layout === 'strip' &&
+        (['normal', 'medio', 'rapido'] as const).map((key) => (
+          <button
+            key={key}
+            type="button"
+            data-testid={`lab-push-pace-${key}`}
+            onClick={() => onPace(key)}
+            style={{
+              padding: '2px 8px',
+              background: pace === key ? T.line : 'transparent',
+              color: pace === key ? T.text : T.muted,
+              border: `1px solid ${T.line}`,
+              borderRadius: 3,
+              font: 'inherit',
+              fontSize: 11,
+              cursor: 'pointer',
+            }}
+          >
+            {p.pace[key]}
+          </button>
+        ))}
+      {layout === 'strip' && (
+        <span style={{ color: T.faint, fontSize: 11, marginLeft: 6 }}>
+          <Info text={p.bias.info} />
+        </span>
+      )}
+      {layout === 'strip' && (
+        <Button
+          kind={bias === 1 ? 'primary' : 'ghost'}
+          small
+          testId="lab-bias-up"
+          disabled={busy === 'bias'}
+          onClick={() => void onBias(bias === 1 ? 'off' : 'up')}
         >
-          {p.pace[key]}
-        </button>
-      ))}
-      <span style={{ color: T.faint, fontSize: 11, marginLeft: 6 }}>
-        <Info text={p.bias.info} />
-      </span>
-      <Button
-        kind={bias === 1 ? 'primary' : 'ghost'}
-        small
-        testId="lab-bias-up"
-        disabled={busy === 'bias'}
-        onClick={() => void onBias(bias === 1 ? 'off' : 'up')}
-      >
-        {p.bias.up}
-      </Button>
-      <Button
-        kind={bias === -1 ? 'danger' : 'ghost'}
-        small
-        testId="lab-bias-down"
-        disabled={busy === 'bias'}
-        onClick={() => void onBias(bias === -1 ? 'off' : 'down')}
-      >
-        {p.bias.down}
-      </Button>
+          {p.bias.up}
+        </Button>
+      )}
+      {layout === 'strip' && (
+        <Button
+          kind={bias === -1 ? 'danger' : 'ghost'}
+          small
+          testId="lab-bias-down"
+          disabled={busy === 'bias'}
+          onClick={() => void onBias(bias === -1 ? 'off' : 'down')}
+        >
+          {p.bias.down}
+        </Button>
+      )}
       <Badge tone={pushing !== null || bias !== null ? 'lab' : 'muted'} testId="lab-push-state">
         {pushing !== null
           ? p.running(pushing.direction === 1 ? 'up' : 'down', pushing.remaining)

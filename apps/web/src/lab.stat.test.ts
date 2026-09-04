@@ -226,7 +226,7 @@ describe('Candle Close Control, from the panel', () => {
     const page = await requireBrowser(ctx).newPage({ viewport: { width: 1280, height: 1200 } });
     const { errors, dump } = instrument(page);
     try {
-      await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
+      await page.goto(`http://127.0.0.1:${webPort}/lab/avanzado`, { waitUntil: 'networkidle' });
       await page.waitForSelector('[data-testid="lab-control"]', { timeout: 30_000 });
       // The banner is permanent (§3).
       expect(await page.locator('body').innerText()).toMatch(/OTC LAB/);
@@ -322,7 +322,7 @@ describe('Candle Close Control, from the panel', () => {
     const page = await requireBrowser(ctx).newPage({ viewport: { width: 1280, height: 1400 } });
     const { errors, dump } = instrument(page);
     try {
-      await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
+      await page.goto(`http://127.0.0.1:${webPort}/lab/avanzado`, { waitUntil: 'networkidle' });
       await page.waitForSelector('[data-testid="tab-positions"]', { timeout: 30_000 });
       await page.click('[data-testid="tab-positions"]');
       await page.waitForSelector('[data-testid="lab-positions"]', { timeout: 30_000 });
@@ -371,7 +371,7 @@ describe('Candle Close Control, from the panel', () => {
     const page = await requireBrowser(ctx).newPage({ viewport: { width: 1280, height: 1600 } });
     const { errors, dump } = instrument(page);
     try {
-      await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
+      await page.goto(`http://127.0.0.1:${webPort}/lab/avanzado`, { waitUntil: 'networkidle' });
       await page.waitForSelector('[data-testid="tab-scenarios"]', { timeout: 30_000 });
       await page.click('[data-testid="tab-scenarios"]');
       await page.waitForSelector('[data-testid="lab-scenario-bullish-trend"]', { timeout: 30_000 });
@@ -439,7 +439,7 @@ describe('Candle Close Control, from the panel', () => {
     const page = await requireBrowser(ctx).newPage({ viewport: { width: 1280, height: 1600 } });
     const { errors, dump } = instrument(page);
     try {
-      await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
+      await page.goto(`http://127.0.0.1:${webPort}/lab/avanzado`, { waitUntil: 'networkidle' });
       await page.waitForSelector('[data-testid="tab-scenarios"]', { timeout: 30_000 });
       await page.click('[data-testid="tab-scenarios"]');
       await page.waitForSelector('[data-testid="lab-shock-size"]', { timeout: 30_000 });
@@ -481,7 +481,7 @@ describe('Candle Close Control, from the panel', () => {
     const page = await requireBrowser(ctx).newPage({ viewport: { width: 1280, height: 1600 } });
     const { errors, dump } = instrument(page);
     try {
-      await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
+      await page.goto(`http://127.0.0.1:${webPort}/lab/avanzado`, { waitUntil: 'networkidle' });
       await page.waitForSelector('[data-testid="lab-control"]', { timeout: 30_000 });
       await page.selectOption('[data-testid="lab-close-bucket"]', 'expiry');
       // Forty seconds from now, as HH:MM:SS UTC — the screen resolves it to an instant.
@@ -526,7 +526,7 @@ describe('Candle Close Control, from the panel', () => {
     const page = await requireBrowser(ctx).newPage({ viewport: { width: 1280, height: 1600 } });
     const { errors, dump } = instrument(page);
     try {
-      await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
+      await page.goto(`http://127.0.0.1:${webPort}/lab/avanzado`, { waitUntil: 'networkidle' });
       // PH-24.11: Objetivo de precio lives on Escenarios.
       await page.click('[data-testid="tab-scenarios"]');
       await page.waitForSelector('[data-testid="lab-target-steps"]', { timeout: 30_000 });
@@ -559,7 +559,7 @@ describe('Candle Close Control, from the panel', () => {
     const page = await requireBrowser(ctx).newPage({ viewport: { width: 1280, height: 1600 } });
     const { errors, dump } = instrument(page);
     try {
-      await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
+      await page.goto(`http://127.0.0.1:${webPort}/lab/avanzado`, { waitUntil: 'networkidle' });
       await page.waitForSelector('[data-testid="lab-control"]', { timeout: 30_000 });
       for (const asset of ['eurusd', 'gbpjpy']) {
         await page.click(`[data-testid="lab-asset-${asset}"]`);
@@ -611,7 +611,8 @@ describe('Candle Close Control, from the panel', () => {
     const { errors, dump } = instrument(page);
     try {
       await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
-      await page.waitForSelector('[data-testid="lab-control"]', { timeout: 30_000 });
+      // PH-24.19: the control panel has no sign-source row; its column is the landmark.
+      await page.waitForSelector('[data-testid="lab-controls"]', { timeout: 30_000 });
       await page.waitForFunction(
         () =>
           /^[0-9]+\.[0-9]+$/.test(
@@ -630,13 +631,18 @@ describe('Candle Close Control, from the panel', () => {
         null,
         { timeout: 30_000 },
       );
-      // The strip is on every tab.
-      await page.click('[data-testid="tab-board"]');
-      expect(await page.locator('[data-testid="lab-push"]').isVisible()).toBe(true);
-      await page.click('[data-testid="tab-close"]');
+      // PH-24.19: the control panel — the four cards beside the chart.
+      for (const card of [
+        'lab-card-push',
+        'lab-card-pace',
+        'lab-card-direction',
+        'lab-card-close',
+      ]) {
+        expect(await page.locator(`[data-testid="${card}"]`).isVisible()).toBe(true);
+      }
 
       // PH-24.15: the pace is chosen on the strip and travels with the push.
-      await page.click('[data-testid="lab-push-pace-rapido"]');
+      await page.click('[data-testid="lab-pace-rapido"]');
       const clickedAt = performance.now();
       await page.click('[data-testid="lab-push-+3"]');
       // PH-24.13: the burst lands in about a second, often before the strip's next
@@ -676,41 +682,43 @@ describe('Candle Close Control, from the panel', () => {
       expect(own.lastPush.exact).toBe(true);
       expect(own.lastPush.landedPrice).toBe(landing![1]!);
       await page.waitForFunction(
-        () =>
-          /push/.test(document.querySelector('[data-testid="lab-session-lab"]')?.textContent ?? ''),
-        null,
+        async (needle) => {
+          const body = await (await fetch('/lab/session')).text();
+          return new RegExp(needle).test(body);
+        },
+        '"action":"push"',
         { timeout: 30_000 },
       );
 
       // PH-24.16: baja stays active on the strip and in the session; a second click ends it.
-      await page.click('[data-testid="lab-bias-down"]');
+      await page.click('[data-testid="lab-direction-down"]');
       await page.waitForFunction(
         () =>
           /BAJA activo/i.test(
-            document.querySelector('[data-testid="lab-push-state"]')?.textContent ?? '',
+            document.querySelector('[data-testid="lab-direction-state"]')?.textContent ?? '',
           ),
         null,
         { timeout: 30_000 },
       );
       await page.waitForFunction(
-        () =>
-          /direction=down/.test(
-            document.querySelector('[data-testid="lab-session-lab"]')?.textContent ?? '',
-          ),
-        null,
+        async (needle) => {
+          const body = await (await fetch('/lab/session')).text();
+          return new RegExp(needle).test(body);
+        },
+        '"direction":"down"',
         { timeout: 30_000 },
       );
-      await page.click('[data-testid="lab-bias-down"]');
+      await page.click('[data-testid="lab-direction-free"]');
       await page.waitForFunction(
         () =>
           !/BAJA activo/i.test(
-            document.querySelector('[data-testid="lab-push-state"]')?.textContent ?? '',
+            document.querySelector('[data-testid="lab-direction-state"]')?.textContent ?? '',
           ),
         null,
         { timeout: 30_000 },
       );
       // PH-24.15: a medio push lands too, and the session records its pace.
-      await page.click('[data-testid="lab-push-pace-medio"]');
+      await page.click('[data-testid="lab-pace-medio"]');
       await page.click('[data-testid="lab-push--1"]');
       await page.waitForFunction(
         () =>
@@ -721,11 +729,11 @@ describe('Candle Close Control, from the panel', () => {
         { timeout: 60_000 },
       );
       await page.waitForFunction(
-        () =>
-          /pace=medio/.test(
-            document.querySelector('[data-testid="lab-session-lab"]')?.textContent ?? '',
-          ),
-        null,
+        async (needle) => {
+          const body = await (await fetch('/lab/session')).text();
+          return new RegExp(needle).test(body);
+        },
+        '"pace":"medio"',
         { timeout: 30_000 },
       );
       // PH-24.11: a push over an armed close releases it and says so on the strip.
@@ -761,11 +769,11 @@ describe('Candle Close Control, from the panel', () => {
       expect(await text(page, 'lab-push-released')).toMatch(/se liberó lo que estaba armado/);
       // The timeline is the strip's next poll away; the release is in the record already.
       await page.waitForFunction(
-        () =>
-          /liberado ✓ by=push/.test(
-            document.querySelector('[data-testid="lab-session-lab"]')?.textContent ?? '',
-          ),
-        null,
+        async (needle) => {
+          const body = await (await fetch('/lab/session')).text();
+          return new RegExp(needle).test(body);
+        },
+        '"by":"push"',
         { timeout: 30_000 },
       );
       await page.evaluate(() => fetch('/lab/release-all', { method: 'POST' }));
@@ -782,7 +790,8 @@ describe('Candle Close Control, from the panel', () => {
     const { errors, dump } = instrument(page);
     try {
       await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
-      await page.waitForSelector('[data-testid="lab-control"]', { timeout: 30_000 });
+      // PH-24.19: the control panel has no sign-source row; its column is the landmark.
+      await page.waitForSelector('[data-testid="lab-controls"]', { timeout: 30_000 });
       // The chart is on the Lab screen and goes live from the Lab's engine routes.
       expect(await page.locator('[data-testid="lab-chart"]').isVisible()).toBe(true);
       await page.waitForFunction(
@@ -819,13 +828,14 @@ describe('Candle Close Control, from the panel', () => {
       expect(
         (await page.request.post(`http://127.0.0.1:${webPort}/labengine/lab/release-all`)).status(),
       ).toBe(405);
-      // PH-24.17: Calidad measures tick granularity on a fork of this market.
+      // PH-24.17: Calidad measures tick granularity on a fork of this market (on the instrument).
+      await page.goto(`http://127.0.0.1:${webPort}/lab/avanzado`, { waitUntil: 'networkidle' });
+      await page.waitForSelector('[data-testid="tab-quality"]', { timeout: 30_000 });
       await page.click('[data-testid="tab-quality"]');
       await page.click('[data-testid="lab-quality"]');
       await page.waitForSelector('[data-testid="lab-granularity"]', { timeout: 120_000 });
       expect(await text(page, 'lab-granularity-ticks')).toMatch(/^\d+ \(p10 \d+ · p90 \d+\)$/);
       expect(await text(page, 'lab-granularity-gap')).toMatch(/mediano · \d+ % de las velas/);
-      await page.click('[data-testid="tab-close"]');
       // The harness points both bases at one process: Vista declares Lab mode; the Lab screen does not repeat it.
       expect(await page.locator('[data-testid="lab-mode-banner"]').count()).toBe(0);
       await page.goto(`http://127.0.0.1:${webPort}/preview`, { waitUntil: 'networkidle' });

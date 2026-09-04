@@ -439,7 +439,26 @@ describe('the Lab is marked wherever it appears', () => {
     // The level the target route receives is the entered units times the unit (Prettier may wrap it).
     expect(escenarios).toMatch(/level: Math\.round\(\s*Number\([\s\S]*?\) \* unitSteps,?\s*\)/);
     const lab = code('lab/Lab.tsx');
-    expect(lab.match(/unitSteps=\{state\?\.distance\?\.unitSteps \?\? 1\}/g) ?? []).toHaveLength(2);
+    // Cierre and Escenarios on the instrument, Controles on the panel (PH-24.19).
+    expect(lab.match(/unitSteps=\{state\?\.distance\?\.unitSteps \?\? 1\}/g) ?? []).toHaveLength(3);
+  });
+
+  it('is a control panel: the chart at three quarters, four cards at one quarter, the instrument behind a link (PH-24.19)', () => {
+    const lab = code('lab/Lab.tsx');
+    expect(lab).toMatch(/gridTemplateColumns: '3fr 1fr'/);
+    expect(lab).toMatch(/<TopBar/);
+    expect(lab).toMatch(/<Controles/);
+    expect(lab).toMatch(/data-testid="lab-advanced-link"/);
+    expect(lab).toMatch(/href="\/lab\/avanzado"/);
+    const controles = code('lab/Controles.tsx');
+    for (const card of ['lab-card-push', 'lab-card-pace', 'lab-card-direction', 'lab-card-close']) {
+      expect(controles, `${card} missing`).toMatch(new RegExp(`testId="${card}"`));
+    }
+    // One status line per card, never a table.
+    expect(controles).not.toMatch(/<table|<Row\b/);
+    expect(controles).toMatch(/data-testid="lab-close-status"/);
+    expect(code('lab/page.tsx')).toMatch(/<Lab mode="control" \/>/);
+    expect(code('lab/avanzado/page.tsx')).toMatch(/<Lab mode="avanzado" \/>/);
   });
 
   it('says the Lab is absent rather than hiding that it can be', () => {

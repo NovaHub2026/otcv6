@@ -122,6 +122,7 @@ state), INV-009 (a Lab settlement recomputes from the Lab's record), INV-010.
 | PH-24.16 | Empujar progresivo y la dirección sostenida: el primer tick anclado en ahora; sube/baja como sesgo de rachas                                  | APPROVED                                                | [PH-24.16](PH-24.16-empujar-progresivo-y-la-direccion-sostenida.md) |
 | PH-24.17 | Granularidad del tick: más ticks por vela con pasos menores a igual dispersión; medida en el Lab; gate completo                               | APPROVED                                                | [PH-24.17](PH-24.17-granularidad-del-tick.md)                       |
 | PH-24.18 | Las distancias del Lab en unidades de vela: una unidad por mercado; empujes, cierres, escenarios en ella; sesgo y ritmos en tiempo de mercado | APPROVED                                                | [PH-24.18](PH-24.18-las-distancias-del-lab.md)                      |
+| PH-24.19 | El panel de control del Lab: gráfico a 3/4, cuatro tarjetas de control a 1/4, solo el activo elegido; el instrumento pasa a /lab/avanzado     | APPROVED                                                | [PH-24.19](PH-24.19-el-panel-de-control-del-lab.md)                 |
 
 Each subphase owes its plants. PH-24.1 owes one that arms in the production
 composition and is caught.
