@@ -135,6 +135,7 @@ export {
   DISPERSION_WINDOW_MS,
   minimumDispersionSpanMs,
 } from './dispersion.js';
+export { ASSET_SEATS, seatArchetype, seatById, type AssetSeat } from './seats.js';
 export {
   HEAVY_SUITE_SAMPLE,
   sampleCatalogue,

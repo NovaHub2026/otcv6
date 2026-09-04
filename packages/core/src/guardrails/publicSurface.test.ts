@@ -78,6 +78,9 @@ const INTERNAL: Record<string, readonly string[]> = {
     'dispersionEvidence.ts',
     'horizonCoverage.ts',
     'horizonEvidence.ts',
+    // PH-26.3's catalogue builder: a deliberate act like the evidence runners
+    // beside it, run by `npm run catalogue:build` and reached by no barrel.
+    'buildCatalogue.ts',
     // PH-22.1's observer load harness: a deliberate act like the two scale
     // runners beside it. Its contract is guarded by `observerLoad.test.ts`,
     // which drives it against five deliberately broken servers.

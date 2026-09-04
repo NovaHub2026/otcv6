@@ -25,10 +25,10 @@ Last synchronized: 2026-09-04
 | ---------------------- | ------------------------------------------------ |
 | Active phase           | **PH-26 — The catalogue of thirty**              |
 | Phase lifecycle        | ACTIVE                                           |
-| Active subphase        | PH-26.2 — the thirty personalities               |
+| Active subphase        | PH-26.3 — the catalogue compiled and calibrated  |
 | Subphase lifecycle     | ACTIVE                                           |
 | Last approved phase    | PH-24 — The Lab's controls: applying a selection |
-| Last approved subphase | PH-26.1 — The suites scale                       |
+| Last approved subphase | PH-26.2 — The thirty personalities               |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
@@ -195,27 +195,22 @@ the wrong thing.
 
 ## EXACT NEXT LEGAL ACTION
 
-**PH-26.2 — the thirty personalities: seats, drawn under seed, checked as
-archetypes are.**
+**PH-26.3 — build the catalogue of thirty, record its evidence, retire the five.**
 
-PH-26.1 is approved: the three heavy statistical suites measure a fixed,
-stratified sample of five and say what they did not measure, the six id-keyed
-tables refuse by name, the differentiation thresholds are multiples of chance
-with the control sized to the catalogue, and at five assets every verdict is the
-one it was (`TARGETED_GATE_EXIT=0`, 134 unit files / 2,675 tests, three
-statistical files / 33 tests in 529 s).
+PH-26.1 and PH-26.2 are approved. The heavy statistical suites sample; the
+thirty seats exist and are checked as archetypes are, with the closest
+cross-seat draw at 0.0298 against a 0.01 floor; the builder that draws,
+authors, calibrates and differentiates every seat is written, declared, and
+smoke-run (`npm run catalogue:build`).
 
-PH-26.2 records the thirty **seats** — a narrowing of each asset's archetype,
-from which its personality is drawn under a stream seeded by its own id — and
-the guard that checks every seat exactly the way `families.test.ts` checks every
-archetype: inside its parent on every trait, feasible at its worst corner, its
-budget departure declared, and no two seats close enough for the
-differentiation check to refuse a draw. Nothing is added to `ASSET_ARCHETYPES`
-and no family is added: both are the Human Owner's decisions. The thirty ids
-carry `-otc`; `eurusd`, `gbpjpy`, `btcusd`, `spx` and `xauusd` are retired and
-never reused, because a checkpoint carries no personality fingerprint and a
-state file written by the old personality must not be resumable by the new one
-under the same name.
+PH-26.3 runs it. The run is a deliberate act with a recorded keyring label:
+thirty entries compiled into `ASSET_CATALOGUE`, the five incumbents removed,
+their per-asset records retired with them, every recorded constant keyed by
+asset id re-measured — lattice tie rates on a fresh stream family, horizon
+coverage at all eight expirations for every asset — and the twenty-six test
+files that named an incumbent by literal made to name the catalogue instead.
+Then the statistical suite is run whole, and its wall clock at thirty is the
+number PH-26.1 promised to measure rather than estimate.
 
 This section named **PH-22.1** — a subphase approved and merged two phases ago —
 until Cycle Audit 8 (a7) found it. A fresh session following `CLAUDE.md` §1 read

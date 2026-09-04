@@ -13,7 +13,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Remote             | `origin` → NovaHub2026/otcv6, public                            |
 | Active cycle       | Cycle 9, **0 of 3** phases approved — Cycle 8's audit is closed |
 | Active phase       | **PH-26 — The catalogue of thirty** (ACTIVE)                    |
-| Active subphase    | PH-26.2 — the thirty personalities (ACTIVE)                     |
+| Active subphase    | PH-26.3 — the catalogue compiled and calibrated (ACTIVE)        |
 | Cycle Audit        | **008 closed** — 60 confirmed, all 60 resolved, none tracked    |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)              |
 
