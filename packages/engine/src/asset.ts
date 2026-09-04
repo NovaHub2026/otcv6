@@ -157,12 +157,28 @@ export const TARGET_TIE_RATE = 0.01;
  * binomial 2se of 0.09pp for a single 20,000-horizon run, which is to say the
  * naive figure understated the real uncertainty by roughly four times.
  *
- * Each value below is therefore the mean of **15 independent replicates** across
- * three unrelated stream families, 8,000 horizons each. The limiting quantity is
- * not horizons sampled but independent volatility epochs simulated: one
- * replicate spans 67 hours, and the slowest cascade component turns over in 36
- * to 44, so a replicate contains only a couple of independent volatility levels.
+ * Each value below is therefore a mean over replicates. **These values are
+ * PH-24.17's**: 12 replicates of 8,000 horizons each, produced by running
+ * `latticeTies.stat.test.ts`'s own procedure on its own seeds
+ * (`ties-verify-<asset>-<n>`) after the recalibration moved every rate. The
+ * limiting quantity is not horizons sampled but independent volatility epochs
+ * simulated: one replicate spans 67 hours — a horizon count, so a tempo change
+ * does not move it — and the slowest cascade component turns over in 36 to 44,
+ * so a replicate contains only a couple of independent volatility levels.
  * Sampling more horizons inside one run buys almost nothing.
+ *
+ * Two things about that provenance, and both were findings.
+ * The text here read "15 independent replicates across three unrelated stream
+ * families" for a cycle after it stopped describing the numbers underneath it
+ * (Cycle Audit 8, a5) — the same defect this comment is about, one paragraph
+ * up. And because the constants were produced on `ties-verify-<asset>-<n>`, a
+ * pass on those same seeds said only that a re-run reproduced a re-run.
+ *
+ * So the verifying test no longer runs them. It measures on `ties-fresh-<asset>-<n>`,
+ * a family the recording never touched, and the five means come back within
+ * their own three-standard-error bands (largest deviation btcusd, 0.044pp,
+ * against a 0.2pp tolerance). The rates below are therefore a property of the
+ * process at these parameters, not of the twelve seeds they were read from.
  */
 export const MEASURED_LATTICE_TIE_RATES = {
   eurusd: 0.00468,

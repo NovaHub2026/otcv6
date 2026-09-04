@@ -1,9 +1,12 @@
 // Invariant evidence: INV-002 (shared market), INV-009 (reproducible settlement).
+import v8 from 'node:v8';
+import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, type Tick } from '@otc/core';
 import {
   DEFAULT_RETAIN_TICKS,
   EvictedError,
+  MEASURED_BYTES_PER_TICK,
   TickFeed,
   UnknownSequenceError,
   type FeedSink,
@@ -19,6 +22,44 @@ function tick(sequence: number): Tick {
 
 function ticks(from: number, count: number): Tick[] {
   return Array.from({ length: count }, (_, i) => tick(from + i));
+}
+
+/**
+ * Measure what one retained tick costs this process, in bytes.
+ *
+ * **Cycle Audit 8 (a3).** The sizing figures in `feed.ts` are what a
+ * hundred-asset deployment is planned from, and they were quoted from a
+ * measurement nobody could re-run: no method was recorded, so when they turned
+ * out to be 44% high there was nothing to say whether the feed had changed or
+ * the measurement had always been wrong. This is the method, in the suite, on
+ * every run.
+ *
+ * The collection is asked for at runtime rather than through `--expose-gc`,
+ * because a guard that needs a flag someone remembers to pass is a guard that
+ * does not run. Six passes rather than one, with margin: a single collection
+ * leaves the young generation's survivors behind and measured 60.7 and 72.5
+ * bytes a tick on consecutive runs, a 16% swing that would put this test at the
+ * edge of its own band; two or more agree to a tenth of a byte.
+ */
+function retainedBytesPerTick(count: number): number {
+  v8.setFlagsFromString('--expose-gc');
+  const collect = vm.runInNewContext('gc') as () => void;
+  v8.setFlagsFromString('--no-expose-gc');
+  const heapUsed = (): number => {
+    for (let i = 0; i < 6; i += 1) collect();
+    return process.memoryUsage().heapUsed;
+  };
+
+  const before = heapUsed();
+  const feed = new TickFeed({ retainTicks: count });
+  // One tick per call, because an array holding all of them would be measured
+  // alongside the window and charge the feed 8 bytes a tick it does not keep.
+  for (let sequence = 1; sequence <= count; sequence += 1) feed.publish('eurusd', [tick(sequence)]);
+  const after = heapUsed();
+  // Read the feed after the second measurement, so nothing in it can be
+  // collected as unreachable before the measurement is taken.
+  if (feed.retained('eurusd')?.newest !== count) throw new Error('the feed did not retain');
+  return (after - before) / count;
 }
 
 /** A sink that records everything, and can be told to start refusing. */
@@ -264,16 +305,39 @@ describe('the guards have teeth', () => {
 });
 
 describe('what the feed costs, and what it releases', () => {
-  it('holds the window its docstring says, at the cost it says (CA7-33)', () => {
-    // Measured, not estimated: 5.01 MB per asset at the default window, so a
-    // hundred assets is 501 MB — 22% of the heap Node defaults to — and about
-    // 446 assets exhausts it before any other subsystem. The constant is not
-    // changed, because it is the resume window every reconnecting client
-    // depends on; it is pinned so that changing it is a decision.
+  it('holds the window its docstring says, at the cost it says (CA7-33, a3)', () => {
+    // **The title was the whole of it (Cycle Audit 8, a3).** This asserted the
+    // window and called that the cost, so the byte figure a hundred-asset
+    // deployment would be sized from — quoted in the roadmap, in PH-22 and in
+    // the observer-load evidence — sat unasserted for a cycle at 105 bytes a
+    // tick while the feed retained 73. The window is not changed, because it is
+    // the resume window every reconnecting client depends on; it is pinned so
+    // that changing it is a decision.
     expect(DEFAULT_RETAIN_TICKS).toBe(50_000);
     const feed = new TickFeed();
     feed.publish('eurusd', ticks(1, DEFAULT_RETAIN_TICKS + 10));
     expect(feed.retained('eurusd')).toEqual({ oldest: 11, newest: 50_010 });
+
+    // What a retained tick *is*, exactly, because that is what the byte figure
+    // measures. A fourth field costs 8 bytes — an 11% move that no band a heap
+    // measurement can honestly carry would notice — so the shape is asserted
+    // rather than left to the band below to catch.
+    const retained = feed.since('eurusd', 50_010)[0]!;
+    expect(Object.keys(retained).sort()).toEqual(['instant', 'price', 'sequence']);
+    for (const [field, value] of Object.entries(retained)) {
+      expect(typeof value, `${field} is not a number`).toBe('number');
+    }
+
+    // And the cost itself, re-measured. The band is 20% because this is a heap
+    // measurement and V8 moves; it is still five times tighter than the error
+    // it exists to catch, and it fails outright on a feed that starts retaining
+    // anything besides the ticks.
+    const perTick = retainedBytesPerTick(DEFAULT_RETAIN_TICKS);
+    expect(
+      Math.abs(perTick - MEASURED_BYTES_PER_TICK) / MEASURED_BYTES_PER_TICK,
+      `the feed retains ${perTick.toFixed(1)} bytes a tick, not ${String(MEASURED_BYTES_PER_TICK)} ` +
+        `— re-measure and update the sizing figures in feed.ts, they are what a catalogue is planned from`,
+    ).toBeLessThan(0.2);
   });
 
   it('releases an asset it is told to forget, and tells its subscribers (CA7-35)', () => {

@@ -216,6 +216,51 @@ export default defineConfig({
       include: ['packages/*/src/**/*.ts', 'tools/*/src/**/*.ts', 'apps/*/src/**/*.ts?(x)'],
       // `**/*.test.ts` also matches `*.stat.test.ts`.
       exclude: ['**/*.test.ts', '**/index.ts', '**/*.d.ts'],
+      /**
+       * A floor per workspace, and what it is for.
+       *
+       * **Cycle Audit 8 (a2).** Coverage was measured accurately and enforced
+       * nothing: no threshold here, and no step of `npm run gate` that ran the
+       * measurement. A file could go from fully covered to zero — or arrive at
+       * zero, as every line of `apps/web/src` did — and every step of the gate
+       * returned the same verdict. An instrument that reports and holds nothing
+       * shut is the same class of defect as CA6-01, one layer up.
+       *
+       * These are a ratchet, not a target. Each floor sits about two points
+       * under what `npm run test:cov:unit` measured on 2026-09-04 — or fifteen
+       * lines, in the small packages where two points is a handful of lines —
+       * which is one refactor's worth of slack and far less than a file falling
+       * out of the suite. The measurement each floor was set under is recorded
+       * beside it, so a reader can see how much slack is left without running
+       * anything. Raise a floor when the measurement rises; lowering one is a
+       * decision, and belongs in the commit message that does it.
+       *
+       * **Per workspace, because an aggregate has no resolution.** Three hundred
+       * uncovered lines is a rounding error across the eleven thousand in
+       * `packages/` and the whole of `packages/chart` on its own. `gate.test.ts`
+       * asserts every workspace holding source has a floor here, so a new
+       * package cannot arrive unmeasured — which is exactly how `apps/web`'s
+       * zero arrived.
+       *
+       * **Measured under the unit project alone**, because that is the run the
+       * gate can afford (about 100 s). A file covered only by statistical tests
+       * reads as uncovered there, which is why `tools/sim` and `apps/web` sit
+       * where they do; `npm run test:cov` runs both projects and can only
+       * measure higher, so it passes these floors too.
+       */
+      thresholds: {
+        'packages/chart/src/**': { lines: 94 }, // measured 99.3
+        'packages/core/src/**': { lines: 96 }, // measured 99.0
+        'packages/distribution/src/**': { lines: 88 }, // measured 90.5
+        'packages/engine/src/**': { lines: 95 }, // measured 97.1
+        'packages/fixtures/src/**': { lines: 95 }, // measured 100.0
+        'packages/lab/src/**': { lines: 88 }, // measured 90.3
+        'packages/runtime/src/**': { lines: 91 }, // measured 94.0
+        'packages/trading/src/**': { lines: 88 }, // measured 93.5
+        'apps/api/src/**': { lines: 75 }, // measured 77.7
+        'apps/web/src/**': { lines: 5 }, // measured 7.7
+        'tools/sim/src/**': { lines: 33 }, // measured 35.7
+      },
     },
   },
 });

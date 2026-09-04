@@ -56,14 +56,29 @@ describe('the Lab engine proxy', () => {
         }),
       );
     };
+    /**
+     * **Cycle Audit 8 (a4).** The credentials are sent, so that dropping them
+     * is what the assertion measures. Until this line the request carried only
+     * `last-event-id`, and `has('authorization') === false` was satisfied by
+     * the header never having existed: adding `authorization` to `FORWARDED` —
+     * this read-only proxy handing a browser-supplied bearer to the Lab, whose
+     * `/lab` sibling is the write surface — changed nothing any test could see.
+     */
     const response = await GET(
-      request('http://panel/labengine/markets/eurusd/stream', 'GET', { 'last-event-id': '41' }),
+      request('http://panel/labengine/markets/eurusd/stream', 'GET', {
+        'last-event-id': '41',
+        authorization: 'Bearer from-the-browser',
+        cookie: 'session=from-the-browser',
+      }),
       params(['markets', 'eurusd', 'stream']),
     );
     expect(response.headers.get('cache-control')).toBe('no-cache, no-transform');
     expect(response.headers.get('x-accel-buffering')).toBe('no');
     expect((forwarded as Headers | null)?.get('last-event-id')).toBe('41');
-    expect((forwarded as Headers | null)?.has('authorization')).toBe(false);
+    expect((forwarded as Headers | null)?.has('authorization'), 'a token was forwarded').toBe(
+      false,
+    );
+    expect((forwarded as Headers | null)?.has('cookie'), 'a cookie was forwarded').toBe(false);
   });
 
   it('says so when no Lab engine is configured, and refuses writes', async () => {

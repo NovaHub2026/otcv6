@@ -28,12 +28,14 @@ import {
   type ScenarioView,
   type Session,
   isControl,
+  LAB_POLL_TIMEOUT_MS,
 } from './labApi.js';
 import { Mercado } from './Mercado.js';
 import { Cierre } from './Cierre.js';
 import { Empujar } from './Empujar.js';
 import { Controles } from './Controles.js';
 import { nearestLevelPrice } from './lattice.js';
+import { createPollGate } from './poll.js';
 import { PreviewChart } from '../preview/PreviewChart.js';
 import { PANEL_TIMEFRAMES, type PanelTimeframeId } from '@otc/chart';
 import { fetchCatalogue, type CatalogueEntry } from '../../lib/api.js';
@@ -69,6 +71,12 @@ import { Tablero } from './Tablero.js';
  */
 type Tab =
   'board' | 'replay' | 'market' | 'close' | 'positions' | 'scenarios' | 'quality' | 'session';
+
+/**
+ * Cada segundo (PH-24.13): un empuje aterriza en dos o tres, y la tira debe
+ * decirlo mientras ocurre.
+ */
+const POLL_INTERVAL_MS = 1_000;
 
 export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): ReactElement {
   const [assets, setAssets] = useState<LabMarket[]>([]);
@@ -135,41 +143,60 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selected;
 
+  // Cycle Audit 8 (a4): and which refresh is the newest, because the market
+  // does not have to change for two answers to arrive out of order. The asset
+  // check above saw only a switch — the one case where the two answers look
+  // different — so two refreshes of the *same* market raced, and whichever the
+  // network returned last won, however old it was.
+  const pollRef = useRef(createPollGate());
+
   const refreshState = useCallback(async (asset: string) => {
-    const body = await labGet<LabState>(`markets/${asset}/state`);
-    if (selectedRef.current !== asset) return;
-    if (isUnavailable(body)) {
-      setUnavailable(body.reason);
-      setState(null);
-      return;
+    const gate = pollRef.current;
+    const ticket = gate.begin();
+    /** Whether this answer may still be written to the screen. */
+    const stale = (): boolean => !gate.isCurrent(ticket) || selectedRef.current !== asset;
+    try {
+      const body = await labGet<LabState>(`markets/${asset}/state`, LAB_POLL_TIMEOUT_MS);
+      if (stale()) return;
+      if (isUnavailable(body)) {
+        setUnavailable(body.reason);
+        setState(null);
+        return;
+      }
+      setUnavailable(null);
+      setState(body);
+      const [ctl, timelines, open, diagnostic, settled, everyMarket] = await Promise.all([
+        labGet<Control>(`markets/${asset}/control`, LAB_POLL_TIMEOUT_MS),
+        labGet<Session>('session', LAB_POLL_TIMEOUT_MS),
+        labGet<{ positions: LabPositionView[] }>(`markets/${asset}/positions`, LAB_POLL_TIMEOUT_MS),
+        labGet<ClosesView>('session/closes', LAB_POLL_TIMEOUT_MS),
+        labGet<PositionsView>('session/positions', LAB_POLL_TIMEOUT_MS),
+        labGet<ControlAll>('control', LAB_POLL_TIMEOUT_MS),
+      ]);
+      if (stale()) return;
+      if (!isUnavailable(settled)) setPositionsView(settled);
+      if (!isUnavailable(everyMarket)) setAll(everyMarket);
+      // An error body is not a control: storing one would read as "nothing running".
+      if (isControl(ctl)) setControl(ctl);
+      if (!isUnavailable(timelines)) setSession(timelines);
+      if (!isUnavailable(open)) setPositions(open.positions);
+      if (!isUnavailable(diagnostic)) setCloses(diagnostic);
+    } finally {
+      gate.end(ticket);
     }
-    setUnavailable(null);
-    setState(body);
-    const [ctl, timelines, open, diagnostic, settled, everyMarket] = await Promise.all([
-      labGet<Control>(`markets/${asset}/control`),
-      labGet<Session>('session'),
-      labGet<{ positions: LabPositionView[] }>(`markets/${asset}/positions`),
-      labGet<ClosesView>('session/closes'),
-      labGet<PositionsView>('session/positions'),
-      labGet<ControlAll>('control'),
-    ]);
-    if (selectedRef.current !== asset) return;
-    if (!isUnavailable(settled)) setPositionsView(settled);
-    if (!isUnavailable(everyMarket)) setAll(everyMarket);
-    // An error body is not a control: storing one would read as "nothing running".
-    if (isControl(ctl)) setControl(ctl);
-    if (!isUnavailable(timelines)) setSession(timelines);
-    if (!isUnavailable(open)) setPositions(open.positions);
-    if (!isUnavailable(diagnostic)) setCloses(diagnostic);
   }, []);
 
   useEffect(() => {
     if (selected === null) return;
     void refreshState(selected);
-    // Every second (PH-24.13): a push lands in two or three, and the strip should say so as it happens.
     const timer = setInterval(() => {
+      // A tick that finds the previous refresh still out is skipped rather than
+      // stacked on it (a4): each refresh is seven requests, and against a Lab
+      // that had stopped answering the interval queued seven more every second
+      // for the whole outage — then resolved the lot, in the network's order.
+      if (pollRef.current.busy()) return;
       void refreshState(selected);
-    }, 1_000);
+    }, POLL_INTERVAL_MS);
     return () => {
       clearInterval(timer);
     };
@@ -441,6 +468,18 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
 
   const regime =
     state?.magnitudeState.modulators?.find((m) => m !== null && 'regime' in m)?.regime ?? null;
+  /**
+   * La unidad de distancia del mercado (PH-24.18), o nada.
+   *
+   * Cycle Audit 8 (a4): aquí estaba `state?.distance?.unitSteps ?? 1`, y un 1
+   * no es «no lo sé» — es el paso de la red. Entre el montaje y la primera
+   * respuesta, y mientras el Lab no conteste, «+3» armaba un cierre a tres
+   * pasos (unas 0,0000008 en EUR/USD, invisibles a la precisión que se muestra)
+   * en lugar de a las tres unidades que dice el botón, y nada en la pantalla
+   * decía que la unidad había cambiado. Las dos pestañas cuyos campos se piden
+   * en unidades esperan a saber cuánto vale una.
+   */
+  const distanceUnit = state?.distance ?? null;
   return (
     <div data-testid="lab" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Banner />
@@ -549,27 +588,31 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
                 <Mercado state={state} />
               </div>
               <div hidden={tab !== 'close'}>
-                <Cierre
-                  timeframe={tf}
-                  onTimeframe={setTf}
-                  bucket={bucket}
-                  onBucket={setBucket}
-                  expiryTime={expiryTime}
-                  onExpiryTime={setExpiryTime}
-                  price={price}
-                  onPrice={setPrice}
-                  onPreview={previewClose}
-                  onApply={applyClose}
-                  onNeighbour={applyNeighbour}
-                  onDelta={applyDelta}
-                  onRelease={releaseMarket}
-                  busy={busy}
-                  plan={plan}
-                  notice={notice}
-                  control={control}
-                  displayPrecision={state === null ? 7 : (state.price.split('.')[1] ?? '').length}
-                  unitSteps={state?.distance?.unitSteps ?? 1}
-                />
+                {distanceUnit === null ? (
+                  <UnitUnknown />
+                ) : (
+                  <Cierre
+                    timeframe={tf}
+                    onTimeframe={setTf}
+                    bucket={bucket}
+                    onBucket={setBucket}
+                    expiryTime={expiryTime}
+                    onExpiryTime={setExpiryTime}
+                    price={price}
+                    onPrice={setPrice}
+                    onPreview={previewClose}
+                    onApply={applyClose}
+                    onNeighbour={applyNeighbour}
+                    onDelta={applyDelta}
+                    onRelease={releaseMarket}
+                    busy={busy}
+                    plan={plan}
+                    notice={notice}
+                    control={control}
+                    displayPrecision={state === null ? 7 : (state.price.split('.')[1] ?? '').length}
+                    unitSteps={distanceUnit.unitSteps}
+                  />
+                )}
               </div>
               <div hidden={tab !== 'positions'}>
                 <Posiciones
@@ -581,17 +624,21 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
                 />
               </div>
               <div hidden={tab !== 'scenarios'}>
-                <Escenarios
-                  scenarios={scenarios}
-                  plan={scenarioPlan}
-                  notice={scenarioNotice}
-                  busy={busy}
-                  onRun={runScenario}
-                  onTarget={runScenario}
-                  targetPlan={scenarioPlan}
-                  unitSteps={state?.distance?.unitSteps ?? 1}
-                  unitPrice={state?.distance?.unitPrice}
-                />
+                {distanceUnit === null ? (
+                  <UnitUnknown />
+                ) : (
+                  <Escenarios
+                    scenarios={scenarios}
+                    plan={scenarioPlan}
+                    notice={scenarioNotice}
+                    busy={busy}
+                    onRun={runScenario}
+                    onTarget={runScenario}
+                    targetPlan={scenarioPlan}
+                    unitSteps={distanceUnit.unitSteps}
+                    unitPrice={distanceUnit.unitPrice}
+                  />
+                )}
               </div>
               <div hidden={tab !== 'quality'}>
                 <QualityPanel quality={quality} busy={busy === 'quality'} onRun={runQuality} />
@@ -830,6 +877,38 @@ function NotRunning({ reason }: { reason: string }): ReactElement {
           : es.lab.unreachable}
       </strong>
       <Info text={reason} />
+    </div>
+  );
+}
+
+/**
+ * Cycle Audit 8 (a4): un control de distancia sin unidad no se muestra.
+ *
+ * No es un error: es el estado normal durante el primer segundo, y el estado
+ * permanente mientras el Lab no conteste. Lo que no puede pasar es que los
+ * botones sigan ahí midiendo en otra cosa sin decirlo.
+ */
+const UNIT_UNKNOWN_NOTE =
+  'Cierre y Escenarios piden las distancias en unidades del mercado, y el Lab ' +
+  'todavía no ha dicho cuánto vale una aquí. Un paso de la red no es una ' +
+  'unidad: en EUR/USD son unas 0,0000008, invisibles a la precisión que se ' +
+  'muestra, así que estos controles esperan en lugar de suponerla.';
+
+function UnitUnknown(): ReactElement {
+  return (
+    <div
+      data-testid="lab-unit-unknown"
+      style={{
+        margin: '12px 0',
+        padding: 12,
+        border: `1px solid ${T.line}`,
+        color: T.muted,
+        fontSize: 12,
+        lineHeight: 1.6,
+      }}
+    >
+      <strong>Esperando la unidad de este mercado.</strong>
+      <Info text={UNIT_UNKNOWN_NOTE} />
     </div>
   );
 }

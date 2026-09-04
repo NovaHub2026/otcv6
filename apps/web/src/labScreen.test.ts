@@ -252,7 +252,7 @@ describe('the Lab is marked wherever it appears', () => {
     // The board never arms: the only act on it is release.
     expect(tablero, 'the board arms something').not.toMatch(/\/close|\/scenario|preset/);
     const lab = code('lab/Lab.tsx');
-    expect(lab).toMatch(/labGet<ControlAll>\('control'\)/);
+    expect(lab).toMatch(/labGet<ControlAll>\('control', LAB_POLL_TIMEOUT_MS\)/);
     expect(lab).toMatch(/lab-asset-badge-/);
     expect(lab).toMatch(/labPost<\{ released: unknown\[\] \}>\('release-all'\)/);
   });
@@ -290,8 +290,16 @@ describe('the Lab is marked wherever it appears', () => {
     const api = code('lab/labApi.ts');
     // Both verbs go through one catch: a failed fetch or body is an Unavailable answer.
     expect(api).toMatch(/async function asJson</);
-    expect(api).toMatch(/catch \(error\) \{\s*return \{\s*running: false,\s*reason:/);
-    expect(api).toMatch(/return asJson<T>\(fetch\(`\/lab\/\$\{path\}`\)\);/);
+    // The catch answers; it never rethrows, whatever went wrong — since Cycle
+    // Audit 8 (a4) that includes the deadline, which is why it is more than one
+    // return and why this reads the whole block rather than its first line.
+    const failure = /catch \(error\) \{[\s\S]*?\n {2}\}/.exec(api)?.[0] ?? '';
+    expect(failure, 'the catch block was not found').not.toBe('');
+    expect(failure).toMatch(/return \{\s*running: false,/);
+    expect(failure, 'a failed request escapes as an exception').not.toMatch(/\bthrow\b/);
+    expect(api).toMatch(
+      /return asJson<T>\(fetch\(`\/lab\/\$\{path\}`, \{ signal: AbortSignal\.timeout\(timeoutMs\) \}\), timeoutMs\);/,
+    );
     expect(api).toMatch(/return asJson<T>\(\s*fetch\(`\/lab\/\$\{path\}`, \{\s*method: 'POST'/);
     expect(api).not.toMatch(/return \(await response\.json\(\)\) as T \| Unavailable;\n\}/);
     // The push handler clears busy whatever happened.
@@ -440,7 +448,58 @@ describe('the Lab is marked wherever it appears', () => {
     expect(escenarios).toMatch(/level: Math\.round\(\s*Number\([\s\S]*?\) \* unitSteps,?\s*\)/);
     const lab = code('lab/Lab.tsx');
     // Cierre and Escenarios on the instrument; the panel's ▲ ▼ step in price, not in steps (PH-24.20).
-    expect(lab.match(/unitSteps=\{state\?\.distance\?\.unitSteps \?\? 1\}/g) ?? []).toHaveLength(2);
+    expect(lab.match(/unitSteps=\{distanceUnit\.unitSteps\}/g) ?? []).toHaveLength(2);
+  });
+
+  it('never converts a distance by a unit the Lab has not sent (a4)', () => {
+    /**
+     * Cycle Audit 8. `unitSteps={state?.distance?.unitSteps ?? 1}` stood in
+     * both tabs, and a 1 is not a missing unit — it is the lattice step. Until
+     * the first poll answered, and again after any answer that clears the
+     * state, «+3» armed a close three steps away (0.0000008 on EUR/USD,
+     * invisible at the precision the screen prints) instead of three units,
+     * with nothing on screen saying the unit had changed. The tabs are rendered
+     * `hidden` rather than unmounted and their buttons are disabled only while
+     * an act is running, so there was nothing else in the way.
+     */
+    const lab = code('lab/Lab.tsx');
+    expect(lab, 'a distance control defaults the unit it converts by').not.toMatch(
+      /unitSteps=\{[^}]*\?\?/,
+    );
+    expect(lab).toMatch(/const distanceUnit = state\?\.distance \?\? null;/);
+    // Both tabs, and each says it is waiting rather than showing dead buttons.
+    expect(lab.match(/\{distanceUnit === null \? \(\s*<UnitUnknown \/>/g) ?? []).toHaveLength(2);
+    expect(lab).toMatch(/data-testid="lab-unit-unknown"/);
+  });
+
+  it('polls one refresh at a time, on its own deadline (a4)', () => {
+    /**
+     * Cycle Audit 8. The 1 s poll fired whether or not the previous one had
+     * come back, and each refresh is a state read plus six more: against a Lab
+     * that had stopped answering the interval queued seven requests a second
+     * for the whole outage, then resolved them at once in the network's order.
+     * Nothing pinned the interval, the ordering, or a deadline.
+     */
+    const lab = code('lab/Lab.tsx');
+    expect(lab).toMatch(/const pollRef = useRef\(createPollGate\(\)\);/);
+    expect(lab, 'the tick stacks a refresh on the one still out').toMatch(
+      /if \(pollRef\.current\.busy\(\)\) return;/,
+    );
+    expect(lab).toMatch(/const POLL_INTERVAL_MS = 1_000;/);
+    expect(lab).toMatch(/\}, POLL_INTERVAL_MS\);/);
+    // Every read the poll makes carries the poll's deadline — including any
+    // read added to it later, which is how the last one arrived without one.
+    const start = lab.indexOf('const refreshState');
+    expect(start, 'refreshState not found').toBeGreaterThan(0);
+    const refresh = lab.slice(start, lab.indexOf('useEffect', start));
+    const reads = (refresh.match(/labGet</g) ?? []).length;
+    expect(reads).toBeGreaterThanOrEqual(7);
+    expect(
+      (refresh.match(/LAB_POLL_TIMEOUT_MS/g) ?? []).length,
+      'a poll read with no deadline',
+    ).toBe(reads);
+    // And the deadline is a real one: an abort, not a promise nobody cancels.
+    expect(code('lab/labApi.ts')).toMatch(/signal: AbortSignal\.timeout\(timeoutMs\)/);
   });
 
   it('is a control panel: the chart at three quarters, four cards at one quarter, the instrument behind a link (PH-24.19)', () => {
@@ -584,7 +643,12 @@ describe('the Lab is marked wherever it appears', () => {
     // A stale poll or an error body is never rendered as this market's control.
     const lab2 = code('lab/Lab.tsx');
     // Both awaits, not one: the state read and the batch that follows it.
-    expect(lab2.match(/if \(selectedRef\.current !== asset\) return;/g) ?? []).toHaveLength(2);
+    expect(lab2.match(/if \(stale\(\)\) return;/g) ?? []).toHaveLength(2);
+    // And stale is both questions since Cycle Audit 8 (a4): the market on
+    // screen, and whether a later refresh has already overtaken this answer.
+    expect(lab2).toMatch(
+      /const stale = \(\): boolean =>\s*!gate\.isCurrent\(ticket\) \|\| selectedRef\.current !== asset;/,
+    );
     expect(lab2).toMatch(/if \(isControl\(ctl\)\) setControl\(ctl\);/);
     // And the safety event has a name in the operator's language.
     expect(read('../lib/es.ts')).toMatch(/'bias\.expired':/);

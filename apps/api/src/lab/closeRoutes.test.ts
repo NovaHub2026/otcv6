@@ -664,6 +664,48 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     await venue.stop();
   }, 120_000);
 
+  it('Cycle Audit 8 (a8): tells a settled position from one still waiting and one the window dropped', async () => {
+    /**
+     * `actual` was a settlement or null, and null meant either of two opposite
+     * things: "not expired yet, ask again" and "the entry is no longer in the
+     * retained window, so this will never settle". The panel showed both as a
+     * position pending for ever. The view now carries the record's own answer.
+     */
+    const { venue, clock, controller } = await labVenue();
+    await advance(venue, clock, 20_000);
+    const opened = controller.openPosition(id, 'up', '100', '60000') as {
+      position: { id: string };
+    };
+    type Row = {
+      id: string;
+      actual: unknown;
+      settlement: { kind: string; reason?: string } | null;
+    };
+    const rowNow = (): Row =>
+      (controller.listPositions(id) as { positions: Row[] }).positions.find(
+        (p) => p.id === opened.position.id,
+      )!;
+
+    // Before the expiry: nothing to say yet, and the view says so rather than
+    // showing the same null an unsettleable entry would show.
+    expect(rowNow().settlement).toBeNull();
+
+    await advance(venue, clock, 70_000);
+    const settled = rowNow();
+    expect(settled.settlement).toEqual({ kind: 'settled' });
+    expect(settled.actual).not.toBeNull();
+
+    // Now drop the window the entry lived in and let the feed refill past it.
+    venue.feed.forget(id, 'test: the entry falls out of the retained window');
+    await advance(venue, clock, 10_000);
+    const dropped = rowNow();
+    expect(dropped.actual, 'an evicted entry cannot be settled').toBeNull();
+    expect(dropped.settlement!.kind).toBe('evicted');
+    // With `settle`'s own wording, so the panel is not paraphrasing the kernel.
+    expect(dropped.settlement!.reason!.length).toBeGreaterThan(0);
+    await venue.stop();
+  }, 60_000);
+
   it('answers 409 when the process was not composed as a Lab', async () => {
     const { venue, clock, controller } = await labVenue(false);
     await advance(venue, clock, 5_000);

@@ -2,6 +2,9 @@
 
 Type: RECORDED EVIDENCE
 Produced: 2026-09-03
+Corrected: 2026-09-04 — the §After paragraph, which stated the wrong reason the
+replay ceiling was not seen to engage, and what the `gaps` column counts
+(Cycle Audit 8, a3)
 Runner: `tools/sim/src/observerLoadRun.ts` — in the repository, and reproducible
 Harness: `tools/sim/src/observerLoad.ts`, guarded by `observerLoad.test.ts`
 Machine: 16 cores, 7.6 GB, no other load. The gate and every agent workflow were
@@ -212,11 +215,39 @@ Fifteen hundred clients, five assets each:
 | storm, 0 ms   | live edge  | 1,500       | 578 / 1,707 / 1,707 ms     | 1.81 s     | 165 → 219 MB     | 0    | 0          | 0       |
 | storm, 0 ms   | 5,000 back | 1,500       | 664 / 1,269 / **1,271** ms | 3.68 s     | 219 → **458 MB** | 0    | 0          | 0       |
 
-**And the honest part: the budget did not engage in this run.** Nothing was
-refused and no gap was reported, because the harness reads as fast as the server
-writes, so `writableLength` stays near zero and no connection ever owes
-anything. The improvement from 1,470 MB to 458 MB is a 25% smaller run plus
-whatever else changed between them; it is **not** attributable to the ceiling.
+**And the honest part: whether the budget engaged in this run is unknown, and
+the reason first recorded here was wrong.** This paragraph said the budget did
+not engage "because the harness reads as fast as the server writes, so
+`writableLength` stays near zero and no connection ever owes anything". Cycle
+Audit 8 (a3) measured both halves false, against the real controller over a real
+socket:
+
+- The charge is taken **synchronously at the end of the handler**, before any
+  client can have read a byte. Every resuming connection owes about **1.08 MB**
+  at that instant whatever the client does — `writableLength` 1,084,926 bytes,
+  reading or not, because `MAX_REPLAY_BYTES` caps the pre-header buffer at 1 MB
+  — and it is released on `drain`.
+- So what fills the budget is how many resuming connections are handled between
+  drains: **arrival simultaneity, not client read speed.** Forty clients that
+  never read, 40 ms apart, never accumulate more than one connection's charge;
+  120 fired together peaked at **58.6 MB** of the 64 MB ceiling, and a
+  fast-reading fleet produced the identical peak.
+- And the row that would have shown it was unreadable. The harness parsed only
+  frames carrying a numeric `sequence`, so the server's `gap` and `close`
+  frames were discarded: a re-run of 300 observers at `arrivalMs: 0` with
+  `resumeBack` had **208 of 300 replays denied by the ceiling** while the
+  harness reported `established 300, gaps 0, refused 0` — the same signature the
+  table above carries. `gaps` in every table on this page means _sequence
+  discontinuities seen by the client_, and told gaps were not counted at all.
+
+The instrument counts them now —
+[`observerLoad.ts`](../../tools/sim/src/observerLoad.ts)'s `gapEvents` and
+`closeEvents`, printed as
+`TRUNCATED — the server said N deliveries had a gap and cut M of them off` — so
+the question this paragraph could not answer is answerable by re-running the
+table. What still holds unchanged: the improvement from 1,470 MB to 458 MB is a
+25% smaller run plus whatever else changed between them, and is **not**
+attributable to the ceiling.
 
 What the ceiling is proven to do is what the unit tests prove: charge undrained
 bytes, release them on drain or close, refuse a resume past the ceiling without
@@ -224,6 +255,8 @@ a gap policy, and serve the live edge with an explicit `gap` when asked to be
 told. Each watched failing.
 
 **What remains unmeasured** is the ceiling under a genuinely slow fleet — real
-browsers on real networks, which is where `writableLength` actually grows. That
-needs a harness that reads slowly on purpose, and it is the next honest step
-rather than a claim this run supports.
+browsers on real networks, where the charge is _persistent_ rather than released
+on the next drain. That is worth measuring for what a standing charge does to
+the sum, but it is not what a harness needs in order to reach the ceiling at
+all: this one already does, at `arrivalMs: 0` with `resumeBack`, and re-running
+the table above now that gaps are counted is the cheaper first step.

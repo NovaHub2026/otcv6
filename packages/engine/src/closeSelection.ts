@@ -86,9 +86,19 @@ export interface CloseSelection {
 
 export type Reachability = 'easy' | 'normal' | 'difficult' | 'critical' | 'outside-natural-range';
 
-/** Bands over the measured acceptance rate, coarsest first. */
-function bandFor(rate: number, found: boolean): Reachability {
-  if (!found) return 'outside-natural-range';
+/**
+ * Bands over the measured acceptance rate, coarsest first (§36).
+ *
+ * Exported, and without the dead `found` parameter it used to take — both call
+ * sites passed a literal `true`, and `outside-natural-range` comes from the
+ * early returns rather than from here. **Cycle Audit 8 (a8):** the four
+ * cut-offs were pinned by nothing. The only assertion over them read
+ * `expect(['easy','normal','difficult','critical']).toContain(...)`, so a plant
+ * that made every close report `easy` passed 627 tests — and `easy` is the word
+ * the Lab's screen shows an operator deciding whether a close is worth asking
+ * for.
+ */
+export function reachabilityBand(rate: number): Reachability {
   if (rate >= 1 / 100) return 'easy';
   if (rate >= 1 / 2_000) return 'normal';
   if (rate >= 1 / 50_000) return 'difficult';
@@ -174,7 +184,7 @@ export function selectClose(request: CloseSelectionRequest): CloseSelection {
         signs: [...chosen],
         attempts: attempt,
         acceptanceRate: rate,
-        reachability: bandFor(rate, true),
+        reachability: reachabilityBand(rate),
         impossible: null,
       };
     }
@@ -213,21 +223,27 @@ export interface ConditionedCloseRequest {
  * one — a close asked "above 1.0850" that always landed one step above it
  * would be a shape, and §28 and §70 forbid shapes.
  *
- * Impossibility is known without sampling when no attainable distance
- * satisfies: the attainable distances are `-total, -total + 2, …, total`.
+ * Impossibility is known without sampling when no distance of the right parity
+ * satisfies — a **necessary** condition on an attainable close, and cheap. It is
+ * not sufficient: `-total, -total + 2, …, total` is a superset of what the steps
+ * can actually reach, so passing the scan means "not provably impossible" and
+ * the sampler decides (Cycle Audit 8, a8, which found this described as the
+ * attainable set).
  */
 export function selectCloseWhere(request: ConditionedCloseRequest): CloseSelection {
   const { steps, satisfies, random } = request;
   const maxAttempts = request.maxAttempts ?? 200_000;
   const total = steps.reduce((sum, step) => sum + step, 0);
-  let attainable = false;
+  // Necessary, not sufficient — see the docstring. With steps `[5]` the
+  // attainable set is `{-5, +5}` while this scan also tests -3, -1, 1 and 3.
+  let parityAllows = false;
   for (let delta = -total; delta <= total; delta += 2) {
     if (satisfies(delta)) {
-      attainable = true;
+      parityAllows = true;
       break;
     }
   }
-  if (!attainable) {
+  if (!parityAllows) {
     return {
       signs: null,
       attempts: 0,
@@ -261,7 +277,7 @@ export function selectCloseWhere(request: ConditionedCloseRequest): CloseSelecti
         signs: [...chosen],
         attempts: attempt,
         acceptanceRate: rate,
-        reachability: bandFor(rate, true),
+        reachability: reachabilityBand(rate),
         impossible: null,
       };
     }
@@ -272,8 +288,8 @@ export function selectCloseWhere(request: ConditionedCloseRequest): CloseSelecti
     acceptanceRate: 0,
     reachability: 'outside-natural-range',
     impossible:
-      `No path in ${String(maxAttempts)} draws closed where the condition holds. It is ` +
-      `attainable in principle and vanishingly unlikely in practice, which is what §37 calls ` +
-      `outside the natural range.`,
+      `No path in ${String(maxAttempts)} draws closed where the condition holds. Either no ` +
+      `attainable close satisfies it — the parity scan rules out only the clearly impossible — ` +
+      `or it is vanishingly unlikely, which is what §37 calls outside the natural range.`,
   };
 }

@@ -1,10 +1,13 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
- * Every constructor parameter of the Lab controller has a provider (PH-24.18).
+ * What the Lab's sources claim about themselves, read as text.
+ *
+ * Every constructor parameter of the Lab controller has a provider (PH-24.18),
+ * and every guard a comment here names exists.
  *
  * Nest resolves the controller's parameters by their declared types at boot.
  * A parameter with a default value passes every unit test that builds the
@@ -42,5 +45,44 @@ describe('the Lab module provides what its controller asks for', () => {
         !new RegExp(`^\\s*${type},\\s*$`, 'm').test(module),
     );
     expect(missing, 'constructor parameter types with no provider in lab.module.ts').toEqual([]);
+  });
+});
+
+/** Test files under the source trees, by base name. */
+function testFileNames(): Set<string> {
+  const found = new Set<string>();
+  const skip = new Set(['node_modules', 'dist', 'coverage', '.next']);
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (skip.has(entry.name)) continue;
+      if (entry.isDirectory()) walk(path.join(dir, entry.name));
+      else if (entry.name.endsWith('.test.ts')) found.add(entry.name);
+    }
+  };
+  const root = path.resolve(here, '../../../..');
+  for (const tree of ['apps', 'packages', 'tools']) walk(path.join(root, tree));
+  return found;
+}
+
+describe('a comment that names a guard names one that exists', () => {
+  it('every `*.test.ts` cited under apps/api/src/lab is a file', () => {
+    // `lab.module.ts` credited a test file that has never existed with closing
+    // the defect its own comment described (Cycle Audit 8, a8). A comment
+    // naming a guard is how the next reader decides something is covered, so
+    // the name has to resolve to a file.
+    const cited = new Set<string>();
+    for (const file of readdirSync(here)) {
+      if (!file.endsWith('.ts')) continue;
+      for (const match of read(file).matchAll(/`([A-Za-z0-9_.-]+\.test\.ts)`/g)) {
+        cited.add(match[1]!);
+      }
+    }
+    expect(cited.size, 'the scan found no citations at all').toBeGreaterThanOrEqual(5);
+    const present = testFileNames();
+    const missing = [...cited].filter((name) => !present.has(name)).sort();
+    expect(
+      missing,
+      'test files named by a comment under apps/api/src/lab that do not exist',
+    ).toEqual([]);
   });
 });

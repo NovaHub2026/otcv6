@@ -106,12 +106,12 @@ npm run format:check   # Prettier check
 npm run typecheck:web     # the Next.js app, which is outside the reference graph
 npm run typecheck:config  # vitest.config.ts and the root setup/reporter files
 
-npm run test:unit      # fast unit suite, 86 files             (~30s)
-npm run test:stat      # statistical suite, SERIAL (~20min locally, ~40min hosted)
+npm run test:unit      # fast unit suite, ~130 files            (~30s)
+npm run test:stat      # statistical suite, SERIAL — over an hour, see below
 npm test               # both, in that order
 
 npm run gate           # format:check → build → typecheck:web → typecheck:config
-                       #   → lint → unit → statistical             (~25min)
+                       #   → lint → unit → statistical   (dominated by test:stat)
 npm run test:cov       # coverage over packages/, tools/ and apps/, both projects
 ```
 
@@ -123,15 +123,27 @@ the machine, and makes every wall-clock assertion in the suite measure
 contention. The out-of-band audit of 2026-09-02 found this file recommending the
 bare command (a7-07).
 
-**Budget the time.** `npm run gate` runs the statistical suite serially and takes
-roughly twenty-five minutes locally; the hosted Statistical Gate takes 38 to 45
-minutes. Neither has hung. Run it in the background rather than under a short
-command timeout. During subphase work use a **targeted** gate (a justified
-subset — see `GOVERNANCE.md` §21); the full gate belongs at phase boundaries.
+**Budget the time.** `npm run gate` is dominated by the statistical suite, which
+runs serially by design — that is single-core wall clock, and a bigger machine
+does not shorten it. Measured on 2026-09-04: the statistical suite is **70
+minutes locally** (4,217 s) and **105 minutes hosted** (6,280 s), against ~40
+minutes hosted the day before; PH-24.17 recalibrated the engine to print three
+to four times as many ticks per candle, and every suite that samples in ticks
+grew with it. The unit suite is the cheap half: ~130 files and ~2,600 tests in
+about half a minute, same machine, same day. Nothing has hung, but the hosted
+Statistical Gate was **cancelled at its own 90-minute ceiling** on the PH-24
+merge and left that commit with no statistical verdict (Cycle Audit 8, finding
+18; the ceiling is 180 minutes now).
+Run the gate in the background rather than under a short command timeout, and
+treat a number in this paragraph as a magnitude with a date on it, not an
+invariant — the suite grows with the engine. During subphase work use a
+**targeted** gate (a justified subset — see `GOVERNANCE.md` §21); the full gate
+belongs at phase boundaries.
 
 **Build precedes lint, and that ordering is load-bearing.** The type-aware ESLint
 rules resolve workspace types through each package's emitted declarations, so on
-a clean checkout `lint` before `build` reports 46 unresolved-type errors. It
+a clean checkout `lint` before `build` reports every cross-package type as
+unresolved — a count that grows with the workspace and is not worth recording. It
 passed locally for four cycles only because a previous build's `dist/` is always
 lying around — meaning **every `GATE_EXIT=0` recorded through PH-10 was
 conditional on leftover artefacts** (ADR-0009, B-011).

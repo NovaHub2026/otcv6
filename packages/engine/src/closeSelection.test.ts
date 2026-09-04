@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MasterKeyring } from '@otc/core';
-import { selectClose, selectCloseWhere } from './closeSelection.js';
+import { reachabilityBand, selectClose, selectCloseWhere } from './closeSelection.js';
 
 /**
  * The Lab's exact close, and the properties that make it honest.
@@ -189,5 +189,72 @@ describe('a close on a side of a level is selected, never steered (PH-24.21)', (
     expect(
       selectCloseWhere({ steps: [], satisfies: (d) => d > 0, random: stream('x') }).signs,
     ).toBeNull();
+  });
+});
+
+describe("§36's reachability bands are the words the operator reads (a8)", () => {
+  /**
+   * **Cycle Audit 8 (a8).** The four cut-offs were pinned by nothing: the only
+   * assertion over them checked that the answer was one of the four words, so a
+   * plant that reported `easy` for every close passed 627 tests. `easy` is what
+   * the Lab's screen shows an operator deciding whether a close is worth
+   * asking for, and `critical` is what tells them the market almost never goes
+   * there.
+   *
+   * Both sides of every cut-off, so a band cannot be widened or narrowed
+   * without this failing.
+   */
+  it.each([
+    [1, 'easy'],
+    [1 / 100, 'easy'],
+    [1 / 100.5, 'normal'],
+    [1 / 2_000, 'normal'],
+    [1 / 2_000.5, 'difficult'],
+    [1 / 50_000, 'difficult'],
+    [1 / 50_000.5, 'critical'],
+    [0, 'critical'],
+  ] as const)('a rate of %s reads %s', (rate, band) => {
+    expect(reachabilityBand(rate)).toBe(band);
+  });
+
+  it('is the function the selection actually uses, at both ends', () => {
+    // An easy target: the alternating assignment, which any vector reaches.
+    const remaining = steps(24, 'bands-easy');
+    const source = stream('bands-probe');
+    const delta = remaining.reduce((sum, step) => sum + (source.nextBoolean() ? step : -step), 0);
+    const easy = selectClose({ steps: remaining, delta, random: stream('bands-draws') });
+    expect(easy.signs).not.toBeNull();
+    expect(easy.reachability).toBe(reachabilityBand(easy.acceptanceRate));
+    // And a condition met by half the vectors is easy by the same function.
+    const sided = selectCloseWhere({
+      steps: remaining,
+      satisfies: (sum) => sum < 0,
+      random: stream('bands-sided'),
+    });
+    expect(sided.reachability).toBe(reachabilityBand(sided.acceptanceRate));
+    expect(sided.reachability).toBe('easy');
+  });
+
+  it('says a condition no attainable close satisfies is impossible, without claiming the scan proved it (a8)', () => {
+    // The parity scan is necessary, not sufficient: with one step of 5 the
+    // attainable set is {-5, +5}, and the scan also tests -3, -1, 1, 3. A
+    // condition met only by -1 therefore passes the scan and exhausts the
+    // sampler, and the message must not then assert the condition was reachable.
+    const selected = selectCloseWhere({
+      steps: [5],
+      satisfies: (delta) => delta === -1,
+      random: stream('bands-parity'),
+      maxAttempts: 200,
+    });
+    expect(selected.signs).toBeNull();
+    expect(selected.impossible).toMatch(/Either no attainable close satisfies it/);
+    expect(selected.impossible).not.toMatch(/attainable in principle/);
+    // And the cheap refusal still fires where it is sound.
+    const outside = selectCloseWhere({
+      steps: [5],
+      satisfies: (delta) => delta > 5,
+      random: stream('bands-outside'),
+    });
+    expect(outside.attempts, 'the clearly impossible must cost no draws').toBe(0);
   });
 });

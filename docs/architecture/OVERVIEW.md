@@ -14,6 +14,9 @@ Describes: the system as it exists today
             │           depends on @otc/chart + @otc/core only
         apps/api        NestJS venue: hosting, streaming,    ✅ (PH-5, APPROVED)
             │           persistence, publication
+            ├──────────▶ @otc/lab, in the Lab composition    ✅ (PH-23, PH-24)
+            │            only: /lab/* and a selectable sign
+            │            source, never in production (ADR-0018)
             ▼
    @otc/distribution    sequence-addressed tick feed         ✅ (PH-7, APPROVED)
             │           + Merkle commitments, Ed25519        ✅ (PH-12, APPROVED)
@@ -39,6 +42,7 @@ Describes: the system as it exists today
 
     @otc/fixtures       planted-edge corpus + control        ✅
        @otc/lab         predictability and realism batteries ✅ (PH-2, APPROVED)
+                        served to the operator by apps/api   ✅ (PH-23, APPROVED)
        tools/sim        simulation runner, evidence          ✅
                         generators, phase acceptance
 ```
@@ -53,6 +57,57 @@ policy of exactly `@otc/core` and `@otc/chart`.
 nine workspaces — `runtime`, `trading`, `distribution` and `chart` were absent,
 under a header stating that layers not appearing here do not exist. Four approved
 phases were invisible to a reader following the document's own rule.
+
+Cycle Audit 8 found the same absence a cycle later, and the two sections below
+close it: the OTC Market Lab and the multiplexed stream — a phase and a half of
+approved work — appeared nowhere here, under that same header.
+
+## The OTC Market Lab, and the boundary that keeps it out of production
+
+A deployment runs **one** engine process, composed one of two ways (ADR-0018).
+The production composition is the venue alone: no `/lab` routes, no selectable
+sign source. The Lab composition is the same whole engine in simulation mode —
+every engine route, plus `/lab/*`, plus a sign source an operator can steer on
+every hosted market — and it says so on its process banner, in every `/lab`
+response and on every panel screen pointed at it. The panel reaches it through a
+proxy and never bundles it: `@otc/web` may depend on `@otc/core` and
+`@otc/chart` and nothing else, so the battery and the planted-defect corpus stay
+on the server.
+
+**Production is never Lab-composed, and the boundary is composition rather than
+configuration** (ADR-0015 §3). A real deployment cannot acquire a push button
+from a flag, because the route and the sign source are not in its program. Two
+architecture tests are that boundary, not a review habit:
+[`composition.test.ts`](../../apps/api/src/composition.test.ts) reads the
+production entrypoint as text and fails if it registers — or so much as names —
+a sign source, and
+[`labSurface.test.ts`](../../apps/api/src/labSurface.test.ts) fails if any
+production file imports the Lab or can serve latent generator state or a
+keystream cursor (INV-010). Both were got past in Cycle Audit 8 — a steering sign source composed
+from a subdirectory the scan did not recurse into, and a cursor served under a
+word the scan did not look for — and both were widened in response. When the Lab
+grows, that is the layer to strengthen.
+
+**The record has the same boundary, and it did not until that audit.** A
+Lab-composed process marks its state directory before it publishes a tick
+(`lab/composed-by-lab.json`, [`labState.ts`](../../apps/api/src/labState.ts)) and
+production refuses to start on a marked one. Without it, one environment
+variable pointed both compositions at one directory, and a redeploy served a
+market whose prices a human had chosen among futures as production history —
+economically blind no longer (INV-001), and not reproducible as production's
+(INV-009).
+
+## One connection, several assets
+
+`GET /markets/stream?assets=eurusd,btcusd` (PH-22.2) carries several assets over
+one SSE connection — up to `MAX_MULTIPLEXED_ASSETS` of them — because a browser
+allows six connections per origin and this product puts eight charts on a
+screen. The resume position is **per asset** everywhere it appears —
+`from=eurusd:481775,btcusd:9912`, the `id:` field, and the `gap` event, which
+names the asset it concerns — so one number never stands for eight and one
+asset's eviction does not tear down the other seven. The single-asset endpoint
+is unchanged; this is an addition, and
+[`CONSISTENCY_CONTRACT.md`](CONSISTENCY_CONTRACT.md) is what both must satisfy.
 
 ## The dependency rule
 

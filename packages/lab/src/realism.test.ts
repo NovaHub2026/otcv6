@@ -11,9 +11,9 @@ const instrument: InstrumentSpec = {
   referencePrice: 1.1,
 };
 
-function toDataset(prices: number[]) {
+function toDataset(prices: number[], intervalMs = 1_000) {
   const ticks: Tick[] = prices.map((price, i) => ({
-    instant: epochMillis(1_776_000_000_000 + i * 1_000),
+    instant: epochMillis(1_776_000_000_000 + i * intervalMs),
     sequence: i + 1,
     price: logPrice(price),
   }));
@@ -197,6 +197,60 @@ describe('metrics respond to injected structure', () => {
     }
     const report = assessRealism(toDataset(prices));
     expect(report.failed).toContain('unchanged-tick-fraction');
+  });
+});
+
+describe('a tick window is not a span of market time (Cycle Audit 8, a5)', () => {
+  /** The metrics whose window is counted in ticks, and the count each uses. */
+  const WINDOWED: Record<string, number> = {
+    'return-autocorrelation-lag1': 1,
+    'return-autocorrelation-lag10': 10,
+    'absolute-return-autocorrelation-lag1': 1,
+    'absolute-return-long-memory': 500,
+    'volatility-clustering-dominance': 1,
+    'absolute-return-decay-is-slow': 50,
+    'aggregational-gaussianity': 60,
+    'displacement-heterogeneity': 300,
+    'volatility-regime-range': 300,
+  };
+
+  const prices = clusteredWalk(120_000);
+  const secondly = assessRealism(toDataset(prices));
+  const quarterly = assessRealism(toDataset(prices, 250));
+  const find = (report: typeof secondly, name: string) =>
+    report.metrics.find((m) => m.name === name)!;
+
+  it('reports the market time each tick-indexed window covered', () => {
+    for (const [name, ticks] of Object.entries(WINDOWED)) {
+      const m = find(secondly, name);
+      expect(m.measuredOver, name).toEqual({ ticks, marketTimeMs: ticks * 1_000 });
+    }
+  });
+
+  it('reports no window for the metrics that have none', () => {
+    for (const name of ['excess-kurtosis', 'mean-run-length', 'tick-size-dispersion']) {
+      expect(find(secondly, name).measuredOver, name).toBeUndefined();
+    }
+  });
+
+  it('answers the same band over a quarter of the market time when a tick is a quarter', () => {
+    // PH-24.17, exactly: the same published prices at four times the tick rate.
+    // Every value below is identical and every verdict holds, because none of
+    // these measurements can see time at all — what changed is the span of
+    // market they were asked about, which is why the report now says it.
+    for (const [name, ticks] of Object.entries(WINDOWED)) {
+      const before = find(secondly, name);
+      const after = find(quarterly, name);
+      expect(after.value, name).toBe(before.value);
+      expect(after.pass, name).toBe(before.pass);
+      expect(after.measuredOver, name).toEqual({ ticks, marketTimeMs: ticks * 250 });
+    }
+  });
+
+  it('prints the span on the line the band is printed on', () => {
+    const text = formatRealismReport(secondly);
+    expect(text).toContain('over 500 ticks = 500.0s of market time');
+    expect(formatRealismReport(quarterly)).toContain('over 500 ticks = 125.0s of market time');
   });
 });
 

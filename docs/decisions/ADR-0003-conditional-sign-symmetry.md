@@ -190,9 +190,16 @@ is cheap, exact, and it is the gate that a statistical battery cannot replace.
 shipped factory under `environment: 'production'` — 45,000 in
 `phaseAcceptance`, 50,000 in `multiAsset`, 60,300 in `mirror.test.ts`, and
 120,000 in `sampledCatalogue`, the highest anywhere. Against btcusd's recorded
-`meanIntervalMs` of 333, 120,000 ticks is about eleven hours of market life and
-10,000 is under an hour; a hosted market runs for months, and `#sequence` is
-monotonic across restarts by design.
+`meanIntervalMs` of 111, 120,000 ticks is **3.7 hours** of market life and the
+10,000 of `productionComposition.test.ts` is **18.5 minutes**; a hosted market
+runs for months, and `#sequence` is monotonic across restarts by design.
+
+Those figures are a tempo away from being wrong, and were: they read eleven
+hours and under an hour until PH-24.17 divided the catalogue's tempo by three
+to four **inside this same cycle**, and nothing failed when they stopped being
+true (Cycle Audit 8, a1). The tick counts above are the thing the callers fix;
+what a tick is worth in market time is a property of `ASSET_CATALOGUE`, and it
+moves.
 
 An auditor planted the canonical banned mechanism — the leverage effect —
 behind `#sequence > 200_000` and **every mirror test in the repository passed**,

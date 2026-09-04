@@ -165,6 +165,7 @@ export {
   type Reachability,
   selectCloseWhere,
   type ConditionedCloseRequest,
+  reachabilityBand,
 } from './closeSelection.js';
 export {
   type Continuation,

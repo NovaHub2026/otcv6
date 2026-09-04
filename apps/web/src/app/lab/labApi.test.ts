@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { isControl, isUnavailable, labGet, labPost } from './labApi.js';
+import {
+  isControl,
+  isUnavailable,
+  labGet,
+  labPost,
+  LAB_POLL_TIMEOUT_MS,
+  LAB_TIMEOUT_MS,
+} from './labApi.js';
 
 /**
  * Cycle Audit 8 (a8): an HTTP error from the Lab is an answer, not a market.
@@ -65,5 +72,49 @@ describe('the Lab client turns a refusal into an answer', () => {
     const body = await labGet<unknown>('markets');
     expect(isUnavailable(body)).toBe(true);
     expect((body as { reason: string }).reason).toMatch(/socket hang up/);
+  });
+});
+
+/**
+ * Cycle Audit 8 (a4): a Lab that stops answering is a Lab that never answers.
+ *
+ * A blocked Lab holds the socket open rather than closing it, so the transport
+ * never fails and none of the above happens: without a deadline the screen
+ * waits for the whole outage, the poll it belongs to stops asking, and the
+ * `busy` flag on whichever act was in flight is held by a request that will
+ * not come back — the failure PH-24.11 was written for, arriving the one way
+ * PH-24.11 did not close.
+ */
+describe('the Lab client gives up on a Lab that never answers', () => {
+  /** A Lab that accepted the connection and then went quiet. */
+  const silent = (): void => {
+    globalThis.fetch = (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject((init.signal as AbortSignal).reason as Error);
+        });
+      });
+  };
+
+  it('answers a read that never returns as unavailable', async () => {
+    silent();
+    const body = await labGet<unknown>('markets/eurusd/state', 250);
+    expect(isUnavailable(body)).toBe(true);
+    expect((body as { reason: string }).reason).toMatch(/el Lab no respondió/);
+  });
+
+  it('answers a write that never returns as unavailable, so the strip is released', async () => {
+    silent();
+    const body = await labPost<unknown>('markets/eurusd/release', 250);
+    expect(isUnavailable(body)).toBe(true);
+    expect((body as { reason: string }).reason).toMatch(/el Lab no respondió/);
+  });
+
+  it('waits longer for an act than for a poll, and both long enough to say seconds', () => {
+    // The poll asks again by itself and must not sit on a dead socket; an act
+    // may be a rejection search or the battery, and cutting one short would be
+    // a defect rather than a rescue.
+    expect(LAB_POLL_TIMEOUT_MS).toBeLessThan(LAB_TIMEOUT_MS);
+    expect(LAB_POLL_TIMEOUT_MS).toBeGreaterThanOrEqual(1_000);
   });
 });

@@ -210,7 +210,7 @@ export const es = {
       down: 'bajar',
       unit: 'unidades',
       unitInfo: (price: string, range: string) =>
-        `1 unidad = un cuarto del rango mediano de la vela de 1 minuto de este mercado ≈ ${price} (la vela mide ≈ ${range}). Medido sobre una copia del propio mercado; +10 son unas dos velas y media.`,
+        `1 unidad = un cuarto del rango mediano de la vela de 1 minuto de este mercado ≈ ${price} (la vela mide ≈ ${range}). Medido sobre la última media hora de este mercado — las velas que estás viendo — y solo sobre una copia de su futuro si el mercado aún no tiene media hora de registro; +10 son unas dos velas y media.`,
       unitLabel: (price: string) => `1 = ¼ vela ≈ ${price}`,
       running: (dir: 'up' | 'down', n: number) =>
         `empujando ${dir === 'up' ? '↑' : '↓'} · ${String(n)} ticks por jugar`,
@@ -300,7 +300,7 @@ export const es = {
       relative: 'cerrar respecto al precio actual:',
       relativeUnit: 'unidades (¼ de vela de 1m)',
       unitsInfo:
-        'Las distancias del Lab se expresan en la unidad del mercado: un cuarto del rango mediano de su vela de 1 minuto, medido sobre una copia del propio mercado. La ruta sigue trabajando en pasos del retículo; la pantalla convierte.',
+        'Las distancias del Lab se expresan en la unidad del mercado: un cuarto del rango mediano de su vela de 1 minuto, medido sobre la última media hora de este mercado — las velas que ves — y solo sobre una copia de su futuro si aún no tiene media hora de registro. La ruta sigue trabajando en pasos del retículo; la pantalla convierte.',
       releaseInfo:
         'Vuelve al keystream. Un tick ya sorteado se publica tal cual — nada des-sortea una moneda — y el siguiente sorteo ya es del keystream: sin salto, un tick de latencia.',
       source: 'fuente de signos',

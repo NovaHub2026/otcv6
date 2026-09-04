@@ -4,7 +4,7 @@ Type: SUPPORTING DOCUMENTATION (living)
 Status: Dynamic — phases may be split, merged, reordered or replaced as
 implementation reveals information (`GOVERNANCE.md` §13). Approved phases are
 never rewritten as though they had not happened.
-Last revised: 2026-09-03 (Cycle Audit 7 closed; PH-22 is the next phase)
+Last revised: 2026-09-04 (Cycle 8 closed — PH-22, PH-23, PH-24 and Cycle Audit 8; Cycle 9 opening)
 
 ---
 
@@ -341,12 +341,12 @@ So Cycle 5 is derived from what the _product_ needs rather than from what was
 left over, and the ordering is deliberate: **can you afford to run it, can you
 scale it, can you operate it.**
 
-| Phase | Title                                                    | State                           |
-| ----- | -------------------------------------------------------- | ------------------------------- |
-| PH-13 | Operator risk: variance, correlated flow and capacity    | **APPROVED WITH OPEN FINDINGS** |
-| PH-14 | Multi-node consistency and horizontal scale-out          | **APPROVED WITH OPEN FINDINGS** |
-| PH-15 | Operations: the standing guarantee, running continuously | **APPROVED WITH OPEN FINDINGS** |
-| —     | **Cycle Audit 5** — seven independent agents (ADR-0011)  | RAN — findings open             |
+| Phase | Title                                                    | State                                                 |
+| ----- | -------------------------------------------------------- | ----------------------------------------------------- |
+| PH-13 | Operator risk: variance, correlated flow and capacity    | **APPROVED WITH OPEN FINDINGS**                       |
+| PH-14 | Multi-node consistency and horizontal scale-out          | **APPROVED WITH OPEN FINDINGS**                       |
+| PH-15 | Operations: the standing guarantee, running continuously | **APPROVED WITH OPEN FINDINGS**                       |
+| —     | **Cycle Audit 5** — seven independent agents (ADR-0011)  | **APPROVED** — [record](../audits/CYCLE-AUDIT-005.md) |
 
 ### PH-13 — Operator Risk: Variance, Correlated Flow and Capacity
 
@@ -426,7 +426,7 @@ follower cannot generate when it can.
 | PH-16 | Close what the audit falsified                       | **APPROVED**                                          |
 | PH-17 | Assets become data: families, sampling, history      | **APPROVED**                                          |
 | PH-18 | The admin panel: Preview                             | **APPROVED**                                          |
-| —     | **Cycle Audit 6** — one worktree per auditor (B-020) | **RECORDED** — [record](../audits/CYCLE-AUDIT-006.md) |
+| —     | **Cycle Audit 6** — one worktree per auditor (B-020) | **APPROVED** — [record](../audits/CYCLE-AUDIT-006.md) |
 
 ### PH-16 — Close What the Audit Falsified
 
@@ -555,11 +555,12 @@ a 76-byte event, which at the venue's own rate is 24 bytes per second per
 viewer — and looking at the delivery path found something an order of magnitude
 larger.
 
-| Phase | Title                                     | State        |
-| ----- | ----------------------------------------- | ------------ |
-| PH-22 | Distribution under thousands of observers | **APPROVED** |
-| PH-23 | The OTC Market Lab                        | **APPROVED** |
-| PH-24 | The Lab's controls: applying a selection  | **APPROVED** |
+| Phase | Title                                               | State                                                 |
+| ----- | --------------------------------------------------- | ----------------------------------------------------- |
+| PH-22 | Distribution under thousands of observers           | **APPROVED**                                          |
+| PH-23 | The OTC Market Lab                                  | **APPROVED**                                          |
+| PH-24 | The Lab's controls: applying a selection            | **APPROVED**                                          |
+| —     | **Cycle Audit 8** — eight worktrees, eight auditors | **APPROVED** — [record](../audits/CYCLE-AUDIT-008.md) |
 
 ### PH-24 — The Lab's controls: applying a selection
 
@@ -698,12 +699,67 @@ PH-1 substrate
                                                                              └──> PH-14 multi-node ──> PH-15 operations
                                                                                                           └──> PH-16 (audit fixes)
         PH-17 assets as data ──> PH-18 preview ──> PH-19 (audit fixes) ──> PH-20 panel ──> PH-21 catalogue at scale
+                                                                                                    │
+        PH-22 distribution at scale ──> PH-23 the OTC Market Lab ──> PH-24 the Lab's controls <──────┘
+                │                                                            │
+                └────────────> PH-25 the battery against a production venue's own record <───┘
+                                     (instrument: packages/lab; subject: apps/api's published
+                                      record over the PH-22 distribution path)
 ```
 
 Every phase from PH-10 on depends on the whole of Cycle 1 through PH-9; the arrows
 above show only the direct product dependencies.
 
+The chain ended at PH-21 for a cycle after PH-22, PH-23 and PH-24 were approved,
+which mattered more than a stale diagram usually does: PH-25's whole premise is a
+dependency claim — the instrument is the Lab's, the subject is the distribution
+path — and neither node was on the graph that exists to carry exactly that.
+
+## Cycle 9 — opening
+
+Cycle 8's audit closed with every finding resolved and one thing handed forward,
+recorded here so it is not rediscovered:
+
+| Phase | Title                                               | State   |
+| ----- | --------------------------------------------------- | ------- |
+| PH-25 | The battery against a production venue's own record | PLANNED |
+
+**PH-25 — the battery against a production venue's own record.** Every
+adversarial run in this repository builds its own engine, or runs against the
+Lab's composition; nothing attacks the feed a real observer actually reads.
+Cycle Audit 8 (a1) named the gap and refused to close it with a fix, because it
+is not one: the instrument is `packages/lab`, the subject is `apps/api`'s
+published record over the distribution path, and the question — _does the market
+an observer can see leak anything a market built inside a test does not?_ —
+covers publication, retention, reduction to columns and settlement at once. The
+mirror family answers the structural half in milliseconds; this is the other
+half, and it has never been run where the product lives.
+
 ## Known uncertainties
+
+**This table is Cycle 1's, and it is kept as Cycle 1 wrote it.** Every phase in
+its right-hand column is approved, so all five were answered; two were answered
+somewhere else than the table says, and that is worth recording rather than
+editing away.
+
+- **Realism and anti-predictability jointly at 30s** — answered by PH-3 and
+  ADR-0003: the sign is an independent fair coin and the magnitude engine cannot
+  observe one, so `P(up) = P(down)` exactly under every public conditioning. The
+  mirror test checks the precondition; the battery checks the consequence.
+- **The detection floor** — PH-2 published it, and **PH-11** is the phase that
+  actually policed the other horizons; the table predates that phase and does not
+  name it. What the floor still cannot police at the product margin is open as
+  Issue #10.
+- **Distinct personalities without a leak** — PH-4 for the five hand-authored
+  assets, and PH-17 made assets data. At a hundred assets the guarantee rests on
+  a proximity check rather than a measurement, which is open as Issue #21.
+- **Restart-seam detectability** — PH-5, and the seam is now also a Lab concern:
+  Cycle Audit 8 found a Lab market killed mid-script republishing a sequence at
+  different prices, which is the same question from the other side.
+- **Quote granularity per family** — PH-1.3 set the representation and PH-4 fixed
+  the five values. PH-17 made granularity a property of an archetype, PH-21 built
+  a hundred assets on that, and **PH-24.17 moved every tempo underneath it**, so
+  the answer is now a per-archetype calibration rather than five numbers.
 
 | Uncertainty                                                                                                                                                                                                                                                                  | Where it is resolved                                                                     |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |

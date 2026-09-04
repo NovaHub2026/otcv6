@@ -5,7 +5,7 @@
   "description": "Next.js observer frontend: the market as a chart that invents nothing",
   "scripts": {
     "build": "next build",
-    "dev": "next dev",
+    "dev": "next dev -H ${OTC_PANEL_BIND:-127.0.0.1}",
     "start": "next start -H ${OTC_PANEL_BIND:-127.0.0.1}"
   },
   "dependencies": {

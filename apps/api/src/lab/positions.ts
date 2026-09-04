@@ -7,7 +7,14 @@ import {
   type LogPrice,
   type Tick,
 } from '@otc/core';
-import { settle, type Contract, type Direction, type Outcome, type Settlement } from '@otc/trading';
+import {
+  NotSettleableError,
+  settle,
+  type Contract,
+  type Direction,
+  type Outcome,
+  type Settlement,
+} from '@otc/trading';
 
 /**
  * Simulated positions and the presets that decide how they end (PH-24.3).
@@ -59,6 +66,15 @@ export function presetLevel(preset: Preset, entry: LogPrice, direction: Directio
       return logPrice(entry - 1);
   }
 }
+
+/**
+ * A settlement, or the reason there is not one yet. `reason` is `settle`'s own
+ * wording, so the panel shows what refused rather than a Lab paraphrase of it.
+ */
+export type SettlementStatus =
+  | { readonly kind: 'settled'; readonly settlement: Settlement }
+  | { readonly kind: 'pending'; readonly reason: string }
+  | { readonly kind: 'evicted'; readonly reason: string };
 
 export interface LabPosition {
   readonly contract: Contract;
@@ -161,12 +177,40 @@ export class LabPositions {
     return { outcome, basis, close: closeLevel };
   }
 
-  /** The production settlement, against the Lab's record. Null until expiry has passed the record. */
-  static actual(position: LabPosition, ticks: readonly Tick[]): Settlement | null {
+  /**
+   * The production settlement, against the Lab's record, or why there is none.
+   *
+   * Two refusals are ordinary and neither is the other: `pending` is a position
+   * whose expiry the record has not reached, and `evicted` is one whose entry
+   * the retained window no longer covers — the second will never settle and the
+   * first will. Anything else `settle` refuses is a disagreement between what
+   * the Lab armed and what the engine published, which is a finding about the
+   * engine (O9, L5) and is raised rather than reported as a status: a bare
+   * `catch { return null }` read a malformed record, an out-of-range instant and
+   * a genuine disagreement as "not expired yet" (Cycle Audit 8, a8).
+   */
+  static status(position: LabPosition, ticks: readonly Tick[]): SettlementStatus {
+    const record = recordOf(ticks);
     try {
-      return settle(position.contract, recordOf(ticks));
-    } catch {
-      return null;
+      return { kind: 'settled', settlement: settle(position.contract, record) };
+    } catch (error) {
+      if (error instanceof NotSettleableError) {
+        const last = record.instants[record.instants.length - 1];
+        if (last === undefined || position.expiryInstant > last) {
+          return { kind: 'pending', reason: error.detail };
+        }
+        const first = record.instants[0];
+        if (first === undefined || first > position.contract.entryInstant) {
+          return { kind: 'evicted', reason: error.detail };
+        }
+      }
+      throw error;
     }
+  }
+
+  /** The settlement alone; null for either refusal, which {@link status} tells apart. */
+  static actual(position: LabPosition, ticks: readonly Tick[]): Settlement | null {
+    const status = LabPositions.status(position, ticks);
+    return status.kind === 'settled' ? status.settlement : null;
   }
 }

@@ -42,7 +42,13 @@ import { closesDiagnostic } from './closesDiagnostic.js';
 import { positionsDiagnostic, type SettledPosition } from './positionsDiagnostic.js';
 import { SCENARIOS, scenarioNamed, scenarioParameters, shapeOf } from './scenarios.js';
 import { SelectableSigns, SignSelector, BIAS_MAX_MS } from './selectableSigns.js';
-import { distanceUnitFrom, LabDistances, type DistanceUnit } from './distance.js';
+import {
+  distanceUnitFrom,
+  LabDistances,
+  MEASUREMENT_SPAN_MS,
+  recordWindow,
+  type DistanceUnit,
+} from './distance.js';
 import {
   ArrivalSelector,
   PACES,
@@ -957,10 +963,24 @@ export class LabController {
     const cached = this.distances.cached(id, now);
     if (cached !== null) return cached;
     const asset = this.venue.assetFor(id)!;
-    const ticks = this.venue.labTicksAhead(
-      id,
-      Math.min(50_000, Math.max(2_000, Math.round(1_800_000 / asset.evidence.meanIntervalMs))),
-    );
+    // **Cycle Audit 8 (a5): the market's own last half hour, not its next one.**
+    // This measured a fork — the ticks the market is *about* to print — so the
+    // unit described a future the operator cannot see, and across a regime
+    // change it differed from the candles on their screen by up to four times.
+    // The record is the same market and it is the one being looked at. A market
+    // too young to have half an hour of record still falls back to the fork, and
+    // `basis` says which was used.
+    const record = recordWindow(this.recordTicks(id), now);
+    const ticks =
+      record.length > 0
+        ? record
+        : this.venue.labTicksAhead(
+            id,
+            Math.min(
+              50_000,
+              Math.max(2_000, Math.round(MEASUREMENT_SPAN_MS / asset.evidence.meanIntervalMs)),
+            ),
+          );
     const level = this.venue.hostedMarket(id)!.snapshotEngine().price;
     return this.distances.remember(id, distanceUnitFrom(asset, level, ticks, now));
   }
@@ -1350,8 +1370,12 @@ export class LabController {
   sessionPositions(): unknown {
     const settled: SettledPosition[] = [];
     for (const position of this.positions.list()) {
-      const actual = LabPositions.actual(position, this.recordTicks(position.contract.assetId));
-      if (actual === null) continue;
+      const status = LabPositions.status(position, this.recordTicks(position.contract.assetId));
+      // Only a settled position belongs in the diagnostic: one still waiting and
+      // one whose entry the window dropped are both "no outcome", and the second
+      // never gains one.
+      if (status.kind !== 'settled') continue;
+      const actual = status.settlement;
       const preset = this.session.labActions
         .filter(
           (a) =>
@@ -1511,8 +1535,18 @@ export class LabController {
         : (this.venue.hostedMarket(position.contract.assetId)?.snapshotEngine().price ??
           position.entryPrice);
     const expected = LabPositions.expected(position, closeLevel, basis);
-    const actual =
-      this.venue.now() > position.expiryInstant ? LabPositions.actual(position, ticks) : null;
+    /**
+     * Three answers, not two (Cycle Audit 8, a8).
+     *
+     * `actual` was a settlement or null, so "not expired yet" and "the retained
+     * window no longer covers the entry" looked identical on the screen — and
+     * the second never resolves: a position whose entry has been evicted from
+     * the feed cannot be settled against the record, ever, and sat on the panel
+     * as pending for the rest of the session.
+     */
+    const status =
+      this.venue.now() > position.expiryInstant ? LabPositions.status(position, ticks) : null;
+    const actual = status?.kind === 'settled' ? status.settlement : null;
     return {
       id: position.contract.id,
       direction: position.contract.direction,
@@ -1534,6 +1568,13 @@ export class LabController {
               net: actual.net,
               agrees: actual.outcome === expected.outcome,
             },
+      // What the record can still say about it: `settled`, `pending` while the
+      // expiry is in the future, or `evicted` — an entry the retained window no
+      // longer covers, which will never settle.
+      settlement:
+        status === null
+          ? null
+          : { kind: status.kind, ...(status.kind === 'settled' ? {} : { reason: status.reason }) },
     };
   }
 

@@ -271,6 +271,63 @@ describe('the cycle-audit boundary is a fact, not a label (CA7-11)', () => {
     ).toBe(status === 'OPEN' ? 'OPEN' : 'CLOSED');
   });
 
+  /**
+   * Cycle Audit 8, found while closing it: the roadmap's own state column had
+   * been wrong about three separate audits at once.
+   *
+   * Cycle 5's row read `RAN — findings open` and its three phases
+   * `APPROVED WITH OPEN FINDINGS`, against a record that has read
+   * `Status: CLOSED` since Cycle Audit 6 closed it. Cycle 6's row read
+   * `RECORDED` where every other row reads APPROVED. Cycle 8's table had no
+   * audit row at all. The check above reads `CURRENT_STATE.md` — one document,
+   * one audit, the current one — so a roadmap misreporting a whole past cycle
+   * as unremediated passed every gate for three cycles.
+   *
+   * The relation is simple and worth asserting for every audit rather than the
+   * newest: a record that declares itself CLOSED is APPROVED on the roadmap, and
+   * one that does not, is not.
+   */
+  it('agrees with every audit record about every audit, not only the newest', () => {
+    const roadmap = read('docs/phases/ROADMAP.md');
+    const records = listMarkdown('docs/audits').filter((name) =>
+      /^CYCLE-AUDIT-\d+\.md$/.test(name),
+    );
+    expect(records.length, 'no cycle-audit records to check').toBeGreaterThan(2);
+
+    for (const name of records) {
+      const number = Number.parseInt(/CYCLE-AUDIT-(\d+)\.md/.exec(name)![1]!, 10);
+      const declared = /^Status:\s*(\w+)/m.exec(read(`docs/audits/${name}`))?.[1]?.toUpperCase();
+
+      // The row is `| — | **Cycle Audit N** … | STATE |`. Anchored on the number
+      // so `Cycle Audit 1` cannot match the row for `Cycle Audit 10`.
+      const row = new RegExp(
+        `^\\|[^|]*\\|[^|]*Cycle Audit ${String(number)}\\b[^|]*\\|([^|]*)\\|`,
+        'm',
+      ).exec(roadmap);
+      expect(row, `the roadmap has no row for Cycle Audit ${String(number)}`).not.toBeNull();
+      // The first three records predate the `Status:` header the project later
+      // settled on. They still owe a row — a record with no row is invisible —
+      // but there is nothing to compare their state against.
+      if (declared === undefined) continue;
+      const state = row![1]!.replaceAll('*', '').trim().toUpperCase();
+      // `CLOSED` is the word the records have settled on; audit 4 says
+      // `APPROVED`. Both mean the same thing to a reader — the audit is done —
+      // and neither is `OPEN`.
+      const settled = declared === 'CLOSED' || declared === 'APPROVED';
+      if (settled) {
+        expect(
+          state.startsWith('APPROVED'),
+          `Cycle Audit ${String(number)} is ${declared} and the roadmap says «${row![1]!.trim()}»`,
+        ).toBe(true);
+      } else {
+        expect(
+          state.startsWith('APPROVED'),
+          `Cycle Audit ${String(number)} is ${declared} and the roadmap calls it approved`,
+        ).toBe(false);
+      }
+    }
+  });
+
   it('counts the approved phases of the current cycle the way the roadmap does', () => {
     const claimed = /Approved phases in current cycle\s*\|\s*\*\*(\d+) of (\d+)\*\*/.exec(state);
     expect(claimed, 'CURRENT_STATE does not state an approved-phase count').not.toBeNull();
@@ -384,16 +441,171 @@ describe('canonical state documents stay answerable', () => {
     expect(section.trim().length).toBeGreaterThan(60);
   });
 
+  /**
+   * Cycle Audit 8 (a7, row 47): SESSION_HANDOFF's table was entirely pre-merge —
+   * a branch that had moved, a cycle at 2 of 3 that was 3 of 3, an audit it did
+   * not know had run — and no guard read a single one of its rows.
+   *
+   * The rows guarded here are the two a fresh session acts on before it reads
+   * anything else: whether the cycle is full, and whether an audit is open.
+   * Both are stated in `CURRENT_STATE.md` too, and that copy *is* guarded
+   * (CA7-11 above), so the check is that the two records agree — the failure
+   * mode is one of them being updated and the other not.
+   */
+  it('SESSION_HANDOFF’s table agrees with CURRENT_STATE about the cycle and the audit', () => {
+    const handoff = read('SESSION_HANDOFF.md');
+    const state = read('CURRENT_STATE.md');
+
+    const audit = /Cycle Audit\s*\|\s*\*\*(\d+) (closed|OPEN)\*\*/i.exec(handoff);
+    expect(audit, 'SESSION_HANDOFF does not name an audit and its state').not.toBeNull();
+    const stated = /Cycle Audit state\s*\|\s*\*\*(\d+) (closed|OPEN)\*\*/i.exec(state)!;
+    expect(audit![1], 'the two records name different audits').toBe(stated[1]);
+    expect(
+      audit![2]!.toUpperCase(),
+      'the two records disagree about whether the audit is open',
+    ).toBe(stated[2]!.toUpperCase());
+
+    const cycle = /Active cycle\s*\|\s*Cycle (\d+), \*\*(\d+) of (\d+)\*\*/.exec(handoff);
+    expect(cycle, 'SESSION_HANDOFF does not state a cycle and a phase count').not.toBeNull();
+    expect(cycle![1], 'the two records are in different cycles').toBe(
+      /Active development cycle\s*\|\s*Cycle (\d+)/.exec(state)![1],
+    );
+    const count = /Approved phases in current cycle\s*\|\s*\*\*(\d+) of (\d+)\*\*/.exec(state)!;
+    expect([cycle![2], cycle![3]], 'the two records count approved phases differently').toEqual([
+      count[1],
+      count[2],
+    ]);
+  });
+
   it('SESSION_HANDOFF names a continuation point', () => {
     const handoff = read('SESSION_HANDOFF.md');
     expect(handoff).toContain('Continuation point');
     expect(handoff).toContain('CURRENT_STATE.md');
   });
 
+  /**
+   * Cycle Audit 8 (a7, row 50): the Relevant records table stopped at ADR-0016.
+   *
+   * ADR-0017 and ADR-0018 were written in the cycle the table was supposed to
+   * summarise, are cited by the phase documents, and settle two of the questions
+   * a fresh agent is likeliest to ask — where the expiry price comes from, and
+   * whether a Lab-composed process may be production. The table is the first
+   * place §71's fresh agent looks, and it silently answered "there are eighteen
+   * decisions" with sixteen.
+   *
+   * `DOCS_INDEX.md` was already guarded above; this is the other list, and it is
+   * the one written by hand for a reader rather than generated for a linker.
+   */
+  it('CURRENT_STATE’s Relevant records table names every decision record', () => {
+    const state = read('CURRENT_STATE.md');
+    const onDisk = listMarkdown('docs/decisions')
+      .map((name) => /^(ADR-\d{4})/.exec(name)?.[1])
+      .filter((id): id is string => id !== undefined)
+      .sort();
+    expect(onDisk.length, 'no decision records to check').toBeGreaterThan(0);
+
+    const table = state.slice(state.indexOf('## Relevant records'));
+    expect(table.indexOf('|'), 'the Relevant records section has no table').toBeGreaterThan(0);
+    const listed = new Set(
+      [...table.matchAll(/^\|\s*(ADR-\d{4})\s*\|/gm)].map((match) => match[1]!),
+    );
+    const missing = onDisk.filter((id) => !listed.has(id));
+    expect(missing, `CURRENT_STATE does not name ${missing.join(', ')}`).toEqual([]);
+
+    // Each row must say something about the decision, not merely its number:
+    // a row that names an ADR and nothing else is a link, and this is a summary.
+    for (const id of onDisk) {
+      const row = new RegExp(`^\\|\\s*${id}\\s*\\|(.*)\\|`, 'm').exec(table);
+      expect(row, `${id} has no row`).not.toBeNull();
+      expect(row![1]!.trim().length, `${id}'s row says nothing`).toBeGreaterThan(20);
+      // And its lifecycle state, which is the half a reader acts on.
+      expect(row![1]!, `${id} does not carry a status`).toMatch(
+        /APPROVED|PROPOSED|SUPERSEDED|REJECTED|WITHDRAWN/,
+      );
+    }
+  });
+
   it('CURRENT_STATE records the cycle position', () => {
     const state = read('CURRENT_STATE.md');
     expect(state).toMatch(/Approved phases in current cycle/);
     expect(state).toMatch(/Cycle Audit state/);
+  });
+});
+
+/**
+ * Cycle Audit 8 (a2): `rm packages/engine/src/mirror.test.ts` — 438 lines, the
+ * project's primary structural gate — and every cheap step of `npm run gate`
+ * exited 0. The file count fell from 125 to 124 and nothing compares that
+ * against anything.
+ *
+ * A count is the wrong guard: it is a constant, and Cycle Audit 7 recorded that
+ * guards written against constants are the ones that fail. What is not a
+ * constant is that the canonical documents name the tests they rest on —
+ * ADR-0003 §6 names `mirror.test.ts` as the gate a statistical battery cannot
+ * replace, CLAUDE.md tells an agent to run it before every engine change — so a
+ * deleted or renamed test file makes a document a liar, and that is checkable.
+ *
+ * It closes a class rather than an instance: every test a document leans on is
+ * covered, and a new one joins by being named.
+ */
+describe('a document that names a test names one that exists', () => {
+  const documents = [
+    'CLAUDE.md',
+    'GOVERNANCE.md',
+    'PROJECT_INTRODUCTION.md',
+    'PROJECT_CONTEXT.md',
+    'CURRENT_STATE.md',
+    'SESSION_HANDOFF.md',
+    'DOCS_INDEX.md',
+    ...listMarkdown('docs/decisions').map((name) => `docs/decisions/${name}`),
+    ...listMarkdown('docs/architecture').map((name) => `docs/architecture/${name}`),
+  ];
+
+  /** Every `*.test.ts` file in the repository, by basename. */
+  const onDisk = (): Map<string, string[]> => {
+    const found = new Map<string, string[]>();
+    const walk = (directory: string): void => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        // By path segment, never by substring: `packages/distribution` contains
+        // the four letters of `dist`, and a substring filter silently skips the
+        // package that holds the publication tests.
+        if (entry.isDirectory()) {
+          if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name === '.git') {
+            continue;
+          }
+          walk(path.join(directory, entry.name));
+        } else if (entry.name.endsWith('.test.ts')) {
+          const at = path.relative(repoRoot, path.join(directory, entry.name));
+          found.set(entry.name, [...(found.get(entry.name) ?? []), at]);
+        }
+      }
+    };
+    for (const root of ['packages', 'tools', 'apps']) walk(path.join(repoRoot, root));
+    return found;
+  };
+
+  it('finds the test files it is checking against', () => {
+    const files = onDisk();
+    expect(files.size, 'no test files were found at all').toBeGreaterThan(50);
+    expect(files.has('mirror.test.ts'), 'the primary structural gate is gone').toBe(true);
+  });
+
+  it('names no test file that does not exist', () => {
+    const files = onDisk();
+    const missing: string[] = [];
+    let named = 0;
+    for (const document of documents) {
+      if (!existsSync(path.join(repoRoot, document))) continue;
+      for (const match of read(document).matchAll(/`([A-Za-z0-9_.\-/]+\.test\.ts)`/g)) {
+        named += 1;
+        const base = path.basename(match[1]!);
+        if (!files.has(base)) missing.push(`${document} names ${match[1]!}`);
+      }
+    }
+    // A scan that matched nothing would pass this silently, which is the failure
+    // mode of every guard in this file that has ever gone quiet.
+    expect(named, 'no document named a test file; the scan is broken').toBeGreaterThan(30);
+    expect(missing, 'these documents name test files that are not on disk').toEqual([]);
   });
 });
 

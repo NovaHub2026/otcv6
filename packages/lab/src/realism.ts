@@ -24,7 +24,73 @@ import type { ObserverDataset } from './observer.js';
  * tick data carries bid-ask bounce, which ADR-0003 §4 bans because it is
  * tradeable, and a future reader must not "fix" those bands toward the market
  * they describe (a4-08). Their rationales say so.
+ *
+ * ## Four of the windows are counted in ticks, and a tick is not a fixed span
+ *
+ * `absolute-return-decay-is-slow` (50 ticks), `absolute-return-long-memory`
+ * (500), `aggregational-gaussianity` (60) and the regime window (300) are
+ * indexed in ticks, so PH-24.17 — which put three to four times as many ticks
+ * in a minute — divided the market time each one covers by the same factor.
+ * From the catalogue's recorded mean intervals, lag 50 is now 5.5 s of BTC/USD
+ * and 42.2 s of S&P 500 where at PH-4's grain it was 16.6 s and 167.6 s, and
+ * the regime window covers 33 s to 253 s. **The bands did not move; the
+ * question they answer did**, and PH-24.17 recorded one of the four
+ * (Cycle Audit 8, a5).
+ *
+ * So every windowed metric now reports the market time it covered
+ * ({@link RealismMetric.measuredOver}) and the report prints it: the next tempo
+ * change is visible in the instrument itself rather than in one paragraph of
+ * one phase document. `packages/engine/src/catalogue.test.ts` pins the four
+ * spans against the grain factor each asset was re-authored at, so a tempo that
+ * moves without that record fails there first.
+ *
+ * They are still counted in ticks, and that is now a measured decision rather
+ * than an omission. Re-indexed in market time over 1.2 M ticks per asset
+ * (2026-09-04), three of the four stay inside their bands and ask a *harder*
+ * question — the decay ratio at 60 s reads 0.68-0.82 against 0.85-0.91 at 50
+ * ticks, long memory at 10 min 0.15-0.22 against 0.19-0.28 at 500 ticks, the
+ * regime displacement at 300 s 10.6-20.0 against 10.0-14.3 at 300 ticks — but
+ * `aggregational-gaussianity` over sixty *seconds* reads 0.59, 0.70, 1.18, 1.30
+ * and 2.06 against a band of 0-0.85, because a fixed span of time sums a
+ * Hawkes-random number of ticks and the aggregate then carries the dispersion
+ * of that count as well as of the returns. That is a question about the engine
+ * and not about the metric — PH-24.17 saw it on two assets; this is all five —
+ * and answering it means re-running every statistical suite that asserts
+ * `plausible` — four markets outside the catalogue, one of them 24 M ticks. It
+ * belongs in a subphase that can pay for that, not in an audit fix, and until
+ * then the four spans are reported rather than silent.
  */
+
+/**
+ * The tick windows, and why each is the size it is.
+ *
+ * Named because they are behavioural constants of the measurement: every one of
+ * them decides what question a band is asked, and PH-24.17 moved all four
+ * without anyone naming them.
+ */
+/** Where a real market still holds a substantial share of its lag-1 clustering. */
+const CLUSTERING_DECAY_LAG_TICKS = 50;
+/** Far enough out that exponential decay would be gone and hyperbolic decay would not. */
+const LONG_MEMORY_LAG_TICKS = 500;
+/** Returns summed per bucket before asking whether the tails thinned. */
+const AGGREGATION_TICKS = 60;
+/** Ticks per window when reading regimes off displacement and window volatility. */
+const DEFAULT_REGIME_WINDOW_TICKS = 300;
+
+/**
+ * The window a tick-indexed metric measured over, and what that was worth in
+ * market time on this dataset.
+ *
+ * Reported rather than asserted. A band cannot say what span it wants without
+ * being re-derived, but a report that does not say what span it measured lets a
+ * tempo change re-ask the question in silence, which is what happened to all
+ * four of these in PH-24.17 (Cycle Audit 8, a5).
+ */
+export interface MeasurementWindow {
+  readonly ticks: number;
+  /** `ticks` times the dataset's own mean tick interval. */
+  readonly marketTimeMs: number;
+}
 
 export interface RealismMetric {
   readonly name: string;
@@ -42,6 +108,8 @@ export interface RealismMetric {
    * reporting none (a4-07).
    */
   readonly notEvaluated?: string;
+  /** Present on every metric whose window is counted in ticks. */
+  readonly measuredOver?: MeasurementWindow;
 }
 
 export interface RealismReport {
@@ -56,7 +124,12 @@ export interface RealismReport {
 export interface RealismOptions {
   /** Timeframe whose candles are examined for morphology. Default '1m'. */
   readonly candleTimeframe?: TimeframeId;
-  /** Ticks per window when measuring displacement heterogeneity. Default 300. */
+  /**
+   * Ticks per window when measuring displacement heterogeneity and the
+   * volatility regime range. Default 300 — which is 33 s of BTC/USD and 253 s
+   * of the S&P 500, not a fixed span of market time. Both metrics report what
+   * it came to on the dataset they were given.
+   */
   readonly windowTicks?: number;
 }
 
@@ -67,6 +140,7 @@ function metric(
   value: number,
   targetMin: number,
   targetMax: number,
+  measuredOver?: MeasurementWindow,
 ): RealismMetric {
   return {
     name,
@@ -76,6 +150,7 @@ function metric(
     targetMin,
     targetMax,
     pass: Number.isFinite(value) && value >= targetMin && value <= targetMax,
+    ...(measuredOver === undefined ? {} : { measuredOver }),
   };
 }
 
@@ -99,16 +174,25 @@ function ratioMetric(
   guard: { readonly name: string; readonly value: number; readonly floor: number },
   targetMin: number,
   targetMax: number,
+  measuredOver?: MeasurementWindow,
 ): RealismMetric {
   if (!(guard.value >= guard.floor)) {
     return {
-      ...metric(name, description, rationale, Number.NaN, targetMin, targetMax),
+      ...metric(name, description, rationale, Number.NaN, targetMin, targetMax, measuredOver),
       notEvaluated:
         `${guard.name} is ${guard.value.toFixed(4)}, below the ${guard.floor} its own band ` +
         'requires, so this ratio would be noise over noise',
     };
   }
-  return metric(name, description, rationale, numerator / denominator, targetMin, targetMax);
+  return metric(
+    name,
+    description,
+    rationale,
+    numerator / denominator,
+    targetMin,
+    targetMax,
+    measuredOver,
+  );
 }
 
 function autocorrelation(values: Float64Array, lag: number): number {
@@ -158,8 +242,17 @@ export function assessRealism(
 ): RealismReport {
   const started = process.hrtime.bigint();
   const candleTimeframe = options.candleTimeframe ?? '1m';
-  const windowTicks = options.windowTicks ?? 300;
+  const windowTicks = options.windowTicks ?? DEFAULT_REGIME_WINDOW_TICKS;
   const n = dataset.tickCount;
+
+  // What a tick is worth in market time on *this* dataset. Every window below
+  // is counted in ticks, so this is the conversion that says what each one
+  // actually measured.
+  const meanIntervalMs = (dataset.lastInstant - dataset.firstInstant) / Math.max(1, n - 1);
+  const over = (ticks: number): MeasurementWindow => ({
+    ticks,
+    marketTimeMs: ticks * meanIntervalMs,
+  });
 
   const returns = new Float64Array(Math.max(0, n - 1));
   const absolute = new Float64Array(returns.length);
@@ -182,6 +275,7 @@ export function assessRealism(
       Math.abs(autocorrelation(returns, 1)),
       0,
       0.02,
+      over(1),
     ),
   );
   metrics.push(
@@ -192,13 +286,14 @@ export function assessRealism(
       Math.abs(autocorrelation(returns, 10)),
       0,
       0.02,
+      over(10),
     ),
   );
 
   // --- Second moment: clustering and long memory ------------------------------
   const absAcf1 = autocorrelation(absolute, 1);
-  const absAcf50 = autocorrelation(absolute, 50);
-  const absAcf500 = autocorrelation(absolute, 500);
+  const absAcf50 = autocorrelation(absolute, CLUSTERING_DECAY_LAG_TICKS);
+  const absAcf500 = autocorrelation(absolute, LONG_MEMORY_LAG_TICKS);
 
   metrics.push(
     metric(
@@ -209,6 +304,7 @@ export function assessRealism(
       absAcf1,
       0.05,
       0.95,
+      over(1),
     ),
   );
   metrics.push(
@@ -220,6 +316,7 @@ export function assessRealism(
       absAcf500,
       0.01,
       0.95,
+      over(LONG_MEMORY_LAG_TICKS),
     ),
   );
   // Both ratios are ratios *of* the lag-1 clustering, so neither means anything
@@ -240,6 +337,7 @@ export function assessRealism(
       clusteringGuard,
       5,
       Number.POSITIVE_INFINITY,
+      over(1),
     ),
   );
   metrics.push(
@@ -253,6 +351,7 @@ export function assessRealism(
       clusteringGuard,
       0.15,
       1.2,
+      over(CLUSTERING_DECAY_LAG_TICKS),
     ),
   );
 
@@ -270,8 +369,10 @@ export function assessRealism(
     ),
   );
 
-  // Aggregational gaussianity: kurtosis falls as returns are aggregated.
-  const aggregate = 60;
+  // Aggregational gaussianity: kurtosis falls as returns are aggregated. Sixty
+  // *ticks*, not sixty seconds — see the note at the top of this file for what
+  // the difference is worth on the shipped catalogue.
+  const aggregate = AGGREGATION_TICKS;
   const aggregatedCount = Math.floor(returns.length / aggregate);
   const aggregated = new Float64Array(aggregatedCount);
   for (let b = 0; b < aggregatedCount; b += 1) {
@@ -290,6 +391,7 @@ export function assessRealism(
       { name: 'tick excess kurtosis', value: tickKurtosis, floor: 1.5 },
       0,
       0.85,
+      over(AGGREGATION_TICKS),
     ),
   );
 
@@ -319,6 +421,7 @@ export function assessRealism(
       quantile(sortedDisplacement, 0.99) / Math.max(1e-9, quantile(sortedDisplacement, 0.5)),
       4.5,
       100,
+      over(windowTicks),
     ),
   );
   metrics.push(
@@ -330,6 +433,7 @@ export function assessRealism(
       quantile(sortedVolatility, 0.95) / Math.max(1e-9, quantile(sortedVolatility, 0.05)),
       2,
       100,
+      over(windowTicks),
     ),
   );
 
@@ -452,8 +556,16 @@ export function formatRealismReport(report: RealismReport): string {
         ? `>= ${m.targetMin}`
         : `${m.targetMin} .. ${m.targetMax}`;
     const value = Number.isFinite(m.value) ? m.value.toFixed(4) : 'n/a';
+    // The span is printed on every windowed metric, so a report from a faster
+    // market says so on its face (Cycle Audit 8, a5).
+    const over =
+      m.measuredOver === undefined
+        ? ''
+        : `  over ${m.measuredOver.ticks} ticks = ` +
+          `${(m.measuredOver.marketTimeMs / 1000).toFixed(1)}s of market time`;
     lines.push(
       `  ${m.pass ? 'ok  ' : 'FAIL'} ${m.name.padEnd(38)} ${value.padStart(12)}  target ${range}` +
+        over +
         (m.notEvaluated === undefined ? '' : `  not evaluated: ${m.notEvaluated}`),
     );
   }

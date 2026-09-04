@@ -20,6 +20,10 @@ import { DEFAULT_REGIMES, VolatilityRegimeModulator } from './regime.js';
 import { DEFAULT_STRUCTURE, StructurePhaseModulator } from './structure.js';
 import { MarketEngine } from './engine.js';
 import type { MagnitudeContext, MagnitudeModel } from './magnitude.js';
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { ASSET_CATALOGUE } from './catalogue.js';
 import { runMirrorTest, SignInvertingStream } from './mirror.js';
 
 /**
@@ -434,5 +438,201 @@ describe('SignInvertingStream', () => {
     wrapper.seek({ blockIndex: 0n, byteOffset: 0 });
     expect(inner.position()).toEqual({ blockIndex: 0n, byteOffset: 0 });
     expect(cursor).not.toEqual(inner.position());
+  });
+});
+
+/**
+ * Cycle Audit 8 (a1): the window sentence in `mirror.ts` is a measurement.
+ *
+ * That docstring converts the window every caller runs into market time, and
+ * both halves of the conversion rot from opposite directions. The market times
+ * read "under an hour" and "about eleven hours" for a cycle after PH-24.17
+ * divided the catalogue's tempo — a fixed window in ticks buys less market time
+ * when a tick is worth less. The tick bounds then read "10,000 and 120,000"
+ * while the largest window any caller ran was 60,300 and the smallest 950.
+ *
+ * Nothing noticed either, because prose about a precondition is exactly the
+ * thing no test reads. This one reads it: it takes the two tick bounds and the
+ * two market times out of the paragraph and recomputes them from
+ * `ASSET_CATALOGUE` and from the callers' own literals.
+ */
+describe('the window paragraph in mirror.ts still describes this repository', () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(here, '../../..');
+  /** The docstring as one line: a claim must not escape a guard by wrapping. */
+  const flat = (source: string): string => source.replace(/\n \* ?/g, ' ');
+  const doc = flat(readFileSync(path.join(here, 'mirror.ts'), 'utf8'));
+
+  /**
+   * Every file that calls `runMirrorTest`, found by searching for the call.
+   *
+   * The first version of this guard listed three files in `packages/engine` and
+   * was blind to the three in `tools/sim` — including `sampledCatalogue`, which
+   * holds the widest window in the repository. A guard that enumerates the
+   * thing it is checking is a guard that stops checking when the thing grows,
+   * which is the defect this whole paragraph is about.
+   */
+  const callers = (): { file: string; source: string }[] => {
+    const found: { file: string; source: string }[] = [];
+    const walk = (directory: string): void => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const full = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name === 'node_modules' || entry.name === 'dist') continue;
+          walk(full);
+        } else if (entry.name.endsWith('.ts') && entry.name !== 'mirror.ts') {
+          const source = readFileSync(full, 'utf8');
+          // The re-export in `index.ts` names it without calling it.
+          if (/runMirrorTest\(/.test(source)) found.push({ file: full, source });
+        }
+      }
+    };
+    for (const root of ['packages', 'tools', 'apps']) walk(path.join(repoRoot, root));
+    return found;
+  };
+
+  /**
+   * The widest window a file runs, as `max(burn-in) + max(comparison)`.
+   *
+   * An upper bound rather than a pairing — mirror.test.ts's 60,000-tick burn-in
+   * runs with a 300-tick comparison — and an upper bound is the right shape for
+   * a claim that no caller reaches past a number.
+   */
+  const widestWindow = (source: string): number => {
+    const num = (raw: string): number => Number(raw.replace(/_/g, ''));
+    /** `const MIRROR_TICKS = 120_000`, so `MIRROR_TICKS / 2` resolves. */
+    const constants = new Map<string, number>();
+    for (const m of source.matchAll(/const\s+([A-Z_][A-Z0-9_]*)\s*=\s*([\d_]+)\s*;/g))
+      constants.set(m[1]!, num(m[2]!));
+    const value = (raw: string): number | null => {
+      const text = raw.trim();
+      if (/^[\d_]+$/.test(text)) return num(text);
+      const arithmetic = /^([A-Z_][A-Z0-9_]*)\s*([*/])\s*([\d_]+)$/.exec(text);
+      if (arithmetic && constants.has(arithmetic[1]!)) {
+        const base = constants.get(arithmetic[1]!)!;
+        return arithmetic[2] === '/' ? base / num(arithmetic[3]!) : base * num(arithmetic[3]!);
+      }
+      return constants.get(text) ?? null;
+    };
+
+    const burnIn: number[] = [];
+    const compare: number[] = [];
+    // `const INTERIOR = { min: N, max: M }` — passed as `burnInTicks: INTERIOR`.
+    for (const m of source.matchAll(/const\s+\w+\s*=\s*\{\s*min:\s*([\d_]+),\s*max:\s*([\d_]+)/g))
+      burnIn.push(num(m[2]!));
+    for (const m of source.matchAll(/burnInTicks:\s*([^,\n}]+)/g)) {
+      const resolved = value(m[1]!);
+      if (resolved !== null) burnIn.push(resolved);
+    }
+    for (const m of source.matchAll(/compareTicks:\s*([^,\n}]+)/g)) {
+      const resolved = value(m[1]!);
+      if (resolved !== null) compare.push(resolved);
+    }
+    // `for (const burnInTicks of [700, 9_000, 35_000])`.
+    for (const m of source.matchAll(/const burnInTicks of \[([^\]]*)\]/g))
+      for (const raw of m[1]!.split(',')) burnIn.push(num(raw.trim()));
+    if (burnIn.length === 0 || compare.length === 0) return 0;
+    return Math.max(...burnIn) + Math.max(...compare);
+  };
+
+  it('finds every caller, including the ones outside this package', () => {
+    const files = callers().map(({ file }) => path.relative(repoRoot, file));
+    // Named because a search that silently found nothing would pass everything
+    // below: these three hold the widest windows and were missed once already.
+    for (const expected of [
+      'tools/sim/src/sampledCatalogue.stat.test.ts',
+      'tools/sim/src/multiAsset.stat.test.ts',
+      'tools/sim/src/phaseAcceptance.stat.test.ts',
+      'packages/engine/src/productionComposition.test.ts',
+    ]) {
+      expect(files, `the search no longer finds ${expected}`).toContain(expected);
+    }
+  });
+
+  it('states the ceiling the callers actually reach, in ticks', () => {
+    const stated = /reaches past ([\d_]+) ticks/.exec(doc);
+    expect(stated, 'the window paragraph no longer states a ceiling in ticks').not.toBeNull();
+    const windows = callers().map(({ file, source }) => ({
+      file: path.relative(repoRoot, file),
+      ticks: widestWindow(source),
+    }));
+    const widest = windows.reduce((a, b) => (b.ticks > a.ticks ? b : a));
+    expect(
+      Number(stated![1]),
+      `the widest caller window is ${String(widest.ticks)} ticks, in ${widest.file}`,
+    ).toBe(widest.ticks);
+
+    // And the production composition's own window, which the paragraph quotes
+    // because it is the one that guards the shipped factory.
+    const production = windows.find((w) => w.file.endsWith('productionComposition.test.ts'))!;
+    const quoted = /production'` — runs ([\d_]+)/.exec(doc);
+    expect(quoted, 'the paragraph no longer quotes the production window').not.toBeNull();
+    expect(Number(quoted![1]), `productionComposition runs ${String(production.ticks)}`).toBe(
+      production.ticks,
+    );
+  });
+
+  /**
+   * ADR-0003 §6 states the same window in the same market time, and it is the
+   * copy a reader reaches first. Cycle Audit 8 (a1) found both stale together —
+   * so both are checked together, against the same catalogue.
+   */
+  it('ADR-0003 §6 states the same window and the same market time', () => {
+    // Markdown wraps on plain newlines, so a claim spans lines here too.
+    const adr = readFileSync(
+      path.join(repoRoot, 'docs/decisions/ADR-0003-conditional-sign-symmetry.md'),
+      'utf8',
+    ).replace(/\s+/g, ' ');
+    const widest = Math.max(...callers().map(({ source }) => widestWindow(source)));
+    const stated = /(\d[\d,]*) ticks is \*\*([\d.]+) hours\*\*/.exec(adr);
+    expect(stated, 'ADR-0003 no longer converts its widest window into hours').not.toBeNull();
+    expect(Number(stated![1]!.replace(/,/g, '')), 'ADR-0003 quotes a window no caller runs').toBe(
+      widest,
+    );
+
+    const measured = ASSET_CATALOGUE.find((a) => a.definition.id === 'btcusd')!.evidence
+      .meanIntervalMs;
+    const hours = (widest * measured) / 3_600_000;
+    expect(
+      Math.abs(hours - Number(stated![2])) / hours,
+      `the widest window is ${hours.toFixed(2)} h at ${measured.toFixed(1)} ms a tick`,
+    ).toBeLessThan(0.1);
+
+    const narrow =
+      /the ([\d,]+) of .productionComposition\.test\.ts. is \*\*([\d.]+) minutes\*\*/.exec(adr);
+    expect(narrow, 'ADR-0003 no longer converts the production window into minutes').not.toBeNull();
+    const minutes = (Number(narrow![1]!.replace(/,/g, '')) * measured) / 60_000;
+    expect(
+      Math.abs(minutes - Number(narrow![2])) / minutes,
+      `the production window is ${minutes.toFixed(1)} min`,
+    ).toBeLessThan(0.1);
+  });
+
+  it('converts those ticks into market time at the catalogue’s own tempo', () => {
+    const interval = /mean interval of (\d+) ms/.exec(doc);
+    expect(interval, 'the paragraph no longer names the interval it converts with').not.toBeNull();
+    const btcusd = ASSET_CATALOGUE.find((a) => a.definition.id === 'btcusd')!;
+    const measured = btcusd.evidence.meanIntervalMs;
+    expect(
+      Math.round(measured),
+      'the paragraph converts at an interval the catalogue no longer records',
+    ).toBe(Number(interval![1]));
+
+    const stated = /about ([\d.]+) minutes at the narrow end and ([\d.]+) hours/.exec(doc);
+    expect(stated, 'the paragraph no longer states both ends in market time').not.toBeNull();
+    const narrow = Number(/production'` — runs ([\d_]+)/.exec(doc)![1]);
+    const wide = Number(/reaches past ([\d_]+) ticks/.exec(doc)![1]);
+    const minutes = (narrow * measured) / 60_000;
+    const hours = (wide * measured) / 3_600_000;
+    // A tenth, not an order of magnitude: PH-24.17 moved these figures by a
+    // factor of three to six and the prose covered it for a whole cycle.
+    expect(
+      Math.abs(minutes - Number(stated![1])) / minutes,
+      `the narrow end is ${minutes.toFixed(1)} min at ${measured.toFixed(1)} ms a tick`,
+    ).toBeLessThan(0.1);
+    expect(
+      Math.abs(hours - Number(stated![2])) / hours,
+      `the wide end is ${hours.toFixed(2)} h at ${measured.toFixed(1)} ms a tick`,
+    ).toBeLessThan(0.1);
   });
 });

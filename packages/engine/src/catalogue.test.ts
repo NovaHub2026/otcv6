@@ -198,6 +198,14 @@ describe('re-authoring changed rhythm and grain, never scale or tail weight', ()
     spx: 3352.3021210553543,
     xauusd: 1969.0617253751434,
   };
+  /** The factor PH-24.17 divided each tempo by. Part of the record, per §2. */
+  const GRAIN_FACTOR: Record<string, number> = {
+    eurusd: 4,
+    gbpjpy: 3,
+    btcusd: 3,
+    spx: 4,
+    xauusd: 4,
+  };
   /** Tail weight as PH-4 registered it. */
   const PH4_EXCESS_KURTOSIS: Record<string, number> = {
     eurusd: 63.518987927858404,
@@ -229,6 +237,51 @@ describe('re-authoring changed rhythm and grain, never scale or tail weight', ()
     },
   );
 
+  /**
+   * What a tick is worth in market time, and what that costs the measurements
+   * counted in ticks.
+   *
+   * **Cycle Audit 8, a5.** `packages/lab/src/realism.ts` counts four of its
+   * windows in ticks — `absolute-return-decay-is-slow` at 50,
+   * `absolute-return-long-memory` at 500, `aggregational-gaussianity` at 60 and
+   * the regime window at 300 — and none of them can see time. Dividing a tempo
+   * therefore divides the span of market each one asks about, and every band is
+   * re-passed against a shorter question with the band itself untouched.
+   * PH-24.17 did that to all four and recorded one.
+   *
+   * The seconds below are arithmetic on the recorded mean interval, so this
+   * fails the moment a recalibration moves it — before any statistical suite
+   * does, and in the file that made the change.
+   */
+  const REALISM_WINDOW_SECONDS: Record<string, Record<string, number>> = {
+    eurusd: { decay: 17.3, longMemory: 173.4, aggregation: 20.8, regime: 104.1 },
+    gbpjpy: { decay: 11.9, longMemory: 118.8, aggregation: 14.3, regime: 71.3 },
+    btcusd: { decay: 5.5, longMemory: 55.4, aggregation: 6.6, regime: 33.2 },
+    spx: { decay: 42.2, longMemory: 422.0, aggregation: 50.6, regime: 253.2 },
+    xauusd: { decay: 24.8, longMemory: 248.0, aggregation: 29.8, regime: 148.8 },
+  };
+  it.each(ASSET_CATALOGUE.map((a) => [a.definition.id, a] as const))(
+    "%s: the lab's tick-counted realism windows shrank by its grain factor",
+    (id, asset) => {
+      const meanIntervalMs = asset.evidence.meanIntervalMs;
+      // The measured interval is what the windows are made of, and it moved by
+      // the factor the tempo did: a window unchanged in ticks is a question
+      // changed in time.
+      const shrink = PH4_MEAN_INTERVAL_MS[id]! / meanIntervalMs;
+      expect(shrink, `${id} grain`).toBeGreaterThan(GRAIN_FACTOR[id]! * 0.95);
+      expect(shrink, `${id} grain`).toBeLessThan(GRAIN_FACTOR[id]! * 1.05);
+      const seconds = (ticks: number) => (ticks * meanIntervalMs) / 1_000;
+      const recorded = REALISM_WINDOW_SECONDS[id]!;
+      expect(seconds(50), `${id} absolute-return-decay-is-slow`).toBeCloseTo(recorded.decay!, 1);
+      expect(seconds(500), `${id} absolute-return-long-memory`).toBeCloseTo(
+        recorded.longMemory!,
+        1,
+      );
+      expect(seconds(60), `${id} aggregational-gaussianity`).toBeCloseTo(recorded.aggregation!, 1);
+      expect(seconds(300), `${id} regime window`).toBeCloseTo(recorded.regime!, 1);
+    },
+  );
+
   it('carries every non-rhythm trait across unchanged', () => {
     // The exclusion, enforced. If a future re-authoring moves burstiness or a
     // spread while claiming to have changed only rhythm, this is what says so.
@@ -241,13 +294,6 @@ describe('re-authoring changed rhythm and grain, never scale or tail weight', ()
       btcusd: { tempoMs: 1_100, burstiness: 0.78, regimeSpread: 1.35, structureSpread: 1 },
       spx: { tempoMs: 5_450, burstiness: 0.45, regimeSpread: 0.85, structureSpread: 1.35 },
       xauusd: { tempoMs: 4_300, burstiness: 0.55, regimeSpread: 1.25, structureSpread: 0.9 },
-    };
-    const GRAIN_FACTOR: Record<string, number> = {
-      eurusd: 4,
-      gbpjpy: 3,
-      btcusd: 3,
-      spx: 4,
-      xauusd: 4,
     };
     const drifted: string[] = [];
     for (const asset of ASSET_CATALOGUE) {

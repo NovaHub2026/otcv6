@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, type Tick } from '@otc/core';
 import { ASSET_CATALOGUE } from '@otc/engine';
-import { distanceUnitFrom, LabDistances, medianCandleRange } from './distance.js';
+import {
+  distanceUnitFrom,
+  LabDistances,
+  medianCandleRange,
+  MEASUREMENT_SPAN_MS,
+  recordWindow,
+} from './distance.js';
 
 const tick = (sequence: number, instant: number, price: number): Tick => ({
   sequence,
@@ -39,5 +45,59 @@ describe('the distance unit', () => {
     cache.remember('eurusd', unit);
     expect(cache.cached('eurusd', 500)).toBe(unit);
     expect(cache.cached('eurusd', 1_100)).toBeNull();
+  });
+});
+
+describe('which half hour the unit was cut from (Cycle Audit 8, a5)', () => {
+  const now = 1_776_000_000_000;
+  /** A minute of ticks whose range is `range`, starting at `start`. */
+  const minute = (start: number, range: number, sequence: number): Tick[] => [
+    tick(sequence, start + 1_000, 0),
+    tick(sequence + 1, start + 30_000, range),
+    tick(sequence + 2, start + 50_000, 0),
+  ];
+  const half = (from: number, range: number, sequence: number): Tick[] =>
+    Array.from({ length: 30 }, (_, i) => minute(from + i * 60_000, range, sequence + i * 3)).flat();
+
+  it('takes the record window from the instants, not from what retention happens to hold', () => {
+    // The retained window is a tick count, so the market time it covers depends
+    // on the tempo (PH-24.17). The measurement must not.
+    const ticks = [
+      ...half(now - 4 * MEASUREMENT_SPAN_MS, 40, 1),
+      ...half(now - 30 * 60_000, 40, 1000),
+    ];
+    const window = recordWindow(ticks, now);
+    expect(window).toHaveLength(90);
+    expect(window[0]!.instant).toBeGreaterThanOrEqual(now - MEASUREMENT_SPAN_MS);
+    expect(window[window.length - 1]!.instant).toBeLessThanOrEqual(now);
+    expect(recordWindow([], now)).toEqual([]);
+  });
+
+  it('gives nothing back when the record is too short to hold a median', () => {
+    // A market minutes old, or one whose retained window was evicted: three
+    // complete minutes is not a half hour, and the caller has to know that
+    // rather than be handed a unit cut from three candles.
+    const thin = [minute(now - 240_000, 40, 1), minute(now - 180_000, 40, 4)].flat();
+    expect(recordWindow(thin, now)).toEqual([]);
+  });
+
+  it('says whether it measured the record or a fork, from the ticks themselves', () => {
+    const past = distanceUnitFrom(ASSET_CATALOGUE[0]!, 0, half(now - 30 * 60_000, 40, 1), now);
+    const future = distanceUnitFrom(ASSET_CATALOGUE[0]!, 0, half(now, 40, 1), now);
+    expect(past.basis).toBe('record');
+    expect(future.basis).toBe('fork');
+    // Nothing to measure is nothing to claim about; the unit falls back to one step.
+    expect(distanceUnitFrom(ASSET_CATALOGUE[0]!, 0, [], now).basis).toBe('record');
+  });
+
+  it('cuts a different unit from a quiet half hour than from a violent one', () => {
+    // Why the basis matters rather than being bookkeeping: this is the same
+    // market, half an hour apart, and «+3 unidades» means four times as much
+    // price on one side of `now` as on the other.
+    const quiet = distanceUnitFrom(ASSET_CATALOGUE[0]!, 0, half(now - 30 * 60_000, 40, 1), now);
+    const violent = distanceUnitFrom(ASSET_CATALOGUE[0]!, 0, half(now, 160, 1), now);
+    expect(quiet.unitSteps).toBe(10);
+    expect(violent.unitSteps).toBe(40);
+    expect(quiet.minutes).toBe(violent.minutes);
   });
 });

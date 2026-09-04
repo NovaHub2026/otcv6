@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
 import { GET, POST } from './[...path]/route.js';
@@ -123,5 +126,37 @@ describe('the Lab proxy', () => {
     );
     expect(ok.status).toBe(200);
     expect(called).toBe(1);
+  });
+});
+
+/**
+ * **Cycle Audit 8 (a4).** Who can reach the handler above.
+ *
+ * Everything else in this file is about what the proxy does with a request;
+ * this is about which requests can arrive. The panel is the process holding
+ * `OTC_ADMIN_TOKEN`, and it attaches it to every write it forwards — so a
+ * panel bound to every interface hands the Lab's and the engine's write
+ * surfaces to anyone on the network, credential included. Cycle Audit 7
+ * measured that exposure through `next start` (CA7-06) and closed it in the
+ * `start` script; `next dev` binds `*` too, and it is the script an operator
+ * actually runs on the machine where the token is set.
+ *
+ * `apps/api/src/bind.test.ts` pins the same file from the engine's side. Two
+ * guards, because the exposure is one wrong word in one line and the last one
+ * survived a whole cycle.
+ */
+describe('the panel that signs these writes is not published to the network', () => {
+  it('binds loopback in every script that starts it', () => {
+    const manifest = JSON.parse(
+      readFileSync(
+        path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../package.json'),
+        'utf8',
+      ),
+    ) as { scripts: Record<string, string> };
+    for (const name of ['dev', 'start']) {
+      expect(manifest.scripts[name] ?? '', `apps/web ${name} script`).toMatch(
+        /-H\s+\$\{OTC_PANEL_BIND:-127\.0\.0\.1\}/,
+      );
+    }
   });
 });

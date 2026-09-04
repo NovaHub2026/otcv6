@@ -6,16 +6,16 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                                      |
-| ------------------ | -------------------------------------------------------------------------- |
-| Last clean session | 2026-09-03                                                                 |
-| Branch             | `feature/ph-24-the-labs-controls` — off `main` at `8f62e4b` (PH-23 merged) |
-| Remote             | `origin` → NovaHub2026/otcv6, public                                       |
-| Active cycle       | Cycle 8, **3 of 3** phases approved (PH-22, PH-23, PH-24)                  |
-| Active phase       | none — Cycle Audit 8 is what happens next (§28)                            |
-| Active subphase    | none                                                                       |
-| Cycle Audit        | **008 OPEN** — 60 confirmed findings, 18 closed, 42 tracked                |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                         |
+| Field              | Value                                                           |
+| ------------------ | --------------------------------------------------------------- |
+| Last clean session | 2026-09-04                                                      |
+| Branch             | `main` — PH-24 merged at `d1aa02c`, Cycle Audit 8 fixes on top  |
+| Remote             | `origin` → NovaHub2026/otcv6, public                            |
+| Active cycle       | Cycle 9, **0 of 3** phases approved — Cycle 8's audit is closed |
+| Active phase       | none — PH-25 is planned and activating it is the next action    |
+| Active subphase    | none                                                            |
+| Cycle Audit        | **008 closed** — 60 confirmed, all 60 resolved, none tracked    |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)              |
 
 ---
 
@@ -34,14 +34,20 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-24 is APPROVED and merged (`d1aa02c`); Cycle Audit 8 has run and is OPEN.**
-Eight auditors, one worktree each under `~/.otc-audit8/`, every finding put to
-an independent refuter: 86 claims, 60 confirmed, 26 refuted. Eighteen are closed
-(`ce2a544`, `769ce80`, `396c0f4`, `fa362e4`, and the commit that recorded the
-audit); the rest are listed in
-[Cycle Audit 008](docs/audits/CYCLE-AUDIT-008.md) §8 with the six material ones
-in the order they should be taken. The full finding set, with every verdict, is
-in `~/.otc-audit8/all-findings.json`.
+**PH-24 is APPROVED and merged (`d1aa02c`); Cycle Audit 8 has run and is
+CLOSED.** Eight auditors, one worktree each under `~/.otc-audit8/`, every
+finding put to an independent refuter: 86 claims, 60 confirmed, 26 refuted.
+**All 60 are resolved** — eighteen inside the audit (`ce2a544`, `769ce80`,
+`396c0f4`, `fa362e4`), the rest after it, each with a guard watched failing
+against a planted defect before it was believed. Nothing is tracked and nothing
+was deferred to an Issue. The record is
+[Cycle Audit 008](docs/audits/CYCLE-AUDIT-008.md); the full finding set, with
+every verdict, is in `~/.otc-audit8/all-findings.json`.
+
+**Cycle 9 is open and PH-25 is the next action.** The audit handed forward one
+thing that is a phase rather than a fix: no adversarial run in this repository
+attacks the feed a real observer reads — every battery builds its own engine or
+runs against the Lab's composition. `CURRENT_STATE.md` holds the exact wording.
 
 Hosted CI needed two fixes of its own, neither a product defect: the unit
 project now yields an event-loop turn between tests (a worker that cannot read
@@ -50,17 +56,19 @@ and two per-test ceilings plus the job ceiling were raised to fit a suite that
 PH-24.17 made three to four times more expensive. Browser suites run under
 `LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu`.
 
-**The next phase is the decision LA-03 names.** The Lab specification audit
+**PH-24 delivered what LA-03 named**, so this is history rather than the next
+step. The Lab specification audit
 ([LAB-SPECIFICATION-AUDIT-001](docs/audits/LAB-SPECIFICATION-AUDIT-001.md))
-found a correct mechanism and no controls: nothing is ever applied to a hosted
-market. Every remaining section — candle close control on a real candle,
-presets, simulated positions, scenarios, release — waits on one design: how a
-chosen sign vector is played into a hosted Lab engine for the remaining ticks
-and the keystream resumed at its cursor afterwards. The engine's sign source is
-substitutable at construction (`createMarketEngine({streams: {sign}})`) and
-nowhere else; `LabSession` is written and never fed. ADR-0017 fixes what
-"close" means before that work starts: the price in force at the expiry
-instant, inclusive.
+found a correct mechanism and no controls, and every section it left open —
+candle close control on a real candle, presets, simulated positions, scenarios,
+release — rested on one design: how a chosen sign vector is played into a hosted
+Lab engine for the remaining ticks and the keystream resumed at its cursor
+afterwards. That is built: the sign source is still substitutable only at
+construction (`createMarketEngine({streams: {sign}})`), and `LabSession` is fed
+by `apps/api/src/lab/engineEvents.ts` and `lab.controller.ts`. ADR-0017 fixed
+what "close" means before that work started: the price in force at the expiry
+instant, inclusive. What comes next is Cycle 9's first phase; `CURRENT_STATE.md` holds the exact
+next legal action.
 
 ## Local services
 

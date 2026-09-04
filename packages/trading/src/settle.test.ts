@@ -149,6 +149,56 @@ describe('the ledger reports the operator margin honestly', () => {
   });
 });
 
+describe('a refund is exactly at the money, and nothing wider (ADR-0007)', () => {
+  /**
+   * Cycle Audit 8 (a2): the settlement mirror above is direction-symmetric, and
+   * so is a tolerance.
+   *
+   * The auditor planted `Math.abs(expiryPrice - entryPrice) <= 1 → refund` —
+   * symmetric, so every mirror case still mirrored — and all 55 tests in this
+   * package passed. What caught it was an incidental PH-24.3 route test in the
+   * Lab, three packages away, which is luck rather than a guard.
+   *
+   * The property the mirror cannot see is that the refund band has width zero.
+   * A tie is `expiryPrice === entryPrice` on the lattice, and one level either
+   * side is a decided contract — that is the whole content of ADR-0007, and the
+   * operator's margin moves several points when it quietly widens.
+   */
+  it('decides at one lattice level, in both directions', () => {
+    for (const step of [1, 2, 5, 40]) {
+      for (const sign of [1, -1]) {
+        const moved = sign * step;
+        const ticks = record([0, moved, moved]);
+        const base = contract({
+          id: `b${String(moved)}`,
+          entryInstant: epochMillis(1_000_000),
+          horizonMs: durationMillis(2_000),
+        });
+        const up = settle({ ...base, direction: 'up' }, ticks);
+        const down = settle({ ...base, direction: 'down' }, ticks);
+        expect(up.expiryPrice - up.entryPrice, `a ${String(moved)}-level move`).toBe(moved);
+        expect(up.outcome, `${String(moved)} levels is not a refund for up`).toBe(
+          moved > 0 ? 'win' : 'loss',
+        );
+        expect(down.outcome, `${String(moved)} levels is not a refund for down`).toBe(
+          moved > 0 ? 'loss' : 'win',
+        );
+      }
+    }
+  });
+
+  it('refunds only when the two prices are the same level', () => {
+    const ticks = record([0, 0, 0]);
+    const base = contract({
+      id: 'tie',
+      entryInstant: epochMillis(1_000_000),
+      horizonMs: durationMillis(2_000),
+    });
+    expect(settle({ ...base, direction: 'up' }, ticks).outcome).toBe('refund');
+    expect(settle({ ...base, direction: 'down' }, ticks).outcome).toBe('refund');
+  });
+});
+
 describe('settlement is direction-symmetric (the settlement mirror)', () => {
   /**
    * The settlement analogue of the engine's mirror test, and the gap Cycle Audit

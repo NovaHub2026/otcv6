@@ -49,7 +49,11 @@ const arrivals = new ArrivalSelector();
     { provide: ArrivalSelector, useValue: arrivals },
     // PH-24.18: the distance units' cache. Every constructor parameter of the
     // controller must be a provider here — the browser suite boots the real
-    // module and found this one missing; `labModule.test.ts` now boots it too.
+    // module and found this one missing. Nothing boots the module in the unit
+    // project; what stands in for it is `labProviders.test.ts`, which reads
+    // this list and the controller's constructor and fails by the parameter's
+    // name. A provider defect elsewhere — a bad `inject` token, say — is still
+    // found only at boot (Cycle Audit 8, a8).
     { provide: LabDistances, useValue: new LabDistances() },
     LabSession,
     LabPositions,

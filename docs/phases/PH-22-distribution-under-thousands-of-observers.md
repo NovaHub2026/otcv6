@@ -163,10 +163,14 @@ third off that. A server, not a rewrite.
 
 ## 8. What the phase leaves open
 
-**The replay ceiling is unexercised.** PH-22.3 §8 criterion 2: the budget is
-guarded by unit tests, each watched failing, and it did not engage in the
-post-fix load run because the harness reads as fast as the server writes.
-Closing it needs a harness that reads slowly on purpose.
+**Whether the replay ceiling engaged is unknown.** PH-22.3 §8 criterion 2: the
+budget is guarded by unit tests, each watched failing, but the post-fix load run
+cannot say whether it engaged — the harness discarded the server's `gap` and
+`close` frames, and a re-run at `arrivalMs: 0` had 208 of 300 replays denied
+while the harness reported none (Cycle Audit 8, a3). Closing it needs no new
+harness: the instrument counts told gaps now, and re-running the table is the
+step. What a slow-reading fleet adds is a _persistent_ charge rather than the
+ability to reach the ceiling at all — this harness already reaches it.
 
 **Ten thousand was never held.** Two thousand from one harness process is where
 the instrument itself becomes the busier process. Several harness processes are

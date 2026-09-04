@@ -39,6 +39,7 @@ import { HistoryService } from './history.service.js';
 import {
   MarketController,
   MAX_DISPLAY_NAME_LENGTH,
+  MAX_MULTIPLEXED_ASSETS,
   replayBudgetUsed,
 } from './market.controller.js';
 import { PublicationService } from './publication.service.js';
@@ -626,6 +627,11 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
       end: () => {
         ended = true;
       },
+      // A real `ServerResponse` reports this, and the code under test reads it
+      // before ending a connection that may already be finished (a3).
+      get writableEnded() {
+        return ended;
+      },
       on: () => undefined,
       once: (event: string, handler: () => void) => {
         // A socket that drains immediately unless the test says it is full;
@@ -824,6 +830,54 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     expect(() => controller.multiplexed(untouched(), request(), 'eurusd,eurusd')).toThrow(
       /more than once/,
     );
+    // **Cycle Audit 8 (a3).** The cap was the only bound between one GET and a
+    // subscription to the whole catalogue, and nothing asserted it: deleting the
+    // check left every test green, so a hundred-asset venue would have answered
+    // one request with a hundred fan-out targets on one socket, and N requests
+    // with 100N.
+    const overCap = Array.from({ length: MAX_MULTIPLEXED_ASSETS + 1 }, (_, i) => `a${i}`);
+    expect(() => controller.multiplexed(untouched(), request(), overCap.join(','))).toThrow(
+      /the most one stream may carry is 32/,
+    );
+    // And the cap itself is servable: one under it is refused for the asset
+    // being unknown, not for the length.
+    expect(() =>
+      controller.multiplexed(untouched(), request(), overCap.slice(1).join(',')),
+    ).toThrow(/Unknown asset/);
+  });
+
+  it('ends a multiplexed response on shutdown, not only its close frames (a3)', async () => {
+    // `beforeApplicationShutdown` promises each client "an `event: close` naming
+    // the reason and then the end of its response". The single-asset sink ends
+    // the response; the multiplexed sink deliberately does not, because one
+    // asset closing is not the connection closing — and nothing ended it at the
+    // connection level either. So a multiplexed client was left holding close
+    // frames on a response that stayed open, and what actually terminated it was
+    // `forceCloseConnections` in `main.ts` destroying the socket, which from the
+    // client's side is the network failing rather than the server leaving.
+    // `restart.stat.test.ts` watches the promise on the single-asset endpoint
+    // only, which is why this went unseen.
+    const feed = new TickFeed({ retainTicks: 50 });
+    feed.publish('eurusd', ticks(6));
+    feed.publish('gbpjpy', ticks(4));
+    const venue = { ...venueStub(['eurusd', 'gbpjpy']), feed } as unknown as VenueService;
+    const controller = new MarketController(venue);
+
+    const many = recording();
+    controller.multiplexed(many.res, request(), 'eurusd,gbpjpy');
+    const one = recording();
+    controller.stream('eurusd', one.res, request());
+    expect(many.ended(), 'ended before the shutdown').toBe(false);
+
+    await controller.beforeApplicationShutdown();
+
+    for (const asset of ['eurusd', 'gbpjpy']) {
+      expect(many.body(), `${asset} was not told why`).toContain(
+        `event: close\ndata: ${JSON.stringify({ asset, reason: 'server shutting down' })}`,
+      );
+    }
+    expect(many.ended(), 'the multiplexed response was never ended').toBe(true);
+    expect(one.ended(), 'the single-asset response was never ended').toBe(true);
   });
 
   it('charges undrained socket bytes to the process, and releases them (PH-22.3)', () => {

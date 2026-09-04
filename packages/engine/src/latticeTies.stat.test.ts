@@ -39,9 +39,17 @@ import { createMarketEngine } from './factory.js';
  * more horizons inside a single run buys almost nothing. Replicates buy
  * everything.
  *
- * The stream family here is deliberately not one the recorded values were
- * measured with, so a pass means the numbers reproduce rather than that a seed
- * was memorised.
+ * ## The stream family, and what a pass is worth
+ *
+ * The constants in `asset.ts` were produced by this file's own procedure on its
+ * own seeds (`ties-verify-<asset>-<n>`), and for a cycle this docstring claimed
+ * the opposite — that the family here was deliberately not the recorded one, so
+ * that a pass meant the numbers reproduced rather than that a seed had been
+ * memorised (Cycle Audit 8, a5). It did not: the test re-ran the recording.
+ *
+ * It does now. The verification runs on `ties-fresh-<asset>-<n>`, a family the
+ * measurement never touched, so a pass means the rate is a property of the
+ * process at these parameters and not of the twelve seeds it was read from.
  */
 
 const HORIZON_MS = 30_000;
@@ -114,7 +122,7 @@ describe('the recorded lattice tie rates reproduce', () => {
 
       const rates: number[] = [];
       for (let replicate = 0; replicate < REPLICATES; replicate += 1) {
-        rates.push(await tieRate(index, `ties-verify-${id}-${replicate}`));
+        rates.push(await tieRate(index, `ties-fresh-${id}-${replicate}`));
         await breathe();
       }
       const mean = rates.reduce((sum, r) => sum + r, 0) / rates.length;

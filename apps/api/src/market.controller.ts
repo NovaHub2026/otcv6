@@ -334,6 +334,15 @@ export class MarketController implements BeforeApplicationShutdown {
     const live = {
       cancel: (reason?: string): void => {
         for (const subscription of subscriptions) subscription.cancel(reason);
+        // **Cycle Audit 8 (a3).** The per-asset `close` above writes its frame
+        // and returns, because one asset ending is not the connection ending.
+        // Cancelling `live` *is* the connection ending, and nothing ended it:
+        // `beforeApplicationShutdown` left every multiplexed client holding
+        // close frames on a response that stayed open, against its own
+        // docstring, and what terminated them was `forceCloseConnections`
+        // destroying the socket. A client can tell an ended response from a
+        // network fault and reconnect; it cannot tell a destroyed one.
+        if (!res.writableEnded) res.end();
       },
     };
     if (full) {
@@ -896,11 +905,18 @@ const MAX_REPLAY_BYTES = 1_000_000;
  *
  * Sized against what a client is for — the panel's densest view is a handful of
  * charts, and the Human Owner's plan is eight — with room to spare, rather than
- * against what the server survives. An unbounded list would let one request
- * subscribe to the whole catalogue and make the replay bound above a per-asset
- * quantity instead of a per-connection one.
+ * against what the server survives. What it bounds is *subscriptions*: without
+ * it a single GET is a subscription to every asset in the catalogue, so a
+ * hundred-asset venue answers one request with a hundred fan-out targets on one
+ * socket, and N requests with 100N.
+ *
+ * **The reason it used to give was not the reason (Cycle Audit 8, a3).** It
+ * claimed an unbounded list would put the replay bound above a per-asset
+ * quantity rather than a per-connection one — but `bufferedBytes` is a single
+ * counter for the whole connection however many assets it carries, so replay was
+ * never what this protects. Exported so the refusal is testable.
  */
-const MAX_MULTIPLEXED_ASSETS = 32;
+export const MAX_MULTIPLEXED_ASSETS = 32;
 
 /**
  * The most replay this **process** will hold at once, across every connection.

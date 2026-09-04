@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, type Tick } from '@otc/core';
-import { LabPositions, presetLevel, PRESETS, recordOf } from './positions.js';
+import { LabPositions, presetLevel, PRESETS, recordOf, type LabPosition } from './positions.js';
 
 /**
  * PH-24.3 §4: the presets, on the lattice, and a position's entry read as
@@ -126,10 +126,48 @@ describe('a simulated position', () => {
       ticks,
     );
     expect(LabPositions.actual(put, ticks)).toBeNull(); // record ends before expiry: refused, not guessed
+    expect(LabPositions.status(put, ticks).kind).toBe('pending');
     const later = [...ticks, tick(65_000, 4, 101), tick(70_000, 5, 99)];
     const settlement = LabPositions.actual(put, later)!;
     expect(settlement.outcome).toBe('win'); // 101 < 105 for a put
     expect(settlement.expiryPrice).toBe(101);
     expect(recordOf(later).prices.length).toBe(5);
+    expect(LabPositions.status(put, later)).toEqual({ kind: 'settled', settlement });
+  });
+
+  it('tells a position that is waiting from one whose entry the window no longer holds', () => {
+    const positions = new LabPositions();
+    const call = positions.open(
+      { assetId: 'eurusd', direction: 'up', stake: 10, horizonMs: 60_000 },
+      epochMillis(t0 + 6_000),
+      ticks,
+    );
+    // The retained window has rolled past the entry: expiry is covered, the
+    // entry is not. This position will never settle, and reporting it as "not
+    // expired yet" would leave it on the panel for ever.
+    const rolled = [tick(7_000, 4, 106), tick(65_000, 5, 101), tick(70_000, 6, 99)];
+    const status = LabPositions.status(call, rolled);
+    expect(status.kind).toBe('evicted');
+    expect(status.kind === 'evicted' && status.reason).toMatch(/starts after the entry instant/);
+    expect(LabPositions.actual(call, rolled)).toBeNull();
+  });
+
+  it('raises what settlement refuses for any other reason, instead of reading it as pending', () => {
+    // A contract the production `settle` rejects outright — the shape of a
+    // disagreement between the Lab and the engine. Swallowed, it was
+    // indistinguishable from a position whose clock has not run out.
+    const positions = new LabPositions();
+    const sound = positions.open(
+      { assetId: 'eurusd', direction: 'up', stake: 10, horizonMs: 60_000 },
+      epochMillis(t0 + 6_000),
+      ticks,
+    );
+    const malformed: LabPosition = {
+      ...sound,
+      contract: { ...sound.contract, payoutRatio: Number.NaN },
+    };
+    const later = [...ticks, tick(65_000, 4, 101), tick(70_000, 5, 99)];
+    expect(() => LabPositions.status(malformed, later)).toThrow(RangeError);
+    expect(() => LabPositions.actual(malformed, later)).toThrow(RangeError);
   });
 });

@@ -28,11 +28,40 @@ export const isControl = (value: unknown): value is Control =>
   typeof (value as { armed?: unknown }).armed === 'boolean';
 
 /**
+ * How long a call may take before the screen stops waiting for it.
+ *
+ * **Cycle Audit 8 (a4).** No call had a deadline: a Lab that stopped answering
+ * left every request outstanding for the whole outage. The measurement that
+ * matters is the one already written above — a `busy` flag held by a request
+ * that never came back locked the strip on 2026-09-03 — and a request that
+ * never comes back is exactly what a socket to a blocked process is.
+ *
+ * Generous on purpose. The acts behind it are not cheap: a close is found by
+ * rejection over two hundred thousand draws, and Calidad runs the battery's
+ * eight hundred hypotheses over a bounded sample. A deadline that cut one of
+ * those short would be a defect of its own, so this is the ceiling above
+ * anything the Lab has been measured to take, not a latency budget.
+ */
+export const LAB_TIMEOUT_MS = 120_000;
+
+/**
+ * The same, for the screen's own one-second poll (PH-24.13).
+ *
+ * Shorter, because the poll is the one caller that asks again by itself: once
+ * a tick is skipped while a refresh is out (`poll.ts`), a request with no
+ * deadline does not stack the poll up — it stops it, silently, for as long as
+ * the socket stays open. Still far above what these reads cost, because the
+ * first state read of a market computes the distance unit over up to fifty
+ * thousand ticks and a screen with no unit is the failure next door.
+ */
+export const LAB_POLL_TIMEOUT_MS = 15_000;
+
+/**
  * A failed request is an answer, never an exception (PH-24.11): the screen
  * reads the reason and every button stays usable. A `busy` flag held by a
  * request that never came back locked the strip on 2026-09-03.
  */
-async function asJson<T>(request: Promise<Response>): Promise<T | Unavailable> {
+async function asJson<T>(request: Promise<Response>, timeoutMs: number): Promise<T | Unavailable> {
   try {
     const response = await request;
     const body: unknown = await response.json();
@@ -63,22 +92,39 @@ async function asJson<T>(request: Promise<Response>): Promise<T | Unavailable> {
     }
     return body as T;
   } catch (error) {
+    // The deadline is not a transport failure, and «signal timed out» on a
+    // Spanish screen says nothing: name the wait, in seconds, as what happened.
+    const name = (error as Error).name;
+    if (name === 'TimeoutError' || name === 'AbortError') {
+      return {
+        running: false,
+        reason: `el Lab no respondió en ${String(Math.round(timeoutMs / 1_000))} s`,
+      };
+    }
     return { running: false, reason: `no se alcanza el Lab: ${(error as Error).message}` };
   }
 }
 
-export async function labGet<T>(path: string): Promise<T | Unavailable> {
-  return asJson<T>(fetch(`/lab/${path}`));
+export async function labGet<T>(
+  path: string,
+  timeoutMs = LAB_TIMEOUT_MS,
+): Promise<T | Unavailable> {
+  return asJson<T>(fetch(`/lab/${path}`, { signal: AbortSignal.timeout(timeoutMs) }), timeoutMs);
 }
 
 /** The Lab's acts — apply, release, open, preset, scenario — as JSON writes carrying only the query. */
-export async function labPost<T>(path: string): Promise<T | Unavailable> {
+export async function labPost<T>(
+  path: string,
+  timeoutMs = LAB_TIMEOUT_MS,
+): Promise<T | Unavailable> {
   return asJson<T>(
     fetch(`/lab/${path}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: '{}',
+      signal: AbortSignal.timeout(timeoutMs),
     }),
+    timeoutMs,
   );
 }
 

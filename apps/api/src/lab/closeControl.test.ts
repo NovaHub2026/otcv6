@@ -13,6 +13,7 @@ import { ASSET_CATALOGUE } from '@otc/engine';
 import {
   closeInstant,
   planClose,
+  planConditionedClose,
   readWindow,
   resolveTarget,
   type ForkSource,
@@ -158,5 +159,45 @@ describe('planning a close', () => {
     expect(plan.selection.signs).toBeNull();
     expect(plan.selection.impossible).toMatch(/at most 10 lattice steps/);
     expect(plan.reachableNeighbours).toBeNull();
+  });
+});
+
+describe('a sided close ends strictly beyond the mark (PH-24.21)', () => {
+  // Steps 3, 2, 4, 1 with the market's own signs +, −, +, − : a close 4 above
+  // where the window starts, so a mark at +4 is the case the seeded route test
+  // never draws — the natural path landing exactly on it.
+  const window = readWindow(
+    fork(logPrice(1000), [
+      { instant: t0 + 1_000, price: 1003 },
+      { instant: t0 + 2_000, price: 1001 },
+      { instant: t0 + 3_000, price: 1005 },
+      { instant: t0 + 4_000, price: 1004 },
+    ]),
+    epochMillis(t0 + 60_000),
+  );
+
+  it("refuses the market's own path when it closes on the mark, and chooses one beyond it", () => {
+    const mark = logPrice(1004);
+    // A close *on* the entry mark is a tie, which settlement refunds (ADR-0007).
+    // Relaxing either comparison to >= turns an operator's WIN into a REFUND
+    // with nothing to show for it (Cycle Audit 8, a8).
+    const above = planConditionedClose(spec, mark, 'above', window, random);
+    expect(above.natural, 'a close on the mark was taken as above it').toBe(false);
+    expect(above.selection.signs).not.toBeNull();
+    expect(above.delta).toBeGreaterThan(4);
+    expect(above.target).toBeGreaterThan(mark);
+
+    const below = planConditionedClose(spec, mark, 'below', window, random);
+    expect(below.natural, 'a close on the mark was taken as below it').toBe(false);
+    expect(below.selection.signs).not.toBeNull();
+    expect(below.delta).toBeLessThan(4);
+    expect(below.target).toBeLessThan(mark);
+  });
+
+  it("arms the market's own path when it already ends beyond the mark, choosing nothing", () => {
+    const plan = planConditionedClose(spec, logPrice(1003), 'above', window, random);
+    expect(plan.natural).toBe(true);
+    expect(plan.selection.attempts).toBe(0);
+    expect(plan.delta).toBe(4);
   });
 });

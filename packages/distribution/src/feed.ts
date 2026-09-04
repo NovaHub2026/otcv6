@@ -91,24 +91,48 @@ export interface TickFeedOptions {
 /**
  * Ticks retained per asset, and what that costs.
  *
- * **Cycle Audit 7, CA7-33.** Measured rather than estimated: 50,000 ticks of a
- * real feed is **5.01 MB per asset** (105.1 bytes retained per tick), so
- * PH-21's hundred-asset catalogue holds **501 MB** in this map alone — 22% of
- * the 2,240 MB heap Node defaults to on the machine that measured it — and
- * roughly 446 assets exhausts the heap before any market state, history
- * recorder, publication buffer or framework overhead. Nothing configures a
- * heap for the service anywhere in the repository.
+ * **Cycle Audit 7, CA7-33, re-measured by Cycle Audit 8 (a3).** The figures this
+ * docstring carried — 105.1 bytes a tick, 5.01 MiB an asset, 501 MB at a hundred
+ * — were 44% high and recorded no method, so nothing could tell whether they had
+ * ever been true of this feed or had merely stopped being so. They are the
+ * numbers PH-22 was sized from.
  *
- * The number is not changed here. It is the resume window every reconnecting
- * client depends on, and shrinking it silently trades a memory problem for a
- * correctness one. What changes is that it is now written down with its cost,
- * pinned by a test, and named in `MULTI_NODE_AND_OPERATIONS.md` as the first
- * thing PH-22 has to size deliberately rather than inherit.
+ * Re-measured against the tick the engine actually publishes, whose `price` is
+ * an integer count of log units (ADR-0004) and therefore a small integer V8
+ * stores inline rather than a boxed double: **72.9 bytes retained per tick**, so
+ * 50,000 ticks is **3.47 MiB per asset**, and PH-21's hundred-asset catalogue
+ * holds **344 MiB** in this map alone — 15% of the 2,240 MB heap Node defaults to
+ * on the machine that measured it, and 428 MiB of resident set. Roughly 645
+ * assets exhausts the heap before any market state, history recorder,
+ * publication buffer or framework overhead. Nothing configures a heap for the
+ * service anywhere in the repository.
+ *
+ * **The method, because the spread between honest ones is a factor of forty.**
+ * `heapUsed` after six forced collections, with this feed the only owner of the
+ * ticks: 72.9 bytes. Charging the feed only what it adds when the ticks are
+ * retained elsewhere as well: 8.8 bytes, the array slot and nothing else.
+ * Resident set instead of heap: 348 bytes, which measures the allocator's arenas
+ * rather than the window. The first answers the question this docstring asks —
+ * what the retained window costs a process that hosts a catalogue — and it is
+ * the one `feed.test.ts` re-measures on every run.
+ *
+ * The window itself is not changed here. It is the resume window every
+ * reconnecting client depends on, and shrinking it silently trades a memory
+ * problem for a correctness one.
  */
 export const DEFAULT_RETAIN_TICKS = 50_000;
 
-/** Measured bytes retained per tick, at the default window. */
-export const MEASURED_BYTES_PER_TICK = 105;
+/**
+ * Bytes retained per tick, and the figure every sizing claim above rests on.
+ *
+ * Pinned by the test that quotes it. The number it replaced was asserted nowhere
+ * and read by nothing, so it went a whole cycle 44% wrong with the entire suite
+ * green (a3) — a constant nothing reads is a comment with a type. What moves it
+ * is the shape of `Tick`, a field costing 8 bytes as measured, so the test pins
+ * the shape exactly and the bytes in a band rather than pretending a heap
+ * measurement is exact across V8 versions.
+ */
+export const MEASURED_BYTES_PER_TICK = 73;
 
 /**
  * The sequence of the first tick any market publishes.

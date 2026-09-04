@@ -20,10 +20,23 @@ import type { MarketEngine } from './engine.js';
  *
  * ## The window is a precondition (Cycle Audit 7, CA7-01)
  *
- * This function compares a bounded run, and every caller in the repository
- * bounds it between 10,000 and 120,000 ticks. At btcusd's recorded mean
- * interval that is under an hour at the low end and about eleven hours at the
- * high end, against markets that run for months with a monotonic sequence.
+ * This function compares a bounded run, and no caller in the repository reaches
+ * past 120000 ticks, while the one that matters most —
+ * `productionComposition.test.ts`, the only caller that drives the shipped
+ * factory under `environment: 'production'` — runs 10000. At btcusd's recorded mean interval of 111 ms that is about 18
+ * minutes at the narrow end and 3.7 hours at the wide one, against markets that
+ * run for months with a monotonic sequence.
+ *
+ * Those market times are a tempo away from being wrong, and were: they read
+ * "under an hour" and "about eleven hours" until PH-24.17 divided the
+ * catalogue's tempo inside the same cycle, and nothing failed when they stopped
+ * being true (Cycle Audit 8, a1). A fixed window in ticks buys less market time
+ * when a tick is worth less. `mirror.test.ts` now recomputes every number in
+ * this paragraph — the ticks from the callers it finds by searching for them,
+ * the conversion from `ASSET_CATALOGUE` — so the sentence is a measurement
+ * rather than a memory. It searches rather than lists because the first version
+ * of that guard enumerated three caller files and missed the three in
+ * `tools/sim` that hold the widest window of all.
  *
  * An auditor planted the leverage effect behind `#sequence > 200_000` and every
  * mirror test in this repository passed, while the statistical battery returned
