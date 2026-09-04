@@ -535,8 +535,9 @@ describe('the Lab is marked wherever it appears', () => {
     // Recomputed at once on a timeframe change; the interval is cleared.
     expect(chart).toMatch(/\}, \[clock, timeframeId\]\);/);
     expect(chart).toMatch(/return \(\) => clearInterval\(handle\);/);
-    // Out of the way of a click meant for the chart.
+    // Out of the way of a click meant for the chart, and above the library's canvases.
     expect(chart).toMatch(/pointerEvents: 'none'/);
+    expect(chart).toMatch(/zIndex: [1-9]/);
   });
 
   it('says the Lab is absent rather than hiding that it can be', () => {

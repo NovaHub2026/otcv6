@@ -598,6 +598,10 @@ export function PreviewChart({
               position: 'absolute',
               top: 8,
               right: 76,
+              // Above the library's canvases, which carry their own z-index: without
+              // this the countdown was in the DOM, read by the flow, and painted under
+              // the candles — invisible. Seen on the first screenshot.
+              zIndex: 5,
               padding: '2px 8px',
               borderRadius: 3,
               background: 'rgba(11, 14, 20, 0.85)',
