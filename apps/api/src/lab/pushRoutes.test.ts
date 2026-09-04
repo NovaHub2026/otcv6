@@ -38,6 +38,8 @@ interface Pushed {
   direction: 'up' | 'down';
   ticks: number;
   extended: boolean;
+  /** PH-24.21: an opposite push subtracts from what remained. */
+  netted: { previousRemaining: number; applied: number } | null;
   landing: { latticeLevel: number; price: string; afterTicks: number; instant: number };
   retracted: boolean;
   pace: string;
@@ -159,7 +161,7 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     expect(control.lastPush.landedPrice).toBe(pushed.landing.price);
   });
 
-  it('a second push in the same direction extends; the opposite replaces; release ends it', async () => {
+  it('a second push in the same direction extends; the opposite subtracts — shortening, reversing by the difference, or freeing (PH-24.21); release ends it', async () => {
     const lab = await labVenue();
     await advance(lab.venue, lab.clock, 60_000);
     const first = (await lab.controller.push(id, '5')) as Pushed;
@@ -168,11 +170,44 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     expect(second).toMatchObject({ extended: true, remaining: 8 });
     expect(second.pushing).toEqual({ direction: 1, requested: 8, remaining: 8, pace: 'rapido' });
     expect(second.landing.afterTicks).toBe(8);
-    const reversed = (await lab.controller.push(id, '-2')) as Pushed;
-    expect(reversed).toMatchObject({ direction: 'down', extended: false, remaining: 2 });
-    expect(reversed.pushing).toEqual({ direction: -1, requested: 2, remaining: 2, pace: 'rapido' });
+    const remaining = (): number => (lab.controller.control(id) as { remaining: number }).remaining;
+    // Smaller than what remains: the running push is shortened by it and keeps its direction.
+    let before = remaining();
+    const shortened = (await lab.controller.push(id, '-2')) as Pushed;
+    expect(shortened).toMatchObject({
+      direction: 'up',
+      extended: false,
+      netted: { previousRemaining: before, applied: 2 - before },
+      remaining: before - 2,
+    });
+    expect(shortened.pushing).toMatchObject({ direction: 1, remaining: before - 2 });
+    expect(shortened.landing.afterTicks).toBe(before - 2);
+    // Larger than what remains: the direction reverses by the difference.
+    before = remaining();
+    const reversed = (await lab.controller.push(id, `-${String(before + 4)}`)) as Pushed;
+    expect(reversed).toMatchObject({
+      direction: 'down',
+      extended: false,
+      netted: { previousRemaining: before, applied: 4 },
+      remaining: 4,
+    });
+    expect(reversed.pushing).toEqual({ direction: -1, requested: 4, remaining: 4, pace: 'rapido' });
+    expect(reversed.landing.afterTicks).toBe(4);
+    // Equal: nothing survives and the market is free.
+    before = remaining();
+    const freed = (await lab.controller.push(id, `+${String(before)}`)) as Pushed;
+    expect(freed).toMatchObject({
+      netted: { previousRemaining: before, applied: 0 },
+      remaining: 0,
+      armed: false,
+    });
+    expect(freed.pushing).toBeNull();
+    expect(lab.selector.for(id)!.armed).toBe(false);
+    // A release afterwards has nothing to discard; a release mid-push does.
+    const again = (await lab.controller.push(id, '-3')) as Pushed;
+    expect(again).toMatchObject({ direction: 'down', netted: null, remaining: 3 });
     const released = lab.controller.release(id) as { discarded: number; pushing: unknown };
-    expect(released.discarded).toBe(2);
+    expect(released.discarded).toBe(3);
     expect(released.pushing).toBeNull();
     expect(lab.selector.for(id)!.armed).toBe(false);
   });

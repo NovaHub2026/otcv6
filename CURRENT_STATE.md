@@ -21,25 +21,26 @@ Last synchronized: 2026-09-03
 
 ## Phase and subphase
 
-| Field                  | Value                                            |
-| ---------------------- | ------------------------------------------------ |
-| Active phase           | PH-24 — The Lab's controls: applying a selection |
-| Phase lifecycle        | ACTIVE                                           |
-| Active subphase        | none                                             |
-| Subphase lifecycle     | none                                             |
-| Last approved phase    | PH-23 — The OTC Market Lab                       |
-| Last approved subphase | PH-24.20 — El panel, segunda forma               |
+| Field                  | Value                                                           |
+| ---------------------- | --------------------------------------------------------------- |
+| Active phase           | PH-24 — The Lab's controls: applying a selection                |
+| Phase lifecycle        | ACTIVE                                                          |
+| Active subphase        | none                                                            |
+| Subphase lifecycle     | none                                                            |
+| Last approved phase    | PH-23 — The OTC Market Lab                                      |
+| Last approved subphase | PH-24.21 — Subiendo / bajando, la resta, la condición de cierre |
 
-**PH-24 is active; twenty subphases approved (PH-24.1–24.20).** The Lab's
+**PH-24 is active; twenty-one subphases approved (PH-24.1–24.21).** The Lab's
 screen is a control panel — the chart at three quarters and, at one quarter,
-two cards of controls and no data: the pace as three windows, a green row and
-a red row of pushes with sube / baja as toggles; the candle as two windows on
-the chart's own timeframe, a price box with = ▲ ▼, and fijar / × in one place
-(PH-24.20). The instrument lives on `/lab/avanzado`. Under it: distances in
-the market's own unit (PH-24.18) and an engine ticking three to four times as
-often at the same dispersion (PH-24.17). The next item awaits the Human Owner.
-The merge, hosted CI and Cycle Audit 8 wait until the Lab is complete; PH-24's
-approval is Cycle 8's third phase.
+two cards of controls: the pace as three windows, a green row and a red row of
+pushes with sube / baja as toggles and SUBIENDO / BAJANDO while a direction is
+in force, opposite pushes netting (PH-24.21); the close's mark typed or picked
+with a click on the chart, its condition = ▲ ▼ honoured by a conditioned
+selection, fijar / × in one place. The instrument lives on `/lab/avanzado`.
+Under it: distances in the market's own unit (PH-24.18) and an engine ticking
+three to four times as often at the same dispersion (PH-24.17). The next item
+awaits the Human Owner. The merge, hosted CI and Cycle Audit 8 wait until the
+Lab is complete; PH-24's approval is Cycle 8's third phase.
 
 PH-23.5 closed the first item PH-23 §10 left open — the Lab now has a screen in
 the panel, behind a menu entry marked `SIM`. Building it found three defects

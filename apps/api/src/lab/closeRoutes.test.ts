@@ -13,7 +13,7 @@ import { ASSET_CATALOGUE } from '@otc/engine';
 import { MemoryStateStore } from '@otc/runtime';
 import { PublicationService } from '../publication.service.js';
 import { VenueService } from '../venue.service.js';
-import { closeInstant, readWindow } from './closeControl.js';
+import { closeInstant, readWindow, resolveTarget } from './closeControl.js';
 import { LabController } from './lab.controller.js';
 import { SignSelector } from './selectableSigns.js';
 import { LabSession } from './session.js';
@@ -545,6 +545,97 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     expect(releases.every((a) => a.parameters['all'] === true)).toBe(true);
     // A second release-all releases nothing and records nothing.
     expect((controller.releaseAll() as { released: unknown[] }).released).toEqual([]);
+    await venue.stop();
+  }, 60_000);
+
+  it("PH-24.21: a close on a side of a mark — above by a selected path, below by the market's own when it already ends there; a side no close is on is refused by name", async () => {
+    const { venue, clock, controller } = await labVenue();
+    await advance(venue, clock, 20_000);
+    const now = venue.now();
+    const instant = closeInstant(now, '1m', 'current');
+    const state = controller.state(id) as { latticeLevel: number; price: string };
+    type Sided = Applied & { condition: string; mark: string; natural: boolean; attempts: number };
+    // Above the price now: the candle must end higher than where it stands, crossing allowed.
+    const above = (await controller.applyClose(
+      id,
+      state.price,
+      'current',
+      '1m',
+      undefined,
+      undefined,
+      undefined,
+      'above',
+    )) as Sided;
+    expect(above.armed).toBe(true);
+    expect(above.condition).toBe('above');
+    expect(above.mark).toBe(state.price);
+    expect(above.target).toBeGreaterThan(state.latticeLevel);
+    await advance(venue, clock, instant - now + 5_000);
+    const close = inForceAt(venue, instant);
+    expect(close, 'no tick published inside the candle').not.toBeNull();
+    expect(close!.price, 'the candle did not close above the mark').toBeGreaterThan(
+      state.latticeLevel,
+    );
+    expect(close!.price).toBe(above.target);
+    const control = controller.control(id) as { lastApplied: { exact: boolean | null } };
+    expect(control.lastApplied.exact).toBe(true);
+
+    // Below a mark far above the price: every natural path already ends there, so the
+    // market's own path is armed as is — zero attempts, nothing chosen.
+    const later = venue.now();
+    const nextInstant = closeInstant(later, '1m', 'next');
+    const price = Number((controller.state(id) as { price: string }).price);
+    const farAbove = (price * 1.01).toFixed(asset.instrument.displayPrecision);
+    const below = (await controller.applyClose(
+      id,
+      farAbove,
+      'next',
+      '1m',
+      undefined,
+      undefined,
+      undefined,
+      'below',
+    )) as Sided;
+    expect(below.armed).toBe(true);
+    expect(below.natural).toBe(true);
+    expect(below.attempts).toBe(0);
+    const markLevel = resolveTarget(asset.instrument, below.mark);
+    expect(markLevel.kind).toBe('level');
+    expect(below.target).toBeLessThan((markLevel as { level: number }).level);
+    await advance(venue, clock, nextInstant - later + 5_000);
+    const closedBelow = inForceAt(venue, nextInstant);
+    expect(closedBelow!.price).toBe(below.target);
+
+    // A side no attainable close is on: refused by name, nothing armed.
+    const last = venue.now();
+    const soon = closeInstant(last, '1m', 'current');
+    const unreachable = (price * 0.9).toFixed(asset.instrument.displayPrecision);
+    const refused = (await controller.applyClose(
+      id,
+      unreachable,
+      'current',
+      '1m',
+      undefined,
+      undefined,
+      undefined,
+      'below',
+    )) as Sided & { impossible: string | null };
+    expect(refused.armed).toBe(false);
+    expect(refused.impossible).toMatch(/no close within that range satisfies/);
+    expect(soon).toBeGreaterThan(last);
+    // And a condition that is not a side.
+    await expect(
+      controller.applyClose(
+        id,
+        state.price,
+        'current',
+        '1m',
+        undefined,
+        undefined,
+        undefined,
+        'sideways',
+      ),
+    ).rejects.toThrow(/condition must be/);
     await venue.stop();
   }, 60_000);
 

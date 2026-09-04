@@ -12,6 +12,7 @@ import {
   type ClosePlan,
   type ClosesView,
   CLOSE_TIMEFRAMES,
+  type CloseCondition,
   type CloseTimeframe,
   type Control,
   type ControlAll,
@@ -31,6 +32,7 @@ import { Mercado } from './Mercado.js';
 import { Cierre } from './Cierre.js';
 import { Empujar } from './Empujar.js';
 import { Controles } from './Controles.js';
+import { nearestLevelPrice } from './lattice.js';
 import { PreviewChart } from '../preview/PreviewChart.js';
 import { PANEL_TIMEFRAMES, type PanelTimeframeId } from '@otc/chart';
 import { fetchCatalogue, type CatalogueEntry } from '../../lib/api.js';
@@ -79,6 +81,8 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
   const [bucket, setBucket] = useState<'current' | 'next' | 'expiry'>('current');
   const [expiryTime, setExpiryTime] = useState('');
   const [price, setPrice] = useState('');
+  // PH-24.21: where the close must end relative to the mark — the panel's = ▲ ▼.
+  const [closeCondition, setCloseCondition] = useState<CloseCondition>('exact');
   const [plan, setPlan] = useState<ClosePlan | null>(null);
   const [notice, setNotice] = useState<BetweenLevels | string | null>(null);
   const [planExpiry, setPlanExpiry] = useState<number | null>(null);
@@ -195,7 +199,20 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
     return `bucket=${bucket}&timeframe=${closeTf}`;
   };
   const closeQuery = (at = price): string =>
-    `price=${encodeURIComponent(at.trim())}&${addressing()}`;
+    `price=${encodeURIComponent(at.trim())}&${addressing()}` +
+    (mode === 'control' && closeCondition !== 'exact' ? `&condition=${closeCondition}` : '');
+  // PH-24.21: a click on the chart names a price; the box takes the nearest
+  // lattice level, and whatever the box holds is marked on the chart.
+  const pickPrice = (picked: number): void => {
+    const lattice = state?.instrument;
+    if (lattice === undefined) return;
+    const snapped = nearestLevelPrice(lattice, picked);
+    if (snapped !== null) setPrice(snapped);
+  };
+  const marked =
+    mode === 'control' && price.trim() !== '' && Number.isFinite(Number(price))
+      ? { price: Number(price), title: es.lab.panel.close.mark }
+      : null;
 
   const settle = (
     body: ClosePlan | BetweenLevels | { running: false; reason: string } | { message?: string },
@@ -445,6 +462,8 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
               entry={catalogue.find((c) => c.id === selected) ?? null}
               timeframe={chartTf}
               onTimeframe={setChartTf}
+              onPick={pickPrice}
+              mark={marked}
               fill
             />
             <Controles
@@ -463,6 +482,8 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
               onPrice={setPrice}
               onApply={applyClose}
               onRelease={releaseMarket}
+              condition={closeCondition}
+              onCondition={setCloseCondition}
               plan={plan}
               notice={notice}
             />
@@ -680,11 +701,16 @@ function LabChart({
   entry,
   timeframe,
   onTimeframe,
+  onPick,
+  mark = null,
   fill = false,
 }: {
   entry: CatalogueEntry | null;
   timeframe: PanelTimeframeId;
   onTimeframe: (id: PanelTimeframeId) => void;
+  /** PH-24.21: a click on the chart names the price at that height; the mark is the close asked. */
+  onPick?: ((price: number) => void) | undefined;
+  mark?: { readonly price: number; readonly title: string } | null;
   /** PH-24.19: the control panel gives the chart the whole column. */
   fill?: boolean;
 }): ReactElement {
@@ -737,7 +763,14 @@ function LabChart({
         {entry === null ? (
           <div style={{ color: T.faint, fontSize: 11, padding: '0 16px' }}>—</div>
         ) : (
-          <PreviewChart key={entry.id} apiBase="/labengine" asset={entry} timeframeId={timeframe} />
+          <PreviewChart
+            key={entry.id}
+            apiBase="/labengine"
+            asset={entry}
+            timeframeId={timeframe}
+            onPick={onPick}
+            mark={mark}
+          />
         )}
       </div>
     </div>

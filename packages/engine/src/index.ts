@@ -163,6 +163,8 @@ export {
   type CloseSelection,
   type CloseSelectionRequest,
   type Reachability,
+  selectCloseWhere,
+  type ConditionedCloseRequest,
 } from './closeSelection.js';
 export {
   type Continuation,

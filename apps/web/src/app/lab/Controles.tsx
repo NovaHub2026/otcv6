@@ -1,12 +1,12 @@
 'use client';
 
 import type { ReactElement, ReactNode } from 'react';
-import { exp, ln } from '@otc/core/browser';
 import { es } from '../../lib/es.js';
 import { FIELD, Info, T } from '../ui/kit.js';
 import { PUSH_SIZES } from './Empujar.js';
 import type {
   BetweenLevels,
+  CloseCondition,
   ClosePlan,
   CloseTimeframe,
   Control,
@@ -23,22 +23,28 @@ import type {
  * neither pressed the market is free — there is no «libre» button because
  * that is the resting state. **Cierre de vela** — the candle as two windows
  * (vela actual · próxima vela) on the chart's own timeframe, a price box with
- * `=` (the price now), `▲` and `▼` (one unit, PH-24.18), and one button that
- * reads «Fijar cierre» until a close is armed and «×» while it is.
+ * typed or picked with a click on the chart (PH-24.21, marked there), the
+ * condition as three windows — `=` exactly at the mark, `▲` any price above,
+ * `▼` any price below — and one button that reads «Fijar cierre» until a close
+ * is armed and «×» while it is.
  *
  * No status line, no unit label, no landing announcement: the bar's price and
- * state, and the chart, are the feedback. A refusal is the one thing said, in
- * red, only while it applies.
+ * state, and the chart, are the feedback. Two exceptions, both state rather
+ * than data: SUBIENDO / BAJANDO on the push card while a push or a held
+ * direction is in force (PH-24.21), and a refusal, in red, while it applies.
  */
 function Card({
   title,
   info,
   testId,
+  aside,
   children,
 }: {
   title: string;
   info: string;
   testId: string;
+  /** PH-24.21: a state beside the title — SUBIENDO / BAJANDO. */
+  aside?: ReactNode;
   children: ReactNode;
 }): ReactElement {
   return (
@@ -53,8 +59,21 @@ function Card({
         gap: 8,
       }}
     >
-      <div style={{ color: T.text, fontSize: 12, fontWeight: 700, letterSpacing: 0.5 }}>
-        {title} <Info text={info} />
+      <div
+        style={{
+          color: T.text,
+          fontSize: 12,
+          fontWeight: 700,
+          letterSpacing: 0.5,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+        }}
+      >
+        <span>
+          {title} <Info text={info} />
+        </span>
+        {aside}
       </div>
       {children}
     </section>
@@ -68,7 +87,7 @@ function Windows<K extends string>({
   onChange,
   testPrefix,
 }: {
-  options: readonly { key: K; label: string }[];
+  options: readonly { key: K; label: string; title?: string }[];
   value: K;
   onChange: (key: K) => void;
   testPrefix: string;
@@ -89,6 +108,7 @@ function Windows<K extends string>({
           type="button"
           data-testid={`${testPrefix}-${o.key}`}
           aria-pressed={value === o.key}
+          title={o.title}
           onClick={() => onChange(o.key)}
           style={{
             font: 'inherit',
@@ -164,44 +184,6 @@ function Key({
   );
 }
 
-/** A small neutral key beside the price box: = ▲ ▼. */
-function Tool({
-  testId,
-  title,
-  disabled = false,
-  onClick,
-  children,
-}: {
-  testId: string;
-  title: string;
-  disabled?: boolean | undefined;
-  onClick: () => void;
-  children: ReactNode;
-}): ReactElement {
-  return (
-    <button
-      type="button"
-      data-testid={testId}
-      title={title}
-      aria-label={title}
-      disabled={disabled}
-      onClick={onClick}
-      style={{
-        font: 'inherit',
-        width: 32,
-        background: T.raised,
-        border: `1px solid ${T.line}`,
-        color: disabled ? T.faint : T.text,
-        fontSize: 12,
-        borderRadius: 3,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
 const PACES: readonly { key: Pace; label: string }[] = [
   { key: 'normal', label: es.lab.push.pace.normal },
   { key: 'medio', label: es.lab.push.pace.medio },
@@ -211,6 +193,13 @@ const PACES: readonly { key: Pace; label: string }[] = [
 const BUCKETS: readonly { key: 'current' | 'next'; label: string }[] = [
   { key: 'current', label: es.lab.panel.close.current },
   { key: 'next', label: es.lab.panel.close.next },
+];
+
+/** PH-24.21: where the candle must end relative to the mark. */
+const CONDITIONS: readonly { key: CloseCondition; label: string; title: string }[] = [
+  { key: 'exact', label: '=', title: es.lab.panel.close.conditions.exact },
+  { key: 'above', label: '▲', title: es.lab.panel.close.conditions.above },
+  { key: 'below', label: '▼', title: es.lab.panel.close.conditions.below },
 ];
 
 export function Controles({
@@ -229,6 +218,8 @@ export function Controles({
   onPrice,
   onApply,
   onRelease,
+  condition,
+  onCondition,
   plan,
   notice,
 }: {
@@ -249,6 +240,9 @@ export function Controles({
   /** With a price, fixes there; without one, at the price the market stands at. */
   onApply: (at?: string) => Promise<void>;
   onRelease: () => Promise<void>;
+  /** PH-24.21: = ▲ ▼ — where the candle must end relative to the mark. */
+  condition: CloseCondition;
+  onCondition: (value: CloseCondition) => void;
   plan: ClosePlan | null;
   notice: BetweenLevels | string | null;
 }): ReactElement {
@@ -259,25 +253,8 @@ export function Controles({
   const held = busy === 'push';
   const armedClose = (control?.armed ?? false) && pushing === null;
   const now = state?.price;
-  // ▲ ▼ move the box one unit (PH-24.18) from what it holds, or from the price
-  // now — along the lattice, with the kernel's own conversions (the same
-  // formulas as `fromDisplayPrice` / `toDisplayPrice`, portable `ln` and `exp`),
-  // so the box always holds a level that renders back to itself. A price plus a
-  // fixed increment lands between two levels two times in three at EUR/USD's
-  // grain, and a close asked there is refused.
-  const stepped = (direction: 1 | -1): string => {
-    const base = price.trim() === '' ? now : price.trim();
-    const steps = state?.distance?.unitSteps;
-    const lattice = state?.instrument;
-    if (base === undefined || steps === undefined || lattice === undefined) return price;
-    const from = Number(base);
-    if (!Number.isFinite(from) || from <= 0) return price;
-    const level = Math.round(ln(from / lattice.referencePrice) / lattice.logQuantum);
-    const target = level + direction * steps;
-    return (lattice.referencePrice * exp(lattice.logQuantum * target)).toFixed(
-      lattice.displayPrecision,
-    );
-  };
+  // PH-24.21: the direction in force — a push playing, or sube / baja held.
+  const direction: 1 | -1 | null = pushing?.direction ?? bias;
   // A refusal, in one line: a push running, a typed price between two levels
   // (the two named), an unreachable target.
   const refusal =
@@ -295,7 +272,21 @@ export function Controles({
       data-testid="lab-controls"
       style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 12, overflowY: 'auto' }}
     >
-      <Card title={p.cards.push} info={p.pushInfo} testId="lab-card-push">
+      <Card
+        title={p.cards.push}
+        info={p.pushInfo}
+        testId="lab-card-push"
+        aside={
+          direction !== null && (
+            <span
+              data-testid="lab-push-direction"
+              style={{ color: direction === 1 ? T.ok : T.bad, fontSize: 11, letterSpacing: 1 }}
+            >
+              {direction === 1 ? p.rising : p.falling}
+            </span>
+          )
+        }
+      >
         <Windows options={PACES} value={pace} onChange={onPace} testPrefix="lab-pace" />
         <div style={{ display: 'flex', gap: 4 }}>
           {PUSH_SIZES.map((n) => (
@@ -356,31 +347,22 @@ export function Controles({
           onChange={onBucket}
           testPrefix="lab-close-bucket"
         />
-        <div style={{ display: 'flex', gap: 4 }}>
-          <input
-            data-testid="lab-close-price"
-            value={price}
-            onChange={(e) => onPrice(e.target.value)}
-            placeholder={now ?? ''}
-            aria-label={p.close.price}
-            inputMode="decimal"
-            style={{ ...FIELD, flex: 1, minWidth: 0 }}
-          />
-          <Tool
-            testId="lab-close-equal"
-            title={p.close.equal}
-            disabled={now === undefined}
-            onClick={() => onPrice(now ?? '')}
-          >
-            =
-          </Tool>
-          <Tool testId="lab-close-up" title={p.close.up} onClick={() => onPrice(stepped(1))}>
-            ▲
-          </Tool>
-          <Tool testId="lab-close-down" title={p.close.down} onClick={() => onPrice(stepped(-1))}>
-            ▼
-          </Tool>
-        </div>
+        <input
+          data-testid="lab-close-price"
+          value={price}
+          onChange={(e) => onPrice(e.target.value)}
+          placeholder={now ?? ''}
+          aria-label={p.close.price}
+          title={p.close.pick}
+          inputMode="decimal"
+          style={{ ...FIELD, width: '100%', boxSizing: 'border-box' }}
+        />
+        <Windows
+          options={CONDITIONS}
+          value={condition}
+          onChange={onCondition}
+          testPrefix="lab-close-condition"
+        />
         {armedClose ? (
           <Key
             side="down"

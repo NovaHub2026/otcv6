@@ -34,21 +34,25 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-24.10–24.20 are approved; no subphase is active.** `/lab` is the control
+**PH-24.10–24.21 are approved; no subphase is active.** `/lab` is the control
 panel: `Lab({ mode })` renders either the panel (`TopBar` with the markets as
 pills and the selected market's price/regime/state; a `3fr 1fr` grid with the
-chart at full height and `Controles.tsx` — two cards, PH-24.20: **Empuje**
-with the pace as three windows, a green row `+1 +3 +5 +10 · sube` and a red
-row `+1 +3 +5 +10 · baja`, sube / baja as toggles and no libre; **Cierre de
-vela** with vela actual / próxima vela, the chart's timeframe (fijar disabled
-on 30m and wider), a price box with `= ▲ ▼`, and fijar / × alternating — and
-no status line at all) or the instrument on `/lab/avanzado` (the former tabs,
-unchanged; the strip is theirs alone). The panel's browser flow proves each act
-through `control` and `session`, not through text. To serve new front-end code
-locally: `npm run build:web`, then restart the panel. Replay/mirror groundwork
-(`2ff8559`) stays parked. **The next Lab item awaits the Human Owner; the
-merge, hosted CI and Cycle Audit 8 wait until the Lab is complete**
-(`DECISION-LOG.md`, 2026-09-03). Browser suites run under
+chart at full height and `Controles.tsx` — two cards: **Empuje** with the pace
+as three windows, a green row `+1 +3 +5 +10 · sube` and a red row
+`+1 +3 +5 +10 · baja`, SUBIENDO / BAJANDO beside the title while a push or a
+held direction is in force, opposite pushes netting (PH-24.21: `netted` on the
+response and in the session); **Cierre de vela** with vela actual / próxima
+vela, the chart's timeframe, the mark typed or picked with a click on the chart
+(`lattice.ts` snaps it; `PreviewChart` marks it), the condition `= ▲ ▼`
+(`close?condition=above|below`, `planConditionedClose` / `selectCloseWhere`:
+the market's own path when it already ends on that side, else the first natural
+path that does), and fijar / × alternating) or the instrument on
+`/lab/avanzado` (the former tabs, unchanged). The panel's browser flow proves
+each act through `control` and `session`. To serve new front-end code locally:
+`npm run build:web`, then restart the panel (and the engine when `apps/api`
+changed). Replay/mirror groundwork (`2ff8559`) stays parked. **The next Lab
+item awaits the Human Owner; the merge, hosted CI and Cycle Audit 8 wait until
+the Lab is complete** (`DECISION-LOG.md`, 2026-09-03). Browser suites run under
 `LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu`.
 
 **The next phase is the decision LA-03 names.** The Lab specification audit

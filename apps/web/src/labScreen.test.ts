@@ -462,7 +462,7 @@ describe('the Lab is marked wherever it appears', () => {
 
   it('the panel is two cards of controls and nothing else (PH-24.20)', () => {
     const controles = code('lab/Controles.tsx');
-    expect(controles.match(/<Card /g) ?? []).toHaveLength(2);
+    expect(controles.match(/<Card[\s>]/g) ?? []).toHaveLength(2);
     // Empuje: the pace as three windows; a green row and a red row of the same
     // sizes; sube and baja are toggles that release on the second press — no libre.
     expect(controles).toMatch(/testPrefix="lab-pace"/);
@@ -478,18 +478,7 @@ describe('the Lab is marked wherever it appears', () => {
     // fijar and × alternating in one place.
     expect(controles).toMatch(/testPrefix="lab-close-bucket"/);
     expect(controles).not.toMatch(/lab-close-timeframe|<select|lab-close-delta|lab-close-status/);
-    for (const tool of ['lab-close-equal', 'lab-close-up', 'lab-close-down']) {
-      expect(controles, `${tool} missing`).toMatch(new RegExp(`testId="${tool}"`));
-    }
-    // ▲ ▼ step along the lattice with the kernel's portable ln / exp — never a
-    // price plus a fixed increment, which lands between two levels and is refused.
-    expect(controles).toMatch(/import \{ exp, ln \} from '@otc\/core\/browser'/);
-    expect(controles).toMatch(
-      /Math\.round\(ln\(from \/ lattice\.referencePrice\) \/ lattice\.logQuantum\)/,
-    );
-    expect(controles).toMatch(/exp\(lattice\.logQuantum \* target\)/);
-    expect(controles).not.toMatch(/Number\(base\) \+ direction|Math\.(log|exp)\(/);
-    // A target between two levels is said, with the two.
+    // = ▲ ▼ are the close's condition since PH-24.21; a between-levels answer is said, with the two.
     expect(controles).toMatch(/es\.lab\.close\.between\(/);
     expect(controles).toMatch(
       /armedClose \? \([\s\S]*?testId="lab-close-release"[\s\S]*?\) : \([\s\S]*?testId="lab-close-apply"/,
@@ -502,6 +491,34 @@ describe('the Lab is marked wherever it appears', () => {
     expect(block).not.toMatch(/onTimeframe|onDelta|onNeighbour|unitSteps/);
     // The strip is the instrument's alone again.
     expect(code('lab/Empujar.tsx')).not.toMatch(/layout/);
+  });
+
+  it('SUBIENDO / BAJANDO, the mark on the chart, and the close condition = ▲ ▼ (PH-24.21)', () => {
+    const controles = code('lab/Controles.tsx');
+    expect(controles).toMatch(/data-testid="lab-push-direction"/);
+    expect(controles).toMatch(/direction === 1 \? p\.rising : p\.falling/);
+    expect(controles).toMatch(/testPrefix="lab-close-condition"/);
+    expect(controles).not.toMatch(
+      /lab-close-equal|lab-close-up|lab-close-down|@otc\/core\/browser/,
+    );
+    // The lattice arithmetic lives in one place, with the kernel's portable ln / exp.
+    const lattice = code('lab/lattice.ts');
+    expect(lattice).toMatch(/import \{ exp, ln \} from '@otc\/core\/browser'/);
+    expect(lattice).toMatch(
+      /Math\.round\(ln\(price \/ lattice\.referencePrice\) \/ lattice\.logQuantum\)/,
+    );
+    expect(lattice).toMatch(/exp\(lattice\.logQuantum \* level\)/);
+    expect(lattice).not.toMatch(/Math\.(log|exp)\(/);
+    // A click on the chart names a price from the series' own scale; the mark is one line, removed when cleared.
+    const chart = code('preview/PreviewChart.tsx');
+    expect(chart).toMatch(/subscribeClick\(/);
+    expect(chart).toMatch(/coordinateToPrice\(param\.point\.y\)/);
+    expect(chart).toMatch(/removePriceLine\(markLine\.current\)/);
+    const lab = code('lab/Lab.tsx');
+    expect(lab).toMatch(/nearestLevelPrice\(lattice, picked\)/);
+    expect(lab).toMatch(/onPick=\{pickPrice\}/);
+    expect(lab).toMatch(/mark=\{marked\}/);
+    expect(lab).toMatch(/&condition=\$\{closeCondition\}/);
   });
 
   it('says the Lab is absent rather than hiding that it can be', () => {

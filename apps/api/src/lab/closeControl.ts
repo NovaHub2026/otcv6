@@ -11,7 +11,7 @@ import {
   type RandomSource,
   type TimeframeId,
 } from '@otc/core';
-import { selectClose, type CloseSelection } from '@otc/engine';
+import { selectClose, selectCloseWhere, type CloseSelection } from '@otc/engine';
 
 /**
  * Candle Close Control, on a real candle (PH-24.2).
@@ -89,6 +89,8 @@ export interface CloseWindow {
   readonly fromPrice: LogPrice;
   /** Unsigned lattice steps of every tick up to and including one at `instant`. */
   readonly steps: readonly number[];
+  /** The sign each of those ticks carries on the fork: the market's own path (PH-24.21). */
+  readonly signs: readonly (1 | -1)[];
   /** Instant of the last tick inside the window, or null when there is none. */
   readonly lastInstant: EpochMillis | null;
 }
@@ -108,16 +110,18 @@ export interface ForkSource {
  */
 export function readWindow(fork: ForkSource, instant: EpochMillis): CloseWindow {
   const steps: number[] = [];
+  const signs: (1 | -1)[] = [];
   let price = fork.price;
   let lastInstant: EpochMillis | null = null;
   for (;;) {
     const tick = fork.next();
     if (tick === null || tick.instant > instant) break;
     steps.push(Math.abs(tick.price - price));
+    signs.push(tick.price >= price ? 1 : -1);
     price = tick.price;
     lastInstant = tick.instant;
   }
-  return { instant, fromPrice: fork.price, steps, lastInstant };
+  return { instant, fromPrice: fork.price, steps, signs, lastInstant };
 }
 
 export interface ClosePlan {
@@ -157,4 +161,64 @@ export function planClose(
       ]
     : null;
   return { target, display, window, delta, selection, reachableNeighbours };
+}
+
+/** Where a close must end relative to a mark (PH-24.21). */
+export type CloseCondition = 'exact' | 'above' | 'below';
+
+export interface ConditionedClosePlan extends ClosePlan {
+  readonly condition: 'above' | 'below';
+  /** The mark, as a level. */
+  readonly mark: LogPrice;
+  /** The market's own path already ends on the asked side, and is what is armed. */
+  readonly natural: boolean;
+}
+
+/**
+ * Select a close on a side of a mark (PH-24.21).
+ *
+ * If the market's own path over the window already ends on that side, it is
+ * the plan — armed as is, zero attempts: the market does what it was going to
+ * do. Otherwise the first natural path whose close satisfies the side, by
+ * rejection sampling (`selectCloseWhere`), so the endpoint is drawn from the
+ * satisfying closes rather than glued to the mark. Parity never applies to a
+ * side; the record keeps the level the chosen path ends on.
+ */
+export function planConditionedClose(
+  spec: InstrumentSpec,
+  mark: LogPrice,
+  condition: 'above' | 'below',
+  window: CloseWindow,
+  random: RandomSource,
+  maxAttempts = 200_000,
+): ConditionedClosePlan {
+  const bound = mark - window.fromPrice;
+  const satisfies = (delta: number): boolean =>
+    condition === 'above' ? delta > bound : delta < bound;
+  const closeOf = (signs: readonly (1 | -1)[]): number =>
+    window.steps.reduce((sum, step, i) => sum + signs[i]! * step, 0);
+  const natural = satisfies(closeOf(window.signs));
+  const selection: CloseSelection = natural
+    ? {
+        signs: [...window.signs],
+        attempts: 0,
+        acceptanceRate: 1,
+        reachability: 'easy',
+        impossible: null,
+      }
+    : selectCloseWhere({ steps: window.steps, satisfies, random, maxAttempts });
+  const delta = selection.signs === null ? bound : closeOf(selection.signs);
+  const target = logPrice(window.fromPrice + delta);
+  const display = toDisplayPrice(spec, target).toFixed(spec.displayPrecision);
+  return {
+    target,
+    display,
+    window,
+    delta,
+    selection,
+    reachableNeighbours: null,
+    condition,
+    mark,
+    natural,
+  };
 }

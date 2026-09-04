@@ -190,3 +190,90 @@ export function selectClose(request: CloseSelectionRequest): CloseSelection {
       `natural range.`,
   };
 }
+
+/** A close asked as a side of a level rather than a level (PH-24.21). */
+export interface ConditionedCloseRequest {
+  /** Unsigned step sizes, in lattice units, for the ticks that remain in the bucket. */
+  readonly steps: readonly number[];
+  /** Whether a lattice distance from the current price satisfies the operator: `delta > mark`, say. */
+  readonly satisfies: (delta: number) => boolean;
+  /** Where the sign draws come from. A Lab stream, never a market one. */
+  readonly random: RandomSource;
+  /** How many sign vectors to try before reporting the condition unreachable. */
+  readonly maxAttempts?: number;
+}
+
+/**
+ * Sample sign vectors until one closes where the condition holds.
+ *
+ * The same rejection sampling as `selectClose`, with an acceptance test in place
+ * of an equality: the accepted vector is drawn **uniformly from the sign vectors
+ * whose close satisfies the condition**, so its endpoint has the natural
+ * distribution over the satisfying closes rather than sitting on the nearest
+ * one — a close asked "above 1.0850" that always landed one step above it
+ * would be a shape, and §28 and §70 forbid shapes.
+ *
+ * Impossibility is known without sampling when no attainable distance
+ * satisfies: the attainable distances are `-total, -total + 2, …, total`.
+ */
+export function selectCloseWhere(request: ConditionedCloseRequest): CloseSelection {
+  const { steps, satisfies, random } = request;
+  const maxAttempts = request.maxAttempts ?? 200_000;
+  const total = steps.reduce((sum, step) => sum + step, 0);
+  let attainable = false;
+  for (let delta = -total; delta <= total; delta += 2) {
+    if (satisfies(delta)) {
+      attainable = true;
+      break;
+    }
+  }
+  if (!attainable) {
+    return {
+      signs: null,
+      attempts: 0,
+      acceptanceRate: 0,
+      reachability: 'outside-natural-range',
+      impossible:
+        `The remaining ticks can move at most ${String(total)} lattice steps, and no close ` +
+        `within that range satisfies the condition, so no path reaches it.`,
+    };
+  }
+  if (steps.length === 0) {
+    return {
+      signs: [],
+      attempts: 0,
+      acceptanceRate: 1,
+      reachability: 'easy',
+      impossible: null,
+    };
+  }
+  const chosen: (1 | -1)[] = new Array<1 | -1>(steps.length).fill(1);
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    let sum = 0;
+    for (let i = 0; i < steps.length; i += 1) {
+      const sign: 1 | -1 = random.nextBoolean() ? 1 : -1;
+      chosen[i] = sign;
+      sum += sign * steps[i]!;
+    }
+    if (satisfies(sum)) {
+      const rate = 1 / attempt;
+      return {
+        signs: [...chosen],
+        attempts: attempt,
+        acceptanceRate: rate,
+        reachability: bandFor(rate, true),
+        impossible: null,
+      };
+    }
+  }
+  return {
+    signs: null,
+    attempts: maxAttempts,
+    acceptanceRate: 0,
+    reachability: 'outside-natural-range',
+    impossible:
+      `No path in ${String(maxAttempts)} draws closed where the condition holds. It is ` +
+      `attainable in principle and vanishingly unlikely in practice, which is what §37 calls ` +
+      `outside the natural range.`,
+  };
+}

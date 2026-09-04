@@ -84,9 +84,16 @@ export interface LabState {
   readonly direction: { readonly up: number; readonly down: number; readonly why: string };
 }
 
+/** Where a close must end relative to the mark (PH-24.21). */
+export type CloseCondition = 'exact' | 'above' | 'below';
+
 export interface ClosePlan {
   readonly price: string;
   readonly target: number;
+  /** PH-24.21: a sided close — the condition, the mark, and whether the market's own path was armed. */
+  readonly condition?: CloseCondition;
+  readonly mark?: string | null;
+  readonly natural?: boolean;
   readonly instant: number;
   readonly fromPrice: number;
   readonly ticksInWindow: number;
@@ -120,6 +127,8 @@ export interface Pushing {
 }
 
 export interface PushResult extends Control {
+  /** PH-24.21: an opposite push subtracted from what remained. */
+  readonly netted?: { readonly previousRemaining: number; readonly applied: number } | null;
   readonly direction: 'up' | 'down';
   readonly ticks: number;
   readonly pace?: Pace;

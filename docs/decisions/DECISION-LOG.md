@@ -504,3 +504,26 @@ rest — a longer audit, as the earlier decision foresaw.
 
 **Revisit if:** the calibration turns out to need more than family ranges —
 then it is a phase of its own after the audit.
+
+## 2026-09-04 — A close on a side of a level is a conditioned selection, not a live rule
+
+**Context.** PH-24.21 adds ▲ / ▼ to the Lab's close: the candle must end above
+or below the mark, crossing it meanwhile allowed. The Human Owner proposed a
+live rule instead of a new selection — turn sube on when the price crosses the
+wrong way, off when it crosses back — to avoid "touching the engine".
+
+**Decision.** The close is honoured by an acceptance test in the selection that
+already exists (`selectCloseWhere`, rejection sampling: the first natural path
+whose close satisfies the condition), used only by the Lab; the market's own
+path is armed as is when it already satisfies.
+
+**Why.** Neither option touches the price core (INV-001; the selection lives in
+`@otc/engine` beside the exact one and is Lab-only by composition, ADR-0015).
+The rule alone cannot guarantee the final tick: sube / baja are tendencies (runs
+for and shorter runs against), so the last stretch would still need a scripted
+finish — the mechanism the rule meant to avoid — plus a live controller with a
+timer, state across ticks and automatic actions in the session. The conditioned
+selection is a few deterministic lines, tested in the existing harness, and its
+endpoint is drawn uniformly from the satisfying closes rather than glued to the
+mark (§28, §70). The rule's live-correction feel can be added on top later
+without undoing anything.

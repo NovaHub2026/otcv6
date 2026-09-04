@@ -622,6 +622,7 @@ describe('Candle Close Control, from the panel', () => {
         landedPrice: string | null;
         exact: boolean | null;
       } | null;
+      lastApplied?: { targetPrice: string; closedPrice: string | null } | null;
     };
     try {
       await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
@@ -754,16 +755,48 @@ describe('Candle Close Control, from the panel', () => {
       expect(down.lastPush!.direction).toBe(-1);
       await sessionHas('"pace":"medio"');
 
-      // PH-24.20: the close card — próxima vela; = fills the box with the price now and
-      // ▲ moves it one unit up; fijar arms and the button becomes ×; × cancels.
+      // PH-24.21: SUBIENDO while a push plays; an opposite push subtracts from what
+      // remains; nothing shown once the market is free again.
+      await page.click('[data-testid="lab-pace-normal"]');
+      await page.click('[data-testid="lab-push-+10"]');
+      await page.waitForFunction(
+        () =>
+          document.querySelector('[data-testid="lab-push-direction"]')?.textContent === 'SUBIENDO',
+        null,
+        { timeout: 15_000 },
+      );
+      await page.click('[data-testid="lab-push--10"]');
+      await sessionHas('"netted":\\{"previousRemaining"');
+      await until((c) => (c.pushing ?? null) === null, 'the netted push to be spent', 120_000);
+      await page.waitForFunction(
+        () => document.querySelector('[data-testid="lab-push-direction"]') === null,
+        null,
+        { timeout: 30_000 },
+      );
+
+      // PH-24.21: the close — a click on the chart names a price and the box takes
+      // the nearest level; = is the condition by default; ▲ asks any price above
+      // the mark; fijar arms and the button becomes ×; × cancels.
       await page.click('[data-testid="lab-close-bucket-next"]');
       expect(await pressed('lab-close-bucket-next')).toBe('true');
-      await page.click('[data-testid="lab-close-equal"]');
-      const equal = await page.inputValue('[data-testid="lab-close-price"]');
-      expect(equal).toMatch(/^[0-9]+\.[0-9]+$/);
-      await page.click('[data-testid="lab-close-up"]');
-      const up = await page.inputValue('[data-testid="lab-close-price"]');
-      expect(Number(up)).toBeGreaterThan(Number(equal));
+      expect(await pressed('lab-close-condition-exact')).toBe('true');
+      const pane = await page.locator('[data-testid="lab-chart"] canvas').first().boundingBox();
+      expect(pane).not.toBeNull();
+      await page.mouse.click(pane!.x + pane!.width * 0.5, pane!.y + pane!.height * 0.5);
+      await page.waitForFunction(
+        () =>
+          /^[0-9]+\.[0-9]+$/.test(
+            document.querySelector<HTMLInputElement>('[data-testid="lab-close-price"]')?.value ??
+              '',
+          ),
+        null,
+        { timeout: 10_000 },
+      );
+      // The mark: the price now — attainable on the next candle whatever the chart's scale.
+      const mark = (await text(page, 'lab-header-price')).trim();
+      await page.fill('[data-testid="lab-close-price"]', mark);
+      await page.click('[data-testid="lab-close-condition-above"]');
+      expect(await pressed('lab-close-condition-above')).toBe('true');
       await page.click('[data-testid="lab-close-apply"]');
       await page.waitForSelector('[data-testid="lab-close-release"]', { timeout: 30_000 });
       await page.waitForFunction(
@@ -774,13 +807,19 @@ describe('Candle Close Control, from the panel', () => {
         null,
         { timeout: 30_000 },
       );
-      expect((await control()).armed).toBe(true);
+      const armed = await control();
+      expect(armed.armed).toBe(true);
+      expect(Number(armed.lastApplied!.targetPrice)).toBeGreaterThan(Number(mark));
+      await sessionHas('"condition":"above"');
       await page.click('[data-testid="lab-close-release"]');
       await page.waitForSelector('[data-testid="lab-close-apply"]', { timeout: 30_000 });
       await until((c) => !c.armed, 'the close to be cancelled', 30_000);
 
       // PH-24.11: a push over an armed close releases it — the session says by whom.
-      await page.click('[data-testid="lab-close-equal"]');
+      await page.fill(
+        '[data-testid="lab-close-price"]',
+        (await text(page, 'lab-header-price')).trim(),
+      );
       await page.click('[data-testid="lab-close-apply"]');
       await page.waitForSelector('[data-testid="lab-close-release"]', { timeout: 30_000 });
       // The buttons are not held by the armed close.

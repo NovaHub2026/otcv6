@@ -28,7 +28,14 @@ import {
 } from '@otc/engine';
 import { STATE_RECORD_VERSION } from '@otc/runtime';
 import { VenueService } from '../venue.service.js';
-import { closeInstant, planClose, readWindow, resolveTarget } from './closeControl.js';
+import {
+  closeInstant,
+  planClose,
+  planConditionedClose,
+  readWindow,
+  resolveTarget,
+  type CloseCondition,
+} from './closeControl.js';
 import { isPreset, LabPositions, presetLevel, PRESETS, type LabPosition } from './positions.js';
 import { closesDiagnostic } from './closesDiagnostic.js';
 import { positionsDiagnostic, type SettledPosition } from './positionsDiagnostic.js';
@@ -456,11 +463,12 @@ export class LabController {
     @Query('expiry') expiry?: string,
     @Query('nonNatural') nonNatural?: string,
     @Query('delta') delta?: string,
+    @Query('condition') condition?: string,
   ): unknown {
     if (nonNatural !== undefined) throw new BadRequestException(NON_NATURAL_REFUSED);
-    const request = this.closeRequest(id, price, bucket, tf, expiry, delta);
+    const request = this.closeRequest(id, price, bucket, tf, expiry, delta, condition);
     return {
-      ...this.planAt(id, request.price, request.instant, request.delta),
+      ...this.planAt(id, request.price, request.instant, request.delta, request.condition),
       environment: LAB,
       armed: false,
     };
@@ -484,16 +492,23 @@ export class LabController {
     @Query('expiry') expiry?: string,
     @Query('nonNatural') nonNatural?: string,
     @Query('delta') delta?: string,
+    @Query('condition') condition?: string,
   ): Promise<unknown> {
     if (nonNatural !== undefined) throw new BadRequestException(NON_NATURAL_REFUSED);
-    const request = this.closeRequest(id, price, bucket, tf, expiry, delta);
+    const request = this.closeRequest(id, price, bucket, tf, expiry, delta, condition);
     const result = await this.applyAt(
       id,
-      { price: request.price, instant: request.instant, delta: request.delta },
+      {
+        price: request.price,
+        instant: request.instant,
+        delta: request.delta,
+        condition: request.condition,
+      },
       'close.apply',
       {
         bucket: request.bucket,
         timeframe: request.timeframe,
+        condition: request.condition,
       },
     );
     return { ...result.plan, environment: LAB, armed: result.armed, adjusted: result.adjusted };
@@ -509,7 +524,12 @@ export class LabController {
    */
   private async applyAt(
     id: string,
-    request: { price: string; instant: EpochMillis; delta?: number | null },
+    request: {
+      price: string;
+      instant: EpochMillis;
+      delta?: number | null;
+      condition?: CloseCondition;
+    },
     action: string,
     parameters: Record<string, unknown>,
   ): Promise<{
@@ -522,7 +542,8 @@ export class LabController {
     const before = this.controlState(id);
     this.refuseWhilePushing(id, wrapper, action, parameters, before);
     const result = await this.venue.betweenAdvances(() => {
-      let plan = this.planAt(id, request.price, request.instant, request.delta ?? null);
+      const condition = request.condition ?? 'exact';
+      let plan = this.planAt(id, request.price, request.instant, request.delta ?? null, condition);
       let adjusted: { requested: string; applied: string; why: 'parity' } | null = null;
       // PH-24.17: at three to four times the ticks a minute, the parity of the
       // window flips within a second of a preview — a price offered as
@@ -530,6 +551,7 @@ export class LabController {
       // apply therefore takes the reachable neighbour on the requested side,
       // one lattice step away, and says so; a preview still names both.
       if (
+        condition === 'exact' &&
         plan.selection === null &&
         plan.impossible !== null &&
         /parity/.test(plan.impossible) &&
@@ -567,6 +589,8 @@ export class LabController {
         reachability: result.plan.reachability,
         impossible: result.plan.impossible,
         adjusted: result.adjusted,
+        condition: request.condition ?? 'exact',
+        natural: result.plan.natural,
       },
     });
     if (result.armed) {
@@ -635,6 +659,8 @@ export class LabController {
     let count = Math.abs(ticks);
     const running = this.pushes.get(id);
     const extended = running !== undefined && running.direction === direction;
+    // PH-24.21: a push against the one running subtracts from what remains.
+    const opposite = running !== undefined && running.direction !== direction;
     const signs: (1 | -1)[] = Array.from({ length: count }, () => direction);
     const result = await this.venue.betweenAdvances(() => {
       // PH-24.11: a push wins over a close, preset or scenario armed here. It is
@@ -666,6 +692,10 @@ export class LabController {
       const arrival = this.arrivals.for(id);
       const carriedDraws: (number | null)[] =
         extended && arrival !== null ? [...arrival.remainingScript()] : [];
+      // Read before the retract too: a retract restores, a restore seeks, a seek releases.
+      const remainingOld: (1 | -1)[] = opposite ? [...wrapper.remainingScript()] : [];
+      const remainingOldDraws: (number | null)[] =
+        opposite && arrival !== null ? [...arrival.remainingScript()] : [];
       const retracted = market.retractPending();
       const script: (1 | -1)[] = [...carried, ...signs];
       const draw = this.paceDrawFor(id, pace, arrival !== null);
@@ -679,54 +709,92 @@ export class LabController {
         carriedDraws.length > 0
           ? [...carriedDraws, ...paced]
           : [this.anchoredFirstDraw(id, at, pace, arrival !== null), ...paced.slice(1)];
-      let forkSigns: SelectableSigns | null = null;
-      let forkArrival: SelectableArrival | null = null;
-      const fork = this.venue.labFork(
-        id,
-        (keystream) => {
-          forkSigns = new SelectableSigns(keystream, id);
-          return forkSigns;
-        },
-        arrival === null
-          ? undefined
-          : (keystream) => {
-              forkArrival = new SelectableArrival(keystream, id);
-              return forkArrival;
-            },
-      )!;
-      // Armed after the fork restored: a restore seeks, and a seek releases.
-      (forkSigns as SelectableSigns | null)!.arm(script);
-      (forkArrival as SelectableArrival | null)?.arm(draws);
-      const startLevel = fork.price;
-      let level = fork.price;
-      let landingInstant = fork.instant;
-      let walked = 0;
-      for (let i = 0; i < script.length; i += 1) {
-        const tick = fork.next();
-        if (tick === null) break;
-        level = tick.price;
-        landingInstant = tick.instant;
-        walked = i + 1;
-        // By distance: stop at the first tick that reaches the units asked.
-        if (
-          targetSteps !== null &&
-          i >= carried.length &&
-          Math.abs(level - startLevel) >= targetSteps
-        )
-          break;
-      }
+      const walk = (
+        play: readonly (1 | -1)[],
+        playDraws: readonly (number | null)[],
+        stopAtSteps: number | null,
+        skip: number,
+      ): { level: number; landingInstant: EpochMillis; walked: number; startLevel: number } => {
+        let forkSigns: SelectableSigns | null = null;
+        let forkArrival: SelectableArrival | null = null;
+        const fork = this.venue.labFork(
+          id,
+          (keystream) => {
+            forkSigns = new SelectableSigns(keystream, id);
+            return forkSigns;
+          },
+          arrival === null
+            ? undefined
+            : (keystream) => {
+                forkArrival = new SelectableArrival(keystream, id);
+                return forkArrival;
+              },
+        )!;
+        // Armed after the fork restored: a restore seeks, and a seek releases.
+        if (play.length > 0) (forkSigns as SelectableSigns | null)!.arm(play);
+        if (playDraws.length > 0) (forkArrival as SelectableArrival | null)?.arm(playDraws);
+        const startLevel = fork.price;
+        let level = fork.price;
+        let landingInstant = fork.instant;
+        let walked = 0;
+        for (let i = 0; i < play.length; i += 1) {
+          const tick = fork.next();
+          if (tick === null) break;
+          level = tick.price;
+          landingInstant = tick.instant;
+          walked = i + 1;
+          // By distance: stop at the first tick that reaches the units asked.
+          if (stopAtSteps !== null && i >= skip && Math.abs(level - startLevel) >= stopAtSteps)
+            break;
+        }
+        return { level, landingInstant, walked, startLevel };
+      };
+      const first = walk(script, draws, targetSteps, carried.length);
+      let { level, landingInstant, startLevel } = first;
       if (targetSteps !== null) {
-        count = Math.max(1, walked - carried.length);
+        count = Math.max(1, first.walked - carried.length);
         script.length = carried.length + count;
         draws.length = carried.length + count;
       }
-      wrapper.arm(script);
-      arrival?.arm(draws);
-      this.pushes.set(id, {
-        direction,
-        requested: extended ? running.requested + count : count,
-        pace,
-      });
+      // PH-24.21: an opposite push subtracts. Larger than what remained: the
+      // difference, in the new direction. Smaller: the running push shortened,
+      // in its own direction and at its own pace. Equal: nothing — the market free.
+      let netted: { previousRemaining: number; applied: number } | null = null;
+      let survivor: 1 | -1 = direction;
+      let survivorPace: Pace = pace;
+      let requested = extended ? running.requested + count : count;
+      if (opposite) {
+        const previous = remainingOld.length;
+        netted = { previousRemaining: previous, applied: count - previous };
+        if (count > previous) {
+          script.length = count - previous;
+          draws.length = count - previous;
+          requested = count - previous;
+        } else if (count < previous) {
+          script.splice(0, script.length, ...remainingOld.slice(0, previous - count));
+          draws.splice(0, draws.length, ...remainingOldDraws.slice(0, previous - count));
+          survivor = running.direction;
+          survivorPace = running.pace;
+          requested = previous - count;
+        } else {
+          script.length = 0;
+          draws.length = 0;
+          requested = 0;
+        }
+        // The landing is the netted script's, walked afresh: the first walk played the new signs.
+        ({ level, landingInstant, startLevel } = walk(script, draws, null, 0));
+      }
+      if (script.length > 0) {
+        wrapper.arm(script);
+        arrival?.arm(draws);
+        this.pushes.set(id, { direction: survivor, requested, pace: survivorPace });
+      } else {
+        // Nothing survives: the market is the keystream's again, both scripts let go.
+        wrapper.release();
+        arrival?.release();
+        this.pushes.delete(id);
+        this.pushLandings.delete(id);
+      }
       // The fork started at the snapshot's sequence; the landing is script.length ticks on.
       const sequence = this.venue.hostedMarket(id)!.snapshotEngine().sequence + script.length;
       return {
@@ -738,6 +806,8 @@ export class LabController {
         retracted,
         count,
         startLevel,
+        netted,
+        survivor,
       };
     });
     // The burst's first instant is already in the past: publish it now, not on the old timer.
@@ -753,13 +823,15 @@ export class LabController {
       instant: result.landingInstant,
       afterTicks: result.afterTicks,
     };
-    this.pushLandings.set(id, {
-      direction,
-      ticks: result.afterTicks,
-      sequence: result.sequence,
-      level: result.level,
-      price: landing.price,
-    });
+    if (result.afterTicks > 0) {
+      this.pushLandings.set(id, {
+        direction: result.survivor,
+        ticks: result.afterTicks,
+        sequence: result.sequence,
+        level: result.level,
+        price: landing.price,
+      });
+    }
     this.session.recordAction({
       at,
       asset: id,
@@ -773,15 +845,22 @@ export class LabController {
       initialState: before,
       resultingState: this.controlState(id),
       succeeded: true,
-      diagnostics: { extended, landing, released: result.released, retracted: result.retracted },
+      diagnostics: {
+        extended,
+        netted: result.netted,
+        landing,
+        released: result.released,
+        retracted: result.retracted,
+      },
     });
     return {
       environment: LAB,
       asset: id,
-      direction: direction === 1 ? 'up' : 'down',
+      direction: result.survivor === 1 ? 'up' : 'down',
       ticks: result.count,
       pace,
       extended,
+      netted: result.netted,
       distance:
         units === null || unit === null
           ? null
@@ -1791,6 +1870,7 @@ export class LabController {
     tf: string | undefined,
     expiry: string | undefined,
     delta?: string,
+    condition?: string,
   ): {
     id: string;
     price: string;
@@ -1798,6 +1878,7 @@ export class LabController {
     instant: EpochMillis;
     bucket: string;
     timeframe: string;
+    condition: CloseCondition;
   } {
     if (this.venue.hostedMarket(id) === null)
       throw new NotFoundException(`Asset ${id} is not hosted.`);
@@ -1812,6 +1893,12 @@ export class LabController {
     if (delta !== undefined && delta.trim().length > 0 && !/^-?\d+$/.test(delta.trim())) {
       throw new BadRequestException('delta must be a whole number of lattice steps.');
     }
+    // PH-24.21: where the close must end relative to the mark.
+    const closeCondition =
+      condition === undefined || condition.trim().length === 0 ? 'exact' : condition.trim();
+    if (closeCondition !== 'exact' && closeCondition !== 'above' && closeCondition !== 'below') {
+      throw new BadRequestException("condition must be 'exact', 'above' or 'below'.");
+    }
     if (expiry !== undefined) {
       const instant = Number(expiry);
       if (!Number.isSafeInteger(instant) || instant <= this.venue.now()) {
@@ -1824,6 +1911,7 @@ export class LabController {
         instant: epochMillis(instant),
         bucket: 'expiry',
         timeframe: '-',
+        condition: closeCondition,
       };
     }
     if (bucket !== 'current' && bucket !== 'next') {
@@ -1841,6 +1929,7 @@ export class LabController {
       instant: closeInstant(this.venue.now(), tf, bucket),
       bucket,
       timeframe: tf,
+      condition: closeCondition,
     };
   }
 
@@ -1850,11 +1939,16 @@ export class LabController {
     priceText: string,
     instant: EpochMillis,
     delta: number | null = null,
+    condition: CloseCondition = 'exact',
   ): {
     environment: string;
     asset: string;
     price: string;
     target: number;
+    /** PH-24.21: a sided close — its condition, its mark, and whether the market's own path is the plan. */
+    condition: CloseCondition;
+    mark: string | null;
+    natural: boolean;
     instant: number;
     fromPrice: number;
     ticksInWindow: number;
@@ -1890,6 +1984,48 @@ export class LabController {
         throw new BadRequestException((error as Error).message);
       }
     }
+    if (condition !== 'exact') {
+      // PH-24.21: a side of a mark. A typed price between two levels is a fine
+      // mark — the side begins at the level on its far side.
+      const edge =
+        resolved.kind === 'level'
+          ? resolved
+          : resolveTarget(
+              asset.instrument,
+              condition === 'above' ? resolved.below : resolved.above,
+            );
+      if (edge.kind !== 'level') {
+        throw new BadRequestException('The mark could not be placed on the lattice.');
+      }
+      const window = readWindow(fork, instant);
+      const plan = planConditionedClose(
+        asset.instrument,
+        edge.level,
+        condition,
+        window,
+        this.venue.labRandom(id),
+      );
+      return {
+        environment: LAB,
+        asset: id,
+        price: plan.display,
+        target: plan.target,
+        condition,
+        mark: edge.display,
+        natural: plan.natural,
+        instant,
+        fromPrice: window.fromPrice,
+        ticksInWindow: window.steps.length,
+        lastTickInWindow: window.lastInstant,
+        delta: plan.delta,
+        attempts: plan.selection.attempts,
+        acceptanceRate: plan.selection.acceptanceRate,
+        reachability: plan.selection.reachability,
+        impossible: plan.selection.impossible,
+        reachableNeighbours: null,
+        selection: plan.selection.signs,
+      };
+    }
     if (resolved.kind === 'between') {
       throw new ConflictException({
         environment: LAB,
@@ -1908,6 +2044,9 @@ export class LabController {
       asset: id,
       price: plan.display,
       target: plan.target,
+      condition: 'exact',
+      mark: null,
+      natural: false,
       instant,
       fromPrice: window.fromPrice,
       ticksInWindow: window.steps.length,

@@ -90,14 +90,24 @@ export function PreviewChart({
   apiBase,
   asset,
   timeframeId,
+  onPick,
+  mark = null,
 }: {
   apiBase: string;
   asset: CatalogueEntry;
   timeframeId: PanelTimeframeId;
+  /** PH-24.21: a click anywhere on the chart names the price at that height. */
+  onPick?: ((price: number) => void) | undefined;
+  /** PH-24.21: a price to mark with a line — the close the Lab is being asked for. */
+  mark?: { readonly price: number; readonly title: string } | null | undefined;
 }): ReactElement {
   const container = useRef<HTMLDivElement | null>(null);
   const chart = useRef<IChartApi | null>(null);
   const series = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  // The latest handler, read at click time: the chart is built once per asset.
+  const pick = useRef(onPick);
+  pick.current = onPick;
+  const markLine = useRef<IPriceLine | null>(null);
   const [status, setStatus] = useState<string>(es.preview.status.loading);
   const [bars, setBars] = useState<number>(0);
   const [last, setLast] = useState<{ price: number; at: number } | null>(null);
@@ -149,16 +159,47 @@ export function PreviewChart({
       lastValueVisible: false,
       priceLineVisible: false,
     });
+    // PH-24.21: the price under the pointer, from the series' own scale, so a
+    // click on a wick, a gap or the empty right margin all name a price.
+    created.subscribeClick((param) => {
+      const target = series.current;
+      if (param.point === undefined || target === null) return;
+      const price = target.coordinateToPrice(param.point.y);
+      if (price !== null && Number.isFinite(price)) pick.current?.(price);
+    });
     return () => {
       created.remove();
       chart.current = null;
       series.current = null;
+      markLine.current = null;
     };
     // Keyed on the asset, not on its display precision. Four of the five assets
     // in the catalogue share a precision, so keying on that kept the chart
     // across a switch — carrying the previous asset's price format and data
     // until the next fetch returned.
   }, [asset.id, asset.displayPrecision]);
+
+  // PH-24.21: the mark — one line, moved rather than re-created, removed when
+  // the price is cleared. Keyed on the asset too: a new chart has no lines.
+  useEffect(() => {
+    const target = series.current;
+    if (target === null) return;
+    if (mark === null) {
+      if (markLine.current !== null) target.removePriceLine(markLine.current);
+      markLine.current = null;
+      return;
+    }
+    const options = {
+      price: mark.price,
+      color: '#58a6ff',
+      lineWidth: 1 as const,
+      lineStyle: 0 as const,
+      axisLabelVisible: true,
+      title: mark.title,
+    };
+    if (markLine.current === null) markLine.current = target.createPriceLine(options);
+    else markLine.current.applyOptions(options);
+  }, [mark, asset.id]);
 
   useEffect(() => {
     const target = series.current;
