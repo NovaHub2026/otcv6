@@ -34,7 +34,9 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-24.10–24.21 are approved; no subphase is active.** `/lab` is the control
+**PH-24.10–24.22 are approved; no subphase is active.** The chart carries a
+countdown to the end of the candle now forming, on the market's clock and the
+kernel's bucket alignment (PH-24.22, `PreviewChart`, shared with Vista). `/lab` is the control
 panel: `Lab({ mode })` renders either the panel (`TopBar` with the markets as
 pills and the selected market's price/regime/state; a `3fr 1fr` grid with the
 chart at full height and `Controles.tsx` — two cards: **Empuje** with the pace

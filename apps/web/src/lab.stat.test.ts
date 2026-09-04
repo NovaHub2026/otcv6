@@ -857,6 +857,34 @@ describe('Candle Close Control, from the panel', () => {
       expect(
         await page.locator('[data-testid="lab-chart"] [data-testid="last-price"]').textContent(),
       ).toMatch(/^[0-9]+\.[0-9]+$/);
+      // PH-24.22: the countdown to the candle's end, on the chart's timeframe — down
+      // by about a second in a second (or wrapped at a new minute), and on 5m ahead
+      // of 1m by whole minutes, since both buckets end on the same second of the minute.
+      const countdown = async (): Promise<number> => {
+        const label = (await text(page, 'chart-countdown')).trim();
+        const m = /^cierra en (?:(\d+):)?(\d+):(\d\d)$/.exec(label);
+        expect(m, `the countdown reads "${label}"`).not.toBeNull();
+        return (
+          (m![1] === undefined ? 0 : Number(m![1]) * 3600) + Number(m![2]) * 60 + Number(m![3])
+        );
+      };
+      await page.waitForSelector('[data-testid="chart-countdown"]', { timeout: 30_000 });
+      const first = await countdown();
+      await page.waitForTimeout(1_200);
+      const second = await countdown();
+      expect(
+        second < first || (first <= 1 && second > 55),
+        `${String(first)} → ${String(second)}`,
+      ).toBe(true);
+      await page.click('[data-testid="lab-chart-tf-5m"]');
+      await page.waitForTimeout(400);
+      const five = await countdown();
+      await page.click('[data-testid="lab-chart-tf-1m"]');
+      await page.waitForTimeout(400);
+      const one = await countdown();
+      expect(five, `5m ${String(five)} vs 1m ${String(one)}`).toBeGreaterThanOrEqual(one - 3);
+      const offset = (((five - one) % 60) + 60) % 60;
+      expect(offset <= 3 || offset >= 57, `5m − 1m = ${String(five - one)} s`).toBe(true);
       // The proxy reaches the Lab's engine: the same markets /lab names.
       const ids = await page.evaluate(async () => {
         const viaProxy = (await (await fetch('/labengine/lab/markets')).json()) as {

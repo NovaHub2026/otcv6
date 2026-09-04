@@ -521,6 +521,24 @@ describe('the Lab is marked wherever it appears', () => {
     expect(lab).toMatch(/&condition=\$\{closeCondition\}/);
   });
 
+  it("the chart counts down to the end of the candle now forming, on the market's clock (PH-24.22)", () => {
+    const chart = code('preview/PreviewChart.tsx');
+    expect(chart).toMatch(/data-testid="chart-countdown"/);
+    // The kernel's bucket end on the kernel's timeframe: the alignment every close uses.
+    expect(chart).toMatch(/bucketEnd\(epochMillis\(Math\.floor\(now\)\), tf\)/);
+    expect(chart).toMatch(/const tf = timeframe\(timeframeId\)/);
+    // Anchored on the last tick's instant, advanced by the interval since it arrived — never Date.now().
+    expect(chart).toMatch(/clock\.instant \+ \(performance\.now\(\) - clock\.receivedAt\)/);
+    const compute = /const compute = \(\): void => \{[\s\S]*?\n {4}\};/.exec(chart)?.[0] ?? '';
+    expect(compute, 'the countdown computation').not.toBe('');
+    expect(compute).not.toMatch(/Date\.now/);
+    // Recomputed at once on a timeframe change; the interval is cleared.
+    expect(chart).toMatch(/\}, \[clock, timeframeId\]\);/);
+    expect(chart).toMatch(/return \(\) => clearInterval\(handle\);/);
+    // Out of the way of a click meant for the chart.
+    expect(chart).toMatch(/pointerEvents: 'none'/);
+  });
+
   it('says the Lab is absent rather than hiding that it can be', () => {
     expect(lab()).toMatch(/lab-not-running/);
     expect(code('lab/[...path]/route.ts')).toMatch(/OTC_LAB_BASE/);

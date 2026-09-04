@@ -125,6 +125,7 @@ state), INV-009 (a Lab settlement recomputes from the Lab's record), INV-010.
 | PH-24.19 | El panel de control del Lab: gráfico a 3/4, cuatro tarjetas de control a 1/4, solo el activo elegido; el instrumento pasa a /lab/avanzado                              | APPROVED                                                | [PH-24.19](PH-24.19-el-panel-de-control-del-lab.md)                        |
 | PH-24.20 | El panel, segunda forma: dos tarjetas y solo controles — ritmo, filas verde y roja con sube / baja; vela actual / próxima, precio con = ▲ ▼, fijar / ×                 | APPROVED                                                | [PH-24.20](PH-24.20-el-panel-segunda-forma.md)                             |
 | PH-24.21 | Subiendo / bajando en la tarjeta; los empujes contrarios se restan; la tasa marcada con un clic en el gráfico; la condición de cierre = ▲ ▼ con selección condicionada | APPROVED                                                | [PH-24.21](PH-24.21-subiendo-bajando-la-resta-y-la-condicion-de-cierre.md) |
+| PH-24.22 | El cronómetro de la vela: cuánto falta para que cierre la vela en curso, en el marco del gráfico                                                                       | APPROVED                                                | [PH-24.22](PH-24.22-el-cronometro-de-la-vela.md)                           |
 
 Each subphase owes its plants. PH-24.1 owes one that arms in the production
 composition and is caught.

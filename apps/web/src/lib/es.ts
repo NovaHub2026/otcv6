@@ -49,6 +49,9 @@ export const es = {
     bars: (n: string) => `${n} velas`,
     liveBar: 'vela en curso',
     noLiveBar: 'sin vela en curso',
+    closesIn: 'cierra en',
+    countdownInfo:
+      'Lo que le falta a la vela en curso para cerrar, en el marco del gráfico. Va con el reloj del mercado: el instante del último tick más el tiempo transcurrido desde que llegó. Cambiar el marco lo recalcula al momento.',
   },
   create: {
     title: 'Crear activo',

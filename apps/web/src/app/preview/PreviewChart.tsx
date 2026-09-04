@@ -11,7 +11,7 @@ import {
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { es } from '../../lib/es.js';
 import { Info, T } from '../ui/kit.js';
-import type { Tick } from '@otc/core/browser';
+import { bucketEnd, epochMillis, timeframe, type Tick } from '@otc/core/browser';
 import { fetchHistory, type CatalogueEntry } from '../../lib/api.js';
 import { priceFormatFor, toDisplayedPrice } from '../../lib/priceFormat.js';
 import {
@@ -86,6 +86,15 @@ const RESEED_INTERVAL_MS = 15_000;
 const RECONNECT_BACKOFF_MS = 1_000;
 const MAX_RECONNECT_BACKOFF_MS = 30_000;
 
+/** `m:ss`, or `h:mm:ss` on timeframes of an hour and up; whole seconds, rounded up. */
+export function formatCountdown(remainingMs: number, hours: boolean): string {
+  const total = Math.ceil(remainingMs / 1000);
+  const ss = String(total % 60).padStart(2, '0');
+  if (!hours) return `${String(Math.floor(total / 60))}:${ss}`;
+  const mm = String(Math.floor(total / 60) % 60).padStart(2, '0');
+  return `${String(Math.floor(total / 3600))}:${mm}:${ss}`;
+}
+
 export function PreviewChart({
   apiBase,
   asset,
@@ -111,6 +120,13 @@ export function PreviewChart({
   const [status, setStatus] = useState<string>(es.preview.status.loading);
   const [bars, setBars] = useState<number>(0);
   const [last, setLast] = useState<{ price: number; at: number } | null>(null);
+  /**
+   * PH-24.22: the market's clock, as the last tick told it and the time since.
+   * The countdown is anchored here, not on the browser's clock: it says what the
+   * engine's clock says, and only the interval since the tick arrived is local.
+   */
+  const [clock, setClock] = useState<{ instant: number; receivedAt: number } | null>(null);
+  const [remainingMs, setRemainingMs] = useState<number | null>(null);
   /**
    * The bucket the chart is currently drawing live, if any.
    *
@@ -200,6 +216,25 @@ export function PreviewChart({
     if (markLine.current === null) markLine.current = target.createPriceLine(options);
     else markLine.current.applyOptions(options);
   }, [mark, asset.id]);
+
+  // PH-24.22: how long the bucket now forming has left, on the chart's
+  // timeframe — the kernel's own bucket end on the kernel's own timeframe, the
+  // alignment every candle and every close uses. Four times a second; at once
+  // when the timeframe changes.
+  useEffect(() => {
+    if (clock === null) {
+      setRemainingMs(null);
+      return;
+    }
+    const tf = timeframe(timeframeId);
+    const compute = (): void => {
+      const now = clock.instant + (performance.now() - clock.receivedAt);
+      setRemainingMs(Math.max(0, bucketEnd(epochMillis(Math.floor(now)), tf) - now));
+    };
+    compute();
+    const handle = setInterval(compute, 250);
+    return () => clearInterval(handle);
+  }, [clock, timeframeId]);
 
   useEffect(() => {
     const target = series.current;
@@ -475,6 +510,7 @@ export function PreviewChart({
         // movement no contract can settle against.
         const price = toDisplayedPrice(displayPrice(tick.price, asset), asset.displayPrecision);
         setLast({ price, at: tick.instant });
+        setClock({ instant: tick.instant, receivedAt: performance.now() });
         setStatus(liveStatus());
         armStall();
 
@@ -552,6 +588,29 @@ export function PreviewChart({
       */}
       <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
         <div data-testid="chart" ref={container} style={{ position: 'absolute', inset: 0 }} />
+        {remainingMs !== null && (
+          <span
+            data-testid="chart-countdown"
+            title={es.preview.countdownInfo}
+            style={{
+              // Over the candles, clear of the price axis, and never in the way of a
+              // click meant for the chart (PH-24.21: a click names a price).
+              position: 'absolute',
+              top: 8,
+              right: 76,
+              padding: '2px 8px',
+              borderRadius: 3,
+              background: 'rgba(11, 14, 20, 0.85)',
+              border: `1px solid ${T.line}`,
+              color: remainingMs < 10_000 ? T.warn : T.text,
+              fontSize: 12,
+              fontVariantNumeric: 'tabular-nums',
+              pointerEvents: 'none',
+            }}
+          >
+            {`${es.preview.closesIn} ${formatCountdown(remainingMs, timeframe(timeframeId).durationMs >= 3_600_000)}`}
+          </span>
+        )}
       </div>
       <div
         style={{
