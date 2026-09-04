@@ -7,7 +7,17 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # One group per commit on `main`, one per ref everywhere else.
+  #
+  # `cancel-in-progress: false` stops a *running* job being killed, and that is
+  # what the note below fixed. It does not stop the other half: when runs queue
+  # in one group, GitHub keeps the newest pending one and cancels the older
+  # pending ones. Cycle Audit 8 watched it happen — the run for
+  # `docs(audit-8): …` was cancelled while an earlier run was still going, so a
+  # commit on `main` got no verdict at all, which is exactly what the sentence
+  # below promises does not happen. A group per SHA makes the promise true; the
+  # runners are free for a public repository.
+  group: ${{ github.ref == 'refs/heads/main' && format('ci-main-{0}', github.sha) || format('ci-{0}', github.ref) }}
   # A push to main must never cancel the run of the commit before it: the run
   # of `c736707` ("that was the gate failure") was cancelled 58 s later by a
   # docs push and the fix has no hosted result at all (out-of-band audit,
