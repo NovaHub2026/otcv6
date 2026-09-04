@@ -81,6 +81,18 @@ export interface ObserverLoadReport {
   readonly gaps: number;
   /** Sequences delivered twice to one observer. */
   readonly duplicates: number;
+  /**
+   * Frames that said the delivery was short, summed over observers
+   * (Cycle Audit 8, a3).
+   *
+   * The parser read only frames carrying a numeric `sequence`, so a `gap` — the
+   * server saying an asset's history was evicted — and a `close` — the server
+   * cutting a client that fell behind during replay — were both discarded, and
+   * `response.on('end')` settled the observation as complete. A storm in which
+   * every observer was cut off mid-replay reported a fleet with zero gaps.
+   */
+  readonly gapEvents: number;
+  readonly closeEvents: number;
   /** `receivedAt - tick.instant`, in milliseconds. */
   readonly latencyMs: {
     readonly p50: number;
@@ -113,6 +125,8 @@ interface ObserverState {
   ticks: number;
   gaps: number;
   duplicates: number;
+  gapEvents: number;
+  closeEvents: number;
   /** Per asset, so a multiplexed stream is checked the way it is contracted. */
   lastSequence: Map<string, number>;
   failure: string | null;
@@ -189,6 +203,8 @@ export async function runObserverLoad(options: ObserverLoadOptions): Promise<Obs
         ticks: 0,
         gaps: 0,
         duplicates: 0,
+        gapEvents: 0,
+        closeEvents: 0,
         lastSequence: new Map(),
         failure: null,
       };
@@ -260,6 +276,15 @@ export async function runObserverLoad(options: ObserverLoadOptions): Promise<Obs
             while (boundary !== -1) {
               const frame = buffer.slice(0, boundary);
               buffer = buffer.slice(boundary + 2);
+              // The frame's own event name, before its data: a stream that told
+              // this client its delivery was short must not be counted whole.
+              const event = frame
+                .split('\n')
+                .find((entry) => entry.startsWith('event: '))
+                ?.slice(7)
+                .trim();
+              if (event === 'gap') state.gapEvents += 1;
+              if (event === 'close') state.closeEvents += 1;
               const line = frame.split('\n').find((entry) => entry.startsWith('data: '));
               if (line !== undefined) {
                 try {
@@ -374,6 +399,8 @@ export async function runObserverLoad(options: ObserverLoadOptions): Promise<Obs
     ticksDelivered: states.reduce((sum, state) => sum + state.ticks, 0),
     gaps: states.reduce((sum, state) => sum + state.gaps, 0),
     duplicates: states.reduce((sum, state) => sum + state.duplicates, 0),
+    gapEvents: states.reduce((sum, state) => sum + state.gapEvents, 0),
+    closeEvents: states.reduce((sum, state) => sum + state.closeEvents, 0),
     latencyMs: {
       p50: percentile(latencies, 0.5),
       p90: percentile(latencies, 0.9),
@@ -406,6 +433,7 @@ export function describeObserverLoad(report: ObserverLoadReport): string {
     `ticks delivered  ${String(report.ticksDelivered)}`,
     `gaps             ${String(report.gaps)}`,
     `duplicates       ${String(report.duplicates)}`,
+    `short deliveries ${String(report.gapEvents)} gap, ${String(report.closeEvents)} close`,
     `connect ms       p50 ${report.connectMs.p50.toFixed(0)}  p90 ${report.connectMs.p90.toFixed(0)}  p99 ${report.connectMs.p99.toFixed(0)}  max ${report.connectMs.max.toFixed(0)}`,
     `latency ms       p50 ${report.latencyMs.p50.toFixed(0)}  p90 ${report.latencyMs.p90.toFixed(0)}  p99 ${report.latencyMs.p99.toFixed(0)}  max ${report.latencyMs.max.toFixed(0)}`,
     `engine cpu       ${report.engineCpuSeconds === null ? 'unavailable' : `${report.engineCpuSeconds.toFixed(2)}s`}`,
@@ -421,6 +449,15 @@ export function describeObserverLoad(report: ObserverLoadReport): string {
   }
   if (!report.complete) {
     lines.push('INCOMPLETE — not every attempted observer was established');
+  }
+  // **Cycle Audit 8 (a3).** A fleet the server truncated and closed used to
+  // read as a clean run: the parser dropped every frame that was not a tick, so
+  // a storm in which every observer was cut off mid-replay reported zero gaps.
+  if (report.gapEvents > 0 || report.closeEvents > 0) {
+    lines.push(
+      `TRUNCATED — the server said ${String(report.gapEvents)} deliveries had a gap and cut ` +
+        `${String(report.closeEvents)} of them off; these observers did not see the whole stream`,
+    );
   }
   return lines.join('\n');
 }

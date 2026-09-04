@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
-import { runObserverLoad, type ObserverLoadReport } from './observerLoad.js';
+import { runObserverLoad, type ObserverLoadReport, describeObserverLoad } from './observerLoad.js';
 
 /**
  * The instrument, watched failing.
@@ -37,11 +37,11 @@ afterEach(async () => {
 
 /** A server that behaves however the test says, on a port the OS chooses. */
 async function serverThat(
-  behave: (response: ServerResponse, index: number) => void,
+  behave: (response: ServerResponse, index: number, url: string) => void,
 ): Promise<string> {
   let index = 0;
-  const server = createServer((_request, response) => {
-    behave(response, index);
+  const server = createServer((request, response) => {
+    behave(response, index, request.url ?? '');
     index += 1;
   });
   running.servers.push(server);
@@ -71,6 +71,150 @@ const load = (baseUrl: string, observers: number, extra = {}): Promise<ObserverL
     connectTimeoutMs: 800,
     ...extra,
   });
+
+describe('the three options that produced the headline tables (a3)', () => {
+  /**
+   * **Cycle Audit 8 (a3).** `assetsPerConnection`, `resumeBack` and `arrivalMs`
+   * turn this harness into the multiplexing experiment and the reconnect-storm
+   * experiment — the two that produced PH-22.2's and PH-22.3's tables. No file
+   * in the repository passed any of them and no test set them, so three plants
+   * against those code paths survived: the tables were produced by a script
+   * that is not here, and a regression that silently stopped multiplexing, or
+   * silently resumed at the live edge, would have changed nothing visible.
+   */
+  it('multiplexes onto one connection, asks for every asset, and keys gaps per asset', async () => {
+    const asked: string[] = [];
+    const baseUrl = await serverThat((response, index, url) => {
+      asked.push(url);
+      sse(response);
+      // One connection carrying three interleaved series, with a hole in one.
+      for (const [asset, sequences] of [
+        ['eurusd', [1, 2, 3]],
+        ['gbpjpy', [1, 2, 3]],
+        ['btcusd', [1, 3]],
+      ] as const) {
+        for (const sequence of sequences) {
+          response.write(
+            `data: ${JSON.stringify({ asset, sequence, instant: Date.now(), price: 1 })}\n\n`,
+          );
+        }
+      }
+      void index;
+      response.end();
+    });
+    const report = await load(baseUrl, 2, {
+      assetIds: ['eurusd', 'gbpjpy', 'btcusd'],
+      assetsPerConnection: 3,
+    });
+    expect(report.established).toBe(2);
+    // One request per observer, on the multiplexed route, naming all three.
+    expect(asked).toHaveLength(2);
+    for (const url of asked) {
+      expect(url, 'the harness fell back to the single-asset route').toContain('/markets/stream?');
+      expect(url).toContain('assets=eurusd,gbpjpy,btcusd');
+    }
+    // The hole in btcusd is a gap; the interleaving of the other two is not.
+    expect(report.gaps, 'per-asset keying lost the real gap or invented one').toBe(2);
+    expect(report.duplicates).toBe(0);
+  });
+
+  it('resumes from a sequence behind the live edge rather than at it', async () => {
+    const asked: string[] = [];
+    const baseUrl = await serverThat((response, _index, url) => {
+      asked.push(url);
+      // The probe the harness makes to find the live edge answers JSON; the
+      // stream that follows answers SSE.
+      if (!url.includes('/stream')) {
+        response.writeHead(200, { 'Content-Type': 'application/json' });
+        response.end(JSON.stringify({ id: 'eurusd', sequence: 9_000 }));
+        return;
+      }
+      sse(response);
+      response.write(frame(1));
+      response.end();
+    });
+    const report = await load(baseUrl, 1, { resumeBack: 500 });
+    expect(report.established).toBe(1);
+    // It probed for the live edge and then asked from 500 behind it.
+    expect(
+      asked.some((url) => !url.includes('/stream')),
+      'no probe was made',
+    ).toBe(true);
+    const stream = asked.find((url) => url.includes('/stream'));
+    expect(stream, 'no stream was opened').toBeDefined();
+    expect(stream!, 'the harness resumed at the live edge instead of behind it').toContain(
+      'from=8500',
+    );
+    expect(stream!).toContain('onGap=live');
+  });
+
+  it('spreads arrivals over a window instead of opening every observer at once', async () => {
+    const openedAt: number[] = [];
+    const baseUrl = await serverThat((response, _index, _url) => {
+      openedAt.push(Date.now());
+      sse(response);
+      response.write(frame(1));
+      response.end();
+    });
+    const report = await load(baseUrl, 6, { arrivalMs: 600 });
+    expect(report.established).toBe(6);
+    expect(openedAt).toHaveLength(6);
+    const spread = Math.max(...openedAt) - Math.min(...openedAt);
+    expect(spread, 'every observer arrived at once; the storm was not spread').toBeGreaterThan(150);
+  });
+});
+
+describe('the harness says when the server cut the fleet short (a3)', () => {
+  it('counts a close frame, and says the fleet did not see the whole stream', async () => {
+    // **Cycle Audit 8 (a3).** A client resuming further back than the replay
+    // ceiling is cut off mid-replay: the server writes `event: close` and ends
+    // the response. The parser read only frames carrying a numeric `sequence`,
+    // so the close was discarded and `response.on('end')` settled the
+    // observation as complete — a storm in which every observer was truncated
+    // reported a healthy fleet with zero gaps.
+    const baseUrl = await serverThat((response) => {
+      sse(response);
+      response.write(frame(1));
+      response.write(
+        `event: close\ndata: ${JSON.stringify({ reason: 'client fell behind during replay' })}\n\n`,
+      );
+      response.end();
+    });
+    const report = await load(baseUrl, 4);
+    expect(report.established).toBe(4);
+    expect(report.closeEvents, 'the close frames were discarded').toBe(4);
+    expect(report.gapEvents).toBe(0);
+    expect(describeObserverLoad(report)).toMatch(/TRUNCATED/);
+  });
+
+  it('counts a gap frame the same way, and keeps counting the ticks after it', async () => {
+    const baseUrl = await serverThat((response) => {
+      sse(response);
+      response.write(frame(1));
+      response.write(`event: gap\ndata: ${JSON.stringify({ asset: 'eurusd', requested: 1 })}\n\n`);
+      response.write(frame(2));
+      response.end();
+    });
+    const report = await load(baseUrl, 3);
+    expect(report.gapEvents).toBe(3);
+    expect(report.closeEvents).toBe(0);
+    expect(report.ticksDelivered, 'the ticks around the gap were lost too').toBe(6);
+    expect(describeObserverLoad(report)).toMatch(/TRUNCATED/);
+  });
+
+  it('says nothing about truncation when the server delivered the whole stream', async () => {
+    const baseUrl = await serverThat((response) => {
+      sse(response);
+      response.write(frame(1));
+      response.write(frame(2));
+      response.end();
+    });
+    const report = await load(baseUrl, 2);
+    expect(report.gapEvents).toBe(0);
+    expect(report.closeEvents).toBe(0);
+    expect(describeObserverLoad(report)).not.toMatch(/TRUNCATED/);
+  });
+});
 
 describe('the harness counts what arrived, not what it opened', () => {
   it('reports a healthy server as complete, with no gaps and no duplicates', async () => {
