@@ -126,6 +126,27 @@ export interface Pushing {
   readonly pace?: Pace;
 }
 
+export interface RoutePoint {
+  readonly price: string;
+  readonly level: number;
+  readonly sequence: number;
+  readonly reached: boolean;
+}
+
+/** PH-24.23: what a route answered — each point with the sequence it is reached at. */
+export interface RouteResult extends Control {
+  readonly pace: Pace;
+  readonly ticks: number;
+  readonly points: readonly {
+    readonly price: string;
+    readonly level: number;
+    readonly landing: number;
+    readonly sequence: number;
+    readonly ticks: number;
+  }[];
+  readonly released: { readonly discarded: number } | null;
+}
+
 export interface PushResult extends Control {
   /** PH-24.21: an opposite push subtracted from what remained. */
   readonly netted?: { readonly previousRemaining: number; readonly applied: number } | null;
@@ -152,6 +173,13 @@ export interface Control {
   readonly pushing?: Pushing | null;
   /** PH-24.16: the sustained direction, or null. */
   readonly bias?: 1 | -1 | null;
+  /** PH-24.23: the route being walked — its points, which are reached, the leg in force. */
+  readonly route?: {
+    readonly points: readonly RoutePoint[];
+    readonly pace: Pace;
+    readonly remaining: number;
+    readonly direction: 1 | -1 | null;
+  } | null;
   readonly lastPush?: {
     readonly direction: 1 | -1;
     readonly ticks: number;

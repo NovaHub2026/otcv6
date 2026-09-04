@@ -623,6 +623,7 @@ describe('Candle Close Control, from the panel', () => {
         exact: boolean | null;
       } | null;
       lastApplied?: { targetPrice: string; closedPrice: string | null } | null;
+      route?: { points: { reached: boolean }[] } | null;
     };
     try {
       await page.goto(`http://127.0.0.1:${webPort}/lab`, { waitUntil: 'networkidle' });
@@ -774,6 +775,37 @@ describe('Candle Close Control, from the panel', () => {
         { timeout: 30_000 },
       );
 
+      // PH-24.23: a route of two points — two units up, then two units down — sought in
+      // order at rápido; the record says it was armed with both, and the market is free
+      // after the last. Then the list is cleared for the close.
+      const here = Number((await text(page, 'lab-header-price')).trim());
+      const shape = (await page.evaluate(
+        async (url) => (await (await fetch(url)).json()) as unknown,
+        `/lab/markets/${id}/state`,
+      )) as { distance: { unitPrice: string }; instrument: { displayPrecision: number } };
+      const two = Number(shape.distance.unitPrice) * 2;
+      for (const point of [here + two, here - two]) {
+        await page.fill(
+          '[data-testid="lab-route-price"]',
+          point.toFixed(shape.instrument.displayPrecision),
+        );
+        await page.click('[data-testid="lab-route-add"]');
+      }
+      expect(await page.locator('[data-testid="lab-route-point-2"]').count()).toBe(1);
+      await page.click('[data-testid="lab-pace-rapido"]');
+      await page.click('[data-testid="lab-route-go"]');
+      const routed = await until(
+        (c) => (c.route ?? null) !== null,
+        'the route to be armed',
+        30_000,
+      );
+      expect(routed.route!.points).toHaveLength(2);
+      await sessionHas('"action":"route"');
+      await until((c) => (c.route ?? null) === null && !c.armed, 'the route to finish', 120_000);
+      await page.click('[data-testid="lab-route-remove-2"]');
+      await page.click('[data-testid="lab-route-remove-1"]');
+      expect(await page.locator('[data-testid="lab-route-points"]').count()).toBe(0);
+
       // PH-24.21: the close — a click on the chart names a price and the box takes
       // the nearest level; = is the condition by default; ▲ asks any price above
       // the mark; fijar arms and the button becomes ×; × cancels.
@@ -782,6 +814,9 @@ describe('Candle Close Control, from the panel', () => {
       expect(await pressed('lab-close-condition-exact')).toBe('true');
       const pane = await page.locator('[data-testid="lab-chart"] canvas').first().boundingBox();
       expect(pane).not.toBeNull();
+      // PH-24.23: a click on the chart fills the box last focused, and the route's
+      // was — focus the close's first, as an operator would.
+      await page.focus('[data-testid="lab-close-price"]');
       await page.mouse.click(pane!.x + pane!.width * 0.5, pane!.y + pane!.height * 0.5);
       await page.waitForFunction(
         () =>

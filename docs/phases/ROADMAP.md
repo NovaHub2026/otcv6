@@ -594,6 +594,7 @@ on it — the boundary first, guarded before anything stands on it.
 | PH-24.20 | El panel, segunda forma: dos tarjetas y solo controles — ritmo, filas verde y roja con sube / baja; vela actual / próxima, precio con = ▲ ▼, fijar / ×                 | APPROVED |
 | PH-24.21 | Subiendo / bajando en la tarjeta; los empujes contrarios se restan; la tasa marcada con un clic en el gráfico; la condición de cierre = ▲ ▼ con selección condicionada | APPROVED |
 | PH-24.22 | El cronómetro de la vela: cuánto falta para que cierre la vela en curso, en el marco del gráfico                                                                       | APPROVED |
+| PH-24.23 | El recorrido: hasta cinco puntos que el precio va a buscar en orden, con la textura de sube / baja al ritmo elegido; marcados en el gráfico; Buscar y ×                | APPROVED |
 
 ### PH-23 — The OTC Market Lab
 

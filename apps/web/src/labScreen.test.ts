@@ -513,11 +513,11 @@ describe('the Lab is marked wherever it appears', () => {
     const chart = code('preview/PreviewChart.tsx');
     expect(chart).toMatch(/subscribeClick\(/);
     expect(chart).toMatch(/coordinateToPrice\(param\.point\.y\)/);
-    expect(chart).toMatch(/removePriceLine\(markLine\.current\)/);
+    expect(chart).toMatch(/removePriceLine\(line\)/);
     const lab = code('lab/Lab.tsx');
     expect(lab).toMatch(/nearestLevelPrice\(lattice, picked\)/);
     expect(lab).toMatch(/onPick=\{pickPrice\}/);
-    expect(lab).toMatch(/mark=\{marked\}/);
+    expect(lab).toMatch(/marks=\{marks\}/);
     expect(lab).toMatch(/&condition=\$\{closeCondition\}/);
   });
 
@@ -538,6 +538,31 @@ describe('the Lab is marked wherever it appears', () => {
     // Out of the way of a click meant for the chart, and above the library's canvases.
     expect(chart).toMatch(/pointerEvents: 'none'/);
     expect(chart).toMatch(/zIndex: [1-9]/);
+  });
+
+  it("the route: up to five points, Buscar and ×, each box claiming the chart's click (PH-24.23)", () => {
+    const controles = code('lab/Controles.tsx');
+    for (const id of [
+      'lab-route-price',
+      'lab-route-add',
+      'lab-route-points',
+      'lab-route-go',
+      'lab-route-cancel',
+    ]) {
+      expect(controles, `${id} missing`).toMatch(new RegExp(`data-testid="${id}"|testId="${id}"`));
+    }
+    expect(controles).toMatch(/lab-route-point-\$\{String\(i \+ 1\)\}/);
+    expect(controles).toMatch(/lab-route-remove-\$\{String\(i \+ 1\)\}/);
+    expect(controles).toMatch(/routePoints\.length < 5/);
+    // The leg in force wins the direction state; each box claims the chart's click on focus.
+    expect(controles).toMatch(/route\?\.direction \?\? pushing\?\.direction \?\? bias/);
+    expect(controles).toMatch(/onFocus=\{\(\) => onFocusPick\('route'\)\}/);
+    expect(controles).toMatch(/onFocus=\{\(\) => onFocusPick\('close'\)\}/);
+    const lab = code('lab/Lab.tsx');
+    expect(lab).toMatch(/markets\/\$\{selected\}\/route\?points=/);
+    expect(lab).toMatch(/if \(pickTarget === 'route'\) setRouteDraft\(snapped\)/);
+    expect(lab).toMatch(/es\.lab\.panel\.route\.mark\(i \+ 1\)/);
+    expect(lab).toMatch(/ROUTE_RUNNING/);
   });
 
   it('says the Lab is absent rather than hiding that it can be', () => {

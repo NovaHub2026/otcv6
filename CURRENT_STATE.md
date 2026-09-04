@@ -28,9 +28,9 @@ Last synchronized: 2026-09-03
 | Active subphase        | none                                             |
 | Subphase lifecycle     | none                                             |
 | Last approved phase    | PH-23 — The OTC Market Lab                       |
-| Last approved subphase | PH-24.22 — El cronómetro de la vela              |
+| Last approved subphase | PH-24.23 — El recorrido                          |
 
-**PH-24 is active; twenty-two subphases approved (PH-24.1–24.22).** The Lab's
+**PH-24 is active; twenty-three subphases approved (PH-24.1–24.23).** The Lab's
 screen is a control panel — the chart at three quarters and, at one quarter,
 two cards of controls: the pace as three windows, a green row and a red row of
 pushes with sube / baja as toggles and SUBIENDO / BAJANDO while a direction is
@@ -39,8 +39,9 @@ with a click on the chart, its condition = ▲ ▼ honoured by a conditioned
 selection, fijar / × in one place. The instrument lives on `/lab/avanzado`.
 Under it: distances in the market's own unit (PH-24.18) and an engine ticking
 three to four times as often at the same dispersion (PH-24.17). The chart counts down to
-the end of the candle now forming (PH-24.22). The next item awaits the Human
-Owner. The merge, hosted CI and Cycle Audit 8 wait until the
+the end of the candle now forming (PH-24.22). The push card also takes a route of up to five points
+the price seeks in order, with the texture of sube / baja at the chosen pace
+(PH-24.23). The next item awaits the Human Owner. The merge, hosted CI and Cycle Audit 8 wait until the
 Lab is complete; PH-24's approval is Cycle 8's third phase.
 
 PH-23.5 closed the first item PH-23 §10 left open — the Lab now has a screen in

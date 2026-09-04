@@ -34,7 +34,15 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-24.10–24.22 are approved; no subphase is active.** The chart carries a
+**PH-24.10–24.23 are approved; no subphase is active.** The push card also
+carries a **route** (PH-24.23): a price box, «+» for up to five points, the
+numbered list, «Buscar» and «×». `POST markets/:id/route?points=&pace=` walks
+them on a fork with the texture of sube / baja (`RecordingSigns` keeps the
+signs the fork drew; they are the script the live market plays), so each
+point's sequence is known and `control.route` says which are reached. Nothing
+is tied to the candle — a close is the Cierre card's act — and a close during a
+route is refused (`ROUTE_RUNNING`), while a push or a sube / baja interrupts
+it. The chart carries a
 countdown to the end of the candle now forming, on the market's clock and the
 kernel's bucket alignment (PH-24.22, `PreviewChart`, shared with Vista). `/lab` is the control
 panel: `Lab({ mode })` renders either the panel (`TopBar` with the markets as

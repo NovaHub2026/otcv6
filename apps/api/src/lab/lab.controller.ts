@@ -17,6 +17,7 @@ import {
   type EpochMillis,
   type LogPrice,
   type Tick,
+  fromDisplayPrice,
 } from '@otc/core';
 import { assessRealism, buildObserverDataset, runBatteryAsync, tickGranularity } from '@otc/lab';
 import {
@@ -40,7 +41,7 @@ import { isPreset, LabPositions, presetLevel, PRESETS, type LabPosition } from '
 import { closesDiagnostic } from './closesDiagnostic.js';
 import { positionsDiagnostic, type SettledPosition } from './positionsDiagnostic.js';
 import { SCENARIOS, scenarioNamed, scenarioParameters, shapeOf } from './scenarios.js';
-import { SelectableSigns, SignSelector } from './selectableSigns.js';
+import { SelectableSigns, SignSelector, RecordingSigns } from './selectableSigns.js';
 import { distanceUnitFrom, LabDistances, type DistanceUnit } from './distance.js';
 import {
   ArrivalSelector,
@@ -156,6 +157,12 @@ const LAB_MAX_SAMPLE_TICKS = 8_000_000;
 const PUSH_MAX_TICKS = 50;
 /** By distance the fork decides the count; this is how far it may look. */
 const PUSH_MAX_TICKS_BY_DISTANCE = 400;
+/** PH-24.23: a route has at most this many points, and a leg this many ticks to reach its point. */
+const ROUTE_MAX_POINTS = 5;
+const ROUTE_LEG_MAX_TICKS = 600;
+const ROUTE_RUNNING =
+  'ROUTE_RUNNING: a route is running on this market and a plan computed on the keystream would ' +
+  'not describe it. Wait for it to end or release it.';
 
 const PUSH_RUNNING =
   'PUSH_RUNNING: a push is running on this market and a plan computed on the keystream would ' +
@@ -671,6 +678,7 @@ export class LabController {
         const discarded = wrapper.release();
         this.arrivals.for(id)?.release();
         this.applied.delete(id);
+        this.routes.delete(id);
         this.session.recordAction({
           at,
           asset: id,
@@ -793,6 +801,7 @@ export class LabController {
         wrapper.release();
         arrival?.release();
         this.pushes.delete(id);
+        this.routes.delete(id);
         this.pushLandings.delete(id);
       }
       // The fork started at the snapshot's sequence; the landing is script.length ticks on.
@@ -872,6 +881,222 @@ export class LabController {
               fromLevel: result.startLevel,
             },
       landing,
+      released: result.released,
+      retracted: result.retracted,
+      ...this.controlState(id),
+    };
+  }
+
+  /**
+   * A route (PH-24.23): up to five points the price goes to seek, in order.
+   *
+   * On a fork of the live market the Lab plays sube / baja towards each point —
+   * runs for, shorter runs against, from a Lab-only stream (PH-24.16) — at the
+   * chosen pace, until the price reaches or crosses it, then turns to the next.
+   * The signs the fork drew are the script the live market plays: its path is
+   * the fork's, the engine's magnitudes and intervals under the Lab's signs,
+   * exactly as a push — and the sequence each point is reached at is known.
+   * Nothing is tied to the candle: a close is the Cierre card's act. A route
+   * releases whatever was armed; a push or a sube / baja interrupts it.
+   */
+  @Post('markets/:id/route')
+  async route(
+    @Param('id') id: string,
+    @Query('points') pointsText?: string,
+    @Query('pace') paceText?: string,
+  ): Promise<unknown> {
+    const texts = (pointsText ?? '')
+      .split(',')
+      .map((text) => text.trim())
+      .filter((text) => text.length > 0);
+    if (texts.length === 0 || texts.length > ROUTE_MAX_POINTS) {
+      throw new BadRequestException(
+        `points must list 1..${String(ROUTE_MAX_POINTS)} prices, comma-separated.`,
+      );
+    }
+    const pace: Pace = (paceText ?? 'rapido') as Pace;
+    if (!PACES.includes(pace)) {
+      throw new BadRequestException(
+        `pace must be one of ${PACES.join(', ')}, received ${paceText}.`,
+      );
+    }
+    const wrapper = this.wrapperFor(id);
+    const asset = this.venue.assetFor(id)!;
+    const levels = texts.map((text) => {
+      const value = Number(text);
+      if (!Number.isFinite(value) || value <= 0) {
+        throw new BadRequestException(`A point must be a positive price, received ${text}.`);
+      }
+      return fromDisplayPrice(asset.instrument, value);
+    });
+    const at = this.venue.now();
+    const before = this.controlState(id);
+    const arrival = this.arrivals.for(id);
+    const draw = this.paceDrawFor(id, pace, arrival !== null);
+    // The walk, on a fork: point by point, the direction of sube / baja until reached.
+    const walk = (
+      firstDraw: number | null,
+    ): {
+      signs: (1 | -1)[];
+      legs: { level: number; ticks: number; landing: number }[];
+      failed: number | null;
+      startLevel: number;
+    } => {
+      let recorder: RecordingSigns | null = null;
+      let forkArrival: SelectableArrival | null = null;
+      const fork = this.venue.labFork(
+        id,
+        (keystream) => {
+          recorder = new RecordingSigns(keystream, id);
+          return recorder;
+        },
+        arrival === null
+          ? undefined
+          : (keystream) => {
+              forkArrival = new SelectableArrival(keystream, id);
+              return forkArrival;
+            },
+      )!;
+      const signs = (recorder as RecordingSigns | null)!;
+      if (draw !== null) {
+        const budget = ROUTE_MAX_POINTS * ROUTE_LEG_MAX_TICKS;
+        (forkArrival as SelectableArrival | null)?.arm([
+          firstDraw ?? draw,
+          ...Array.from({ length: budget - 1 }, () => draw),
+        ]);
+      }
+      const startLevel = fork.price;
+      const legs: { level: number; ticks: number; landing: number }[] = [];
+      let level: number = fork.price;
+      for (let i = 0; i < levels.length; i += 1) {
+        const target = levels[i]!;
+        const direction: 1 | -1 = target >= level ? 1 : -1;
+        signs.setBias(direction, this.venue.labRandom(id), this.biasRuns(id));
+        let ticks = 0;
+        let reached = false;
+        while (ticks < ROUTE_LEG_MAX_TICKS) {
+          const tick = fork.next();
+          if (tick === null) break;
+          ticks += 1;
+          level = tick.price;
+          if ((direction === 1 && level >= target) || (direction === -1 && level <= target)) {
+            reached = true;
+            break;
+          }
+        }
+        if (!reached) return { signs: signs.drawn, legs, failed: i, startLevel };
+        legs.push({ level: target, ticks, landing: level });
+      }
+      signs.clearBias();
+      return { signs: signs.drawn, legs, failed: null, startLevel };
+    };
+    // A dry run first, so a route that cannot be walked refuses without touching
+    // the market: the real walk below begins after the release and the retract.
+    const dry = walk(null);
+    if (dry.failed !== null) {
+      this.session.recordAction({
+        at,
+        asset: id,
+        engineVersion: ENGINE_VERSION,
+        action: 'route',
+        parameters: { points: texts, pace },
+        initialState: before,
+        resultingState: before,
+        succeeded: false,
+        diagnostics: { refused: 'UNREACHABLE', point: dry.failed + 1, legs: dry.legs },
+      });
+      throw new ConflictException({
+        environment: LAB,
+        asset: id,
+        message:
+          `Point ${String(dry.failed + 1)} (${texts[dry.failed]!}) was not reached within ` +
+          `${String(ROUTE_LEG_MAX_TICKS)} ticks at this pace. Nothing was armed.`,
+        point: dry.failed + 1,
+      });
+    }
+    const result = await this.venue.betweenAdvances(() => {
+      // PH-24.11 by analogy: a route wins over whatever is armed here — recorded.
+      let released: { discarded: number } | null = null;
+      if (wrapper.armed) {
+        const discarded = wrapper.release();
+        arrival?.release();
+        this.applied.delete(id);
+        this.pushes.delete(id);
+        this.routes.delete(id);
+        this.session.recordAction({
+          at,
+          asset: id,
+          engineVersion: ENGINE_VERSION,
+          action: 'release',
+          parameters: { by: 'route' },
+          initialState: before,
+          resultingState: this.controlState(id),
+          succeeded: true,
+          diagnostics: { discarded },
+        });
+        released = { discarded };
+      }
+      const market = this.venue.hostedMarket(id)!;
+      const retracted = market.retractPending();
+      const first = this.anchoredFirstDraw(id, at, pace, arrival !== null);
+      const real = walk(first);
+      const start = market.snapshotEngine().sequence;
+      if (real.failed !== null || real.signs.length === 0) {
+        return { ...real, released, retracted, points: [], start };
+      }
+      wrapper.arm(real.signs);
+      if (draw !== null) arrival?.arm([first ?? draw, ...real.signs.slice(1).map(() => draw)]);
+      let sequence = start;
+      const points = real.legs.map((leg, i) => {
+        sequence += leg.ticks;
+        return {
+          price: texts[i]!,
+          level: leg.level,
+          landing: leg.landing,
+          sequence,
+          ticks: leg.ticks,
+        };
+      });
+      this.routes.set(id, { points, pace, startLevel: real.startLevel });
+      return { ...real, released, retracted, points, start };
+    });
+    // The route's first instant is already in the past: publish it now, not on the old timer.
+    this.venue.wake();
+    const armed = result.failed === null && result.signs.length > 0;
+    this.session.recordAction({
+      at,
+      asset: id,
+      engineVersion: ENGINE_VERSION,
+      action: 'route',
+      parameters: { points: texts, pace },
+      initialState: before,
+      resultingState: this.controlState(id),
+      succeeded: armed,
+      diagnostics: {
+        legs: result.legs.map((leg) => leg.ticks),
+        ticks: result.signs.length,
+        released: result.released,
+        retracted: result.retracted,
+        ...(result.failed === null ? {} : { refused: 'UNREACHABLE', point: result.failed + 1 }),
+      },
+    });
+    if (!armed) {
+      throw new ConflictException({
+        environment: LAB,
+        asset: id,
+        message:
+          `Point ${String((result.failed ?? 0) + 1)} was not reached within ` +
+          `${String(ROUTE_LEG_MAX_TICKS)} ticks at this pace once the market was read again. ` +
+          `Nothing is armed; the market is free.`,
+        point: (result.failed ?? 0) + 1,
+      });
+    }
+    return {
+      environment: LAB,
+      asset: id,
+      pace,
+      points: result.points,
+      ticks: result.signs.length,
       released: result.released,
       retracted: result.retracted,
       ...this.controlState(id),
@@ -1024,6 +1249,23 @@ export class LabController {
     const at = this.venue.now();
     const before = this.controlState(id);
     await this.venue.betweenAdvances(() => {
+      // PH-24.23: a sube / baja interrupts a running route — recorded, like a push over a close.
+      if (this.routes.has(id) && wrapper.armed) {
+        const discarded = wrapper.release();
+        this.arrivals.for(id)?.release();
+        this.routes.delete(id);
+        this.session.recordAction({
+          at,
+          asset: id,
+          engineVersion: ENGINE_VERSION,
+          action: 'release',
+          parameters: { by: 'bias', direction },
+          initialState: before,
+          resultingState: this.controlState(id),
+          succeeded: true,
+          diagnostics: { discarded },
+        });
+      }
       if (direction === 'off') wrapper.clearBias();
       else
         wrapper.setBias(direction === 'up' ? 1 : -1, this.venue.labRandom(id), this.biasRuns(id));
@@ -1067,7 +1309,8 @@ export class LabController {
     parameters: Record<string, unknown>,
     before: ReturnType<LabController['controlState']>,
   ): void {
-    if (!wrapper.armed || !this.pushes.has(id)) return;
+    const running = this.pushes.has(id) ? 'push' : this.routes.has(id) ? 'route' : null;
+    if (!wrapper.armed || running === null) return;
     this.session.recordAction({
       at: this.venue.now(),
       asset: id,
@@ -1077,9 +1320,9 @@ export class LabController {
       initialState: before,
       resultingState: before,
       succeeded: false,
-      diagnostics: { refused: 'PUSH_RUNNING' },
+      diagnostics: { refused: running === 'push' ? 'PUSH_RUNNING' : 'ROUTE_RUNNING' },
     });
-    throw new ConflictException(PUSH_RUNNING);
+    throw new ConflictException(running === 'push' ? PUSH_RUNNING : ROUTE_RUNNING);
   }
 
   /**
@@ -1098,6 +1341,7 @@ export class LabController {
     const discarded = wrapper.release();
     this.arrivals.for(id)?.release();
     this.pushes.delete(id);
+    this.routes.delete(id);
     this.session.recordAction({
       at: this.venue.now(),
       asset: id,
@@ -1707,6 +1951,15 @@ export class LabController {
 
   /** Pushes running per market (PH-24.10): direction and how many ticks were asked in all. */
   private readonly pushes = new Map<string, { direction: 1 | -1; requested: number; pace: Pace }>();
+  /** PH-24.23: the route each market is walking — its points, with the sequence each is reached at. */
+  private readonly routes = new Map<
+    string,
+    {
+      points: { price: string; level: number; sequence: number; ticks: number }[];
+      pace: Pace;
+      startLevel: number;
+    }
+  >();
 
   /** Where the last push said it would land, so `control` can read the record there (PH-24.10). */
   private readonly pushLandings = new Map<
@@ -1829,6 +2082,12 @@ export class LabController {
       landedPrice: string | null;
       exact: boolean | null;
     } | null;
+    route: {
+      points: { price: string; level: number; sequence: number; reached: boolean }[];
+      pace: Pace;
+      remaining: number;
+      direction: 1 | -1 | null;
+    } | null;
     bias: 1 | -1 | null;
     sequence: number;
     lastApplied: ReturnType<LabController['outcomeFor']>;
@@ -1836,8 +2095,45 @@ export class LabController {
     const wrapper = this.signs.for(id);
     const market = this.venue.hostedMarket(id);
     // A push that played out is over; the wrapper is the truth, the map a memo.
-    if (wrapper !== null && !wrapper.armed) this.pushes.delete(id);
+    if (wrapper !== null && !wrapper.armed) {
+      this.pushes.delete(id);
+      this.routes.delete(id);
+    }
     const push = this.pushes.get(id);
+    const route = this.routes.get(id);
+    // PH-24.23: reached is read from the record — a tick at the point's sequence is published.
+    const published = (sequence: number): boolean => {
+      try {
+        for (const tick of this.venue.feed.since(id, sequence)) return tick.sequence >= sequence;
+      } catch {
+        return false;
+      }
+      return false;
+    };
+    const routeView =
+      route === undefined
+        ? null
+        : (() => {
+            const points = route.points.map((point) => ({
+              price: point.price,
+              level: point.level,
+              sequence: point.sequence,
+              reached: published(point.sequence),
+            }));
+            const next = points.findIndex((point) => !point.reached);
+            const from = next <= 0 ? route.startLevel : route.points[next - 1]!.level;
+            return {
+              points,
+              pace: route.pace,
+              remaining: wrapper?.remaining ?? 0,
+              direction:
+                next === -1
+                  ? null
+                  : route.points[next]!.level >= from
+                    ? (1 as const)
+                    : (-1 as const),
+            };
+          })();
     return {
       armed: wrapper?.armed ?? false,
       remaining: wrapper?.remaining ?? 0,
@@ -1851,6 +2147,7 @@ export class LabController {
               pace: push.pace,
             },
       lastPush: this.pushOutcome(id),
+      route: routeView,
       bias: wrapper?.bias ?? null,
       sequence: market?.snapshotEngine().sequence ?? -1,
       lastApplied: this.outcomeFor(id),

@@ -245,3 +245,21 @@ export class SignSelector {
     return [...this.#wrappers.keys()].sort();
   }
 }
+
+/**
+ * A sign source that remembers what it drew (PH-24.23).
+ *
+ * On a fork playing sube / baja towards a point, the signs the fork draws are
+ * the script the live market will play: recorded here, armed there, and the
+ * live path is the fork's path — the engine's magnitudes and intervals, the
+ * Lab's signs, exactly as a push.
+ */
+export class RecordingSigns extends SelectableSigns {
+  readonly drawn: (1 | -1)[] = [];
+
+  override nextBoolean(): boolean {
+    const up = super.nextBoolean();
+    this.drawn.push(up ? 1 : -1);
+    return up;
+  }
+}
