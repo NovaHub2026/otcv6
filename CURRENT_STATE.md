@@ -23,10 +23,10 @@ Last synchronized: 2026-09-04
 
 | Field                  | Value                                                 |
 | ---------------------- | ----------------------------------------------------- |
-| Active phase           | none — Cycle Audit 8                                  |
-| Phase lifecycle        | none                                                  |
-| Active subphase        | none                                                  |
-| Subphase lifecycle     | none                                                  |
+| Active phase           | **PH-26 — The catalogue of thirty**                   |
+| Phase lifecycle        | ACTIVE                                                |
+| Active subphase        | PH-26.1 — the suites scale                            |
+| Subphase lifecycle     | ACTIVE                                                |
 | Last approved phase    | PH-24 — The Lab's controls: applying a selection      |
 | Last approved subphase | PH-24.24 — El recorrido retirado, el sesgo con límite |
 
@@ -195,26 +195,36 @@ the wrong thing.
 
 ## EXACT NEXT LEGAL ACTION
 
-**Open Cycle 9 by activating PH-25 — the battery against a production venue's
-own record.**
+**PH-26.1 — make the statistical suites survive a catalogue six times larger.**
 
-Cycle Audit 8 is closed. All 60 confirmed findings are resolved: eighteen inside
-the audit (`ce2a544`, `769ce80`, `396c0f4`, `fa362e4`) and the remaining 42
-after it, each with a guard watched failing against a planted defect before it
-was believed. Nothing is tracked and nothing was deferred to an Issue, so §32's
-allowance for closing with open findings was not needed.
+Cycle Audit 8 is closed; all 60 confirmed findings are resolved, and the gate
+above is the run that says so. Cycle 9 is open and its first phase is **PH-26,
+the catalogue of thirty** — the Human Owner's library of thirty predefined OTC
+assets replacing the five hand-authored ones, with three decisions recorded as
+theirs: equities are declared `etf`, no archetype is added, the five incumbents
+go away.
 
-The audit handed one thing forward, and it is a phase rather than a fix: **no
-adversarial run in this repository attacks the feed a real observer reads.**
-Every battery builds its own engine or runs against the Lab's composition.
-PH-25 is that phase — `packages/lab`'s instrument pointed at `apps/api`'s
-published record over the distribution path, covering publication, retention,
-reduction to columns and settlement at once. It is on the roadmap as PLANNED;
-activating it is the next legal action, and no authorization is required for it
-or for anything after it (ADR-0008).
+PH-26.1 comes before any asset is written, because without it none of the rest
+can be executed:
 
-The counter is reset: Cycle 9 opens with zero approved phases, and the next
-audit boundary is three away (§28).
+1. **The three expensive suites are stratified.** `multiAsset`, `latticeTies`
+   and `catalogue.stat` carry 97.5% of the catalogue-scaling cost — 184 M of
+   188.7 M simulated ticks at five assets, six to seven hours at thirty, against
+   a 180-minute hosted ceiling. Each samples with a recorded stratum and says in
+   its own output which assets it measured and which it did not (§68).
+2. **Six per-asset-id tables stop throwing.** `MEASURED_LATTICE_TIE_RATES`,
+   `GRAIN`, `PH4_TICK_RMS`, `PH4_MEAN_INTERVAL_MS`, `GRAIN_FACTOR`,
+   `PH4_EXCESS_KURTOSIS`, `REALISM_WINDOW_SECONDS` and `PH4_CARRIED` are indexed
+   with non-null assertions under `it.each` over `ASSET_CATALOGUE`.
+3. **Two differentiation thresholds stop depending on N = 5.** Classifier chance
+   falls from 1/5 to 1/30; the thresholds become multiples of chance or paired
+   lifts over the identical-personality control.
+4. **`horizonCoverage`'s row count becomes reachable.** It asserts recorded rows
+   == assets × 8 against a recorded evidence document; thirty assets needs 240
+   rows.
+
+Each with a guard watched failing against a planted defect before it is
+believed, on `feature/ph-26-catalogue-of-thirty`.
 
 This section named **PH-22.1** — a subphase approved and merged two phases ago —
 until Cycle Audit 8 (a7) found it. A fresh session following `CLAUDE.md` §1 read

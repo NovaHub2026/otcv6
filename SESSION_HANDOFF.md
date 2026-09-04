@@ -9,11 +9,11 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Field              | Value                                                           |
 | ------------------ | --------------------------------------------------------------- |
 | Last clean session | 2026-09-04                                                      |
-| Branch             | `main` — PH-24 merged at `d1aa02c`, Cycle Audit 8 fixes on top  |
+| Branch             | `feature/ph-26-catalogue-of-thirty`, off `main` at `c2a32a1`    |
 | Remote             | `origin` → NovaHub2026/otcv6, public                            |
 | Active cycle       | Cycle 9, **0 of 3** phases approved — Cycle 8's audit is closed |
-| Active phase       | none — PH-25 is planned and activating it is the next action    |
-| Active subphase    | none                                                            |
+| Active phase       | **PH-26 — The catalogue of thirty** (ACTIVE)                    |
+| Active subphase    | PH-26.1 — the suites scale (ACTIVE)                             |
 | Cycle Audit        | **008 closed** — 60 confirmed, all 60 resolved, none tracked    |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)              |
 
@@ -44,10 +44,21 @@ was deferred to an Issue. The record is
 [Cycle Audit 008](docs/audits/CYCLE-AUDIT-008.md); the full finding set, with
 every verdict, is in `~/.otc-audit8/all-findings.json`.
 
-**Cycle 9 is open and PH-25 is the next action.** The audit handed forward one
-thing that is a phase rather than a fix: no adversarial run in this repository
-attacks the feed a real observer reads — every battery builds its own engine or
-runs against the Lab's composition. `CURRENT_STATE.md` holds the exact wording.
+**Cycle 9 is open and PH-26 is running.** The Human Owner asked for a library of
+thirty predefined OTC assets to replace the five hand-authored ones, and that is
+Cycle 9's first phase. Three decisions are theirs and are recorded as given:
+equities are declared in the existing `etf` family, no archetype is added, and
+the five incumbents go away. Reference prices are August 2026 monthly averages,
+measured against dated sources.
+
+It is a phase and not data entry because the verification does not survive the
+size: nine statistical files do work per asset, 97.5% of it in three of them, and
+at thirty assets the suite needs six to seven hours against a 180-minute hosted
+ceiling. **PH-26.1 is that problem** and comes before any asset is written.
+
+PH-25 — the battery against a production venue's own record — is still Cycle 9's
+other phase and still planned. It runs after PH-26 because its subject is the
+feed a real observer reads, and that feed is about to carry thirty assets.
 
 Hosted CI needed two fixes of its own, neither a product defect: the unit
 project now yields an event-loop turn between tests (a worker that cannot read

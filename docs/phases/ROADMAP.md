@@ -720,9 +720,37 @@ path — and neither node was on the graph that exists to carry exactly that.
 Cycle 8's audit closed with every finding resolved and one thing handed forward,
 recorded here so it is not rediscovered:
 
-| Phase | Title                                               | State   |
-| ----- | --------------------------------------------------- | ------- |
-| PH-25 | The battery against a production venue's own record | PLANNED |
+| Phase | Title                                               | State      |
+| ----- | --------------------------------------------------- | ---------- |
+| PH-26 | The catalogue of thirty                             | **ACTIVE** |
+| PH-25 | The battery against a production venue's own record | PLANNED    |
+
+**PH-26 runs first, and the numbering says so rather than hiding it.** PH-25 was
+recorded when the audit closed and PH-26 was asked for afterwards; renumbering a
+recorded phase to make the table read in order would make the roadmap tidier and
+the history false. The order is also the right one on its own: PH-25's subject is
+the feed a real observer reads, and the Human Owner has replaced the five assets
+that feed carries — so running the battery first would measure a market that is
+about to stop existing.
+
+**PH-26 — the catalogue of thirty.** A library of thirty predefined OTC assets,
+replacing the five hand-authored ones: eight currency pairs, eight equities, six
+crypto pairs and eight invented thematic indices. Three decisions are the Human
+Owner's and are recorded as given — equities are declared in the existing `etf`
+family, no archetype is added, and the five incumbents go away. What makes it a
+phase rather than a data entry job is that the project's own verification does
+not survive a catalogue six times larger: nine statistical files do work per
+asset, 97.5% of it in three of them, and at thirty assets the suite would need
+six to seven hours against a 180-minute CI ceiling. Six per-asset-id tables
+indexed with non-null assertions do not slow down when the catalogue changes —
+they throw.
+
+| Subphase | Title                                                                     | State      |
+| -------- | ------------------------------------------------------------------------- | ---------- |
+| PH-26.1  | The suites scale: stratified sampling, id-keyed tables, N-free thresholds | **ACTIVE** |
+| PH-26.2  | The thirty personalities: drawn under seed, filtered by profile           | PLANNED    |
+| PH-26.3  | The catalogue compiled and calibrated, with its evidence recorded         | PLANNED    |
+| PH-26.4  | The integration library: the thirty as something a broker can consume     | PLANNED    |
 
 **PH-25 — the battery against a production venue's own record.** Every
 adversarial run in this repository builds its own engine, or runs against the
