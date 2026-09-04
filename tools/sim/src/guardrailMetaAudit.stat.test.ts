@@ -128,8 +128,13 @@ const MUTATIONS: Mutation[] = [
     edits: [
       {
         file: 'vitest.config.ts',
-        find: '          allowOnly: false,\n          testTimeout: unitTimeoutMs,',
-        replace: '          testTimeout: unitTimeoutMs,',
+        // The unit project's, which is declared first — a string `find` replaces
+        // the first occurrence. Anchored on the line itself rather than on the
+        // line that follows it: the previous anchor named `testTimeout` as the
+        // next line, and a `setupFiles` added between them in Cycle Audit 8 made
+        // the mutation a no-op, which this file's own assertion caught on CI.
+        find: '          allowOnly: false,\n',
+        replace: '',
       },
     ],
     defect:

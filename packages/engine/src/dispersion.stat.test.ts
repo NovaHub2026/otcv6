@@ -156,7 +156,10 @@ describe('the diffusion rate predicts where the price actually goes', () => {
     // constant and could not see the plant at all.
     expect(pooled).toBeGreaterThan(0.85);
     expect(pooled).toBeLessThan(1.3);
-  }, 600_000);
+    // Ten minutes until Cycle Audit 8: this timed out on a hosted runner after
+    // PH-24.17 made every tick a quarter of what it was, and a run that measures
+    // a span of market life four times as expensive. Twenty.
+  }, 1_200_000);
 
   it('states a quarter in the units an operator thinks in', () => {
     // The catalogue's own numbers, against the hundred-replicate 90-day

@@ -30,15 +30,23 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(LabModule, { bufferLogs: false });
   app.enableShutdownHooks();
 
+  const venue = app.get(VenueService);
   // The state directory is the Lab's own — the launcher gives it one.
   const stateDir = process.env['OTC_STATE_DIR'] ?? './.otc-state';
   // Cycle Audit 8 (a4, a6): mark it **before the first tick is published**, so a
   // Lab that ran for an hour and was never touched still cannot be mistaken for
   // production later. Production refuses to resume a marked directory.
-  const marker = markLabState(stateDir, Date.now(), `state-record/${String(STATE_RECORD_VERSION)}`);
+  //
+  // The instant comes from the venue's injected clock, not from `Date.now()`:
+  // the no-ambient-time guardrail covers this file, and it caught the first
+  // version of this line.
+  const marker = markLabState(
+    stateDir,
+    venue.now(),
+    `state-record/${String(STATE_RECORD_VERSION)}`,
+  );
   logger.log(`this state directory is a simulation's: ${marker}`);
 
-  const venue = app.get(VenueService);
   venue.applyOverlays(await app.get<AssetRegistry>('ASSET_REGISTRY').overlays());
   await venue.start();
   // The session survives the process (PH-24.8): what a previous Lab in this

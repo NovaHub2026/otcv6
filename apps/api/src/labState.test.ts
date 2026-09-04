@@ -84,7 +84,14 @@ describe('the two compositions agree about the mark', () => {
     const production = read('main.ts');
     // Before `venue.start()`: a mark written after the first tick is a mark that
     // is missing for the run that mattered.
-    expect(lab).toMatch(/markLabState\(stateDir, Date\.now\(\)/);
+    // The venue's injected clock, never ambient time: the no-ambient-time
+    // guardrail covers this file and caught the first version of the line.
+    expect(lab).toMatch(/markLabState\(\s*stateDir,\s*venue\.now\(\)/);
+    // Over comment-stripped source: the place a forbidden call is likeliest to
+    // appear is the comment explaining why it is forbidden.
+    const strip = (source: string): string =>
+      source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+    expect(strip(lab)).not.toMatch(/Date\.now\(\)/);
     expect(lab.indexOf('markLabState(')).toBeLessThan(lab.indexOf('await venue.start()'));
     expect(production).toMatch(
       /refuseLabState\(process\.env\.OTC_STATE_DIR \?\? '\.\/\.otc-state'\)/,

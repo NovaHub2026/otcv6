@@ -176,8 +176,21 @@ export default defineConfig({
            * passing; the second reports the worst synchronous block per file.
            */
           setupFiles: [path.resolve(root, 'vitest.setup.statistical.ts')],
-          testTimeout: 900_000,
-          hookTimeout: 900_000,
+          /**
+           * Fifteen minutes until Cycle Audit 8, when two files crossed it on a
+           * hosted runner and the whole gate came back red on a green tree.
+           *
+           * PH-24.17 recalibrated the engine to print three to four times as
+           * many ticks per candle, and the suites that were redefined to sample
+           * **in time** rather than in ticks — deliberately, so a recalibration
+           * could not shrink the evidence — got proportionally more expensive.
+           * A hosted runner is about half again slower than the machine these
+           * numbers were set on. The work is intentional; the ceiling has to
+           * follow it, and the job's own ceiling (`ci.yml`, 180 minutes) has the
+           * room.
+           */
+          testTimeout: 1_800_000,
+          hookTimeout: 1_800_000,
         },
       },
     ],
