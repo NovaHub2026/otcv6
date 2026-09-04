@@ -1,9 +1,10 @@
 import type { ReactElement, ReactNode } from 'react';
 import { Nav } from './Nav';
+import { LabModeBanner } from './LabModeBanner';
 
 export const metadata = {
-  title: 'OTC engine — admin',
-  description: 'The operator surface for a synthetic market that shows only what happened',
+  title: 'OTC engine — panel',
+  description: 'El panel del operador de un mercado sintético que solo muestra lo que pasó',
 };
 
 /**
@@ -25,7 +26,7 @@ const API_BASE = process.env.NEXT_PUBLIC_OTC_API_BASE ?? '/engine';
  */
 export default function RootLayout({ children }: { children: ReactNode }): ReactElement {
   return (
-    <html lang="en">
+    <html lang="es">
       <body
         style={{
           margin: 0,
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: { children: ReactNode }): React
       >
         <Nav apiBase={API_BASE} />
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          <LabModeBanner />
           {children}
         </div>
       </body>

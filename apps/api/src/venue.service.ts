@@ -5,9 +5,11 @@ import {
   SystemClock,
   type Clock,
   type EpochMillis,
+  type LogPrice,
   type MasterKeyring,
   type RandomSource,
   type Tick,
+  yieldToLoop,
 } from '@otc/core';
 import { ASSET_CATALOGUE, configFor, createMarketEngine, type RegisteredAsset } from '@otc/engine';
 import {
@@ -16,6 +18,7 @@ import {
   Venue,
   type HostedMarket,
   type RecoveryOutcome,
+  type SignSourceFactory,
   type StateStore,
   type AssetOverlay,
 } from '@otc/runtime';
@@ -124,6 +127,17 @@ export class VenueService implements OnModuleDestroy {
      * market's past is.
      */
     private readonly backfillDays = 0,
+    /**
+     * A hook on every hosted engine's sign stream, or null (PH-24.1).
+     *
+     * Null in production, always: `AppModule.register()` is called bare by
+     * `main.ts`. The Lab composes a `SelectableSigns` factory here so it can
+     * play a chosen vector into a hosted engine — and `composition.test.ts`
+     * asserts the production path never does.
+     */
+    private readonly signSource: SignSourceFactory | null = null,
+    /** PH-24.13: the arrival stream's wrapper, Lab only. With either source the markets are retractable. */
+    private readonly arrivalSource: SignSourceFactory | null = null,
   ) {}
 
   /** Resume every asset, then begin publishing. */
@@ -158,6 +172,9 @@ export class VenueService implements OnModuleDestroy {
         continue;
       }
       const { market, outcome } = await resumeMarket({
+        ...(this.signSource === null ? {} : { signSource: this.signSource }),
+        ...(this.arrivalSource === null ? {} : { arrivalSource: this.arrivalSource }),
+        retractable: this.signSource !== null || this.arrivalSource !== null,
         asset,
         keyring: this.keyring,
         environment: 'production',
@@ -301,6 +318,29 @@ export class VenueService implements OnModuleDestroy {
   }
 
   /**
+   * Run `fn` with no advance in flight and none able to start before it returns.
+   *
+   * PH-24.2. Arming a sign source is only correct against the future the fork
+   * described, and the fork was read from a snapshot: if the venue advanced in
+   * between, the vector begins one tick late and an exact close lands one step
+   * off. So the read, the selection and the arming happen in one synchronous
+   * `fn`, after the in-flight advance has settled — and the wait loops, because
+   * the timer that starts the next advance can fire while this is awaiting the
+   * last one. `fn` runs synchronously the moment the check passes, and a new
+   * advance can only start from a timer, which cannot interleave with it.
+   *
+   * Economically blind and Lab-agnostic: this knows nothing about `fn`. It is
+   * the same discipline `retire` and `host` use, offered as a function.
+   */
+  async betweenAdvances<T>(fn: () => T): Promise<T> {
+    for (;;) {
+      const current = this.inFlight;
+      await current;
+      if (current === this.inFlight) return fn();
+    }
+  }
+
+  /**
    * The hosted market for an asset, or null.
    *
    * Exposed for the Lab, which reads engine state the product never publishes.
@@ -358,6 +398,36 @@ export class VenueService implements OnModuleDestroy {
    * keystream position is consumed twice. The Lab reads the future; it does not
    * spend it.
    */
+  /**
+   * `labTicksAhead`, yielding to the event loop every `chunk` ticks (PH-24.17).
+   *
+   * The quality sample is a span in the asset's own ticks — millions at the
+   * finer grain — and a synchronous walk of that length held the process for
+   * seconds: the panel's polls answered 502 and the screen read the Lab as
+   * gone. The venue keeps ticking between chunks.
+   */
+  async labTicksAheadAsync(assetId: string, count: number, chunk = 250_000): Promise<Tick[]> {
+    const market = this.hostedMarket(assetId);
+    const asset = this.assetFor(assetId);
+    if (market === null || asset === null) return [];
+    const snapshot = market.snapshotEngine();
+    const fork = createMarketEngine({
+      config: configFor(asset),
+      keyring: this.keyring,
+      environment: 'production',
+      start: { instant: epochMillis(snapshot.instant), price: logPrice(snapshot.price) },
+    });
+    fork.restore(snapshot);
+    const ticks: Tick[] = [];
+    for (let i = 0; i < count; i += 1) {
+      const tick = fork.next();
+      if (tick === null) break;
+      ticks.push(tick);
+      if (ticks.length % chunk === 0) await yieldToLoop();
+    }
+    return ticks;
+  }
+
   labTicksAhead(assetId: string, count: number): Tick[] {
     const market = this.hostedMarket(assetId);
     const asset = this.assetFor(assetId);
@@ -377,6 +447,61 @@ export class VenueService implements OnModuleDestroy {
       ticks.push(tick);
     }
     return ticks;
+  }
+
+  /**
+   * A fork of a hosted market, positioned where the live engine stands.
+   *
+   * Same discipline as {@link VenueService.labStepsAhead}: snapshot, copy,
+   * restore — the live market is not advanced and no keystream position is
+   * spent twice. The fork stands at the engine's current price, which is the
+   * pending tick's when one is drawn (the snapshot is taken after that draw),
+   * and its first `next()` is the tick the live engine will draw next. That is
+   * exactly the alignment PH-24.2 needs for an armed vector to begin on the
+   * right tick.
+   */
+  labFork(
+    assetId: string,
+    wrapSign?: (keystream: RandomSource) => RandomSource,
+    wrapArrival?: (keystream: RandomSource) => RandomSource,
+  ): {
+    readonly price: LogPrice;
+    readonly instant: EpochMillis;
+    next(): Tick | null;
+  } | null {
+    const market = this.hostedMarket(assetId);
+    const asset = this.assetFor(assetId);
+    if (market === null || asset === null) return null;
+    const snapshot = market.snapshotEngine();
+    const config = configFor(asset);
+    // PH-24.10: a fork whose signs the Lab chooses — the landing of a push is
+    // the engine's own magnitudes under the pushed signs. Only the sign stream
+    // is substituted, as the mirror harness does; `restore` seeks it, so a
+    // wrapper that releases on seek must be armed after this returns.
+    const derive = (purpose: 'sign' | 'arrival'): RandomSource =>
+      this.keyring.derive({ env: 'production', asset: config.instrument.id, purpose, keyEpoch: 0 });
+    const streams =
+      wrapSign === undefined && wrapArrival === undefined
+        ? {}
+        : {
+            streams: {
+              ...(wrapSign === undefined ? {} : { sign: wrapSign(derive('sign')) }),
+              ...(wrapArrival === undefined ? {} : { arrival: wrapArrival(derive('arrival')) }),
+            },
+          };
+    const fork = createMarketEngine({
+      config,
+      keyring: this.keyring,
+      environment: 'production',
+      start: { instant: epochMillis(snapshot.instant), price: logPrice(snapshot.price) },
+      ...streams,
+    });
+    fork.restore(snapshot);
+    return {
+      price: snapshot.price,
+      instant: epochMillis(snapshot.instant),
+      next: () => fork.next(),
+    };
   }
 
   /** A Lab-only randomness stream: never a market one. */
@@ -431,6 +556,9 @@ export class VenueService implements OnModuleDestroy {
       });
     }
     const { market, outcome } = await resumeMarket({
+      ...(this.signSource === null ? {} : { signSource: this.signSource }),
+      ...(this.arrivalSource === null ? {} : { arrivalSource: this.arrivalSource }),
+      retractable: this.signSource !== null || this.arrivalSource !== null,
       asset,
       keyring: this.keyring,
       environment: 'production',
@@ -566,7 +694,18 @@ export class VenueService implements OnModuleDestroy {
     return Math.max(1, Math.min(wait, 1_000));
   }
 
-  private schedule(): void {
+  /**
+   * Run the next pass now (PH-24.13). A push retracts the pending tick and arms
+   * a burst whose first instant is already in the past; the pass that publishes
+   * it should not wait for a timer set before the push existed.
+   */
+  wake(): void {
+    if (this.stopping || this.venue === null) return;
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.schedule(0);
+  }
+
+  private schedule(waitMs: number = this.nextWaitMs()): void {
     if (this.stopping || this.venue === null) return;
     this.timer = setTimeout(() => {
       // Kept so `stop()` can wait for it rather than checkpointing on top of
@@ -579,6 +718,6 @@ export class VenueService implements OnModuleDestroy {
           this.schedule();
         });
       void this.inFlight;
-    }, this.nextWaitMs());
+    }, waitMs);
   }
 }

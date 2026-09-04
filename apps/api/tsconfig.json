@@ -26,6 +26,9 @@
     },
     {
       "path": "../../packages/lab"
+    },
+    {
+      "path": "../../packages/trading"
     }
   ]
 }

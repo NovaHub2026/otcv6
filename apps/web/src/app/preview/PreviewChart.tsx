@@ -9,9 +9,12 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts';
 import { useEffect, useRef, useState, type ReactElement } from 'react';
-import type { Tick } from '@otc/core/browser';
+import { es } from '../../lib/es.js';
+import { Info, T } from '../ui/kit.js';
+import { bucketEnd, epochMillis, timeframe, type Tick } from '@otc/core/browser';
 import { fetchHistory, type CatalogueEntry } from '../../lib/api.js';
 import { priceFormatFor, toDisplayedPrice } from '../../lib/priceFormat.js';
+import { formatCountdown } from '../../lib/countdown.js';
 import {
   bucketStart,
   displayPrice,
@@ -88,17 +91,34 @@ export function PreviewChart({
   apiBase,
   asset,
   timeframeId,
+  onPick,
+  mark = null,
 }: {
   apiBase: string;
   asset: CatalogueEntry;
   timeframeId: PanelTimeframeId;
+  /** PH-24.21: a click anywhere on the chart names the price at that height. */
+  onPick?: ((price: number) => void) | undefined;
+  /** PH-24.21: a price to mark with a line — the close the Lab is being asked for. */
+  mark?: { readonly price: number; readonly title: string } | null | undefined;
 }): ReactElement {
   const container = useRef<HTMLDivElement | null>(null);
   const chart = useRef<IChartApi | null>(null);
   const series = useRef<ISeriesApi<'Candlestick'> | null>(null);
-  const [status, setStatus] = useState<string>('loading');
+  // The latest handler, read at click time: the chart is built once per asset.
+  const pick = useRef(onPick);
+  pick.current = onPick;
+  const markLine = useRef<IPriceLine | null>(null);
+  const [status, setStatus] = useState<string>(es.preview.status.loading);
   const [bars, setBars] = useState<number>(0);
   const [last, setLast] = useState<{ price: number; at: number } | null>(null);
+  /**
+   * PH-24.22: the market's clock, as the last tick told it and the time since.
+   * The countdown is anchored here, not on the browser's clock: it says what the
+   * engine's clock says, and only the interval since the tick arrived is local.
+   */
+  const [clock, setClock] = useState<{ instant: number; receivedAt: number } | null>(null);
+  const [remainingMs, setRemainingMs] = useState<number | null>(null);
   /**
    * The bucket the chart is currently drawing live, if any.
    *
@@ -147,16 +167,66 @@ export function PreviewChart({
       lastValueVisible: false,
       priceLineVisible: false,
     });
+    // PH-24.21: the price under the pointer, from the series' own scale, so a
+    // click on a wick, a gap or the empty right margin all name a price.
+    created.subscribeClick((param) => {
+      const target = series.current;
+      if (param.point === undefined || target === null) return;
+      const price = target.coordinateToPrice(param.point.y);
+      if (price !== null && Number.isFinite(price)) pick.current?.(price);
+    });
     return () => {
       created.remove();
       chart.current = null;
       series.current = null;
+      markLine.current = null;
     };
     // Keyed on the asset, not on its display precision. Four of the five assets
     // in the catalogue share a precision, so keying on that kept the chart
     // across a switch — carrying the previous asset's price format and data
     // until the next fetch returned.
   }, [asset.id, asset.displayPrecision]);
+
+  // PH-24.21: the mark — one line, moved rather than re-created, removed when
+  // the price is cleared. Keyed on the asset too: a new chart has no lines.
+  useEffect(() => {
+    const target = series.current;
+    if (target === null) return;
+    if (mark === null) {
+      if (markLine.current !== null) target.removePriceLine(markLine.current);
+      markLine.current = null;
+      return;
+    }
+    const options = {
+      price: mark.price,
+      color: '#58a6ff',
+      lineWidth: 1 as const,
+      lineStyle: 0 as const,
+      axisLabelVisible: true,
+      title: mark.title,
+    };
+    if (markLine.current === null) markLine.current = target.createPriceLine(options);
+    else markLine.current.applyOptions(options);
+  }, [mark, asset.id]);
+
+  // PH-24.22: how long the bucket now forming has left, on the chart's
+  // timeframe — the kernel's own bucket end on the kernel's own timeframe, the
+  // alignment every candle and every close uses. Four times a second; at once
+  // when the timeframe changes.
+  useEffect(() => {
+    if (clock === null) {
+      setRemainingMs(null);
+      return;
+    }
+    const tf = timeframe(timeframeId);
+    const compute = (): void => {
+      const now = clock.instant + (performance.now() - clock.receivedAt);
+      setRemainingMs(Math.max(0, bucketEnd(epochMillis(Math.floor(now)), tf) - now));
+    };
+    compute();
+    const handle = setInterval(compute, 250);
+    return () => clearInterval(handle);
+  }, [clock, timeframeId]);
 
   useEffect(() => {
     const target = series.current;
@@ -200,9 +270,9 @@ export function PreviewChart({
 
     const liveStatus = (): string => {
       if (!connection.joinExact) {
-        return 'live — the forming candle is the record, re-read each minute';
+        return `${es.preview.status.live} — la vela en curso es el registro, releído cada minuto`;
       }
-      return afterGap ? 'live — reconnected after a gap' : 'live';
+      return afterGap ? es.preview.status.liveAfterGap : es.preview.status.live;
     };
 
     const armStall = (): void => {
@@ -222,7 +292,7 @@ export function PreviewChart({
       failures += 1;
       afterGap = true;
       const inMs = Math.min(RECONNECT_BACKOFF_MS * 2 ** (failures - 1), MAX_RECONNECT_BACKOFF_MS);
-      setStatus(`${why} — reconnecting in ${(inMs / 1000).toFixed(0)}s (attempt ${failures})`);
+      setStatus(`${why} — reconectando en ${(inMs / 1000).toFixed(0)} s (intento ${failures})`);
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null;
         void run().catch((error: unknown) => {
@@ -237,7 +307,7 @@ export function PreviewChart({
       const self = { joinExact: true };
       connection = self;
       stopReseeding();
-      setStatus(afterGap ? 'reloading history after a gap' : 'loading history');
+      setStatus(afterGap ? es.preview.status.reloadingHistory : es.preview.status.loadingHistory);
       const to = Date.now();
       const from = to - frame.defaultSpanMs;
       const history = await fetchHistory(
@@ -353,7 +423,7 @@ export function PreviewChart({
       applySeed();
 
       if (!asset.live) {
-        setStatus('history only — this market is not hosted');
+        setStatus(`solo historial — ${es.preview.status.notHosted}`);
         return;
       }
 
@@ -432,6 +502,7 @@ export function PreviewChart({
         // movement no contract can settle against.
         const price = toDisplayedPrice(displayPrice(tick.price, asset), asset.displayPrecision);
         setLast({ price, at: tick.instant });
+        setClock({ instant: tick.instant, receivedAt: performance.now() });
         setStatus(liveStatus());
         armStall();
 
@@ -444,7 +515,7 @@ export function PreviewChart({
             lineWidth: 1,
             lineStyle: 2,
             axisLabelVisible: true,
-            title: 'live',
+            title: es.preview.status.live,
           });
         } else {
           priceLine.applyOptions({ price });
@@ -473,9 +544,11 @@ export function PreviewChart({
       };
     };
 
+    // PH-24.14: a first load that fails is retried like an interrupted stream —
+    // a chart opened during an outage draws itself when the engine answers again.
     void run().catch((error: unknown) => {
       if (controller.signal.aborted) return;
-      setStatus((error as Error).message);
+      retryLater((error as Error).message);
     });
 
     return () => {
@@ -507,6 +580,33 @@ export function PreviewChart({
       */}
       <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
         <div data-testid="chart" ref={container} style={{ position: 'absolute', inset: 0 }} />
+        {remainingMs !== null && (
+          <span
+            data-testid="chart-countdown"
+            title={es.preview.countdownInfo}
+            style={{
+              // Over the candles, clear of the price axis, and never in the way of a
+              // click meant for the chart (PH-24.21: a click names a price).
+              position: 'absolute',
+              top: 8,
+              right: 76,
+              // Above the library's canvases, which carry their own z-index: without
+              // this the countdown was in the DOM, read by the flow, and painted under
+              // the candles — invisible. Seen on the first screenshot.
+              zIndex: 5,
+              padding: '2px 8px',
+              borderRadius: 3,
+              background: 'rgba(11, 14, 20, 0.85)',
+              border: `1px solid ${T.line}`,
+              color: remainingMs < 10_000 ? T.warn : T.text,
+              fontSize: 12,
+              fontVariantNumeric: 'tabular-nums',
+              pointerEvents: 'none',
+            }}
+          >
+            {`${es.preview.closesIn} ${formatCountdown(remainingMs, timeframe(timeframeId).durationMs >= 3_600_000)}`}
+          </span>
+        )}
       </div>
       <div
         style={{
@@ -521,7 +621,7 @@ export function PreviewChart({
       >
         <span
           data-testid="stream-status"
-          style={{ color: status.startsWith('live') ? '#3fb950' : '#8b93a7' }}
+          style={{ color: status.startsWith(es.preview.status.live) ? T.ok : T.muted }}
         >
           {status}
         </span>
@@ -540,13 +640,35 @@ export function PreviewChart({
             </span>
           </span>
         )}
-        <span data-testid="bar-count">{bars.toLocaleString()} bars</span>
-        <span data-testid="forming-bucket" style={{ color: '#5b6377' }}>
-          {forming === null ? 'no live bar' : `live bar ${String(forming.time)}`}
+        <span data-testid="bar-count">{es.preview.bars(bars.toLocaleString())}</span>
+        {/*
+          Two renderings of the forming bar. The operator reads the time of day;
+          the browser suite reads the bucket's epoch second through `forming-bucket`,
+          a test seam that stays in the DOM but out of sight — an epoch on the
+          status strip read as debug output (PH-24.6).
+        */}
+        <span style={{ color: T.faint }}>
+          {forming === null
+            ? es.preview.noLiveBar
+            : `${es.preview.liveBar} · ${new Date(forming.time * 1000).toISOString().slice(11, 16)} UTC`}
         </span>
-        <span>quantum {asset.logQuantum.toExponential(3)}</span>
-        <span>tie rate {(100 * asset.tieRate).toFixed(2)}%</span>
-        <span>quarterly spread {(100 * asset.dispersion.quarterlyPercent).toFixed(1)}%</span>
+        <span
+          data-testid="forming-bucket"
+          style={{
+            position: 'absolute',
+            width: 1,
+            height: 1,
+            overflow: 'hidden',
+            clip: 'rect(0 0 0 0)',
+          }}
+        >
+          {forming === null
+            ? es.preview.noLiveBar
+            : `${es.preview.liveBar} ${String(forming.time)}`}
+        </span>
+        <Info
+          text={`cuanto ${asset.logQuantum.toExponential(3)} · tasa de empate ${(100 * asset.tieRate).toFixed(2)} % · dispersión trimestral ${(100 * asset.dispersion.quarterlyPercent).toFixed(1)} %`}
+        />
       </div>
     </div>
   );

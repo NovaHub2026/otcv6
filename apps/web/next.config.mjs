@@ -12,6 +12,15 @@
  */
 const config = {
   reactStrictMode: true,
+  /**
+   * Where the build goes (PH-24.14). The browser suites build the panel from
+   * source on every run and then start it — into `.next` until 2026-09-03,
+   * which is also what the operator's local panel serves. Every gate therefore
+   * rewrote the served build under a running server, and the Human Owner's tab
+   * broke with "a client-side exception" each time. The suites now build into
+   * `.next-stat`; the operator's `.next` is never touched by a test.
+   */
+  distDir: process.env.OTC_NEXT_DIST_DIR ?? '.next',
   transpilePackages: ['@otc/chart', '@otc/core'],
   /*
    * The engine is served under the panel's own origin at `/engine`, by the route

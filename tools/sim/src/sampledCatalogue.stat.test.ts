@@ -76,9 +76,19 @@ function verificationSpanFor(cascadeSpanMs: number): {
 }
 
 const MIRROR_TICKS = 120_000;
-const WINDOW_TICKS = 2_000;
+/**
+ * A signature window is a span of time, not a tick count (PH-24.17). The
+ * original 2,000 ticks were ~46 minutes of the median catalogue asset; at a
+ * finer grain the same count is a quarter of that, and a signature over
+ * eleven minutes of a market whose volatility memory turns over in hours
+ * reads the level it happened to hold, not the personality. Each asset gets
+ * the ticks its own mean interval puts in the window.
+ */
+const WINDOW_MS = 2_000 * 1_380;
 const WINDOWS = 40;
-const SIGNATURE_TICKS = WINDOW_TICKS * WINDOWS + 10;
+function windowTicksFor(asset: RegisteredAsset): number {
+  return Math.max(500, Math.round(WINDOW_MS / asset.evidence.meanIntervalMs));
+}
 
 const referencePriceFor: Record<string, number> = {
   'major-fx': 1.1,
@@ -174,13 +184,15 @@ async function signaturesFor(
   // in flight. Vitest's sixty-second reply timer then fired before the reply
   // was read: `Timeout calling "onTaskUpdate"`, every test passing, `main` red
   // on four consecutive pushes and green locally on 8% of headroom.
+  const windowTicks = windowTicksFor(asset);
+  const signatureTicks = windowTicks * WINDOWS + 10;
   const dataset = await buildObserverDataset({
-    source: engineFor(asset, SIGNATURE_TICKS, seed),
-    maxTicks: SIGNATURE_TICKS,
+    source: engineFor(asset, signatureTicks, seed),
+    maxTicks: signatureTicks,
     chunkTicks: 10_000,
   });
   return Array.from({ length: WINDOWS }, (_, w) =>
-    assetSignature(dataset, w * WINDOW_TICKS, WINDOW_TICKS),
+    assetSignature(dataset, w * windowTicks, windowTicks),
   );
 }
 

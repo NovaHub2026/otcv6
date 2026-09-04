@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MasterKeyring } from '@otc/core';
-import { selectClose } from './closeSelection.js';
+import { selectClose, selectCloseWhere } from './closeSelection.js';
 
 /**
  * The Lab's exact close, and the properties that make it honest.
@@ -127,5 +127,67 @@ describe('an exact close is selected, never steered', () => {
   it('closes on the price it is already at when no ticks remain', () => {
     expect(selectClose({ steps: [], delta: 0, random: stream('draws10') }).signs).toEqual([]);
     expect(selectClose({ steps: [], delta: 3, random: stream('draws11') }).signs).toBeNull();
+  });
+});
+
+describe('a close on a side of a level is selected, never steered (PH-24.21)', () => {
+  it('closes above the mark by a natural path, not on the nearest level above it', () => {
+    const remaining = steps(40, 'c');
+    // The mark: a distance a random assignment reaches, so "above" is attainable.
+    const source = stream('probe-c');
+    const mark = remaining.reduce((sum, step) => sum + (source.nextBoolean() ? step : -step), 0);
+    const closes: number[] = [];
+    for (let i = 0; i < 12; i += 1) {
+      const selected = selectCloseWhere({
+        steps: remaining,
+        satisfies: (delta) => delta > mark,
+        random: stream(`draws-${String(i)}`),
+      });
+      expect(selected.signs, `unreachable: ${selected.impossible ?? ''}`).not.toBeNull();
+      expect(selected.signs).toHaveLength(remaining.length);
+      const closed = remaining.reduce((sum, step, j) => sum + selected.signs![j]! * step, 0);
+      expect(closed, 'the selected path did not close above the mark').toBeGreaterThan(mark);
+      closes.push(closed);
+    }
+    // Twelve draws, not twelve copies of the smallest satisfying close: the
+    // endpoint is drawn from the satisfying closes, and their spread shows it.
+    expect(new Set(closes).size).toBeGreaterThan(3);
+  });
+
+  it('closes below the mark when asked the other side', () => {
+    const remaining = steps(30, 'd');
+    const selected = selectCloseWhere({
+      steps: remaining,
+      satisfies: (delta) => delta < 0,
+      random: stream('draws-below'),
+    });
+    expect(selected.signs).not.toBeNull();
+    const closed = remaining.reduce((sum, step, j) => sum + selected.signs![j]! * step, 0);
+    expect(closed).toBeLessThan(0);
+    // The first satisfying draw is taken: a coin-flip condition is met almost at once.
+    expect(selected.attempts).toBeLessThan(8);
+    expect(selected.reachability).toBe('easy');
+  });
+
+  it('refuses a side no attainable close is on, by name and without sampling', () => {
+    const remaining = steps(20, 'e');
+    const total = remaining.reduce((sum, step) => sum + step, 0);
+    const selected = selectCloseWhere({
+      steps: remaining,
+      satisfies: (delta) => delta > total,
+      random: stream('draws-none'),
+    });
+    expect(selected.signs).toBeNull();
+    expect(selected.attempts).toBe(0);
+    expect(selected.impossible).toMatch(/no close within that range satisfies/);
+  });
+
+  it('with no ticks left, satisfies only if the price already does', () => {
+    expect(
+      selectCloseWhere({ steps: [], satisfies: (d) => d >= 0, random: stream('x') }),
+    ).toMatchObject({ signs: [], attempts: 0, acceptanceRate: 1 });
+    expect(
+      selectCloseWhere({ steps: [], satisfies: (d) => d > 0, random: stream('x') }).signs,
+    ).toBeNull();
   });
 });

@@ -559,6 +559,43 @@ larger.
 | ----- | ----------------------------------------- | ------------ |
 | PH-22 | Distribution under thousands of observers | **APPROVED** |
 | PH-23 | The OTC Market Lab                        | **APPROVED** |
+| PH-24 | The Lab's controls: applying a selection  | **APPROVED** |
+
+### PH-24 — The Lab's controls: applying a selection
+
+Opened 2026-09-03 from
+[LAB-SPECIFICATION-AUDIT-001](../audits/LAB-SPECIFICATION-AUDIT-001.md): a Lab
+with a correct mechanism and no controls. Nothing is ever applied to a hosted
+market (LA-03). The phase adds a sign source that plays a chosen vector in
+lockstep with the keystream, composed only in the Lab, and builds every control
+on it — the boundary first, guarded before anything stands on it.
+
+| Subphase | Title                                                                                                                                                                  | State    |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| PH-24.1  | The selectable sign source and its hook                                                                                                                                | APPROVED |
+| PH-24.2  | Candle Close Control on a real candle, apply, release, session record                                                                                                  | APPROVED |
+| PH-24.3  | Presets and simulated positions, settled against the Lab's record                                                                                                      | APPROVED |
+| PH-24.4  | Scenarios, the ones sign selection cannot express, and the screen                                                                                                      | APPROVED |
+| PH-24.5  | The diagnostics the audit found missing                                                                                                                                | APPROVED |
+| PH-24.6  | Rediseño UX del panel y del Lab — en español, con tooltips                                                                                                             | APPROVED |
+| PH-24.7  | Los controles que faltan en pantalla: shock, expiración, Target Price                                                                                                  | APPROVED |
+| PH-24.8  | Sesión persistente y los diagnósticos que faltan                                                                                                                       | APPROVED |
+| PH-24.9  | Varios activos a la vez: tablero, insignias, liberar todo                                                                                                              | APPROVED |
+| PH-24.10 | Empujar y cerrar: pushes naturales de N ticks por botón, la pantalla alrededor de los dos controles                                                                    | APPROVED |
+| PH-24.11 | El empuje siempre responde: la capa de red no lanza, el empuje libera lo armado, Objetivo de precio a Escenarios                                                       | APPROVED |
+| PH-24.12 | Un solo motor: el Lab es el motor en modo simulación; el panel lo declara; el gráfico dentro del Lab                                                                   | APPROVED |
+| PH-24.13 | Empujar al instante: el tick pendiente se retira, los N ticks llegan en ráfaga con las llegadas más rápidas del motor                                                  | APPROVED |
+| PH-24.14 | El panel se recupera solo: el gráfico reintenta su primera carga; el aviso del Lab dice lo que pasó                                                                    | APPROVED |
+| PH-24.15 | El ritmo del empuje: normal, medio, rápido — el paso de la ráfaga como parámetro del empuje                                                                            | APPROVED |
+| PH-24.16 | Empujar progresivo y la dirección sostenida: el primer tick anclado en ahora; sube/baja como sesgo de rachas                                                           | APPROVED |
+| PH-24.17 | Granularidad del tick: más ticks por vela con pasos menores a igual dispersión; medida en el Lab; gate completo                                                        | APPROVED |
+| PH-24.18 | Las distancias del Lab en unidades de vela: una unidad por mercado; empujes, cierres, escenarios en ella; sesgo y ritmos en tiempo de mercado                          | APPROVED |
+| PH-24.19 | El panel de control del Lab: gráfico a 3/4, cuatro tarjetas de control a 1/4, solo el activo elegido; el instrumento pasa a /lab/avanzado                              | APPROVED |
+| PH-24.20 | El panel, segunda forma: dos tarjetas y solo controles — ritmo, filas verde y roja con sube / baja; vela actual / próxima, precio con = ▲ ▼, fijar / ×                 | APPROVED |
+| PH-24.21 | Subiendo / bajando en la tarjeta; los empujes contrarios se restan; la tasa marcada con un clic en el gráfico; la condición de cierre = ▲ ▼ con selección condicionada | APPROVED |
+| PH-24.22 | El cronómetro de la vela: cuánto falta para que cierre la vela en curso, en el marco del gráfico                                                                       | APPROVED |
+| PH-24.23 | El recorrido: hasta cinco puntos que el precio va a buscar en orden, con la textura de sube / baja al ritmo elegido; marcados en el gráfico; Buscar y ×                | REVERTED |
+| PH-24.24 | El recorrido retirado y el sesgo con límite: dos minutos como máximo, en el reloj del mercado, visible en el botón y registrado al expirar                             | APPROVED |
 
 ### PH-23 — The OTC Market Lab
 

@@ -15,23 +15,32 @@ Last synchronized: 2026-09-03
 | Field                            | Value                                                                                                                  |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | Active development cycle         | Cycle 8                                                                                                                |
-| Approved phases in current cycle | **2 of 3** — PH-22, PH-23                                                                                              |
-| Cycle Audit state                | **007 closed** — 34 of 35 findings closed in the audit itself, one carried (Issue #22)                                 |
+| Approved phases in current cycle | **3 of 3** — PH-22, PH-23, PH-24                                                                                       |
+| Cycle Audit state                | **007 closed**; **008 due now** — Cycle 8's third phase is approved, so §28 runs the audit immediately                 |
 | Last Cycle Audit                 | [Cycle Audit 007](docs/audits/CYCLE-AUDIT-007.md) — recorded 2026-09-03, eight independent auditors, one worktree each |
 
 ## Phase and subphase
 
-| Field                  | Value                                        |
-| ---------------------- | -------------------------------------------- |
-| Active phase           | none                                         |
-| Phase lifecycle        | none                                         |
-| Active subphase        | none                                         |
-| Subphase lifecycle     | none                                         |
-| Last approved phase    | PH-23 — The OTC Market Lab                   |
-| Last approved subphase | PH-23.6 — What the specification audit found |
+| Field                  | Value                                                 |
+| ---------------------- | ----------------------------------------------------- |
+| Active phase           | none — Cycle Audit 8                                  |
+| Phase lifecycle        | none                                                  |
+| Active subphase        | none                                                  |
+| Subphase lifecycle     | none                                                  |
+| Last approved phase    | PH-24 — The Lab's controls: applying a selection      |
+| Last approved subphase | PH-24.24 — El recorrido retirado, el sesgo con límite |
 
-Nothing is active. Cycle 8 stands at two approved phases of three; a third
-opens the next Cycle Audit.
+**PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
+now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
+approved and then reverted at the Human Owner's request. The Lab's mechanism
+became controls an operator can hold: a close on a real candle, exact or on a
+side of a mark; presets, positions and sixteen scenarios; a push in the
+market's own distance unit at a chosen pace; a sustained direction that ends by
+itself after two minutes; a control panel with the chart at three quarters and
+the instrument behind a link. The engine was recalibrated inside the phase
+(PH-24.17): three to four times as many ticks per candle at the same
+dispersion. On 2026-09-04 the Human Owner lifted the pause on the merge, hosted
+CI and this audit (`DECISION-LOG.md`).
 
 PH-23.5 closed the first item PH-23 §10 left open — the Lab now has a screen in
 the panel, behind a menu entry marked `SIM`. Building it found three defects

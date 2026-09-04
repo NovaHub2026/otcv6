@@ -3,51 +3,30 @@
 import { usePathname } from 'next/navigation';
 import { useEffect, useState, type ReactElement } from 'react';
 import { fetchHealth, type HealthView } from '../lib/api.js';
+import { es } from '../lib/es.js';
+import { Info, T } from './ui/kit.js';
 
 const ENTRIES = [
-  { href: '/preview', label: 'Preview' },
-  { href: '/assets/new', label: 'Create asset' },
-  { href: '/assets/manage', label: 'Assets' },
+  { href: '/preview', label: es.shell.nav.preview },
+  { href: '/assets/new', label: es.shell.nav.create },
+  { href: '/assets/manage', label: es.shell.nav.manage },
   /**
    * The Lab, marked in the menu as well as on its own screen.
    *
    * §3 of the specification requires `OTC LAB` and `SIMULATION ENVIRONMENT` to
    * be permanently displayed, and the menu is where an operator decides to go
-   * there. A row that looked like the others would be the first place the
-   * distinction is lost.
-   *
-   * The entry is always present, even with no Lab running. The screen then says
-   * so and says how to start one, which is the honest state: the Lab is a
-   * separate process by design (ADR-0015 §3), and a menu that hid the entry
-   * until one existed would make the boundary look like a bug.
+   * there. The entry is always present, even with no Lab running: the Lab is a
+   * separate process by design (ADR-0015 §3), and the screen says so.
    */
-  { href: '/lab', label: 'Lab', lab: true },
+  { href: '/lab', label: es.shell.nav.lab, lab: true },
 ] as const;
 
-/**
- * How often the shell asks the engine whether it is publishing (a6-18).
- *
- * A few seconds: the catch-up bound is fifteen, so a stall is visible here
- * within a third of the time it took to become one, and a hundred-asset
- * catalogue answering `/health` every five seconds is a few kilobytes.
- */
+/** How often the shell asks the engine whether it is publishing (a6-18). */
 export const HEALTH_POLL_MS = 5_000;
 
 /**
- * The panel's submenus, and the engine's own account of itself.
- *
- * A client component because the active entry depends on the path and the
- * health line depends on a poll. It is separate from the layout so that the
- * layout can stay a server component and the list of submenus can stay one
- * array.
- *
- * ## Why the shell polls `/health` (a6-18)
- *
- * A stalled market keeps its stream open and publishes nothing. From a chart
- * that is indistinguishable from a quiet market, so the preview said `live`
- * over a price frozen for minutes. The venue knows the difference — it records
- * every market that failed its last advance, and why — and the panel had never
- * asked. Now the answer is on every screen, with the reason.
+ * The panel's menu and the engine's own account of itself (a6-18), in Spanish
+ * since PH-24.6: the health as a dot and a short line, the explanation behind ⓘ.
  */
 export function Nav({ apiBase }: { apiBase: string }): ReactElement {
   const pathname = usePathname();
@@ -80,15 +59,19 @@ export function Nav({ apiBase }: { apiBase: string }): ReactElement {
       style={{
         width: 180,
         flexShrink: 0,
-        borderRight: '1px solid #242c3d',
+        borderRight: `1px solid ${T.line}`,
         padding: '14px 0',
         display: 'flex',
         flexDirection: 'column',
+        background: T.panel,
       }}
     >
-      <div style={{ padding: '0 14px 14px', color: '#5b6377', fontSize: 11 }}>OTC ENGINE</div>
+      <div style={{ padding: '0 14px 14px', color: T.faint, fontSize: 11, letterSpacing: 1 }}>
+        {es.shell.brand}
+      </div>
       {ENTRIES.map((entry) => {
         const active = pathname === entry.href || pathname.startsWith(`${entry.href}/`);
+        const isLab = 'lab' in entry;
         return (
           <a
             key={entry.href}
@@ -98,22 +81,21 @@ export function Nav({ apiBase }: { apiBase: string }): ReactElement {
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              padding: '8px 14px',
-              color: active ? '#d7dce5' : '#8b93a7',
+              padding: '9px 14px',
+              color: active ? T.text : T.muted,
               textDecoration: 'none',
-              borderLeft: `3px solid ${
-                active ? ('lab' in entry ? '#f85149' : '#3fb950') : 'transparent'
-              }`,
-              background: active ? '#161b26' : 'transparent',
+              borderLeft: `3px solid ${active ? (isLab ? T.lab : T.ok) : 'transparent'}`,
+              background: active ? T.raised : 'transparent',
+              fontSize: 13,
             }}
           >
             <span>{entry.label}</span>
-            {'lab' in entry && (
+            {isLab && (
               <span
                 data-testid="nav-lab-marker"
-                style={{ color: '#f85149', fontSize: 9, letterSpacing: 0.5 }}
+                style={{ color: T.lab, fontSize: 9, letterSpacing: 0.5 }}
               >
-                SIM
+                {es.shell.labMark}
               </span>
             )}
           </a>
@@ -132,33 +114,57 @@ function HealthLine({
   health: HealthView | null;
   unreachable: string | null;
 }): ReactElement {
-  let colour = '#8b93a7';
-  let headline = 'engine …';
+  let colour: string = T.muted;
+  let headline: string = es.shell.engine.loading;
   let detail: string[] = [];
   if (unreachable !== null) {
-    colour = '#f85149';
-    headline = 'engine unreachable';
+    colour = T.bad;
+    headline = es.shell.engine.unreachable;
     detail = [unreachable];
   } else if (health !== null && health.status === 'ok') {
-    colour = '#3fb950';
-    headline = `engine ok · ${health.assets} hosted`;
+    colour = T.ok;
+    headline = es.shell.engine.ok(health.assets);
   } else if (health !== null) {
-    colour = '#f85149';
-    headline = `engine degraded · ${health.stalled.length} of ${health.assets} stalled`;
-    // The venue's own words, per market: an operator learns from the service
-    // rather than from a chart that stopped moving (CA6-33).
+    colour = T.bad;
+    headline = es.shell.engine.degraded(health.stalled.length, health.assets);
+    // The venue's own words, per market (CA6-33) — behind ⓘ, not on the menu.
     detail = health.stalled.map((entry) => `${entry.assetId}: ${entry.reason}`);
   }
   return (
-    <div style={{ padding: '14px 14px 0', fontSize: 11, lineHeight: 1.5 }}>
-      <div data-testid="health-status" style={{ color: colour }}>
+    <div
+      style={{
+        padding: '14px 14px 0',
+        fontSize: 11,
+        lineHeight: 1.5,
+        display: 'flex',
+        alignItems: 'center',
+      }}
+    >
+      <span
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+          background: colour,
+          marginRight: 8,
+          flexShrink: 0,
+        }}
+      />
+      <span data-testid="health-status" style={{ color: colour }}>
         {headline}
-      </div>
-      {detail.map((line) => (
-        <div key={line} style={{ color: '#8b93a7', marginTop: 4, wordBreak: 'break-word' }}>
-          {line}
-        </div>
-      ))}
+      </span>
+      <Info
+        text={
+          <>
+            <div>{es.shell.engine.info}</div>
+            {detail.map((line) => (
+              <div key={line} style={{ color: T.bad, marginTop: 4 }}>
+                {line}
+              </div>
+            ))}
+          </>
+        }
+      />
     </div>
   );
 }

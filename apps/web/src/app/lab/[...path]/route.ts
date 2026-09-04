@@ -36,7 +36,11 @@ const NOT_RUNNING = {
     'OTC_LAB_BASE=http://127.0.0.1:3100.',
 };
 
-async function forward(request: NextRequest, path: string[]): Promise<Response> {
+async function forward(
+  request: NextRequest,
+  path: string[],
+  method: 'GET' | 'POST',
+): Promise<Response> {
   const base = labBase();
   if (base === null) {
     return Response.json(NOT_RUNNING, { status: 503 });
@@ -44,7 +48,38 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   const url = new URL(`${base}/lab/${path.join('/')}`);
   url.search = request.nextUrl.search;
   try {
-    const upstream = await fetch(url, { method: 'GET', headers: { accept: 'application/json' } });
+    // POST for the Lab's acts — apply, release — carrying only the query: the
+    // routes take no body, and a proxy that forwarded one would be forwarding
+    // something nothing reads (PH-24.2).
+    //
+    // The acts are writes, and the Lab composes the application's global
+    // write guard: every non-read request needs `Authorization: Bearer
+    // <OTC_ADMIN_TOKEN>`. Added here, server-side, from this process's own
+    // token — the same arrangement as the engine proxy, and for the same
+    // reason: a browser never holds the credential. Nothing a browser sends
+    // under `authorization` is forwarded. Found by clicking Apply: the screen
+    // said "keystream (nothing armed)" and the Lab had answered 403.
+    const headers = new Headers({ accept: 'application/json' });
+    let body: string | undefined;
+    if (method !== 'GET') {
+      const token = process.env['OTC_ADMIN_TOKEN'];
+      if (token !== undefined && token.length > 0) headers.set('authorization', `Bearer ${token}`);
+      // The guard also takes writes as `application/json` only — a write a
+      // browser could send without a preflight would be a write any page
+      // could make — so the acts carry an empty JSON body under that type.
+      headers.set('content-type', 'application/json');
+      body = '{}';
+    }
+    const init = { method, headers, ...(body === undefined ? {} : { body }) };
+    // PH-24.19: a read is retried once on a transport error. The Lab process
+    // blocks for a few seconds while Calidad assesses millions of ticks, and a
+    // pooled keep-alive socket it closed meanwhile answers the next poll with a
+    // reset — one 502 on an otherwise healthy market. A write is never retried.
+    const upstream = await fetch(url, init).catch(async (error: unknown) => {
+      if (method !== 'GET') throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      return fetch(url, init);
+    });
     // The body is handed over unread, like the engine proxy: a Lab response can
     // be a long analysis and a buffered proxy would hold all of it.
     return new Response(upstream.body, {
@@ -67,5 +102,13 @@ export async function GET(
   context: { params: Promise<{ path: string[] }> },
 ): Promise<Response> {
   const { path } = await context.params;
-  return forward(request, path);
+  return forward(request, path, 'GET');
+}
+
+export async function POST(
+  request: NextRequest,
+  context: { params: Promise<{ path: string[] }> },
+): Promise<Response> {
+  const { path } = await context.params;
+  return forward(request, path, 'POST');
 }

@@ -35,7 +35,8 @@ import { bindAddressFromEnvironment, isExposedBind } from './bind.js';
  */
 async function bootstrap(): Promise<void> {
   const logger = new Logger('bootstrap');
-  const app = await NestFactory.create(AppModule, {
+  // Bare: production registers no sign source (PH-24.1, `composition.test.ts`).
+  const app = await NestFactory.create(AppModule.register(), {
     bufferLogs: false,
     forceCloseConnections: true,
   });

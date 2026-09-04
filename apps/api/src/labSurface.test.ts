@@ -80,10 +80,43 @@ describe('the production composition cannot reach the Lab', () => {
   it('every Lab response says what it is', () => {
     // §3 of the specification: a screenshot of the Lab must not be mistakable
     // for one of the market.
+    //
+    // Per route, not per `return {`: the first version counted returns against
+    // literal banners, and PH-24.2 broke it in both directions — a constant
+    // replaced the literal, and private helpers return objects that are not
+    // responses. Each routed method must carry the environment itself, or
+    // spread a helper that does (`plan`, `timelines`).
     const controller = read('lab/lab.controller.ts');
-    const returns = controller.split('return {').length - 1;
-    expect(returns).toBeGreaterThan(1);
-    expect(controller.match(/OTC LAB — SIMULATION ENVIRONMENT/g) ?? []).toHaveLength(returns);
+    const routes = controller.split(/^\s*@(?:Get|Post)\(/m).slice(1);
+    expect(routes.length).toBeGreaterThanOrEqual(9);
+    for (const route of routes) {
+      const body = route.split(/^\s*(?:@(?:Get|Post)\(|private |\/\*\*\s*$)/m)[0]!;
+      const name =
+        /^[^)]*\)\s*\n\s*(?:async )?([a-zA-Z]+)\(/.exec(route)?.[1] ?? route.slice(0, 40);
+      expect(
+        /environment: LAB|OTC LAB — SIMULATION ENVIRONMENT|\.\.\.this\.plan\(|this\.session\.timelines\(\)/.test(
+          body,
+        ),
+        `route ${name} answers without saying it is the Lab`,
+      ).toBe(true);
+    }
+    expect(controller).toMatch(/const LAB = 'OTC LAB — SIMULATION ENVIRONMENT'/);
+  });
+
+  it('never appends a tick to a feed from outside the engine (PH-24.5 §3)', () => {
+    // §37's synthetic tick is not built, and this is the mechanism that keeps
+    // it not built: the Lab reads feeds; it does not write them. The engine is
+    // the single writer (ADR-0012), and a tick from anywhere else collides with
+    // its sequence numbering.
+    const labDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'lab');
+    const sources = readdirSync(labDir).filter((n) => /\.ts$/.test(n) && !/\.test\.ts$/.test(n));
+    expect(sources.length).toBeGreaterThan(5);
+    for (const file of sources) {
+      const source = readFileSync(path.join(labDir, file), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/(^|[^:])\/\/.*$/gm, '$1');
+      expect(source, `lab/${file} writes to a feed`).not.toMatch(/\.publish\(|feed\.forget\(/);
+    }
   });
 
   it('never serves a predictability verdict without its sensitivity (§68, CA7-05)', () => {

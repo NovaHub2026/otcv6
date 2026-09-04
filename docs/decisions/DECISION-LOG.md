@@ -383,3 +383,166 @@ that had never contained the fix. Both reports were accurate; they were about a
 different build. The third instance of this project's most expensive mistake —
 testing the wrong thing and believing the answer — so the launcher now says what
 it ran (see PH-21.3 §5.1).
+
+## 2026-09-03 — §37's non-natural terminal tick is not built
+
+**Decided:** the Lab does not append a synthetic tick to reach a target outside
+the natural range. An unreachable close is refused with its reason and its
+reachable neighbours; the operator widens the window instead (PH-24.5 §3).
+
+**Alternative:** ADR-0015 §3 permitted exactly one shape — a synthetic terminal
+tick, only in the Lab, labelled, excluded from every measurement — "only where
+it can never enter a published record". Building PH-24.2–24.4 made the
+condition concrete: the Lab market's feed _is_ the Lab's published record (its
+chart, its positions, its `control` all read it). A tick appended to the feed
+collides with the engine's own sequence numbering (INV-002, in the Lab); a tick
+kept beside the feed settles a position at a price no chart showed (INV-003,
+L6–L7). Neither is a testing environment for a product whose claim is that
+chart, close and settlement are one price.
+
+**Revisit if:** the Lab ever gets a record of its own that no chart draws from
+and no settlement reads — at which point the tick would have somewhere to go,
+and would still need every fence ADR-0015 §3 names.
+
+## 2026-09-03 — PH-24 stays open until the Lab is complete; the cycle boundary waits
+
+**Decided:** PH-24 is not approved until everything the Lab is meant to do, and
+its tests, are finished. The Human Owner directed it in their own words —
+_"fusión, CI y Auditoría de Ciclo 8 solo se aplicará cuando … esté terminada;
+vamos a terminar absolutamente todo lo del lab y las pruebas"_ — and the form
+that honours it without amending Governance is to keep the phase **active** and
+add the remaining Lab work as its subphases (PH-24.6 the UX redesign, then the
+items the specification audit and the Lab inventory of 2026-09-03 list), rather
+than approve PH-24 and open PH-25.
+
+**Alternative:** approve PH-24 now and open new phases. `GOVERNANCE.md` §28
+makes the third approved phase of a cycle a hard boundary — development stops
+and Cycle Audit 8 runs — and PH-24 would be that third phase. Opening PH-25
+after it would have to postpone an audit the rules say does not wait, which is a
+Governance amendment only the Human Owner may make (§5.1) and which they did
+not ask for; they asked for the Lab to be finished first.
+
+**Consequence:** a longer phase with more subphases than any before it, each
+still gated and approved from evidence in its turn; the phase gate, the merge to
+`main`, hosted CI and Cycle Audit 8 all at the end. The full gate started on
+`15d25ec` for the phase closure was stopped as moot (unit 113 files / 2,445
+tests green, 6 of 43 statistical files run) and will be re-run on the final tree.
+
+**Revisit if:** the phase grows past what one audit can examine — then the
+Human Owner may prefer to approve a first half and let §28 run.
+
+## 2026-09-03 — The Lab is two controls; a push is N signs, never an added amount
+
+**Decided:** The Human Owner re-stated what the Lab is for — _"realmente yo
+solo necesito hacer varias cosas"_: push or pull the price by buttons (`+1 +3
++5 +10` and their negatives), repeatable, the market otherwise free; and make
+the current candle close at a chosen price — with the condition that pushes
+_"deben ser naturales … los movimientos que él hace después deben ser
+naturales"_. So a push of `+N` is the next `N` ticks taking the upward sign,
+magnitudes and intervals the engine's own, then the keystream (PH-24.10). The
+alternative first proposed — an offset added to every published tick — was
+withdrawn on that condition: an added amount is not a movement the engine made.
+
+**Alternative:** `+N` as a target displacement in price units reached naturally.
+Refused for now: at this engine's tick sizes a visible displacement takes
+minutes to hours of same-sign ticks, and a button that lands minutes later is
+not the control described. The natural unit of a natural push is the tick.
+
+**Consequence:** the Lab's screen is reorganised around the two controls; the
+replay/mirror groundwork (`2ff8559`) is parked as modules with no route or tab;
+large runs as jobs (§67) leave the Lab's scope. Nothing built for PH-24.1–24.9
+is removed — it moves one tab back.
+
+**Revisit if:** the Human Owner wants a push sized in price rather than ticks —
+then it is a selection with a target and a window, like an exact close with an
+open end, and can be built on `selectContinuation`.
+
+## 2026-09-03 — A push is instantaneous: the pending tick is retracted and the burst selects arrivals
+
+**Decided:** _"El empujar se torna demasiado lento; tiene que ser más dinámico
+e instantáneo."_ A push (PH-24.10) began after the drawn, unpublished tick
+published and then walked at the market's natural pace. PH-24.13 makes it
+begin at the instant of the click and finish in seconds: the hosted market,
+built retractable only in the Lab composition, retracts its unpublished tick
+(nothing observed it; the engine returns to the state before that draw and
+draws again from the same keystream positions); and the pushed ticks' arrival
+draws are selected — `SelectableArrival`, the sign wrapper's twin — at
+`u = e^(-1/12)`, one twelfth of the base tempo, the fastest pace the engine's own
+Hawkes law produces, closer still as the burst excites it. Magnitudes are never
+touched; duration coupling shrinks a fast tick as it always does.
+
+**Alternative:** publish the burst with rescaled instants, or add a displacement.
+Both refused: the first rewrites the engine's timing, the second the price.
+Neither is a movement the engine made.
+
+**Consequence:** the Lab selects two of the engine's five streams (signs,
+arrivals) instead of one; the production composition still selects none
+(`composition.test.ts`, extended). The specification's "manual volatility
+controls" stay out of scope: the burst is a property of a push, not a dial.
+
+**Revisit if:** the Human Owner wants the burst's pace as a control — then
+`BURST_DIVISOR` becomes a per-push parameter with the same fences.
+
+## 2026-09-03 — Engine calibration inside the Lab phase: tick granularity (PH-24.17)
+
+**Decided:** The Human Owner found the candles gappy — the open far from the
+previous close most of the time — and asked whether it was the regime or
+something to improve. Measured: it is tick granularity (few, large ticks; the
+gap is one step), not the regime and not the chart. They chose to fix the
+engine now, inside PH-24: _"el Lab todavía necesita trabajo pero es importante
+que el motor funcione bien; vamos con el motor en esta misma fase."_ PH-24.17
+is engine work under the Lab phase, and it takes the **full** gate, because
+family traits change.
+
+**Alternative:** close PH-24 first and open an engine phase. That runs Cycle
+Audit 8 first (§28), which the Human Owner has deferred until the Lab is
+complete; and the Lab is the instrument this work measures itself with.
+
+**Consequence:** PH-24 now carries one subphase whose scope is the engine's
+personalities. The Cycle Audit that follows PH-24 will examine it with the
+rest — a longer audit, as the earlier decision foresaw.
+
+**Revisit if:** the calibration turns out to need more than family ranges —
+then it is a phase of its own after the audit.
+
+## 2026-09-04 — A close on a side of a level is a conditioned selection, not a live rule
+
+**Context.** PH-24.21 adds ▲ / ▼ to the Lab's close: the candle must end above
+or below the mark, crossing it meanwhile allowed. The Human Owner proposed a
+live rule instead of a new selection — turn sube on when the price crosses the
+wrong way, off when it crosses back — to avoid "touching the engine".
+
+**Decision.** The close is honoured by an acceptance test in the selection that
+already exists (`selectCloseWhere`, rejection sampling: the first natural path
+whose close satisfies the condition), used only by the Lab; the market's own
+path is armed as is when it already satisfies.
+
+**Why.** Neither option touches the price core (INV-001; the selection lives in
+`@otc/engine` beside the exact one and is Lab-only by composition, ADR-0015).
+The rule alone cannot guarantee the final tick: sube / baja are tendencies (runs
+for and shorter runs against), so the last stretch would still need a scripted
+finish — the mechanism the rule meant to avoid — plus a live controller with a
+timer, state across ticks and automatic actions in the session. The conditioned
+selection is a few deterministic lines, tested in the existing harness, and its
+endpoint is drawn uniformly from the satisfying closes rather than glued to the
+mark (§28, §70). The rule's live-correction feel can be added on top later
+without undoing anything.
+
+## 2026-09-04 — The Lab is complete enough: merge, hosted CI and Cycle Audit 8 are released
+
+**Context.** On 2026-09-03 the Human Owner suspended the merge to `main`, hosted
+CI and Cycle Audit 8 until the Lab was finished, and every remaining item was
+added as a PH-24.x subphase. Fifteen subphases later (PH-24.10–24.24) they
+asked for the route to be reverted, for a two-minute cap on the sustained
+direction, and then — in the same message — for the merge, hosted CI and the
+audit to run, with every finding resolved afterwards.
+
+**Decision.** The pause is lifted. PH-24.24 closes PH-24; the phase is verified
+and gated in full, merged to `main`, hosted CI runs on that push, and Cycle
+Audit 8 follows immediately as §28 requires (PH-22, PH-23 and PH-24 are the
+cycle's three approved phases). Findings are fixed under §31.
+
+**Why.** The suspension was the Human Owner's and so is its end; it was stated
+in their own message alongside the work that closes the Lab. Nothing else about
+the loop changes: the audit is adversarial and independent (§28.1), and its
+findings are recorded whether or not they are convenient.

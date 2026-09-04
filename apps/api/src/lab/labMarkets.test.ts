@@ -4,6 +4,8 @@ import { ASSET_CATALOGUE } from '@otc/engine';
 import { MemoryStateStore } from '@otc/runtime';
 import { VenueService } from '../venue.service.js';
 import { LabController } from './lab.controller.js';
+import { SignSelector } from './selectableSigns.js';
+import { LabSession } from './session.js';
 import { BadRequestException } from '@nestjs/common';
 
 /**
@@ -42,7 +44,11 @@ interface MarketsBody {
 describe('the Lab lists the markets it hosts', () => {
   it('returns every hosted asset, named, and says where it is', async () => {
     const venue = await labVenue();
-    const body = new LabController(venue).markets() as MarketsBody;
+    const body = new LabController(
+      venue,
+      new SignSelector(),
+      new LabSession(),
+    ).markets() as MarketsBody;
     expect(body.environment).toBe('OTC LAB — SIMULATION ENVIRONMENT');
     expect(body.markets.map((m) => m.id)).toEqual(
       ASSET_CATALOGUE.slice(0, 3).map((a) => a.definition.id),
@@ -58,7 +64,11 @@ describe('the Lab lists the markets it hosts', () => {
     const venue = await labVenue();
     const retired = ASSET_CATALOGUE[1]!.definition.id;
     await venue.retire(retired);
-    const body = new LabController(venue).markets() as MarketsBody;
+    const body = new LabController(
+      venue,
+      new SignSelector(),
+      new LabSession(),
+    ).markets() as MarketsBody;
     expect(body.markets.map((m) => m.id)).not.toContain(retired);
     expect(body.markets, 'retiring one asset emptied the list').toHaveLength(2);
     await venue.stop();
@@ -92,7 +102,10 @@ describe('a bounded battery run says what it could not see', () => {
    */
   it('calls a sample too thin to test inconclusive, not clean', async () => {
     const venue = await labVenue();
-    const body = (await new LabController(venue).quality('eurusd', '40000')) as QualityBody;
+    const body = (await new LabController(venue, new SignSelector(), new LabSession()).quality(
+      'eurusd',
+      '40000',
+    )) as QualityBody;
     expect(body.predictability.hypothesesTested).toBeLessThan(100);
     expect(body.predictability.verdict, 'two hypotheses read as a clean verdict').toBe(
       'inconclusive',
@@ -102,7 +115,7 @@ describe('a bounded battery run says what it could not see', () => {
 
   it('refuses a sample size outside the stated bounds', async () => {
     const venue = await labVenue();
-    const controller = new LabController(venue);
+    const controller = new LabController(venue, new SignSelector(), new LabSession());
     await expect(controller.quality('eurusd', '10')).rejects.toBeInstanceOf(BadRequestException);
     await expect(controller.quality('eurusd', '9000000')).rejects.toBeInstanceOf(
       BadRequestException,

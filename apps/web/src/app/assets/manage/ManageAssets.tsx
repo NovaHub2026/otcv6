@@ -3,29 +3,16 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { fetchCatalogue, renameAsset, retireAsset, type CatalogueEntry } from '../../../lib/api.js';
 import { filterCatalogue } from '../../../lib/catalogueView.js';
+import { es } from '../../../lib/es.js';
+import { Badge, Button, FIELD, Info, Notice, T } from '../../ui/kit.js';
 
 /**
- * Editing and retiring, and a screen that says what it cannot do.
+ * Renombrar y retirar (PH-20.3, rediseñado en PH-24.6).
  *
- * ## Two controls, and a list of refusals
- *
- * A market's id derives its keystream (ADR-0002). Its quantum decides every
- * settlement (ADR-0004). Its reference price maps those integers to the numbers
- * a viewer read. Its personality *is* the market. Editing any of them would
- * rewrite what already happened — a chart of last month drawn against a lattice
- * that did not exist then — so none of them is on this screen, and the engine
- * refuses each **by name** if something else asks.
- *
- * What is left is a label and a decision to stop.
- *
- * ## Retirement is final
- *
- * A market resumed after a gap either invents the interval nobody generated,
- * which this runtime refuses outright, or takes a seam in a published record —
- * which an operator would be *choosing* to put into a market that had already
- * printed prices. So there is no un-retire, and the confirmation says so rather
- * than implying an undo that does not exist. Everything the market published
- * stays readable for ever.
+ * Un id deriva su keystream (ADR-0002), un cuanto decide cada liquidación
+ * (ADR-0004), un precio de referencia convierte los enteros, una personalidad
+ * *es* el mercado: nada de eso se edita, porque decidió lo que ya pasó. Queda
+ * un rótulo y la decisión de parar — y retirar no se deshace.
  */
 export function ManageAssets({ apiBase }: { apiBase: string }): ReactElement {
   const [catalogue, setCatalogue] = useState<CatalogueEntry[] | null>(null);
@@ -55,9 +42,7 @@ export function ManageAssets({ apiBase }: { apiBase: string }): ReactElement {
       await run();
       await reload();
     } catch (cause) {
-      // Verbatim. The engine's refusal names the field and the reason, and that
-      // is the only part of it worth reading.
-      setError((cause as Error).message);
+      setError((cause as Error).message); // verbatim: the engine names the field and the reason
     } finally {
       setBusy(null);
       setEditing(null);
@@ -65,204 +50,149 @@ export function ManageAssets({ apiBase }: { apiBase: string }): ReactElement {
     }
   };
 
-  if (error !== null && catalogue === null) return <Message text={error} />;
-  if (catalogue === null) return <Message text="Loading the catalogue…" />;
+  if (error !== null && catalogue === null)
+    return <div style={{ padding: 20, color: T.muted }}>{error}</div>;
+  if (catalogue === null)
+    return <div style={{ padding: 20, color: T.muted }}>{es.manage.loading}</div>;
+
+  const stateOf = (entry: CatalogueEntry): { label: string; tone: 'ok' | 'muted' | 'bad' } =>
+    entry.retired === true
+      ? { label: es.manage.state.retired, tone: 'bad' }
+      : entry.live
+        ? { label: es.manage.state.hosted, tone: 'ok' }
+        : { label: es.manage.state.idle, tone: 'muted' };
 
   return (
-    <div style={{ padding: 24, overflowY: 'auto', maxWidth: 900 }}>
-      <h1 style={{ fontSize: 16, fontWeight: 500, margin: '0 0 4px' }}>Assets</h1>
-      <p style={{ color: '#8b93a7', margin: '0 0 20px', lineHeight: 1.6 }}>
-        A display name can change. An id, a lattice, a reference price and a personality cannot:
-        they decided what already happened. Retiring stops a market and keeps everything it
-        published — it cannot be undone.
-      </p>
-
+    <div style={{ padding: 20, overflowY: 'auto', maxWidth: 900 }}>
+      <h1
+        style={{
+          fontSize: 16,
+          fontWeight: 500,
+          margin: '0 0 14px',
+          display: 'flex',
+          alignItems: 'center',
+        }}
+      >
+        {es.manage.title}
+        <Info text={es.manage.intro} />
+      </h1>
       {error !== null && (
-        <div
-          data-testid="manage-error"
-          style={{
-            border: '1px solid #f85149',
-            color: '#f85149',
-            padding: '10px 12px',
-            marginBottom: 16,
-            lineHeight: 1.5,
-          }}
-        >
+        <Notice tone="bad" testId="manage-error">
           {error}
-        </div>
+        </Notice>
       )}
-
-      {/*
-        The same filter as the preview sidebar, for the same reason: a table of
-        a hundred rows is a table nobody finds one row in.
-      */}
       <input
         data-testid="manage-filter"
         value={query}
-        onChange={(event) => {
-          setQuery(event.target.value);
-        }}
-        placeholder="filter by id, name or family"
-        style={{
-          width: '100%',
-          maxWidth: 320,
-          padding: '6px 8px',
-          marginBottom: 14,
-          background: '#0b0e14',
-          border: '1px solid #242c3d',
-          color: '#d7dce5',
-          font: 'inherit',
-          fontSize: 12,
-        }}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder={es.manage.filter}
+        style={{ ...FIELD, width: '100%', maxWidth: 320, marginBottom: 12 }}
       />
-
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
         <tbody>
-          {filterCatalogue(catalogue, query).map((entry) => (
-            <tr
-              key={entry.id}
-              data-testid={`row-${entry.id}`}
-              style={{ borderBottom: '1px solid #242c3d' }}
-            >
-              <td style={{ padding: '10px 8px 10px 0', width: '40%' }}>
-                {editing === entry.id ? (
-                  <input
-                    data-testid={`rename-input-${entry.id}`}
-                    value={draft}
-                    onChange={(event) => {
-                      setDraft(event.target.value);
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '5px 7px',
-                      background: '#0b0e14',
-                      border: '1px solid #3fb950',
-                      color: '#d7dce5',
-                      font: 'inherit',
-                    }}
-                  />
-                ) : (
-                  <span data-testid={`name-${entry.id}`}>{entry.displayName}</span>
-                )}
-                <div style={{ color: '#5b6377', fontSize: 11, marginTop: 3 }}>
-                  {entry.id} · {entry.family}
-                </div>
-              </td>
-              <td style={{ padding: '10px 8px', color: '#8b93a7', width: '25%' }}>
-                <span data-testid={`state-${entry.id}`}>
-                  {entry.retired === true ? 'retired' : entry.live ? 'hosted' : 'idle'}
-                </span>
-              </td>
-              <td style={{ padding: '10px 0', textAlign: 'right' }}>
-                {editing === entry.id ? (
-                  <>
-                    <Action
-                      testId={`rename-save-${entry.id}`}
-                      label="save"
-                      disabled={busy !== null}
-                      onClick={() => {
-                        void act(entry.id, () => renameAsset(apiBase, entry.id, draft));
-                      }}
+          {filterCatalogue(catalogue, query).map((entry) => {
+            const state = stateOf(entry);
+            return (
+              <tr
+                key={entry.id}
+                data-testid={`row-${entry.id}`}
+                style={{ borderBottom: `1px solid ${T.line}` }}
+              >
+                <td style={{ padding: '9px 8px 9px 0', width: '40%' }}>
+                  {editing === entry.id ? (
+                    <input
+                      data-testid={`rename-input-${entry.id}`}
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      style={{ ...FIELD, width: '100%', border: `1px solid ${T.ok}` }}
                     />
-                    <Action
-                      testId={`rename-cancel-${entry.id}`}
-                      label="cancel"
-                      disabled={false}
-                      onClick={() => {
-                        setEditing(null);
-                      }}
-                    />
-                  </>
-                ) : confirming === entry.id ? (
-                  <>
-                    <span style={{ color: '#f85149', marginRight: 10 }}>
-                      retire {entry.id} for good?
+                  ) : (
+                    <span data-testid={`name-${entry.id}`}>{entry.displayName}</span>
+                  )}
+                  <div style={{ color: T.faint, fontSize: 11, marginTop: 3 }}>
+                    {entry.id} · {entry.family}
+                  </div>
+                </td>
+                <td style={{ padding: '9px 8px', width: '20%' }}>
+                  <Badge tone={state.tone}>
+                    <span data-testid={`state-${entry.id}`}>{state.label}</span>
+                  </Badge>
+                </td>
+                <td style={{ padding: '9px 0', textAlign: 'right' }}>
+                  {editing === entry.id ? (
+                    <span style={{ display: 'inline-flex', gap: 6 }}>
+                      <Button
+                        small
+                        testId={`rename-save-${entry.id}`}
+                        disabled={busy !== null}
+                        onClick={() =>
+                          void act(entry.id, () => renameAsset(apiBase, entry.id, draft))
+                        }
+                      >
+                        {es.manage.save}
+                      </Button>
+                      <Button
+                        small
+                        kind="ghost"
+                        testId={`rename-cancel-${entry.id}`}
+                        onClick={() => setEditing(null)}
+                      >
+                        {es.manage.cancel}
+                      </Button>
                     </span>
-                    <Action
-                      testId={`retire-confirm-${entry.id}`}
-                      label="retire"
-                      danger
-                      disabled={busy !== null}
-                      onClick={() => {
-                        void act(entry.id, () => retireAsset(apiBase, entry.id));
-                      }}
-                    />
-                    <Action
-                      testId={`retire-cancel-${entry.id}`}
-                      label="cancel"
-                      disabled={false}
-                      onClick={() => {
-                        setConfirming(null);
-                      }}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <Action
-                      testId={`rename-${entry.id}`}
-                      label="rename"
-                      disabled={busy !== null}
-                      onClick={() => {
-                        setDraft(entry.displayName);
-                        setEditing(entry.id);
-                      }}
-                    />
-                    {entry.retired !== true && (
-                      <Action
-                        testId={`retire-${entry.id}`}
-                        label="retire"
+                  ) : confirming === entry.id ? (
+                    <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                      <span style={{ color: T.bad }}>{es.manage.confirm(entry.id)}</span>
+                      <Button
+                        small
+                        kind="danger"
+                        testId={`retire-confirm-${entry.id}`}
+                        disabled={busy !== null}
+                        onClick={() => void act(entry.id, () => retireAsset(apiBase, entry.id))}
+                      >
+                        {es.manage.retire}
+                      </Button>
+                      <Button
+                        small
+                        kind="ghost"
+                        testId={`retire-cancel-${entry.id}`}
+                        onClick={() => setConfirming(null)}
+                      >
+                        {es.manage.cancel}
+                      </Button>
+                    </span>
+                  ) : (
+                    <span style={{ display: 'inline-flex', gap: 6 }}>
+                      <Button
+                        small
+                        testId={`rename-${entry.id}`}
                         disabled={busy !== null}
                         onClick={() => {
-                          setConfirming(entry.id);
+                          setDraft(entry.displayName);
+                          setEditing(entry.id);
                         }}
-                      />
-                    )}
-                  </>
-                )}
-              </td>
-            </tr>
-          ))}
+                      >
+                        {es.manage.rename}
+                      </Button>
+                      {entry.retired !== true && (
+                        <Button
+                          small
+                          kind="ghost"
+                          testId={`retire-${entry.id}`}
+                          disabled={busy !== null}
+                          onClick={() => setConfirming(entry.id)}
+                        >
+                          {es.manage.retire}
+                        </Button>
+                      )}
+                    </span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
-}
-
-function Action({
-  testId,
-  label,
-  onClick,
-  disabled,
-  danger = false,
-}: {
-  testId: string;
-  label: string;
-  onClick: () => void;
-  disabled: boolean;
-  danger?: boolean;
-}): ReactElement {
-  return (
-    <button
-      type="button"
-      data-testid={testId}
-      disabled={disabled}
-      onClick={onClick}
-      style={{
-        marginLeft: 8,
-        padding: '4px 10px',
-        background: 'transparent',
-        border: `1px solid ${danger ? '#f85149' : '#242c3d'}`,
-        color: danger ? '#f85149' : '#8b93a7',
-        font: 'inherit',
-        fontSize: 12,
-        cursor: disabled ? 'default' : 'pointer',
-      }}
-    >
-      {label}
-    </button>
-  );
-}
-
-function Message({ text }: { text: string }): ReactElement {
-  return <div style={{ padding: 24, color: '#8b93a7' }}>{text}</div>;
 }

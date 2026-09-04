@@ -58,6 +58,13 @@ const ALLOWED: Record<string, readonly string[]> = {
     '@otc/distribution',
     '@otc/chart',
     '@otc/lab',
+    // PH-24.3. The Lab settles simulated positions with the production
+    // `settle` against the Lab market's own record — one settlement rule, not
+    // a second one written for the Lab (ADR-0015 §1: a rule that describes the
+    // system, widened with the reason beside it). Nothing in the production
+    // composition calls it; `composition.test.ts` and `labSurface.test.ts` keep
+    // the Lab's files out of that composition.
+    '@otc/trading',
   ],
   // The browser bundle. `@otc/lab` and `@otc/fixtures` must never appear here:
   // one carries the attack battery, the other the planted-defect corpus.

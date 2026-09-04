@@ -5,6 +5,9 @@ import type { AssetRegistry } from '@otc/runtime';
 import { bindAddressFromEnvironment, isExposedBind } from '../bind.js';
 import { VenueService } from '../venue.service.js';
 import { LabModule } from './lab.module.js';
+import { EngineEventObserver } from './engineEvents.js';
+import { LabSession } from './session.js';
+import { SessionFile } from './sessionFile.js';
 
 /**
  * The Lab's entry point, and the reason there are two.
@@ -29,14 +32,28 @@ async function bootstrap(): Promise<void> {
   const venue = app.get(VenueService);
   venue.applyOverlays(await app.get<AssetRegistry>('ASSET_REGISTRY').overlays());
   await venue.start();
+  // The session survives the process (PH-24.8): what a previous Lab in this
+  // state directory recorded is loaded, and every record from here on is
+  // appended. The state directory is the Lab's own — the launcher gives it one.
+  const sessionFile = new SessionFile(process.env['OTC_STATE_DIR'] ?? './.otc-state');
+  const restored = app.get(LabSession).persistTo(sessionFile.existing(), sessionFile);
+  logger.log(
+    `session file ${sessionFile.file}: ${String(restored.loaded)} record(s) restored` +
+      (restored.skipped > 0 ? `, ${String(restored.skipped)} unreadable line(s) skipped` : ''),
+  );
+  // The engine's timeline, fed from here on (PH-24.5 §4).
+  app.get(EngineEventObserver).start();
 
   const host = bindAddressFromEnvironment(process.env);
-  const port = Number.parseInt(process.env['OTC_LAB_PORT'] ?? '3100', 10);
+  // ADR-0018: one engine per deployment. A Lab-composed process is the whole
+  // engine in simulation mode, so it takes the engine's port unless told otherwise.
+  const port = Number.parseInt(process.env['OTC_LAB_PORT'] ?? process.env['PORT'] ?? '3100', 10);
   await app.listen(port, host);
   logger.warn(
     `OTC LAB — SIMULATION ENVIRONMENT on ${host}:${String(port)} ` +
       `(${isExposedBind(host) ? 'REACHABLE FROM OTHER MACHINES' : 'this machine only'}). ` +
-      `This process serves engine state and keystream cursors, which production never does.`,
+      `This process is the whole engine — catalogue, history, ticks — plus /lab, and it serves ` +
+      `engine state and keystream cursors, which production never does (ADR-0018).`,
   );
 }
 

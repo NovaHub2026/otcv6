@@ -38,6 +38,7 @@ export {
   checkpointMarket,
   DEFAULT_LEASE_BLOCKS,
   resumeMarket,
+  type SignSourceFactory,
   type RecoveryOutcome,
   type ResumeOptions,
   type ResumeResult,

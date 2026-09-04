@@ -163,11 +163,14 @@ export {
   type CloseSelection,
   type CloseSelectionRequest,
   type Reachability,
+  selectCloseWhere,
+  type ConditionedCloseRequest,
 } from './closeSelection.js';
 export {
-  INTERVENTIONS,
-  selectContinuation,
   type Continuation,
+  INTERVENTIONS,
   type InterventionRequest,
   type InterventionResult,
+  nextShock,
+  selectContinuation,
 } from './intervention.js';

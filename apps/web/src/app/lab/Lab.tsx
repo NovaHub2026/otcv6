@@ -1,106 +1,122 @@
 'use client';
 
-import { useCallback, useEffect, useState, type ReactElement, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
+import { es } from '../../lib/es.js';
+import { Badge, Info, T, Tabs } from '../ui/kit.js';
+import {
+  isBetween,
+  isUnavailable,
+  labGet,
+  labPost,
+  type BetweenLevels,
+  type ClosePlan,
+  type ClosesView,
+  CLOSE_TIMEFRAMES,
+  type CloseCondition,
+  type CloseTimeframe,
+  type Control,
+  type ControlAll,
+  type Pace,
+  type PushResult,
+  type LabMarket,
+  type MarketControl,
+  type LabPositionView,
+  type LabState,
+  type PositionsView,
+  type Quality,
+  type ScenarioPlan,
+  type ScenarioView,
+  type Session,
+  isControl,
+} from './labApi.js';
+import { Mercado } from './Mercado.js';
+import { Cierre } from './Cierre.js';
+import { Empujar } from './Empujar.js';
+import { Controles } from './Controles.js';
+import { nearestLevelPrice } from './lattice.js';
+import { PreviewChart } from '../preview/PreviewChart.js';
+import { PANEL_TIMEFRAMES, type PanelTimeframeId } from '@otc/chart';
+import { fetchCatalogue, type CatalogueEntry } from '../../lib/api.js';
+import { Posiciones } from './Posiciones.js';
+import { Escenarios } from './Escenarios.js';
+import { QualityPanel } from './Calidad.js';
+import { Sesion } from './Sesion.js';
+import { Tablero } from './Tablero.js';
 
 /**
- * The OTC Lab, in the panel.
+ * El OTC Lab, en el panel (PH-23.5), rediseñado en PH-24.6.
  *
- * ## Why the whole screen is marked
+ * ## Por qué toda la pantalla lleva el rótulo
  *
- * §3 of the specification requires `OTC LAB` and `SIMULATION ENVIRONMENT` to be
- * permanently displayed, and it is not decoration. This screen shows the
- * engine's latent state and its **keystream cursors**, which INV-010 forbids
- * publishing, and it can select among futures. A screenshot of it must not be
- * mistakable for a screenshot of the market, so the banner is part of the frame
- * rather than a line inside the content, and `labScreen.test.ts` asserts it.
+ * §3 de la especificación exige `OTC LAB` y `SIMULATION ENVIRONMENT` de forma
+ * permanente, y no es decoración: esta pantalla muestra el estado latente del
+ * motor y los cursores del keystream, que INV-010 prohíbe publicar, y puede
+ * elegir entre futuros. Una captura no puede confundirse con una del mercado,
+ * así que el rótulo va en el marco y no en el contenido, y `labScreen.test.ts`
+ * lo afirma.
  *
- * ## Why it can be empty
+ * ## Una pregunta por pestaña
  *
- * The Lab is a separate process and this points at one only when `OTC_LAB_BASE`
- * names it. With no Lab running the screen says so, and says how to start one —
- * which is the honest state, not an error. Absence by default is the boundary
- * (ADR-0015 §3), and a screen that hid it would be arguing against it.
+ * Arriba, lo que decide: mercado, precio, régimen, si hay algo armado y cómo
+ * acabó lo último. Debajo, una pestaña por pregunta — Mercado, Cierre,
+ * Posiciones, Escenarios, Calidad, Sesión — con los controles primero y las
+ * lecturas después. Cada explicación vive detrás de un ⓘ.
+ *
+ * ## Por qué puede estar vacía
+ *
+ * El Lab es un proceso aparte y esto apunta a él solo si `OTC_LAB_BASE` lo
+ * nombra. Sin Lab la pantalla lo dice, y dice cómo arrancar uno (ADR-0015 §3).
  */
+type Tab =
+  'board' | 'replay' | 'market' | 'close' | 'positions' | 'scenarios' | 'quality' | 'session';
 
-interface LabMarket {
-  readonly id: string;
-  readonly displayName: string;
-  readonly family: string;
-}
-
-interface LabState {
-  readonly environment: string;
-  readonly sequence: number;
-  /** Rendered to the asset's display precision. The lattice level is beside it. */
-  readonly price: string;
-  readonly latticeLevel: number;
-  readonly previousMagnitude: number;
-  readonly previousIntervalMs: number;
-  readonly cursors: Readonly<Record<string, string>>;
-  readonly direction: { readonly up: number; readonly down: number; readonly why: string };
-}
-
-interface Reachability {
-  readonly delta: number;
-  readonly ticksRemaining: number;
-  readonly attempts: number;
-  readonly acceptanceRate: number;
-  readonly reachability: string;
-  readonly impossible: string | null;
-}
-
-interface Quality {
-  readonly sampledTicks: number;
-  readonly bounded: string;
-  readonly realism: {
-    readonly plausible: boolean;
-    readonly passed: number;
-    readonly of: number;
-    readonly failed: readonly string[];
-    readonly note: string;
-    readonly metrics: readonly { readonly name: string; readonly value: number }[];
-  };
-  readonly predictability: {
-    readonly verdict: 'inconclusive' | 'clean-above-resolution' | 'exploitable';
-    readonly clean: boolean;
-    readonly resolutionPoints: number;
-    readonly minimumHypotheses: number;
-    readonly hypothesesTested: number;
-    readonly bucketsSkippedForOccupancy: number;
-    readonly sensitivity: readonly unknown[];
-    readonly notes: readonly string[];
-  };
-}
-
-interface Unavailable {
-  readonly running: false;
-  readonly reason: string;
-}
-
-async function labGet<T>(path: string): Promise<T | Unavailable> {
-  const response = await fetch(`/lab/${path}`);
-  const body = (await response.json()) as T | Unavailable;
-  return body;
-}
-
-const isUnavailable = (value: unknown): value is Unavailable =>
-  typeof value === 'object' && value !== null && (value as { running?: unknown }).running === false;
-
-export function Lab(): ReactElement {
+export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): ReactElement {
   const [assets, setAssets] = useState<LabMarket[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [state, setState] = useState<LabState | null>(null);
   const [unavailable, setUnavailable] = useState<string | null>(null);
-  const [delta, setDelta] = useState('0');
-  const [reach, setReach] = useState<Reachability | null>(null);
-  const [quality, setQuality] = useState<Quality | null>(null);
+  const [tab, setTab] = useState<Tab>('close');
   const [busy, setBusy] = useState<string | null>(null);
 
+  const [tf, setTf] = useState<CloseTimeframe>('1m');
+  const [bucket, setBucket] = useState<'current' | 'next' | 'expiry'>('current');
+  const [expiryTime, setExpiryTime] = useState('');
+  const [price, setPrice] = useState('');
+  // PH-24.21: where the close must end relative to the mark — the panel's = ▲ ▼.
+  const [closeCondition, setCloseCondition] = useState<CloseCondition>('exact');
+  const [plan, setPlan] = useState<ClosePlan | null>(null);
+  const [notice, setNotice] = useState<BetweenLevels | string | null>(null);
+  const [planExpiry, setPlanExpiry] = useState<number | null>(null);
+  const [control, setControl] = useState<Control | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [closes, setCloses] = useState<ClosesView | null>(null);
+  const [positionsView, setPositionsView] = useState<PositionsView | null>(null);
+  const [all, setAll] = useState<ControlAll | null>(null);
+  const [lastPush, setLastPush] = useState<PushResult | null>(null);
+  const [pushError, setPushError] = useState<string | null>(null);
+  const [pace, setPace] = useState<Pace>('rapido');
+  const [catalogue, setCatalogue] = useState<CatalogueEntry[]>([]);
+  const [chartTf, setChartTf] = useState<PanelTimeframeId>('1m');
+  const [positions, setPositions] = useState<LabPositionView[]>([]);
+  const [positionNotice, setPositionNotice] = useState<string | null>(null);
+  const [scenarios, setScenarios] = useState<ScenarioView[]>([]);
+  const [scenarioPlan, setScenarioPlan] = useState<ScenarioPlan | null>(null);
+  const [scenarioNotice, setScenarioNotice] = useState<string | null>(null);
+  const [quality, setQuality] = useState<Quality | null>(null);
+
   useEffect(() => {
-    // The Lab's own markets, never production's. A screen that listed the
-    // production catalogue beside a close-selection control would be offering
-    // to steer a market carrying positions, whatever the request underneath
-    // actually reached (§3). It cannot name one because it never learns one.
+    // The chart's catalogue from the Lab's own engine routes (PH-24.12): never /engine.
+    fetchCatalogue('/labengine')
+      .then(setCatalogue)
+      .catch(() => setCatalogue([]));
+  }, []);
+
+  useEffect(() => {
+    void labGet<{ scenarios: ScenarioView[] }>('scenarios').then((body) => {
+      if (!isUnavailable(body)) setScenarios(body.scenarios);
+    });
+    // The Lab's own markets, never production's (§3): the screen cannot name a
+    // production asset because it never learns one.
     void labGet<{ markets: LabMarket[] }>('markets').then((body) => {
       if (isUnavailable(body)) {
         setUnavailable(body.reason);
@@ -113,8 +129,15 @@ export function Lab(): ReactElement {
     });
   }, []);
 
+  // PH-24.24: which market the screen is on, read after every await. A poll for
+  // the market just left can answer after the switch, and its control would then
+  // be rendered under the new market's name — a countdown for somebody else.
+  const selectedRef = useRef<string | null>(null);
+  selectedRef.current = selected;
+
   const refreshState = useCallback(async (asset: string) => {
     const body = await labGet<LabState>(`markets/${asset}/state`);
+    if (selectedRef.current !== asset) return;
     if (isUnavailable(body)) {
       setUnavailable(body.reason);
       setState(null);
@@ -122,29 +145,286 @@ export function Lab(): ReactElement {
     }
     setUnavailable(null);
     setState(body);
+    const [ctl, timelines, open, diagnostic, settled, everyMarket] = await Promise.all([
+      labGet<Control>(`markets/${asset}/control`),
+      labGet<Session>('session'),
+      labGet<{ positions: LabPositionView[] }>(`markets/${asset}/positions`),
+      labGet<ClosesView>('session/closes'),
+      labGet<PositionsView>('session/positions'),
+      labGet<ControlAll>('control'),
+    ]);
+    if (selectedRef.current !== asset) return;
+    if (!isUnavailable(settled)) setPositionsView(settled);
+    if (!isUnavailable(everyMarket)) setAll(everyMarket);
+    // An error body is not a control: storing one would read as "nothing running".
+    if (isControl(ctl)) setControl(ctl);
+    if (!isUnavailable(timelines)) setSession(timelines);
+    if (!isUnavailable(open)) setPositions(open.positions);
+    if (!isUnavailable(diagnostic)) setCloses(diagnostic);
   }, []);
 
   useEffect(() => {
     if (selected === null) return;
     void refreshState(selected);
+    // Every second (PH-24.13): a push lands in two or three, and the strip should say so as it happens.
     const timer = setInterval(() => {
       void refreshState(selected);
-    }, 2_000);
+    }, 1_000);
     return () => {
       clearInterval(timer);
     };
   }, [selected, refreshState]);
 
-  const probe = async (): Promise<void> => {
+  // A typed UTC time (HH:MM[:SS], today) as an instant; tomorrow's if it has passed.
+  const expiryInstant = (): number | null => {
+    const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(expiryTime.trim());
+    if (m === null) return null;
+    const now = new Date();
+    let at = Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      Number(m[1]),
+      Number(m[2]),
+      Number(m[3] ?? '0'),
+    );
+    if (at <= Date.now()) at += 86_400_000;
+    return at;
+  };
+  // PH-24.20: on the panel the close addresses the chart's own candle — a
+  // selector of its own would be redundant. The chart has no 30s and the close
+  // nothing wider than 15m, so outside the shared three the panel's fijar is
+  // disabled and says why.
+  const panelCloseTf: CloseTimeframe | null = (CLOSE_TIMEFRAMES as readonly string[]).includes(
+    chartTf,
+  )
+    ? (chartTf as CloseTimeframe)
+    : null;
+  const closeTf: CloseTimeframe = mode === 'control' ? (panelCloseTf ?? tf) : tf;
+  const addressing = (): string => {
+    if (bucket === 'expiry') {
+      const at = expiryInstant();
+      return at === null ? `bucket=current&timeframe=${closeTf}` : `expiry=${String(at)}`;
+    }
+    return `bucket=${bucket}&timeframe=${closeTf}`;
+  };
+  const closeQuery = (at = price): string =>
+    `price=${encodeURIComponent(at.trim())}&${addressing()}` +
+    (mode === 'control' && closeCondition !== 'exact' ? `&condition=${closeCondition}` : '');
+  // PH-24.21: a click on the chart names a price; the box takes the nearest
+  // lattice level, and whatever the box holds is marked on the chart.
+  const pickPrice = (picked: number): void => {
+    const lattice = state?.instrument;
+    if (lattice === undefined) return;
+    const snapped = nearestLevelPrice(lattice, picked);
+    if (snapped !== null) setPrice(snapped);
+  };
+  const marked =
+    mode === 'control' && price.trim() !== '' && Number.isFinite(Number(price))
+      ? { price: Number(price), title: es.lab.panel.close.mark }
+      : null;
+
+  const settle = (
+    body: ClosePlan | BetweenLevels | { running: false; reason: string } | { message?: string },
+  ): void => {
+    if (isUnavailable(body)) {
+      setUnavailable(body.reason);
+      return;
+    }
+    if (isBetween(body)) {
+      setPlan(null);
+      setNotice(body);
+      return;
+    }
+    if ('reachability' in body) {
+      setNotice(null);
+      setPlan(body);
+      return;
+    }
+    setPlan(null);
+    const message = typeof body.message === 'string' ? body.message : 'El Lab rechazó la petición.';
+    // PH-24.10: a close refused because a push is running, in the operator's words.
+    setNotice(/PUSH_RUNNING/.test(message) ? es.lab.push.refusedPush : message);
+  };
+
+  const previewClose = async (): Promise<void> => {
     if (selected === null) return;
-    setBusy('reachability');
-    const body = await labGet<Reachability>(`markets/${selected}/reachable/${delta.trim()}`);
+    setPlanExpiry(null);
+    setBusy('preview');
+    settle(
+      await labGet<ClosePlan | BetweenLevels>(`markets/${selected}/close/preview?${closeQuery()}`),
+    );
+    setBusy(null);
+  };
+
+  // PH-24.20: the panel's fijar with an empty box fixes the price the market stands at.
+  const applyClose = async (at?: string): Promise<void> => {
+    if (selected === null) return;
+    if (at !== undefined) setPrice(at);
+    setPlanExpiry(null);
+    setBusy('apply');
+    settle(await labPost<ClosePlan | BetweenLevels>(`markets/${selected}/close?${closeQuery(at)}`));
+    setBusy(null);
+    void refreshState(selected);
+  };
+
+  // A neighbour is the act, applied where its plan belongs: at a position's
+  // expiry after a preset, not at whatever candle the selectors show.
+  const applyNeighbour = async (level: string): Promise<void> => {
+    if (selected === null) return;
+    setPrice(level);
+    setBusy('apply');
+    const query =
+      planExpiry === null
+        ? `price=${encodeURIComponent(level)}&${addressing()}`
+        : `price=${encodeURIComponent(level)}&expiry=${String(planExpiry)}`;
+    settle(await labPost<ClosePlan | BetweenLevels>(`markets/${selected}/close?${query}`));
+    setBusy(null);
+    void refreshState(selected);
+  };
+
+  // A relative close: N lattice steps from the price the market stands at when
+  // armed — the operator's natural question, and what the presets already ask
+  // about an entry. `delta=` lets the server compute the target on the fork.
+  const applyDelta = async (delta: number, apply: boolean): Promise<void> => {
+    if (selected === null) return;
+    setPlanExpiry(null);
+    setBusy(apply ? 'apply' : 'preview');
+    const query = `delta=${String(delta)}&${addressing()}`;
+    settle(
+      apply
+        ? await labPost<ClosePlan | BetweenLevels>(`markets/${selected}/close?${query}`)
+        : await labGet<ClosePlan | BetweenLevels>(`markets/${selected}/close/preview?${query}`),
+    );
+    setBusy(null);
+    if (apply) void refreshState(selected);
+  };
+
+  const push = async (ticks: number): Promise<void> => {
+    if (selected === null) return;
+    setBusy('push');
+    setPushError(null);
+    try {
+      const body = await labPost<PushResult>(
+        // PH-24.18: the buttons are distances in the market's own unit, not ticks.
+        `markets/${selected}/push?distance=${String(ticks)}&pace=${pace}`,
+      );
+      if (isUnavailable(body)) {
+        // A failed push is said on the strip; the screen and its buttons stay.
+        setPushError(es.lab.push.failed(body.reason));
+        return;
+      }
+      setLastPush(body);
+      void refreshState(selected);
+    } finally {
+      // PH-24.11: whatever happened, the strip is never left held.
+      setBusy(null);
+    }
+  };
+
+  const setBias = async (direction: 'up' | 'down' | 'off'): Promise<void> => {
+    if (selected === null) return;
+    setBusy('bias');
+    try {
+      const body = await labPost<Control>(`markets/${selected}/bias?direction=${direction}`);
+      if (isUnavailable(body)) {
+        setPushError(es.lab.push.failed(body.reason));
+        return;
+      }
+      setControl(body);
+      void refreshState(selected);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const releaseAll = async (): Promise<void> => {
+    setBusy('release-all');
+    const body = await labPost<{ released: unknown[] }>('release-all');
     setBusy(null);
     if (isUnavailable(body)) {
       setUnavailable(body.reason);
       return;
     }
-    setReach(body);
+    setPlan(null);
+    if (selected !== null) void refreshState(selected);
+  };
+
+  const releaseMarket = async (): Promise<void> => {
+    if (selected === null) return;
+    setBusy('release');
+    const body = await labPost<Control>(`markets/${selected}/release`);
+    setBusy(null);
+    if (isUnavailable(body)) {
+      setUnavailable(body.reason);
+      return;
+    }
+    setPlan(null);
+    void refreshState(selected);
+  };
+
+  const openPosition = async (
+    direction: 'up' | 'down',
+    stake: number,
+    horizonMs: number,
+  ): Promise<void> => {
+    if (selected === null) return;
+    setBusy('position');
+    const body = await labPost<{ position: LabPositionView } | { message?: string }>(
+      `markets/${selected}/positions?direction=${direction}&stake=${String(stake)}&horizonMs=${String(horizonMs)}`,
+    );
+    setBusy(null);
+    if (isUnavailable(body)) {
+      setUnavailable(body.reason);
+      return;
+    }
+    setPositionNotice('position' in body ? null : (body.message ?? 'El Lab rechazó la posición.'));
+    void refreshState(selected);
+  };
+
+  const applyPreset = async (id: string, name: string): Promise<void> => {
+    if (selected === null) return;
+    setPlanExpiry(positions.find((p) => p.id === id)?.expiryInstant ?? null);
+    setBusy('preset');
+    settle(
+      await labPost<ClosePlan | BetweenLevels>(
+        `markets/${selected}/positions/${id}/preset?name=${name}`,
+      ),
+    );
+    setBusy(null);
+    setTab('close');
+    void refreshState(selected);
+  };
+
+  const runScenario = async (
+    name: string,
+    windowMs: number,
+    params: Record<string, number | string>,
+    apply: boolean,
+  ): Promise<void> => {
+    if (selected === null) return;
+    setBusy(apply ? 'scenario-apply' : 'scenario-preview');
+    const query = [`name=${name}`, `window=${String(windowMs)}`]
+      .concat(Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`))
+      .join('&');
+    const body = apply
+      ? await labPost<ScenarioPlan | { message?: string }>(`markets/${selected}/scenario?${query}`)
+      : await labGet<ScenarioPlan | { message?: string }>(
+          `markets/${selected}/scenario/preview?${query}`,
+        );
+    setBusy(null);
+    if (isUnavailable(body)) {
+      setUnavailable(body.reason);
+      return;
+    }
+    if ('attempts' in body) {
+      setScenarioNotice(null);
+      setScenarioPlan(body);
+    } else {
+      setScenarioPlan(null);
+      setScenarioNotice(body.message ?? 'El Lab rechazó el escenario.');
+    }
+    if (apply) void refreshState(selected);
   };
 
   const runQuality = async (): Promise<void> => {
@@ -159,54 +439,372 @@ export function Lab(): ReactElement {
     setQuality(body);
   };
 
+  const regime =
+    state?.magnitudeState.modulators?.find((m) => m !== null && 'regime' in m)?.regime ?? null;
   return (
     <div data-testid="lab" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Banner />
       {unavailable !== null && <NotRunning reason={unavailable} />}
-      <div style={{ display: 'flex', gap: 16, padding: 14, flex: 1, minHeight: 0 }}>
-        <AssetList assets={assets} selected={selected} onSelect={setSelected} />
-        <div style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
-          <MarketState state={state} />
-          <CloseControl
-            delta={delta}
-            onDelta={setDelta}
-            onProbe={probe}
-            busy={busy === 'reachability'}
-            result={reach}
+      {mode === 'control' ? (
+        // PH-24.19: the control panel — the market's bar, the chart at three
+        // quarters, the controls at one quarter (two cards, PH-24.20). The
+        // instrument is /lab/avanzado.
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+          <TopBar
+            assets={assets}
+            selected={selected}
+            onSelect={setSelected}
+            all={all}
+            state={state}
+            regime={regime}
+            control={control}
           />
-          <QualityPanel quality={quality} busy={busy === 'quality'} onRun={runQuality} />
+          <div
+            data-testid="lab-panel"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '3fr 1fr',
+              flex: 1,
+              minHeight: 0,
+            }}
+          >
+            <LabChart
+              entry={catalogue.find((c) => c.id === selected) ?? null}
+              timeframe={chartTf}
+              onTimeframe={setChartTf}
+              onPick={pickPrice}
+              mark={marked}
+              fill
+            />
+            <Controles
+              state={state}
+              control={control}
+              pushError={pushError}
+              busy={busy}
+              onPush={push}
+              pace={pace}
+              onPace={setPace}
+              onBias={setBias}
+              closeTimeframe={panelCloseTf}
+              bucket={bucket}
+              onBucket={setBucket}
+              price={price}
+              onPrice={setPrice}
+              onApply={applyClose}
+              onRelease={releaseMarket}
+              condition={closeCondition}
+              onCondition={setCloseCondition}
+              plan={plan}
+              notice={notice}
+            />
+          </div>
         </div>
-      </div>
+      ) : (
+        <div style={{ display: 'flex', gap: 0, flex: 1, minHeight: 0 }}>
+          <AssetList assets={assets} selected={selected} onSelect={setSelected} all={all} />
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            <HeaderStrip state={state} regime={regime} control={control} />
+            <Empujar
+              control={control}
+              last={lastPush}
+              error={pushError}
+              busy={busy}
+              onPush={push}
+              pace={pace}
+              onPace={setPace}
+              onBias={setBias}
+              state={state}
+            />
+            <LabChart
+              entry={catalogue.find((c) => c.id === selected) ?? null}
+              timeframe={chartTf}
+              onTimeframe={setChartTf}
+            />
+            <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: '0 16px 16px' }}>
+              <Tabs<Tab>
+                tabs={[
+                  { key: 'close', label: es.lab.tabs.close },
+                  { key: 'board', label: es.lab.tabs.board },
+                  { key: 'market', label: es.lab.tabs.market },
+                  { key: 'positions', label: es.lab.tabs.positions },
+                  { key: 'scenarios', label: es.lab.tabs.scenarios },
+                  { key: 'quality', label: es.lab.tabs.quality },
+                  { key: 'session', label: es.lab.tabs.session },
+                ]}
+                active={tab}
+                onChange={setTab}
+              />
+              <div hidden={tab !== 'board'}>
+                <Tablero
+                  all={all}
+                  busy={busy}
+                  onReleaseAll={releaseAll}
+                  onSelect={(id) => {
+                    setSelected(id);
+                    setTab('close');
+                  }}
+                />
+              </div>
+              <div hidden={tab !== 'market'}>
+                <Mercado state={state} />
+              </div>
+              <div hidden={tab !== 'close'}>
+                <Cierre
+                  timeframe={tf}
+                  onTimeframe={setTf}
+                  bucket={bucket}
+                  onBucket={setBucket}
+                  expiryTime={expiryTime}
+                  onExpiryTime={setExpiryTime}
+                  price={price}
+                  onPrice={setPrice}
+                  onPreview={previewClose}
+                  onApply={applyClose}
+                  onNeighbour={applyNeighbour}
+                  onDelta={applyDelta}
+                  onRelease={releaseMarket}
+                  busy={busy}
+                  plan={plan}
+                  notice={notice}
+                  control={control}
+                  displayPrecision={state === null ? 7 : (state.price.split('.')[1] ?? '').length}
+                  unitSteps={state?.distance?.unitSteps ?? 1}
+                />
+              </div>
+              <div hidden={tab !== 'positions'}>
+                <Posiciones
+                  positions={positions}
+                  onOpen={openPosition}
+                  onPreset={applyPreset}
+                  busy={busy}
+                  notice={positionNotice}
+                />
+              </div>
+              <div hidden={tab !== 'scenarios'}>
+                <Escenarios
+                  scenarios={scenarios}
+                  plan={scenarioPlan}
+                  notice={scenarioNotice}
+                  busy={busy}
+                  onRun={runScenario}
+                  onTarget={runScenario}
+                  targetPlan={scenarioPlan}
+                  unitSteps={state?.distance?.unitSteps ?? 1}
+                />
+              </div>
+              <div hidden={tab !== 'quality'}>
+                <QualityPanel quality={quality} busy={busy === 'quality'} onRun={runQuality} />
+              </div>
+              <div hidden={tab !== 'session'}>
+                <Sesion session={session} closes={closes} positions={positionsView} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 /**
- * The banner, in the frame rather than in the content.
- *
- * A screenshot of this screen must not be mistakable for one of the market
- * (§3). That is why it is not a line that scrolls away.
+ * The control panel's bar (PH-24.19): the markets as pills, and — for the
+ * selected one only — its price, regime and state. Plus the small door to the
+ * instrument.
  */
+function TopBar({
+  assets,
+  selected,
+  onSelect,
+  all,
+  state,
+  regime,
+  control,
+}: {
+  assets: readonly LabMarket[];
+  selected: string | null;
+  onSelect: (id: string) => void;
+  all: ControlAll | null;
+  state: LabState | null;
+  regime: string | null;
+  control: Control | null;
+}): ReactElement {
+  const armed = control?.armed ?? false;
+  const last = control?.lastApplied ?? null;
+  return (
+    <div
+      data-testid="lab-topbar"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '8px 14px',
+        borderBottom: `1px solid ${T.line}`,
+        flexShrink: 0,
+        flexWrap: 'wrap',
+      }}
+    >
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+        {assets.map((asset) => {
+          const market = all?.markets.find((m) => m.id === asset.id) ?? null;
+          return (
+            <button
+              key={asset.id}
+              type="button"
+              data-testid={`lab-asset-${asset.id}`}
+              onClick={() => onSelect(asset.id)}
+              style={{
+                padding: '4px 10px',
+                background: selected === asset.id ? T.line : 'transparent',
+                color: selected === asset.id ? T.text : T.muted,
+                border: `1px solid ${selected === asset.id ? T.lab : T.line}`,
+                borderRadius: 14,
+                font: 'inherit',
+                fontSize: 12,
+                cursor: 'pointer',
+              }}
+            >
+              {asset.displayName}
+              {market !== null && market.armed ? ' ·' : ''}
+            </button>
+          );
+        })}
+      </div>
+      <span style={{ fontSize: 22, color: T.text }} data-testid="lab-header-price">
+        {state?.price ?? '—'}
+      </span>
+      <span style={{ color: T.muted, fontSize: 12 }}>
+        {es.lab.header.regime}: <span style={{ color: T.text }}>{regime ?? '—'}</span>
+      </span>
+      <Badge tone={armed ? 'lab' : 'muted'} testId="lab-header-armed">
+        {armed
+          ? `${es.lab.header.armed} · ${es.lab.header.remaining(control?.remaining ?? 0)}`
+          : es.lab.header.keystream}
+      </Badge>
+      {last !== null && last.closedPrice !== null && (
+        <span
+          data-testid="lab-header-outcome"
+          style={{ fontSize: 12, color: last.exact ? T.ok : T.bad }}
+        >
+          {`${last.targetPrice} → ${last.closedPrice} ${last.exact ? 'EXACTO' : 'FALLÓ'}`}
+        </span>
+      )}
+      <a
+        href="/lab/avanzado"
+        data-testid="lab-advanced-link"
+        style={{ marginLeft: 'auto', color: T.muted, fontSize: 11, textDecoration: 'none' }}
+      >
+        {es.lab.panel.advanced} <Info text={es.lab.panel.advancedInfo} />
+      </a>
+    </div>
+  );
+}
+
+/** The banner, in the frame rather than in the content (§3). */
+/**
+ * The selected market's candles, from the Lab's engine (PH-24.12, ADR-0018 §4).
+ *
+ * The same `PreviewChart` Vista uses, fed through `/labengine`: what a push or
+ * a close does is seen where it happens. With one engine per deployment these
+ * are Vista's candles; with two they are still the Lab's, never production's.
+ */
+function LabChart({
+  entry,
+  timeframe,
+  onTimeframe,
+  onPick,
+  mark = null,
+  fill = false,
+}: {
+  entry: CatalogueEntry | null;
+  timeframe: PanelTimeframeId;
+  onTimeframe: (id: PanelTimeframeId) => void;
+  /** PH-24.21: a click on the chart names the price at that height; the mark is the close asked. */
+  onPick?: ((price: number) => void) | undefined;
+  mark?: { readonly price: number; readonly title: string } | null;
+  /** PH-24.19: the control panel gives the chart the whole column. */
+  fill?: boolean;
+}): ReactElement {
+  return (
+    <div
+      data-testid="lab-chart"
+      style={
+        fill
+          ? {
+              display: 'flex',
+              flexDirection: 'column',
+              minHeight: 0,
+              borderRight: `1px solid ${T.line}`,
+            }
+          : { borderBottom: `1px solid ${T.line}`, flexShrink: 0 }
+      }
+    >
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '6px 16px' }}>
+        <span style={{ color: T.text, fontSize: 12, fontWeight: 600 }}>
+          {es.lab.chart.title} <Info text={es.lab.chart.info} />
+        </span>
+        {PANEL_TIMEFRAMES.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            data-testid={`lab-chart-tf-${t.id}`}
+            onClick={() => onTimeframe(t.id)}
+            style={{
+              padding: '2px 8px',
+              background: timeframe === t.id ? T.line : 'transparent',
+              color: timeframe === t.id ? T.text : T.muted,
+              border: `1px solid ${T.line}`,
+              borderRadius: 3,
+              font: 'inherit',
+              fontSize: 11,
+              cursor: 'pointer',
+            }}
+          >
+            {t.id}
+          </button>
+        ))}
+      </div>
+      <div
+        style={
+          fill
+            ? { flex: 1, minHeight: 0, position: 'relative' }
+            : { height: 260, position: 'relative' }
+        }
+      >
+        {entry === null ? (
+          <div style={{ color: T.faint, fontSize: 11, padding: '0 16px' }}>—</div>
+        ) : (
+          <PreviewChart
+            key={entry.id}
+            apiBase="/labengine"
+            asset={entry}
+            timeframeId={timeframe}
+            onPick={onPick}
+            mark={mark}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Banner(): ReactElement {
   return (
     <div
       data-testid="lab-banner"
       style={{
-        background: '#3a1d1d',
-        borderBottom: '2px solid #f85149',
-        color: '#f8b0aa',
-        padding: '8px 14px',
-        fontSize: 12,
-        letterSpacing: 0.5,
+        background: '#3a1f1f',
+        borderBottom: `2px solid ${T.lab}`,
+        color: '#ffd7d7',
+        padding: '6px 16px',
         display: 'flex',
-        gap: 16,
+        alignItems: 'center',
+        gap: 14,
+        flexShrink: 0,
       }}
     >
-      <strong style={{ color: '#f85149' }}>OTC LAB</strong>
-      <span>SIMULATION ENVIRONMENT</span>
-      <span style={{ color: '#a2827e' }}>
-        engine internals and keystream cursors — never a market carrying positions
-      </span>
+      <strong style={{ letterSpacing: 2, fontSize: 13 }}>{es.lab.banner.title}</strong>
+      <span style={{ letterSpacing: 1, fontSize: 11 }}>{es.lab.banner.subtitle}</span>
+      <span style={{ fontSize: 11, color: '#f0b0b0' }}>{es.lab.banner.line}</span>
     </div>
   );
 }
@@ -215,10 +813,22 @@ function NotRunning({ reason }: { reason: string }): ReactElement {
   return (
     <div
       data-testid="lab-not-running"
-      style={{ padding: 14, color: '#8b93a7', fontSize: 12, lineHeight: 1.6 }}
+      style={{
+        margin: 16,
+        padding: 14,
+        border: `1px solid ${T.warn}`,
+        color: T.warn,
+        fontSize: 12,
+        lineHeight: 1.6,
+      }}
     >
-      <div style={{ color: '#e3b341', marginBottom: 6 }}>No Lab is running.</div>
-      {reason}
+      {/* PH-24.14: "not configured" only when the proxy says so; a transport failure is said as one. */}
+      <strong data-testid="lab-not-running-title">
+        {/OTC_LAB_BASE|not configured|no configurado/i.test(reason)
+          ? es.lab.notRunning
+          : es.lab.unreachable}
+      </strong>
+      <Info text={reason} />
     </div>
   );
 }
@@ -227,286 +837,121 @@ function AssetList({
   assets,
   selected,
   onSelect,
+  all,
 }: {
-  assets: LabMarket[];
+  assets: readonly LabMarket[];
   selected: string | null;
   onSelect: (id: string) => void;
+  all: ControlAll | null;
 }): ReactElement {
   return (
-    <div style={{ width: 170, flexShrink: 0, borderRight: '1px solid #242c3d' }}>
+    <aside
+      style={{
+        width: 170,
+        borderRight: `1px solid ${T.line}`,
+        overflowY: 'auto',
+        flexShrink: 0,
+        background: T.panel,
+      }}
+    >
       {assets.map((asset) => (
         <button
           key={asset.id}
           type="button"
           data-testid={`lab-asset-${asset.id}`}
-          onClick={() => {
-            onSelect(asset.id);
-          }}
+          onClick={() => onSelect(asset.id)}
           style={{
             display: 'block',
             width: '100%',
             textAlign: 'left',
-            padding: '7px 12px',
+            padding: '9px 14px',
+            background: selected === asset.id ? T.raised : 'transparent',
             border: 'none',
-            cursor: 'pointer',
-            background: selected === asset.id ? '#161b26' : 'transparent',
-            color: selected === asset.id ? '#d7dce5' : '#8b93a7',
+            borderLeft: `3px solid ${selected === asset.id ? T.lab : 'transparent'}`,
+            color: T.text,
+            font: 'inherit',
             fontSize: 12,
+            cursor: 'pointer',
           }}
         >
-          {asset.displayName}
+          <div>{asset.displayName}</div>
+          <div style={{ fontSize: 10, color: T.faint }}>
+            {asset.id} · {asset.family}
+          </div>
+          <MarketBadge market={all?.markets.find((m) => m.id === asset.id) ?? null} />
         </button>
       ))}
-    </div>
+    </aside>
   );
 }
 
-function Row({ label, value }: { label: string; value: string }): ReactElement {
-  return (
-    <div style={{ display: 'flex', gap: 10, fontSize: 12, padding: '2px 0' }}>
-      <span style={{ color: '#5b6377', width: 150, flexShrink: 0 }}>{label}</span>
-      <span style={{ color: '#d7dce5', wordBreak: 'break-all' }}>{value}</span>
-    </div>
-  );
-}
-
-function Section({ title, children }: { title: string; children: ReactNode }): ReactElement {
-  return (
-    <section style={{ marginBottom: 18 }}>
-      <h2 style={{ fontSize: 11, color: '#5b6377', letterSpacing: 1, margin: '0 0 8px' }}>
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
-
-/**
- * §8 and §10.
- *
- * The specification asks for the engine's directional probabilities — "UP 51.8%
- * / DOWN 48.2%" and an influence breakdown. Those numbers cannot exist: the
- * sign is an independent fair coin at every tick and the magnitude engine
- * cannot observe one, so it is exactly one half and no influence moves it.
- *
- * What is shown instead is the latent magnitude and rhythm state, with that
- * sentence beside it. An operator asking whether this market is exploitable is
- * better served by the reason than by a number that would have to be invented.
- */
-function MarketState({ state }: { state: LabState | null }): ReactElement {
-  if (state === null)
-    return (
-      <Section title="MARKET STATE">
-        <Row label="state" value="…" />
-      </Section>
-    );
-  return (
-    <Section title="MARKET STATE">
-      <Row label="sequence" value={String(state.sequence)} />
-      <Row label="price" value={state.price} />
-      <Row label="lattice level" value={String(state.latticeLevel)} />
-      <Row label="previous magnitude" value={String(state.previousMagnitude)} />
-      <Row label="previous interval" value={`${String(state.previousIntervalMs)} ms`} />
-      <div data-testid="lab-direction" style={{ marginTop: 10 }}>
-        <Row
-          label="next tick"
-          value={`UP ${(100 * state.direction.up).toFixed(3)}%  ·  DOWN ${(100 * state.direction.down).toFixed(3)}%`}
-        />
-        <div style={{ color: '#8b93a7', fontSize: 11, lineHeight: 1.6, marginTop: 4 }}>
-          {state.direction.why}
-        </div>
-      </div>
-      <div style={{ marginTop: 10 }}>
-        <Row label="keystream cursors" value={Object.keys(state.cursors).join(', ')} />
-        <div style={{ color: '#a2827e', fontSize: 11, marginTop: 4 }}>
-          INV-010 forbids publishing these. They exist here and in no production response, which is
-          why the Lab is a separate process rather than a flag.
-        </div>
-      </div>
-    </Section>
-  );
-}
-
-/** §19–§37, as far as PH-23 built it: reachability, measured. */
-function CloseControl({
-  delta,
-  onDelta,
-  onProbe,
-  busy,
-  result,
+/** What decides, always visible: price, regime, armed state, last outcome. */
+function HeaderStrip({
+  state,
+  regime,
+  control,
 }: {
-  delta: string;
-  onDelta: (value: string) => void;
-  onProbe: () => Promise<void>;
-  busy: boolean;
-  result: Reachability | null;
+  state: LabState | null;
+  regime: string | null;
+  control: Control | null;
 }): ReactElement {
+  const armed = control?.armed ?? false;
+  const last = control?.lastApplied ?? null;
   return (
-    <Section title="CANDLE CLOSE CONTROL — REACHABILITY">
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-        <input
-          data-testid="lab-delta"
-          value={delta}
-          onChange={(event) => {
-            onDelta(event.target.value);
-          }}
-          style={{
-            width: 120,
-            background: '#0b0e14',
-            border: '1px solid #242c3d',
-            color: '#d7dce5',
-            padding: '4px 8px',
-            fontSize: 12,
-          }}
-        />
-        <span style={{ color: '#5b6377', fontSize: 11 }}>lattice steps from here</span>
-        <button
-          type="button"
-          data-testid="lab-probe"
-          disabled={busy}
-          onClick={() => {
-            void onProbe();
-          }}
-          style={{
-            background: '#161b26',
-            border: '1px solid #242c3d',
-            color: '#d7dce5',
-            padding: '4px 12px',
-            cursor: busy ? 'wait' : 'pointer',
-            fontSize: 12,
-          }}
+    <div
+      data-testid="lab-header"
+      style={{
+        display: 'flex',
+        alignItems: 'baseline',
+        gap: 22,
+        padding: '12px 16px',
+        borderBottom: `1px solid ${T.line}`,
+        flexShrink: 0,
+      }}
+    >
+      <span style={{ fontSize: 26, color: T.text }} data-testid="lab-header-price">
+        {state?.price ?? '—'}
+      </span>
+      <span style={{ color: T.muted, fontSize: 12 }}>
+        {es.lab.header.regime}: <span style={{ color: T.text }}>{regime ?? '—'}</span>
+      </span>
+      <Badge tone={armed ? 'lab' : 'muted'} testId="lab-header-armed">
+        {armed
+          ? `${es.lab.header.armed} · ${es.lab.header.remaining(control?.remaining ?? 0)}`
+          : es.lab.header.keystream}
+      </Badge>
+      {last !== null && (
+        <span
+          data-testid="lab-header-outcome"
+          style={{ fontSize: 12, color: last.exact === null ? T.muted : last.exact ? T.ok : T.bad }}
         >
-          {busy ? 'sampling…' : 'Measure'}
-        </button>
-      </div>
-      {result !== null && (
-        <div data-testid="lab-reachability">
-          <Row label="reachability" value={result.reachability} />
-          <Row label="ticks remaining" value={String(result.ticksRemaining)} />
-          <Row label="attempts" value={String(result.attempts)} />
-          <Row
-            label="acceptance rate"
-            value={result.acceptanceRate === 0 ? '0' : result.acceptanceRate.toFixed(6)}
-          />
-          {result.impossible !== null && (
-            <div style={{ color: '#e3b341', fontSize: 11, marginTop: 6, lineHeight: 1.6 }}>
-              {result.impossible}
-            </div>
-          )}
-        </div>
+          {last.closedPrice === null
+            ? `→ ${last.targetPrice}`
+            : `${last.targetPrice} → ${last.closedPrice} ${last.exact ? 'EXACTO' : 'FALLÓ'}`}
+        </span>
       )}
-      <div style={{ color: '#5b6377', fontSize: 11, marginTop: 8, lineHeight: 1.6 }}>
-        The rate is measured, not estimated: it is the fraction of the engine&apos;s own futures
-        that close there. A target the market cannot reach is refused by arithmetic, without
-        sampling.
-      </div>
-    </Section>
+    </div>
   );
 }
 
-/** §52–§68, from the laboratory that has been running headless for eight phases. */
-/**
- * What the screen prints, and why none of the three is the bare word "clean".
- *
- * "Clean" and "clean at a stated resolution" are different claims and only the
- * second can be acted on — the distinction `VALIDATION.md` exists to keep, and
- * the one Cycle Audit 7 caught PH-21 collapsing (CA7-05).
- */
-const VERDICT: Record<Quality['predictability']['verdict'], string> = {
-  inconclusive: 'INCONCLUSIVE — too few hypotheses survived to have looked',
-  'clean-above-resolution': 'clean, above the resolution below',
-  exploitable: 'EDGE DETECTED',
-};
-
-function QualityPanel({
-  quality,
-  busy,
-  onRun,
-}: {
-  quality: Quality | null;
-  busy: boolean;
-  onRun: () => Promise<void>;
-}): ReactElement {
+/** A market's state in one word on the asset list (PH-24.9): armed, or how its last close ended. */
+function MarketBadge({ market }: { market: MarketControl | null }): ReactElement | null {
+  if (market === null) return null;
+  if (market.armed) {
+    const push = market.pushing ?? null;
+    return (
+      <Badge tone="lab" testId={`lab-asset-badge-${market.id}`}>
+        {push !== null
+          ? `${push.direction === 1 ? '↑' : '↓'} ${String(push.remaining)}`
+          : `${es.lab.header.armed} · ${String(market.remaining)}`}
+      </Badge>
+    );
+  }
+  const last = market.lastApplied;
+  if (last === null || last.closedPrice === null) return null;
   return (
-    <Section title="MARKET QUALITY">
-      <button
-        type="button"
-        data-testid="lab-quality"
-        disabled={busy}
-        onClick={() => {
-          void onRun();
-        }}
-        style={{
-          background: '#161b26',
-          border: '1px solid #242c3d',
-          color: '#d7dce5',
-          padding: '4px 12px',
-          cursor: busy ? 'wait' : 'pointer',
-          fontSize: 12,
-          marginBottom: 8,
-        }}
-      >
-        {busy ? 'running the battery…' : 'Run'}
-      </button>
-      {quality !== null && (
-        <div data-testid="lab-quality-result">
-          {/*
-            "at this sample", never a bare `plausible` / `IMPLAUSIBLE`. Three
-            consecutive forks of one market at this size measured 14/15, 15/15
-            and 15/15 — so the word flips and the market does not.
-          */}
-          <Row
-            label="realism"
-            value={`${String(quality.realism.passed)} of ${String(
-              quality.realism.of,
-            )} metrics inside their bands, on this fork`}
-          />
-          <div
-            data-testid="lab-realism-note"
-            style={{ color: '#8b93a7', fontSize: 11, lineHeight: 1.6, margin: '2px 0 8px' }}
-          >
-            {quality.realism.note}
-          </div>
-          <Row label="predictability" value={VERDICT[quality.predictability.verdict]} />
-          <Row
-            label="resolution"
-            value={`no edge above ${quality.predictability.resolutionPoints.toFixed(2)}pp`}
-          />
-          <Row
-            label="hypotheses tested"
-            value={`${String(quality.predictability.hypothesesTested)} (a verdict needs ${String(
-              quality.predictability.minimumHypotheses,
-            )})`}
-          />
-          <Row label="sampled ticks" value={String(quality.sampledTicks)} />
-          <div
-            data-testid="lab-quality-caveat"
-            style={{ color: '#e3b341', fontSize: 11, marginTop: 6, lineHeight: 1.6 }}
-          >
-            {quality.bounded}
-          </div>
-          {/*
-            The battery's own account of what it could not test. It was being
-            computed and dropped: the first version of this panel printed a
-            green `clean` resting on two hypotheses out of eight hundred, and
-            these are the four sentences that would have said so.
-          */}
-          <ul
-            data-testid="lab-quality-notes"
-            style={{
-              color: '#8b93a7',
-              fontSize: 11,
-              lineHeight: 1.6,
-              margin: '6px 0 0',
-              paddingLeft: 16,
-            }}
-          >
-            {quality.predictability.notes.map((note) => (
-              <li key={note}>{note}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </Section>
+    <Badge tone={last.exact === true ? 'ok' : 'bad'} testId={`lab-asset-badge-${market.id}`}>
+      {last.exact === true ? 'EXACTO' : 'FALLÓ'}
+    </Badge>
   );
 }

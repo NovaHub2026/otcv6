@@ -107,3 +107,4 @@ export {
   type StandingVerdict,
   composeFamilies,
 } from './standing.js';
+export { tickGranularity, type GranularityReport } from './granularity.js';
