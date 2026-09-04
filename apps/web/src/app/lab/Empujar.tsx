@@ -3,7 +3,7 @@
 import type { ReactElement } from 'react';
 import { es } from '../../lib/es.js';
 import { Badge, Button, Info, Notice, T } from '../ui/kit.js';
-import type { Control, Pace, PushResult } from './labApi.js';
+import type { Control, LabState, Pace, PushResult } from './labApi.js';
 
 export const PUSH_SIZES = [1, 3, 5, 10] as const;
 
@@ -23,6 +23,7 @@ export function Empujar({
   pace,
   onPace,
   onBias,
+  state,
 }: {
   control: Control | null;
   last: PushResult | null;
@@ -34,6 +35,8 @@ export function Empujar({
   onPace: (pace: Pace) => void;
   /** PH-24.16: sube / baja. */
   onBias: (direction: 'up' | 'down' | 'off') => Promise<void>;
+  /** PH-24.18: the market's distance unit, for the strip's label. */
+  state: LabState | null;
 }): ReactElement {
   const p = es.lab.push;
   const pushing = control?.pushing ?? null;
@@ -83,6 +86,19 @@ export function Empujar({
         </Button>
       ))}
       <span style={{ color: T.faint, fontSize: 11 }}>{p.up}</span>
+      {state?.distance !== undefined && (
+        <span data-testid="lab-push-unit" style={{ color: T.faint, fontSize: 11, marginLeft: 4 }}>
+          {p.unitLabel(state.distance.unitPrice)}{' '}
+          <Info
+            text={p.unitInfo(
+              state.distance.unitPrice,
+              (Number(state.distance.unitPrice) * 4).toFixed(
+                state.distance.unitPrice.split('.')[1]?.length ?? 0,
+              ),
+            )}
+          />
+        </span>
+      )}
       <span style={{ color: T.faint, fontSize: 11, marginLeft: 6 }}>
         {p.pace.label} <Info text={p.pace.info} />
       </span>
@@ -137,7 +153,9 @@ export function Empujar({
       {/* The last act's announcement stays: a burst lands before the strip's next poll (PH-24.13). */}
       {last !== null && (
         <span data-testid="lab-push-landing" style={{ fontSize: 12, color: T.muted }}>
-          {p.landing(last.landing.price, last.landing.afterTicks)}
+          {last.distance !== undefined && last.distance !== null
+            ? p.landingUnits(last.landing.price, last.distance.units, last.landing.afterTicks)
+            : p.landing(last.landing.price, last.landing.afterTicks)}
           {last.pace !== undefined ? ` · ${p.pace[last.pace]}` : ''}
           {last.extended ? ` · ${p.extended}` : ''}
         </span>

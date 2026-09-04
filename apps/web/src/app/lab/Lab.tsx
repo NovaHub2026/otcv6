@@ -264,7 +264,8 @@ export function Lab(): ReactElement {
     setPushError(null);
     try {
       const body = await labPost<PushResult>(
-        `markets/${selected}/push?ticks=${String(ticks)}&pace=${pace}`,
+        // PH-24.18: the buttons are distances in the market's own unit, not ticks.
+        `markets/${selected}/push?distance=${String(ticks)}&pace=${pace}`,
       );
       if (isUnavailable(body)) {
         // A failed push is said on the strip; the screen and its buttons stay.
@@ -415,6 +416,7 @@ export function Lab(): ReactElement {
             pace={pace}
             onPace={setPace}
             onBias={setBias}
+            state={state}
           />
           <LabChart
             entry={catalogue.find((c) => c.id === selected) ?? null}
@@ -469,6 +471,7 @@ export function Lab(): ReactElement {
                 notice={notice}
                 control={control}
                 displayPrecision={state === null ? 7 : (state.price.split('.')[1] ?? '').length}
+                unitSteps={state?.distance?.unitSteps ?? 1}
               />
             </div>
             <div hidden={tab !== 'positions'}>
@@ -489,6 +492,7 @@ export function Lab(): ReactElement {
                 onRun={runScenario}
                 onTarget={runScenario}
                 targetPlan={scenarioPlan}
+                unitSteps={state?.distance?.unitSteps ?? 1}
               />
             </div>
             <div hidden={tab !== 'quality'}>

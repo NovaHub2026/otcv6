@@ -39,6 +39,8 @@ export class SelectableSigns implements RandomSource {
   #runSign: 1 | -1 = 1;
   #runLeft = 0;
   #lastForLength = 0;
+  #runMin = BIAS_RUN_MIN;
+  #runMax = BIAS_RUN_MAX;
 
   constructor(
     private readonly inner: RandomSource,
@@ -100,6 +102,11 @@ export class SelectableSigns implements RandomSource {
     return this.#bias;
   }
 
+  /** The run lengths a bias plays, in ticks. */
+  get biasRuns(): { readonly min: number; readonly max: number } {
+    return { min: this.#runMin, max: this.#runMax };
+  }
+
   /**
    * Prioritise a direction until told otherwise (PH-24.16).
    *
@@ -109,9 +116,20 @@ export class SelectableSigns implements RandomSource {
    * the keystream keeps advancing in lockstep as always. A script armed on top
    * plays first; the bias resumes after it.
    */
-  setBias(direction: 1 | -1, random: RandomSource): void {
+  setBias(
+    direction: 1 | -1,
+    random: RandomSource,
+    runs: { readonly min: number; readonly max: number } = { min: BIAS_RUN_MIN, max: BIAS_RUN_MAX },
+  ): void {
+    if (!(runs.min >= 2) || !(runs.max >= runs.min)) {
+      throw new RangeError(
+        `Bias runs must satisfy 2 <= min <= max, received ${String(runs.min)}..${String(runs.max)}.`,
+      );
+    }
     this.#bias = direction;
     this.#biasRandom = random;
+    this.#runMin = runs.min;
+    this.#runMax = runs.max;
     this.#runLeft = 0;
     this.#lastForLength = 0;
   }
@@ -139,7 +157,7 @@ export class SelectableSigns implements RandomSource {
       if (this.#lastForLength === 0 || this.#runSign !== bias) {
         // A run for the direction.
         this.#runSign = bias;
-        this.#runLeft = BIAS_RUN_MIN + random.nextBoundedUint32(BIAS_RUN_MAX - BIAS_RUN_MIN + 1);
+        this.#runLeft = this.#runMin + random.nextBoundedUint32(this.#runMax - this.#runMin + 1);
         this.#lastForLength = this.#runLeft;
       } else {
         // A run against it, strictly shorter than the run before.

@@ -6,9 +6,8 @@ import { PublicationService } from '../publication.service.js';
 import { VenueService } from '../venue.service.js';
 import { LabController } from './lab.controller.js';
 import { SignSelector } from './selectableSigns.js';
-import { ArrivalSelector, BURST_DIVISOR, PACE_DIVISORS } from './selectableArrival.js';
+import { ArrivalSelector, paceIntervalMs } from './selectableArrival.js';
 import { LabPositions } from './positions.js';
-import { configFor } from '@otc/engine';
 import { LabSession } from './session.js';
 
 /**
@@ -113,8 +112,7 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     const labDeltas = deltas(labTicks, lastPublished);
     const labIntervals = intervals(labTicks, lastPublished);
     // Criterion 2: the burst — at most base / BURST_DIVISOR apart, every sign up.
-    const base = configFor(asset).arrival.baseIntervalMs;
-    const step = Math.max(1, Math.floor(base / BURST_DIVISOR));
+    const step = paceIntervalMs('rapido', asset.evidence.meanIntervalMs)!;
     // PH-24.16: the first pushed tick is anchored at now — its interval is the gap
     // since the last published tick plus one burst step; the rest are burst steps.
     expect(labIntervals[0]!).toBeGreaterThanOrEqual(gap);
@@ -229,7 +227,6 @@ describe('PH-24.10 — a push is N natural ticks', () => {
   });
 
   it("PH-24.15: normal plays the keystream's own intervals, medio one sixth of the tempo; the pace is recorded", async () => {
-    const base = configFor(asset).arrival.baseIntervalMs;
     // normal: the pushed stretch has the unpushed venue's intervals, tick for tick —
     // the retract redraws from the same keystream positions and no arrival draw is scripted.
     const lab = await labVenue();
@@ -280,7 +277,7 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     expect(m.pushing).toEqual({ direction: -1, requested: 4, remaining: 4, pace: 'medio' });
     await advance(medio.venue, medio.clock, 5_000);
     const mTicks = after(record(medio.venue), last2.sequence);
-    const bound = Math.max(1, Math.floor(base / PACE_DIVISORS.medio!));
+    const bound = paceIntervalMs('medio', asset.evidence.meanIntervalMs)!;
     // PH-24.16: the first pushed tick is anchored at now (gap + step); the rest at the pace.
     const mIntervals = intervals(mTicks, last2).slice(0, 4);
     expect(mIntervals[0]!).toBeLessThanOrEqual(gapMedio + bound + 1);
@@ -292,17 +289,13 @@ describe('PH-24.10 — a push is N natural ticks', () => {
   });
 
   it('PH-24.16: pushed ticks are due one after another from now, at the pace, never before the push', async () => {
-    const base = configFor(asset).arrival.baseIntervalMs;
-    for (const [pace, divisor] of [
-      ['rapido', BURST_DIVISOR],
-      ['medio', PACE_DIVISORS.medio!],
-    ] as const) {
+    for (const pace of ['rapido', 'medio'] as const) {
       const lab = await labVenue();
       await advance(lab.venue, lab.clock, 120_000);
       const lastPublished = record(lab.venue)[record(lab.venue).length - 1]!;
       const now = lab.clock.now();
       const pushed = (await lab.controller.push(id, '+5', pace)) as Pushed;
-      const step = Math.max(1, Math.floor(base / divisor));
+      const step = paceIntervalMs(pace, asset.evidence.meanIntervalMs)!;
       // The landing is five ticks ahead of now, not of the last published instant.
       expect(pushed.landing.instant).toBeGreaterThanOrEqual(now + step);
       expect(pushed.landing.instant).toBeLessThanOrEqual(now + 6 * step + 1);
@@ -320,5 +313,50 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     const now = lab.clock.now();
     const pushed = (await lab.controller.push(id, '+2', 'normal')) as Pushed;
     expect(pushed.landing.instant).toBeGreaterThan(now);
+  });
+
+  it('PH-24.18: a push by distance arms the ticks the fork needed to reach the units asked, and says so', async () => {
+    const lab = await labVenue();
+    await advance(lab.venue, lab.clock, 120_000);
+    const state = lab.controller.state(id) as {
+      latticeLevel: number;
+      distance: { unitSteps: number; candleRangeSteps: number; minutes: number };
+    };
+    expect(state.distance.minutes).toBeGreaterThan(10);
+    expect(state.distance.unitSteps).toBeGreaterThanOrEqual(1);
+    const pushed = (await lab.controller.push(id, undefined, 'rapido', '+2')) as Pushed & {
+      distance: { units: number; unitSteps: number; ticks: number; fromLevel: number } | null;
+      landing: { latticeLevel: number };
+    };
+    expect(pushed.armed).toBe(true);
+    expect(pushed.distance).not.toBeNull();
+    expect(pushed.distance!.units).toBe(2);
+    expect(pushed.distance!.ticks).toBe(pushed.ticks);
+    // It stops when the distance is reached: fewer ticks than the fork may look
+    // at, and a landing not further past the target than a candle's range (a plant
+    // that ignored the stop walked all 400 and passed a looser version of this).
+    expect(pushed.ticks).toBeLessThan(400);
+    expect(Math.abs(pushed.landing.latticeLevel - pushed.distance!.fromLevel)).toBeLessThan(
+      2 * state.distance.unitSteps + state.distance.candleRangeSteps,
+    );
+    // The landing is at least two units from where the walk began — the last
+    // published level, the retracted pending tick undone (`state` still carried it).
+    expect(
+      Math.abs(pushed.landing.latticeLevel - pushed.distance!.fromLevel),
+    ).toBeGreaterThanOrEqual(2 * state.distance.unitSteps);
+    expect(Math.abs(pushed.distance!.fromLevel - state.latticeLevel)).toBeLessThan(
+      state.distance.unitSteps,
+    );
+    expect(pushed.pushing).toMatchObject({
+      direction: 1,
+      requested: pushed.ticks,
+      remaining: pushed.ticks,
+    });
+    await expect(lab.controller.push(id, undefined, 'rapido', '0')).rejects.toThrow(
+      /distance must be/,
+    );
+    await expect(lab.controller.push(id, undefined, 'rapido', '21')).rejects.toThrow(
+      /distance must be/,
+    );
   });
 });

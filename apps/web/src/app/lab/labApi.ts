@@ -52,6 +52,13 @@ export interface LabMarket {
 export interface LabState {
   readonly environment: string;
   readonly sequence: number;
+  /** PH-24.18: the market's own distance unit — a quarter of its median 1m range. */
+  readonly distance?: {
+    readonly unitSteps: number;
+    readonly unitPrice: string;
+    readonly candleRangeSteps: number;
+    readonly minutes: number;
+  };
   /** Rendered to the asset's display precision; the lattice level is beside it. */
   readonly price: string;
   readonly latticeLevel: number;
@@ -117,6 +124,11 @@ export interface PushResult extends Control {
     readonly afterTicks: number;
   };
   readonly released: { readonly discarded: number } | null;
+  readonly distance?: {
+    readonly units: number;
+    readonly unitSteps: number;
+    readonly ticks: number;
+  } | null;
 }
 
 export interface Control {

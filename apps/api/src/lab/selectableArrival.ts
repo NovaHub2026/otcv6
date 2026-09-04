@@ -146,12 +146,20 @@ export const BURST_DRAW = 1 - exp(-1 / BURST_DIVISOR);
  */
 export type Pace = 'normal' | 'medio' | 'rapido';
 export const PACES: readonly Pace[] = ['normal', 'medio', 'rapido'];
-export const PACE_DIVISORS: Readonly<Record<Pace, number | null>> = {
+/**
+ * PH-24.18: a pace is a fraction of the market's **mean interval**, not of
+ * its base tempo — `medio` half of it, `rapido` a fifth — so the feel is the
+ * same on every asset and survives a recalibration of the tempo. The draw
+ * that yields the interval is found on a fork by bisection at push time (the
+ * Hawkes intensity is the market's own at that moment); these are the targets.
+ */
+export const PACE_FRACTIONS: Readonly<Record<Pace, number | null>> = {
   normal: null,
-  medio: 6,
-  rapido: BURST_DIVISOR,
+  medio: 1 / 2,
+  rapido: 1 / 5,
 };
-export function paceDraw(pace: Pace): number | null {
-  const divisor = PACE_DIVISORS[pace];
-  return divisor === null ? null : 1 - exp(-1 / divisor);
+/** The pace's interval for a market, in milliseconds; null for the market's own. */
+export function paceIntervalMs(pace: Pace, meanIntervalMs: number): number | null {
+  const fraction = PACE_FRACTIONS[pace];
+  return fraction === null ? null : Math.max(1, Math.round(meanIntervalMs * fraction));
 }

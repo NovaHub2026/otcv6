@@ -28,14 +28,14 @@ Last synchronized: 2026-09-03
 | Active subphase        | none                                             |
 | Subphase lifecycle     | none                                             |
 | Last approved phase    | PH-23 — The OTC Market Lab                       |
-| Last approved subphase | PH-24.17 — Granularidad del tick                 |
+| Last approved subphase | PH-24.18 — Las distancias del Lab                |
 
-**PH-24 is active; seventeen subphases approved (PH-24.1–24.17).** The Lab is
-the controls the Human Owner asked for — instantaneous pushes at a chosen
-pace, a sustained direction, the exact close of the current candle — on one
-engine per deployment; and the engine's markets now tick three to four times
-as often at the same dispersion (PH-24.17), so a candle's boundary gap is one
-small step. The next item awaits the Human Owner. The merge, hosted CI and
+**PH-24 is active; eighteen subphases approved (PH-24.1–24.18).** The Lab
+states every distance in the market's own unit — a quarter of its median
+1-minute candle, measured on its own fork — pushes by distance, bias runs in
+market time, paces as fractions of the mean interval (PH-24.18), over an
+engine whose markets tick three to four times as often at the same dispersion
+(PH-24.17). The next item awaits the Human Owner. The merge, hosted CI and
 Cycle Audit 8 wait until the Lab is complete; PH-24's approval is Cycle 8's
 third phase.
 

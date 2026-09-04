@@ -274,7 +274,7 @@ describe('the Lab is marked wherever it appears', () => {
     // The strip never posts anything itself; the shell does, to the push route and only there.
     expect(strip).not.toMatch(/labPost|labGet/);
     const lab = code('lab/Lab.tsx');
-    expect(lab).toMatch(/markets\/\$\{selected\}\/push\?ticks=\$\{String\(ticks\)\}/);
+    expect(lab).toMatch(/markets\/\$\{selected\}\/push\?distance=\$\{String\(ticks\)\}/);
     // Outside every tab: rendered before the Tabs, not inside a hidden div.
     const stripAt = lab.indexOf('<Empujar');
     expect(stripAt).toBeGreaterThan(0);
@@ -383,7 +383,9 @@ describe('the Lab is marked wherever it appears', () => {
     expect(strip).toMatch(/p\.pace\.label/);
     const lab = code('lab/Lab.tsx');
     expect(lab).toMatch(/useState<Pace>\('rapido'\)/);
-    expect(lab).toMatch(/push\?ticks=\$\{String\(ticks\)\}&pace=\$\{pace\}/);
+    // PH-24.18: the buttons send distances in the market's unit.
+    expect(lab).toMatch(/push\?distance=\$\{String\(ticks\)\}&pace=\$\{pace\}/);
+    expect(strip).toMatch(/(data-testid|testId)="lab-push-unit"/);
   });
 
   it('offers sube / baja as toggles that go to the bias route (PH-24.16)', () => {
@@ -421,6 +423,23 @@ describe('the Lab is marked wherever it appears', () => {
     const cierre = code('lab/Cierre.tsx');
     expect(cierre).toMatch(/(data-testid|testId)="lab-close-adjusted"/);
     expect(cierre).toMatch(/plan\.adjusted\.requested, plan\.adjusted\.applied/);
+  });
+
+  it("states every distance in the market's unit and converts on the screen (PH-24.18)", () => {
+    const cierre = code('lab/Cierre.tsx');
+    expect(cierre.match(/onDelta\(d \* unitSteps, true\)/g) ?? []).toHaveLength(2);
+    const escenarios = code('lab/Escenarios.tsx');
+    expect(escenarios).toMatch(
+      /DISTANCE_PARAMS = new Set\(\['net', 'range', 'rise', 'fall', 'level', 'hold'\]\)/,
+    );
+    expect(escenarios).toMatch(/Math\.round\(entered \* unitSteps\)/);
+    expect(escenarios).toMatch(
+      /size: Math\.max\(1, Math\.round\(Number\(shockSize\) \* unitSteps\)\)/,
+    );
+    // The level the target route receives is the entered units times the unit (Prettier may wrap it).
+    expect(escenarios).toMatch(/level: Math\.round\(\s*Number\([\s\S]*?\) \* unitSteps,?\s*\)/);
+    const lab = code('lab/Lab.tsx');
+    expect(lab.match(/unitSteps=\{state\?\.distance\?\.unitSteps \?\? 1\}/g) ?? []).toHaveLength(2);
   });
 
   it('says the Lab is absent rather than hiding that it can be', () => {

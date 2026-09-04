@@ -7,7 +7,7 @@ import { VenueService } from '../venue.service.js';
 import { LabController } from './lab.controller.js';
 import { LabPositions } from './positions.js';
 import { ArrivalSelector } from './selectableArrival.js';
-import { BIAS_RUN_MAX, SignSelector } from './selectableSigns.js';
+import { SignSelector } from './selectableSigns.js';
 import { LabSession } from './session.js';
 
 /**
@@ -84,8 +84,15 @@ describe('PH-24.16 — sube / baja', () => {
     const lab = await labVenue();
     await advance(lab.venue, lab.clock, 60_000);
     const start = record(lab.venue)[record(lab.venue).length - 1]!;
-    const on = (await lab.controller.bias(id, 'down')) as { bias: number | null };
+    const on = (await lab.controller.bias(id, 'down')) as {
+      bias: number | null;
+      runs: { min: number; max: number } | null;
+    };
     expect(on.bias).toBe(-1);
+    // PH-24.18: runs are one to three seconds of the market's pace, never under two ticks.
+    const mean = asset.evidence.meanIntervalMs;
+    const runMin = Math.max(2, Math.round(1_000 / mean));
+    expect(on.runs).toEqual({ min: runMin, max: Math.max(runMin + 1, Math.round(3_000 / mean)) });
     await advance(lab.venue, lab.clock, 180_000);
     const ticks = record(lab.venue);
     const end = ticks[ticks.length - 1]!;
@@ -101,7 +108,7 @@ describe('PH-24.16 — sube / baja', () => {
     const pattern = runs(signs);
     for (let i = 1; i < pattern.length - 1; i += 1) {
       const run = pattern[i]!;
-      if (run.sign === 1) expect(run.length).toBeLessThanOrEqual(BIAS_RUN_MAX - 1);
+      if (run.sign === 1) expect(run.length).toBeLessThanOrEqual(on.runs!.max - 1);
     }
     expect(
       lab.session.toLines().some((l) => /"action":"bias"/.test(l) && /"direction":"down"/.test(l)),

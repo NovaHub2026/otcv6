@@ -3,6 +3,7 @@ import { AppModule } from '../app.module.js';
 import { LabController } from './lab.controller.js';
 import { SignSelector } from './selectableSigns.js';
 import { ArrivalSelector } from './selectableArrival.js';
+import { LabDistances } from './distance.js';
 import { LabSession } from './session.js';
 import { LabPositions } from './positions.js';
 import { EngineEventObserver } from './engineEvents.js';
@@ -35,6 +36,10 @@ const arrivals = new ArrivalSelector();
   providers: [
     { provide: SignSelector, useValue: selector },
     { provide: ArrivalSelector, useValue: arrivals },
+    // PH-24.18: the distance units' cache. Every constructor parameter of the
+    // controller must be a provider here — the browser suite boots the real
+    // module and found this one missing; `labModule.test.ts` now boots it too.
+    { provide: LabDistances, useValue: new LabDistances() },
     LabSession,
     LabPositions,
     {

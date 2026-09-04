@@ -25,7 +25,6 @@ import {
   selectClose,
   selectContinuation,
   type Continuation,
-  configFor,
 } from '@otc/engine';
 import { STATE_RECORD_VERSION } from '@otc/runtime';
 import { VenueService } from '../venue.service.js';
@@ -35,11 +34,11 @@ import { closesDiagnostic } from './closesDiagnostic.js';
 import { positionsDiagnostic, type SettledPosition } from './positionsDiagnostic.js';
 import { SCENARIOS, scenarioNamed, scenarioParameters, shapeOf } from './scenarios.js';
 import { SelectableSigns, SignSelector } from './selectableSigns.js';
+import { distanceUnitFrom, LabDistances, type DistanceUnit } from './distance.js';
 import {
   ArrivalSelector,
-  PACE_DIVISORS,
   PACES,
-  paceDraw,
+  paceIntervalMs,
   SelectableArrival,
   type Pace,
 } from './selectableArrival.js';
@@ -148,6 +147,8 @@ const LAB_MAX_SAMPLE_TICKS = 8_000_000;
 
 /** The most ticks one push may arm: past this the operator is drawing a chart, not pushing (PH-24.10). */
 const PUSH_MAX_TICKS = 50;
+/** By distance the fork decides the count; this is how far it may look. */
+const PUSH_MAX_TICKS_BY_DISTANCE = 400;
 
 const PUSH_RUNNING =
   'PUSH_RUNNING: a push is running on this market and a plan computed on the keystream would ' +
@@ -161,6 +162,7 @@ export class LabController {
     private readonly session: LabSession,
     private readonly positions: LabPositions = new LabPositions(),
     private readonly arrivals: ArrivalSelector = new ArrivalSelector(),
+    private readonly distances: LabDistances = new LabDistances(),
   ) {}
 
   /**
@@ -242,6 +244,7 @@ export class LabController {
        * trend is an excursion of a fair walk, and this is its size.
        */
       netDisplacement: this.netDisplacement(id, snapshot.instant),
+      distance: this.distanceUnit(id),
       magnitudeState: snapshot.magnitudeState,
       arrivalState: snapshot.arrivalState,
       /** INV-010: this is the reason this route may not exist in production. */
@@ -578,8 +581,21 @@ export class LabController {
     @Param('id') id: string,
     @Query('ticks') ticksText?: string,
     @Query('pace') paceText?: string,
+    @Query('distance') distanceText?: string,
   ): Promise<unknown> {
-    const ticks = Number(ticksText);
+    // PH-24.18: a push may be asked as a distance in the market's own unit —
+    // a quarter of its median 1m candle — and the Lab finds on a fork how many
+    // ticks at this pace it takes. `ticks=` stays for the API's own use.
+    const units = distanceText === undefined ? null : Number(distanceText);
+    if (units !== null) {
+      if (!/^[+-]?\d+$/.test(distanceText!.trim()) || units === 0 || Math.abs(units) > 20) {
+        throw new BadRequestException(
+          'distance must be a whole number of units, 1..20 or its negative.',
+        );
+      }
+    }
+    const ticks =
+      units !== null ? Math.sign(units) * PUSH_MAX_TICKS_BY_DISTANCE : Number(ticksText);
     const pace: Pace = (paceText ?? 'rapido') as Pace;
     if (!PACES.includes(pace)) {
       throw new BadRequestException(
@@ -587,11 +603,12 @@ export class LabController {
       );
     }
     if (
-      ticksText === undefined ||
-      !/^[+-]?\d+$/.test(ticksText.trim()) ||
-      !Number.isSafeInteger(ticks) ||
-      ticks === 0 ||
-      Math.abs(ticks) > PUSH_MAX_TICKS
+      units === null &&
+      (ticksText === undefined ||
+        !/^[+-]?\d+$/.test(ticksText.trim()) ||
+        !Number.isSafeInteger(ticks) ||
+        ticks === 0 ||
+        Math.abs(ticks) > PUSH_MAX_TICKS)
     ) {
       throw new BadRequestException(
         `ticks must be a whole number of ticks, 1..${String(PUSH_MAX_TICKS)} or its negative.`,
@@ -601,7 +618,9 @@ export class LabController {
     const at = this.venue.now();
     const before = this.controlState(id);
     const direction: 1 | -1 = ticks > 0 ? 1 : -1;
-    const count = Math.abs(ticks);
+    const unit = units === null ? null : this.distanceUnit(id);
+    const targetSteps = units === null || unit === null ? null : Math.abs(units) * unit.unitSteps;
+    let count = Math.abs(ticks);
     const running = this.pushes.get(id);
     const extended = running !== undefined && running.direction === direction;
     const signs: (1 | -1)[] = Array.from({ length: count }, () => direction);
@@ -637,7 +656,7 @@ export class LabController {
         extended && arrival !== null ? [...arrival.remainingScript()] : [];
       const retracted = market.retractPending();
       const script: (1 | -1)[] = [...carried, ...signs];
-      const draw = paceDraw(pace);
+      const draw = this.paceDrawFor(id, pace, arrival !== null);
       const paced: (number | null)[] = signs.map(() => draw);
       // PH-24.16: the first pushed tick is anchored at now. Its draw is found on
       // forks so that its interval is the gap since the last published tick plus
@@ -666,15 +685,29 @@ export class LabController {
       // Armed after the fork restored: a restore seeks, and a seek releases.
       (forkSigns as SelectableSigns | null)!.arm(script);
       (forkArrival as SelectableArrival | null)?.arm(draws);
+      const startLevel = fork.price;
       let level = fork.price;
       let landingInstant = fork.instant;
+      let walked = 0;
       for (let i = 0; i < script.length; i += 1) {
         const tick = fork.next();
         if (tick === null) break;
         level = tick.price;
         landingInstant = tick.instant;
+        walked = i + 1;
+        // By distance: stop at the first tick that reaches the units asked.
+        if (
+          targetSteps !== null &&
+          i >= carried.length &&
+          Math.abs(level - startLevel) >= targetSteps
+        )
+          break;
       }
-      // The live market: after the retract everything was released, so arm the whole script.
+      if (targetSteps !== null) {
+        count = Math.max(1, walked - carried.length);
+        script.length = carried.length + count;
+        draws.length = carried.length + count;
+      }
       wrapper.arm(script);
       arrival?.arm(draws);
       this.pushes.set(id, {
@@ -684,7 +717,16 @@ export class LabController {
       });
       // The fork started at the snapshot's sequence; the landing is script.length ticks on.
       const sequence = this.venue.hostedMarket(id)!.snapshotEngine().sequence + script.length;
-      return { level, landingInstant, afterTicks: script.length, sequence, released, retracted };
+      return {
+        level,
+        landingInstant,
+        afterTicks: script.length,
+        sequence,
+        released,
+        retracted,
+        count,
+        startLevel,
+      };
     });
     // The burst's first instant is already in the past: publish it now, not on the old timer.
     this.venue.wake();
@@ -711,7 +753,11 @@ export class LabController {
       asset: id,
       engineVersion: ENGINE_VERSION,
       action: 'push',
-      parameters: { ticks, pace },
+      parameters: {
+        ticks: result.count * direction,
+        pace,
+        ...(units === null ? {} : { distance: units }),
+      },
       initialState: before,
       resultingState: this.controlState(id),
       succeeded: true,
@@ -721,9 +767,19 @@ export class LabController {
       environment: LAB,
       asset: id,
       direction: direction === 1 ? 'up' : 'down',
-      ticks: count,
+      ticks: result.count,
       pace,
       extended,
+      distance:
+        units === null || unit === null
+          ? null
+          : {
+              units: Math.abs(units),
+              unitSteps: unit.unitSteps,
+              ticks: result.count,
+              // Where the walk began: the last published level, the retracted tick undone.
+              fromLevel: result.startLevel,
+            },
       landing,
       released: result.released,
       retracted: result.retracted,
@@ -769,6 +825,23 @@ export class LabController {
   }
 
   /**
+   * The market's distance unit (PH-24.18): a quarter of the median 1m range,
+   * measured over thirty minutes of a fork of the live market, cached briefly.
+   */
+  private distanceUnit(id: string): DistanceUnit {
+    const now = this.venue.now();
+    const cached = this.distances.cached(id, now);
+    if (cached !== null) return cached;
+    const asset = this.venue.assetFor(id)!;
+    const ticks = this.venue.labTicksAhead(
+      id,
+      Math.min(50_000, Math.max(2_000, Math.round(1_800_000 / asset.evidence.meanIntervalMs))),
+    );
+    const level = this.venue.hostedMarket(id)!.snapshotEngine().price;
+    return this.distances.remember(id, distanceUnitFrom(asset, level, ticks, now));
+  }
+
+  /**
    * The arrival draw that puts the first pushed tick at now plus the pace's
    * interval (PH-24.16), found by bisection on forks — the model is the
    * engine's own, so the fork's answer is the market's.
@@ -781,7 +854,6 @@ export class LabController {
   ): number | null {
     if (!selectable) return null;
     const asset = this.venue.assetFor(id)!;
-    const base = configFor(asset).arrival.baseIntervalMs;
     const firstIntervalWith = (draw: number | null): number => {
       let armed: SelectableArrival | null = null;
       const fork = this.venue.labFork(id, undefined, (keystream) => {
@@ -792,9 +864,8 @@ export class LabController {
       const tick = fork.next();
       return tick === null ? Number.POSITIVE_INFINITY : tick.instant - fork.instant;
     };
-    const divisor = PACE_DIVISORS[pace];
-    const own =
-      divisor === null ? firstIntervalWith(null) : Math.max(1, Math.floor(base / divisor));
+    const paceMs = paceIntervalMs(pace, asset.evidence.meanIntervalMs);
+    const own = paceMs === null ? firstIntervalWith(null) : paceMs;
     const snapshot = this.venue.hostedMarket(id)!.snapshotEngine();
     const gap = Math.max(0, at - snapshot.instant);
     const target = gap + own;
@@ -805,6 +876,42 @@ export class LabController {
     for (let i = 0; i < 40; i += 1) {
       const mid = (lo + hi) / 2;
       const interval = firstIntervalWith(mid);
+      best = mid;
+      if (Math.abs(interval - target) <= 1) break;
+      if (interval < target) lo = mid;
+      else hi = mid;
+    }
+    return best;
+  }
+
+  /**
+   * The arrival draw for a pace on this market now (PH-24.18): the draw whose
+   * interval, from the market's current state, is the pace's fraction of the
+   * mean interval — found by bisection on a fork, like the anchored first tick.
+   * One draw serves the whole burst; the burst's own excitation then shortens
+   * the later intervals, as it would for any fast stretch.
+   */
+  private paceDrawFor(id: string, pace: Pace, selectable: boolean): number | null {
+    if (!selectable) return null;
+    const asset = this.venue.assetFor(id)!;
+    const target = paceIntervalMs(pace, asset.evidence.meanIntervalMs);
+    if (target === null) return null;
+    const intervalWith = (draw: number): number => {
+      let armed: SelectableArrival | null = null;
+      const fork = this.venue.labFork(id, undefined, (keystream) => {
+        armed = new SelectableArrival(keystream, id);
+        return armed;
+      })!;
+      (armed as SelectableArrival | null)!.arm([draw]);
+      const tick = fork.next();
+      return tick === null ? Number.POSITIVE_INFINITY : tick.instant - fork.instant;
+    };
+    let lo = 0;
+    let hi = 1 - 1e-12;
+    let best = hi;
+    for (let i = 0; i < 40; i += 1) {
+      const mid = (lo + hi) / 2;
+      const interval = intervalWith(mid);
       best = mid;
       if (Math.abs(interval - target) <= 1) break;
       if (interval < target) lo = mid;
@@ -827,7 +934,8 @@ export class LabController {
     const before = this.controlState(id);
     await this.venue.betweenAdvances(() => {
       if (direction === 'off') wrapper.clearBias();
-      else wrapper.setBias(direction === 'up' ? 1 : -1, this.venue.labRandom(id));
+      else
+        wrapper.setBias(direction === 'up' ? 1 : -1, this.venue.labRandom(id), this.biasRuns(id));
     });
     this.session.recordAction({
       at,
@@ -840,7 +948,24 @@ export class LabController {
       succeeded: true,
       diagnostics: {},
     });
-    return { environment: LAB, asset: id, direction, ...this.controlState(id) };
+    return {
+      environment: LAB,
+      asset: id,
+      direction,
+      runs: direction === 'off' ? null : wrapper.biasRuns,
+      ...this.controlState(id),
+    };
+  }
+
+  /**
+   * Bias runs in market time (PH-24.18): a run for the direction lasts one to
+   * three seconds of the market's own pace, never fewer than two ticks.
+   */
+  private biasRuns(id: string): { min: number; max: number } {
+    const mean = this.venue.assetFor(id)!.evidence.meanIntervalMs;
+    const min = Math.max(2, Math.round(1_000 / mean));
+    const max = Math.max(min + 1, Math.round(3_000 / mean));
+    return { min, max };
   }
 
   /** A plan drawn on the keystream cannot describe a market playing a push (PH-24.10). */

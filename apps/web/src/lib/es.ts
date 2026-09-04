@@ -174,11 +174,16 @@ export const es = {
       info: 'Cada botón hace que los próximos N ticks del mercado tomen ese signo — subir o bajar — en ráfaga: llegan con los intervalos más rápidos del propio proceso de llegadas del motor, y con las magnitudes que el motor da a un tick rápido (algo más pequeñas, como en un impulso real). No se suma nada al precio: el movimiento es del motor, solo la dirección y el momento son tuyos. Al terminar, el mercado sigue su camino. Pulsar de nuevo en la misma dirección alarga el empuje; en la contraria, lo sustituye.',
       up: 'subir',
       down: 'bajar',
-      unit: 'ticks',
+      unit: 'unidades',
+      unitInfo: (price: string, range: string) =>
+        `1 unidad = un cuarto del rango mediano de la vela de 1 minuto de este mercado ≈ ${price} (la vela mide ≈ ${range}). Medido sobre una copia del propio mercado; +10 son unas dos velas y media.`,
+      unitLabel: (price: string) => `1 = ¼ vela ≈ ${price}`,
       running: (dir: 'up' | 'down', n: number) =>
         `empujando ${dir === 'up' ? '↑' : '↓'} · ${String(n)} ticks por jugar`,
       idle: 'sin empuje — el mercado sigue su camino',
       landing: (price: string, n: number) => `llegará a ${price} tras ${String(n)} ticks`,
+      landingUnits: (price: string, units: number, n: number) =>
+        `llegará a ${price} — ${String(units)} unidades en ${String(n)} ticks`,
       extended: 'alargado',
       landed: (dir: 'up' | 'down', n: number, price: string, exact: boolean) =>
         `${dir === 'up' ? '↑' : '↓'} ${String(n)} ticks · llegó a ${price} ${exact ? '✓' : '✗ (no coincide con lo anunciado)'}`,
@@ -259,7 +264,9 @@ export const es = {
       apply: 'Aplicar',
       release: 'Liberar mercado',
       relative: 'cerrar respecto al precio actual:',
-      relativeUnit: 'pasos del retículo (ticks)',
+      relativeUnit: 'unidades (¼ de vela de 1m)',
+      unitsInfo:
+        'Las distancias del Lab se expresan en la unidad del mercado: un cuarto del rango mediano de su vela de 1 minuto, medido sobre una copia del propio mercado. La ruta sigue trabajando en pasos del retículo; la pantalla convierte.',
       releaseInfo:
         'Vuelve al keystream. Un tick ya sorteado se publica tal cual — nada des-sortea una moneda — y el siguiente sorteo ya es del keystream: sin salto, un tick de latencia.',
       source: 'fuente de signos',

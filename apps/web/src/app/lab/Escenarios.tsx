@@ -22,6 +22,7 @@ export function Escenarios({
   onRun,
   onTarget,
   targetPlan,
+  unitSteps,
 }: {
   scenarios: readonly ScenarioView[];
   plan: ScenarioPlan | null;
@@ -41,19 +42,24 @@ export function Escenarios({
     apply: boolean,
   ) => Promise<void>;
   targetPlan: ScenarioPlan | null;
+  /** PH-24.18: lattice steps in one unit; distance parameters are entered in units. */
+  unitSteps: number;
 }): ReactElement {
   const [windowSeconds, setWindowSeconds] = useState('60');
-  const [shockSize, setShockSize] = useState('40');
+  const [shockSize, setShockSize] = useState('2');
   const [shockDirection, setShockDirection] = useState<'1' | '-1'>('1');
   const [chosen, setChosen] = useState<string | null>(null);
   const [params, setParams] = useState<Record<string, string>>({});
   const scenario = scenarios.find((s) => s.name === chosen) ?? null;
+  // Distance parameters — every one the scenarios state in lattice steps — are
+  // entered in units and converted here; `depth` is a fraction and `changes` a count.
+  const DISTANCE_PARAMS = new Set(['net', 'range', 'rise', 'fall', 'level', 'hold']);
   const numbers = (): Record<string, number> =>
     Object.fromEntries(
-      (scenario?.parameters ?? []).map((p) => [
-        p.name,
-        Number(params[p.name] ?? String(p.default)),
-      ]),
+      (scenario?.parameters ?? []).map((p) => {
+        const entered = Number(params[p.name] ?? String(p.default));
+        return [p.name, DISTANCE_PARAMS.has(p.name) ? Math.round(entered * unitSteps) : entered];
+      }),
     );
   return (
     <>
@@ -133,7 +139,14 @@ export function Escenarios({
               <Field key={p.name} label={es.lab.scenarios.params[p.name] ?? p.label} width={150}>
                 <input
                   data-testid={`lab-scenario-param-${p.name}`}
-                  value={params[p.name] ?? String(p.default)}
+                  value={
+                    params[p.name] ??
+                    String(
+                      DISTANCE_PARAMS.has(p.name)
+                        ? Math.max(1, Math.round(p.default / unitSteps))
+                        : p.default,
+                    )
+                  }
                   onChange={(e) => setParams({ ...params, [p.name]: e.target.value })}
                   style={FIELD}
                 />
@@ -215,7 +228,10 @@ export function Escenarios({
                   void onRun(
                     'shock',
                     Number(windowSeconds) * 1000,
-                    { size: Number(shockSize), direction: Number(shockDirection) },
+                    {
+                      size: Math.max(1, Math.round(Number(shockSize) * unitSteps)),
+                      direction: Number(shockDirection),
+                    },
                     false,
                   )
                 }
@@ -230,7 +246,10 @@ export function Escenarios({
                   void onRun(
                     'shock',
                     Number(windowSeconds) * 1000,
-                    { size: Number(shockSize), direction: Number(shockDirection) },
+                    {
+                      size: Math.max(1, Math.round(Number(shockSize) * unitSteps)),
+                      direction: Number(shockDirection),
+                    },
                     true,
                   )
                 }
@@ -298,7 +317,7 @@ export function Escenarios({
           </div>
         )}
       </Section>
-      <TargetPrice onTarget={onTarget} plan={targetPlan} busy={busy} />
+      <TargetPrice onTarget={onTarget} plan={targetPlan} busy={busy} unitSteps={unitSteps} />
     </>
   );
 }
@@ -315,6 +334,7 @@ function TargetPrice({
   onTarget,
   plan,
   busy,
+  unitSteps,
 }: {
   onTarget: (
     name: string,
@@ -324,6 +344,7 @@ function TargetPrice({
   ) => Promise<void>;
   plan: ScenarioPlan | null;
   busy: string | null;
+  unitSteps: number;
 }): ReactElement {
   const [price, setPrice] = useState('');
   const [steps, setSteps] = useState('');
@@ -332,7 +353,7 @@ function TargetPrice({
   const params = (): Record<string, number | string> =>
     price.trim().length > 0
       ? { price: price.trim() }
-      : { level: Number(steps.trim() === '' ? '0' : steps.trim()) };
+      : { level: Math.round(Number(steps.trim() === '' ? '0' : steps.trim()) * unitSteps) };
   const shown = plan !== null && plan.scenario === 'target-price' ? plan : null;
   return (
     <div

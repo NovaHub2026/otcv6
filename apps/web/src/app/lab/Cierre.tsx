@@ -2,7 +2,7 @@
 
 import type { ReactElement } from 'react';
 import { es } from '../../lib/es.js';
-import { Button, Field, FIELD, Notice, Row, Section, T } from '../ui/kit.js';
+import { Button, FIELD, Field, Info, Notice, Row, Section, T } from '../ui/kit.js';
 import {
   CLOSE_TIMEFRAMES,
   when,
@@ -40,6 +40,7 @@ export function Cierre({
   notice,
   control,
   displayPrecision,
+  unitSteps,
 }: {
   timeframe: CloseTimeframe;
   onTimeframe: (value: CloseTimeframe) => void;
@@ -61,6 +62,8 @@ export function Cierre({
   notice: BetweenLevels | string | null;
   control: Control | null;
   displayPrecision: number;
+  /** PH-24.18: lattice steps in one unit (¼ of the market's median 1m candle). */
+  unitSteps: number;
 }): ReactElement {
   const armed = control?.armed ?? false;
   const reasonOf = (p: ClosePlan): string | null => {
@@ -166,7 +169,7 @@ export function Cierre({
             kind="danger"
             testId={`lab-close-delta-${String(d)}`}
             disabled={busy !== null}
-            onClick={() => void onDelta(d, true)}
+            onClick={() => void onDelta(d * unitSteps, true)}
           >
             {String(d)}
           </Button>
@@ -179,12 +182,14 @@ export function Cierre({
             kind="primary"
             testId={`lab-close-delta-+${String(d)}`}
             disabled={busy !== null}
-            onClick={() => void onDelta(d, true)}
+            onClick={() => void onDelta(d * unitSteps, true)}
           >
             +{String(d)}
           </Button>
         ))}
-        <span style={{ color: T.faint, fontSize: 11 }}>{es.lab.close.relativeUnit}</span>
+        <span style={{ color: T.faint, fontSize: 11 }}>
+          {es.lab.close.relativeUnit} <Info text={es.lab.close.unitsInfo} />
+        </span>
       </div>
 
       <div data-testid="lab-control" style={{ margin: '6px 0 8px' }}>

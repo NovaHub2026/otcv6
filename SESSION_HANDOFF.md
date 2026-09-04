@@ -34,20 +34,21 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-24.10–24.17 are approved; no subphase is active.** PH-24.17 recalibrated
-the five catalogue assets at a fraction of their tempo (÷4; GBP/JPY and
-BTC/USD ÷3) with the tick RMS divided by √factor — same dispersion, same
-lattice, same structure — and divided the family tempo ranges the same way;
-the Lab measures tick granularity on Calidad (`tickGranularity`). Samples
-that were sized in ticks are now spans (Lab quality default, assurance
-record, sampled-catalogue windows), the quality route yields while it works,
-and an exact-close apply adjusts an off-parity request to the neighbour on the
-requested side and says so. To serve new code locally: `npm run build:web`,
-restart the panel; API/engine changes need the engine restarted (`start.sh`;
-hosted markets restore across the recalibration — `recalibration.test.ts`).
-Replay/mirror groundwork (`2ff8559`) stays parked. **The next Lab item awaits
-the Human Owner; the merge, hosted CI and Cycle Audit 8 wait until the Lab is
-complete** (`DECISION-LOG.md`, 2026-09-03). Browser suites run under
+**PH-24.10–24.18 are approved; no subphase is active.** PH-24.18 gave every
+market a distance unit (`apps/api/src/lab/distance.ts`: a quarter of the median
+1m range on a thirty-minute fork, cached five minutes; in `state.distance`),
+pushes by distance (`push?distance=±N`, the fork decides the ticks, ≤ 400),
+bias runs in market time (1–3 s of the mean interval), paces as fractions of
+the mean interval (`medio` ½, `rápido` ⅕, draws by bisection on a fork), and
+the screen converts the close's `±1 ±2 ±3`, the scenarios' distance parameters,
+the shock size and the target level from units to lattice steps (`unitSteps`
+from the state). Routes keep lattice steps. `labProviders.test.ts` guards that
+every controller constructor parameter has a provider. To serve new code
+locally: `npm run build:web`, restart the panel; API changes need the engine
+restarted (`start.sh`). Replay/mirror groundwork (`2ff8559`) stays parked.
+**The next Lab item awaits the Human Owner; the merge, hosted CI and Cycle
+Audit 8 wait until the Lab is complete** (`DECISION-LOG.md`, 2026-09-03).
+Browser suites run under
 `LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu`.
 
 **The next phase is the decision LA-03 names.** The Lab specification audit

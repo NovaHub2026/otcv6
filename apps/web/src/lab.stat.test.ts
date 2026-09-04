@@ -449,7 +449,9 @@ describe('Candle Close Control, from the panel', () => {
       await page.waitForSelector('[data-testid="lab-shock-at"]', { timeout: 30_000 });
       expect(await text(page, 'lab-shock-at')).toMatch(/No viene/);
       // A step of one: some step in the window is that large; its direction is chosen.
-      await page.fill('[data-testid="lab-shock-size"]', '1');
+      // PH-24.18: the size is in units (¼ candle); a hundredth of one rounds to the
+      // smallest step there is, which the very next tick reaches.
+      await page.fill('[data-testid="lab-shock-size"]', '0.01');
       await page.selectOption('[data-testid="lab-shock-direction"]', '-1');
       await page.click('[data-testid="lab-shock-apply"]');
       await page.waitForFunction(
@@ -641,11 +643,14 @@ describe('Candle Close Control, from the panel', () => {
       // poll — the running state is not waited for; the landing line stays on the
       // strip until the record has the landing, and the outcome follows.
       await page.waitForSelector('[data-testid="lab-push-landing"]', { timeout: 30_000 });
-      const landing = /llegará a ([0-9.]+) tras (\d+) ticks/.exec(
+      // PH-24.18: the buttons are distances — "llegará a X — 3 unidades en N ticks".
+      const landing = /llegará a ([0-9.]+) — (\d+) unidades en (\d+) ticks/.exec(
         await text(page, 'lab-push-landing'),
       );
-      expect(landing, 'the strip did not announce a landing').not.toBeNull();
+      expect(landing, 'the strip did not announce a landing in units').not.toBeNull();
       expect(landing![2]).toBe('3');
+      expect(Number(landing![3])).toBeGreaterThanOrEqual(1);
+      expect(await text(page, 'lab-push-unit')).toMatch(/1 = ¼ vela ≈ [0-9.]+/);
       expect(await text(page, 'lab-push-landing')).toMatch(/rápido/i);
 
       // Three ticks later the record is read at the landing's sequence — and with
@@ -656,7 +661,7 @@ describe('Candle Close Control, from the panel', () => {
       console.log(`PH-24.13 push landed ${String(Math.round(landedAfterMs))} ms after the click`);
       expect(landedAfterMs, 'a push should land within seconds').toBeLessThan(6_000);
       const outcome = await text(page, 'lab-push-outcome');
-      expect(outcome).toMatch(/↑ 3 ticks · llegó a/);
+      expect(outcome).toMatch(/↑ \d+ ticks · llegó a/);
       expect(outcome, `landed elsewhere than ${landing![1]!}`).toContain(
         `llegó a ${landing![1]!} ✓`,
       );
@@ -709,7 +714,7 @@ describe('Candle Close Control, from the panel', () => {
       await page.click('[data-testid="lab-push--1"]');
       await page.waitForFunction(
         () =>
-          /↓ 1 ticks · llegó a/.test(
+          /↓ \d+ ticks · llegó a/.test(
             document.querySelector('[data-testid="lab-push-outcome"]')?.textContent ?? '',
           ),
         null,
