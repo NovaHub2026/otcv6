@@ -84,6 +84,8 @@ export interface ClosePlan {
   readonly impossible: string | null;
   readonly reachableNeighbours: readonly string[] | null;
   readonly armed: boolean;
+  /** PH-24.17: an apply that took the reachable neighbour of an off-parity request. */
+  readonly adjusted?: { requested: string; applied: string; why: string } | null;
 }
 
 export interface BetweenLevels {
@@ -257,7 +259,16 @@ export interface ScenarioPlan {
   readonly targetPrice?: string | null;
 }
 
+export interface GranularityView {
+  readonly minutes: number;
+  readonly ticksPerMinute: { readonly median: number; readonly p10: number; readonly p90: number };
+  readonly gapOverRange: { readonly median: number; readonly shareAboveQuarter: number };
+  readonly step: { readonly median: number; readonly p90: number; readonly zeroShare: number };
+  readonly intervalMs: { readonly median: number; readonly p90: number };
+}
+
 export interface Quality {
+  readonly granularity?: GranularityView;
   readonly sampledTicks: number;
   readonly bounded: string;
   readonly realism: {

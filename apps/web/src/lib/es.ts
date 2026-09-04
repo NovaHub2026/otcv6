@@ -291,6 +291,8 @@ export const es = {
       armedNo: 'no',
       between: (req: string) =>
         `${req} no es un nivel del retículo de este activo. Los dos más cercanos:`,
+      adjusted: (requested: string, applied: string) =>
+        `ajustado por paridad: pediste ${requested} y se armó ${applied}, el nivel alcanzable al lado — con muchos ticks por minuto la paridad de la ventana cambia en menos de un segundo`,
       parity:
         'Inalcanzable por paridad: la suma de los pasos restantes deja la mitad del retículo fuera. Alcanzables al lado:',
       range: (max: string, delta: string) =>
@@ -394,6 +396,22 @@ export const es = {
         'Ninguna continuación natural cumplió el criterio en los sorteos: este mercado no hace eso en esta ventana. Esa es la respuesta, no un esfuerzo insuficiente.',
     },
     quality: {
+      granularity: {
+        title: 'Granularidad del tick — lo que el gráfico enseña de la estructura',
+        info: 'Una vela abre en el primer tick que cae dentro y la anterior cerró en el último tick antes: el hueco entre ambas es un paso del mercado. Se ve cuando hay pocos ticks por vela y pasos grandes respecto al rango. Medido sobre la muestra de la medición, en velas de 1 minuto completas.',
+        ticksPerMinute: 'ticks por vela de 1m',
+        ticksValue: (m: number, p10: number, p90: number) =>
+          `${String(m)} (p10 ${String(p10)} · p90 ${String(p90)})`,
+        gap: 'hueco apertura–cierre anterior / rango',
+        gapValue: (median: number, share: number) =>
+          `${median.toFixed(2)} mediano · ${(100 * share).toFixed(0)} % de las velas por encima de 1/4`,
+        step: 'paso de un tick (pasos del retículo)',
+        stepValue: (median: number, p90: number, zero: number) =>
+          `${String(median)} mediano · p90 ${String(p90)} · ${(100 * zero).toFixed(0)} % nulos`,
+        interval: 'intervalo entre ticks',
+        intervalValue: (median: number, p90: number) =>
+          `${String(median)} ms mediano · p90 ${String(p90)} ms`,
+      },
       title: 'Calidad del mercado',
       run: 'Medir',
       running: 'midiendo…',

@@ -18,7 +18,7 @@ import {
   type LogPrice,
   type Tick,
 } from '@otc/core';
-import { assessRealism, buildObserverDataset, runBattery } from '@otc/lab';
+import { assessRealism, buildObserverDataset, runBatteryAsync, tickGranularity } from '@otc/lab';
 import {
   INTERVENTIONS,
   nextShock,
@@ -68,14 +68,26 @@ import { LabSession } from './session.js';
  *   boundary is structural.
  */
 /**
- * Ticks the bounded quality sample looks at.
+ * The span the bounded quality sample covers.
  *
  * Enough for the realism metrics to have an opinion and for the battery to
- * populate its buckets, and far short of a gate run. The number is named
- * because a verdict whose sample size is unstated is the same failure as one
- * whose sensitivity is.
+ * populate its buckets, and far short of a gate run. It was a million ticks;
+ * PH-24.17 made it the sixteen days a million ticks covered on EUR/USD then,
+ * because hypotheses at 30 s–15 m are bought with time, and a market with
+ * three to four times the ticks a minute covered a quarter of the time with
+ * the same count (129 hypotheses against 378). The number is named because a
+ * verdict whose sample size is unstated is the same failure as one whose
+ * sensitivity is.
  */
-const LAB_SAMPLE_TICKS = 1_000_000;
+const LAB_SAMPLE_SPAN_MS = 1_000_000 * 1_380;
+
+/** The default sample for an asset: its span in its own ticks, within the bound. */
+function defaultSampleTicks(meanIntervalMs: number): number {
+  return Math.min(
+    LAB_MAX_SAMPLE_TICKS,
+    Math.max(1_000, Math.round(LAB_SAMPLE_SPAN_MS / meanIntervalMs)),
+  );
+}
 
 /** Every Lab response says what it is (§3). */
 const LAB = 'OTC LAB — SIMULATION ENVIRONMENT';
@@ -132,7 +144,7 @@ const ENGINE_VERSION = `state-record/${String(STATE_RECORD_VERSION)}`;
 const LAB_MIN_HYPOTHESES = 100;
 
 /** The ceiling on a request-bound run. Beyond this belongs to a job with a record (§67). */
-const LAB_MAX_SAMPLE_TICKS = 2_000_000;
+const LAB_MAX_SAMPLE_TICKS = 8_000_000;
 
 /** The most ticks one push may arm: past this the operator is drawing a chart, not pushing (PH-24.10). */
 const PUSH_MAX_TICKS = 50;
@@ -283,15 +295,18 @@ export class LabController {
     if (market === null || asset === null)
       throw new NotFoundException(`Asset ${id} is not hosted.`);
 
-    const sample = sampleSize(requested);
-    const ticks = this.venue.labTicksAhead(id, sample);
+    const sample = sampleSize(requested, asset.evidence.meanIntervalMs);
+    // PH-24.17: yielding — a span at the finer grain is millions of ticks.
+    const ticks = await this.venue.labTicksAheadAsync(id, sample);
     let at = 0;
     const dataset = await buildObserverDataset({
       source: { instrument: asset.instrument, next: () => ticks[at++] ?? null },
       maxTicks: ticks.length,
     });
     const realism = assessRealism(dataset);
-    const predictability = runBattery(dataset);
+    // PH-24.17: what the chart shows of the tick structure — ticks per candle, the boundary gap.
+    const granularity = tickGranularity(ticks);
+    const predictability = await runBatteryAsync(dataset);
     // The coarsest resolution across horizons: the verdict is only ever "no
     // edge above this". `VALIDATION.md` exists to keep those two claims apart.
     const resolutionPoints = predictability.sensitivity.reduce(
@@ -303,6 +318,7 @@ export class LabController {
       environment: 'OTC LAB — SIMULATION ENVIRONMENT',
       asset: id,
       sampledTicks: ticks.length,
+      granularity,
       bounded:
         `A bounded sample, not a gate run. The recorded evidence uses 24 million ticks; this ` +
         `looks at ${String(ticks.length)} so a screen has something truthful on it.`,
@@ -465,7 +481,7 @@ export class LabController {
         timeframe: request.timeframe,
       },
     );
-    return { ...result.plan, environment: LAB, armed: result.armed };
+    return { ...result.plan, environment: LAB, armed: result.armed, adjusted: result.adjusted };
   }
 
   /**
@@ -481,16 +497,42 @@ export class LabController {
     request: { price: string; instant: EpochMillis; delta?: number | null },
     action: string,
     parameters: Record<string, unknown>,
-  ): Promise<{ plan: ReturnType<LabController['planAt']>; armed: boolean }> {
+  ): Promise<{
+    plan: ReturnType<LabController['planAt']>;
+    armed: boolean;
+    adjusted: { requested: string; applied: string; why: 'parity' } | null;
+  }> {
     const wrapper = this.wrapperFor(id);
     const at = this.venue.now();
     const before = this.controlState(id);
     this.refuseWhilePushing(id, wrapper, action, parameters, before);
     const result = await this.venue.betweenAdvances(() => {
-      const plan = this.planAt(id, request.price, request.instant, request.delta ?? null);
+      let plan = this.planAt(id, request.price, request.instant, request.delta ?? null);
+      let adjusted: { requested: string; applied: string; why: 'parity' } | null = null;
+      // PH-24.17: at three to four times the ticks a minute, the parity of the
+      // window flips within a second of a preview — a price offered as
+      // reachable a moment ago can be off-parity by the time it is applied. An
+      // apply therefore takes the reachable neighbour on the requested side,
+      // one lattice step away, and says so; a preview still names both.
+      if (
+        plan.selection === null &&
+        plan.impossible !== null &&
+        /parity/.test(plan.impossible) &&
+        plan.reachableNeighbours !== null &&
+        plan.reachableNeighbours.length === 2
+      ) {
+        const upward =
+          request.delta !== undefined && request.delta !== null
+            ? request.delta >= 0
+            : plan.target >= plan.fromPrice;
+        const neighbour = plan.reachableNeighbours[upward ? 1 : 0]!;
+        const requested = plan.price;
+        plan = this.planAt(id, neighbour, request.instant, null);
+        adjusted = { requested, applied: plan.price, why: 'parity' };
+      }
       const signs = plan.selection;
       if (signs !== null && signs.length > 0) wrapper.arm(signs);
-      return { plan, armed: signs !== null && signs.length > 0 };
+      return { plan, armed: signs !== null && signs.length > 0, adjusted };
     });
     this.session.recordAction({
       at,
@@ -509,6 +551,7 @@ export class LabController {
         acceptanceRate: result.plan.acceptanceRate,
         reachability: result.plan.reachability,
         impossible: result.plan.impossible,
+        adjusted: result.adjusted,
       },
     });
     if (result.armed) {
@@ -1095,6 +1138,7 @@ export class LabController {
       ...result.plan,
       environment: LAB,
       armed: result.armed,
+      adjusted: result.adjusted,
       preset: name,
       position: this.describe(position),
     };
@@ -1751,8 +1795,9 @@ export class LabController {
  * verdict — it produces a verdict resting on two hypotheses out of eight
  * hundred, which is a different thing and reads identically on a screen.
  */
-function sampleSize(requested?: string): number {
-  if (requested === undefined || requested.trim().length === 0) return LAB_SAMPLE_TICKS;
+function sampleSize(requested: string | undefined, meanIntervalMs: number): number {
+  if (requested === undefined || requested.trim().length === 0)
+    return defaultSampleTicks(meanIntervalMs);
   const value = Number(requested);
   if (!Number.isSafeInteger(value) || value < 1_000 || value > LAB_MAX_SAMPLE_TICKS) {
     throw new BadRequestException(

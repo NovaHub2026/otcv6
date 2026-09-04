@@ -167,13 +167,21 @@ describe('the recorded personalities reproduce from their targets', () => {
   });
 });
 
-describe('re-authoring changed rhythm and nothing else', () => {
+describe('re-authoring changed rhythm and grain, never scale or tail weight', () => {
   /**
-   * Realised tick amplitude as PH-4 registered it, before any rhythm existed.
+   * Realised tick amplitude as PH-4 registered it, before any rhythm existed,
+   * and the mean tick interval each asset had then.
    *
-   * Frozen deliberately. This is the assertion that stops PH-10 from claiming a
-   * differentiation gain it bought by spreading the assets further apart in
-   * size — which would be trivial, true by construction, and meaningless.
+   * Frozen deliberately. This is the assertion that stops a re-authoring from
+   * claiming a differentiation gain it bought by spreading the assets further
+   * apart in size — which would be trivial, true by construction, and
+   * meaningless. PH-10 held the amplitude itself. PH-24.17 raised every tempo
+   * (three to four times the ticks a minute) and divided the amplitude by the
+   * square root of the same factor, so the quantity that is still PH-4's is
+   * the **variance per millisecond** — the amplitude squared over the mean
+   * interval — which is what the quarterly dispersion is made of. A market
+   * with finer ticks and the same dispersion is the same market at a finer
+   * grain; a market with more dispersion would be a different one.
    */
   const PH4_TICK_RMS: Record<string, number> = {
     eurusd: 0.000013932458128335953,
@@ -182,7 +190,14 @@ describe('re-authoring changed rhythm and nothing else', () => {
     spx: 0.00000820990287547472,
     xauusd: 0.00002846808863025055,
   };
-
+  /** Mean tick interval each asset was measured at when PH-4's amplitude was set (ms). */
+  const PH4_MEAN_INTERVAL_MS: Record<string, number> = {
+    eurusd: 1379.8191861941425,
+    gbpjpy: 714.6766515523951,
+    btcusd: 332.9569156063406,
+    spx: 3352.3021210553543,
+    xauusd: 1969.0617253751434,
+  };
   /** Tail weight as PH-4 registered it. */
   const PH4_EXCESS_KURTOSIS: Record<string, number> = {
     eurusd: 63.518987927858404,
@@ -191,15 +206,20 @@ describe('re-authoring changed rhythm and nothing else', () => {
     spx: 44.40447547836519,
     xauusd: 100.48688844255925,
   };
-
   it.each(ASSET_CATALOGUE.map((a) => [a.definition.id, a] as const))(
-    '%s keeps its amplitude',
+    "%s keeps its variance per millisecond, PH-4's amplitude at its grain",
     (id, asset) => {
       const realised = asset.definition.traits.volatility * cascadeRmsGain(asset.definition.traits);
-      expect(realised).toBeCloseTo(PH4_TICK_RMS[id]!, 15);
+      const perMs = (realised * realised) / asset.evidence.meanIntervalMs;
+      const ph4PerMs = (PH4_TICK_RMS[id]! * PH4_TICK_RMS[id]!) / PH4_MEAN_INTERVAL_MS[id]!;
+      // The measured mean interval carries the arrival process's excitation, so
+      // the ratio is a measurement, not an identity: the same 0.7-1.4 band
+      // `catalogue.stat.test.ts` holds a fresh calibration's dispersion to.
+      const ratio = perMs / ph4PerMs;
+      expect(ratio, `${id} variance per ms ratio`).toBeGreaterThan(0.7);
+      expect(ratio, `${id} variance per ms ratio`).toBeLessThan(1.4);
     },
   );
-
   it.each(ASSET_CATALOGUE.map((a) => [a.definition.id, a] as const))(
     '%s keeps its tail weight within 6%',
     (id, asset) => {
@@ -212,6 +232,9 @@ describe('re-authoring changed rhythm and nothing else', () => {
   it('carries every non-rhythm trait across unchanged', () => {
     // The exclusion, enforced. If a future re-authoring moves burstiness or a
     // spread while claiming to have changed only rhythm, this is what says so.
+    // PH-24.17 divided each tempo by a recorded factor (finer grain, same
+    // dispersion); the factor is part of the record, so a tempo that drifts
+    // from PH-4's over that factor is still caught.
     const PH4_CARRIED: Record<string, Record<string, number>> = {
       eurusd: { tempoMs: 3_000, burstiness: 0.6, regimeSpread: 1, structureSpread: 1 },
       gbpjpy: { tempoMs: 1_850, burstiness: 0.62, regimeSpread: 1.15, structureSpread: 1 },
@@ -219,12 +242,21 @@ describe('re-authoring changed rhythm and nothing else', () => {
       spx: { tempoMs: 5_450, burstiness: 0.45, regimeSpread: 0.85, structureSpread: 1.35 },
       xauusd: { tempoMs: 4_300, burstiness: 0.55, regimeSpread: 1.25, structureSpread: 0.9 },
     };
+    const GRAIN_FACTOR: Record<string, number> = {
+      eurusd: 4,
+      gbpjpy: 3,
+      btcusd: 3,
+      spx: 4,
+      xauusd: 4,
+    };
     const drifted: string[] = [];
     for (const asset of ASSET_CATALOGUE) {
       const carried = PH4_CARRIED[asset.definition.id]!;
       for (const [name, value] of Object.entries(carried)) {
         const actual = asset.definition.traits[name as keyof typeof asset.definition.traits];
-        if (actual !== value) drifted.push(`${asset.definition.id}.${name}: ${actual} != ${value}`);
+        const expected = name === 'tempoMs' ? value / GRAIN_FACTOR[asset.definition.id]! : value;
+        if (actual !== expected)
+          drifted.push(`${asset.definition.id}.${name}: ${actual} != ${expected}`);
       }
       if (asset.definition.traits.durationCoupling !== DEFAULT_TRAITS.durationCoupling) {
         drifted.push(`${asset.definition.id}.durationCoupling`);

@@ -34,17 +34,17 @@ with the library prefix — run the gate as:
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
 
-**PH-24.10–24.16 are approved; no subphase is active.** The Lab: the Empujar
-strip — a push retracts the drawn, unpublished tick, its **first tick is
-anchored at now** (arrival draw found by bisection on forks, PH-24.16) and the
-rest arrive at the chosen pace (`normal | medio | rápido`), progressively; the
-sustained direction **sube / baja** (`POST …/bias?direction=up|down|off`;
-runs for the direction of 2–6 ticks and strictly shorter runs against, from a
-Lab-only random stream; scripts play first; `release` ends it) — and the exact
-close of the current candle. One engine per deployment (ADR-0018); the panel
-recovers by itself; a gate never touches the served panel (suites build in
-`.next-stat`). To serve new front-end code locally: `npm run build:web`, then
-restart the panel; API changes need the engine restarted (`start.sh`).
+**PH-24.10–24.17 are approved; no subphase is active.** PH-24.17 recalibrated
+the five catalogue assets at a fraction of their tempo (÷4; GBP/JPY and
+BTC/USD ÷3) with the tick RMS divided by √factor — same dispersion, same
+lattice, same structure — and divided the family tempo ranges the same way;
+the Lab measures tick granularity on Calidad (`tickGranularity`). Samples
+that were sized in ticks are now spans (Lab quality default, assurance
+record, sampled-catalogue windows), the quality route yields while it works,
+and an exact-close apply adjusts an off-parity request to the neighbour on the
+requested side and says so. To serve new code locally: `npm run build:web`,
+restart the panel; API/engine changes need the engine restarted (`start.sh`;
+hosted markets restore across the recalibration — `recalibration.test.ts`).
 Replay/mirror groundwork (`2ff8559`) stays parked. **The next Lab item awaits
 the Human Owner; the merge, hosted CI and Cycle Audit 8 wait until the Lab is
 complete** (`DECISION-LOG.md`, 2026-09-03). Browser suites run under

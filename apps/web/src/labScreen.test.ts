@@ -398,6 +398,31 @@ describe('the Lab is marked wherever it appears', () => {
     expect(lab).toMatch(/markets\/\$\{selected\}\/bias\?direction=\$\{direction\}/);
   });
 
+  it('shows tick granularity on Calidad, measured by the Lab package (PH-24.17)', () => {
+    const calidad = code('lab/Calidad.tsx');
+    for (const handle of [
+      'lab-granularity',
+      'lab-granularity-ticks',
+      'lab-granularity-gap',
+      'lab-granularity-step',
+      'lab-granularity-interval',
+    ]) {
+      expect(calidad, `${handle} missing`).toMatch(new RegExp(`(data-testid|testId)="${handle}"`));
+    }
+    expect(calidad).toMatch(/quality\.granularity\.gapOverRange\.shareAboveQuarter/);
+    const api = readFileSync(
+      path.join(app, '..', '..', '..', 'api', 'src', 'lab', 'lab.controller.ts'),
+      'utf8',
+    );
+    expect(api).toMatch(/tickGranularity\(ticks\)/);
+  });
+
+  it('names an apply adjusted by parity (PH-24.17)', () => {
+    const cierre = code('lab/Cierre.tsx');
+    expect(cierre).toMatch(/(data-testid|testId)="lab-close-adjusted"/);
+    expect(cierre).toMatch(/plan\.adjusted\.requested, plan\.adjusted\.applied/);
+  });
+
   it('says the Lab is absent rather than hiding that it can be', () => {
     expect(lab()).toMatch(/lab-not-running/);
     expect(code('lab/[...path]/route.ts')).toMatch(/OTC_LAB_BASE/);

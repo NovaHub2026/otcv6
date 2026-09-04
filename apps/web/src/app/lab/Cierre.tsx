@@ -271,6 +271,11 @@ export function Cierre({
             value={plan.armed ? es.lab.close.armedYes : es.lab.close.armedNo}
             tone={plan.armed ? 'ok' : undefined}
           />
+          {plan.adjusted !== undefined && plan.adjusted !== null && (
+            <Notice tone="warn" testId="lab-close-adjusted">
+              {es.lab.close.adjusted(plan.adjusted.requested, plan.adjusted.applied)}
+            </Notice>
+          )}
           {plan.impossible !== null && (
             <Notice tone="warn" detail={plan.impossible}>
               {reasonOf(plan)}{' '}

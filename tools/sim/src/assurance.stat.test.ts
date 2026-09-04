@@ -31,7 +31,14 @@ import { settle, type Contract } from '@otc/trading';
 const GENESIS = epochMillis(1_776_000_000_000);
 const keyring = MasterKeyring.forTesting('assurance');
 const ASSET = ASSET_CATALOGUE[0]!;
-const TICKS = 400_000;
+/**
+ * The record spans time, not a tick count. 400,000 ticks was the original
+ * size, when EUR/USD ticked every 1.38 s on average — six and a half days. At
+ * PH-24.17's grain the same count is a day and a half, and a battery over a
+ * day and a half tests no 15-minute hypothesis at all. The span is what buys
+ * hypotheses; the ticks are whatever the market makes of it.
+ */
+const SPAN_MS = 400_000 * 1_380;
 
 function generate(): Tick[] {
   const engine = createMarketEngine({
@@ -39,12 +46,11 @@ function generate(): Tick[] {
     keyring,
     environment: 'simulation',
     start: { instant: GENESIS, price: logPrice(0) },
-    maxTicks: TICKS,
   });
   const ticks: Tick[] = [];
   for (;;) {
     const tick = engine.next();
-    if (tick === null) break;
+    if (tick === null || tick.instant > GENESIS + SPAN_MS) break;
     ticks.push(tick);
   }
   return ticks;

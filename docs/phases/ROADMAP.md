@@ -588,6 +588,7 @@ on it — the boundary first, guarded before anything stands on it.
 | PH-24.14 | El panel se recupera solo: el gráfico reintenta su primera carga; el aviso del Lab dice lo que pasó                   | APPROVED |
 | PH-24.15 | El ritmo del empuje: normal, medio, rápido — el paso de la ráfaga como parámetro del empuje                           | APPROVED |
 | PH-24.16 | Empujar progresivo y la dirección sostenida: el primer tick anclado en ahora; sube/baja como sesgo de rachas          | APPROVED |
+| PH-24.17 | Granularidad del tick: más ticks por vela con pasos menores a igual dispersión; medida en el Lab; gate completo       | APPROVED |
 
 ### PH-23 — The OTC Market Lab
 

@@ -339,7 +339,10 @@ describe('Candle Close Control, from the panel', () => {
       await page.waitForFunction(() => /ARMADO|paridad/.test(document.body.innerText), null, {
         timeout: 30_000,
       });
-      if (/paridad/.test(await page.locator('body').innerText())) {
+      // PH-24.17: an apply adjusts an off-parity request to the neighbour on the
+      // requested side and says «ajustado por paridad» — so the branch is on
+      // whether neighbour buttons are offered, not on the word.
+      if ((await page.locator('[data-testid="lab-close-neighbour"]').count()) > 0) {
         // The preset named entry and entry + 2; choosing the one above entry
         // applies it at the position's expiry — the screen carries the instant.
         await page.locator('[data-testid="lab-close-neighbour"]').last().click();
@@ -386,14 +389,27 @@ describe('Candle Close Control, from the panel', () => {
       await page.waitForSelector('[data-testid="lab-scenario-plan"]', { timeout: 30_000 });
       expect(await text(page, 'lab-scenario-plan')).toMatch(/armado\nno/);
       await page.click('[data-testid="lab-scenario-apply"]');
+      // The plan's own armed line, not the control row: an earlier flow may have
+      // left this market ARMADO, and at PH-24.17's grain a script plays out fast.
       await page.waitForFunction(
         () =>
-          /ARMADO/.test(document.querySelector('[data-testid="lab-control"]')?.textContent ?? ''),
+          // textContent has no line breaks between rows; innerText does.
+          /armado\s*SÍ/.test(
+            document.querySelector('[data-testid="lab-scenario-plan"]')?.textContent ?? '',
+          ),
         null,
         { timeout: 30_000 },
       );
       expect(await text(page, 'lab-scenario-plan')).toMatch(/armado\nSÍ/);
-      expect(await text(page, 'lab-session-lab')).toMatch(/escenario aplicado ✓/);
+      // The timeline is a poll away.
+      await page.waitForFunction(
+        () =>
+          /escenario aplicado ✓/.test(
+            document.querySelector('[data-testid="lab-session-lab"]')?.textContent ?? '',
+          ),
+        null,
+        { timeout: 30_000 },
+      );
       // PH-24.5: the engine's timeline is fed by observing the engine — at least
       // its first sight of every market — and the closes diagnostic says what it
       // rests on rather than calling this session's handful a pattern.
@@ -484,10 +500,15 @@ describe('Candle Close Control, from the panel', () => {
       );
       const plan = await text(page, 'lab-close-plan');
       expect(plan).toMatch(new RegExp(`${at.toISOString().slice(11, 16)}`));
+      // Its own outcome: the control row still carries an earlier flow's close
+      // until this one lands, so wait for this target's "cerró en".
+      const target = /objetivo\n([0-9.]+)/.exec(plan)![1]!;
       await page.waitForFunction(
-        () =>
-          /cerró en/.test(document.querySelector('[data-testid="lab-control"]')?.textContent ?? ''),
-        null,
+        (armed) => {
+          const control = document.querySelector('[data-testid="lab-control"]')?.textContent ?? '';
+          return control.includes(armed) && /cerró en/.test(control);
+        },
+        target,
         { timeout: 120_000 },
       );
       expect(await text(page, 'lab-control')).toMatch(/EXACTO/);
@@ -793,6 +814,13 @@ describe('Candle Close Control, from the panel', () => {
       expect(
         (await page.request.post(`http://127.0.0.1:${webPort}/labengine/lab/release-all`)).status(),
       ).toBe(405);
+      // PH-24.17: Calidad measures tick granularity on a fork of this market.
+      await page.click('[data-testid="tab-quality"]');
+      await page.click('[data-testid="lab-quality"]');
+      await page.waitForSelector('[data-testid="lab-granularity"]', { timeout: 120_000 });
+      expect(await text(page, 'lab-granularity-ticks')).toMatch(/^\d+ \(p10 \d+ · p90 \d+\)$/);
+      expect(await text(page, 'lab-granularity-gap')).toMatch(/mediano · \d+ % de las velas/);
+      await page.click('[data-testid="tab-close"]');
       // The harness points both bases at one process: Vista declares Lab mode; the Lab screen does not repeat it.
       expect(await page.locator('[data-testid="lab-mode-banner"]').count()).toBe(0);
       await page.goto(`http://127.0.0.1:${webPort}/preview`, { waitUntil: 'networkidle' });

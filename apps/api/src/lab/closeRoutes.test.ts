@@ -264,23 +264,18 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     const position = opened.position;
     expect(position.expiryInstant).toBe(venue.now() + 60_000);
 
-    let applied = (await controller.applyPreset(id, position.id, 'win-minimum')) as Applied & {
+    const applied = (await controller.applyPreset(id, position.id, 'win-minimum')) as Applied & {
       impossible: string | null;
       reachableNeighbours: readonly string[] | null;
+      adjusted: { requested: string; applied: string; why: string } | null;
     };
-    if (!applied.armed) {
-      // Parity refused entry + 1; the preset names entry and entry + 2. "Minimum"
-      // is not redefined — the test takes the reachable neighbour above entry,
-      // through the close control addressed to the position's expiry.
-      expect(applied.impossible).toMatch(/parity/);
-      expect(applied.reachableNeighbours).toHaveLength(2);
-      applied = (await controller.applyClose(
-        id,
-        applied.reachableNeighbours![1],
-        undefined,
-        undefined,
-        String(position.expiryInstant),
-      )) as typeof applied;
+    // Parity refuses entry + 1 half the time. PH-24.17: the apply then arms the
+    // reachable neighbour on the requested side — entry + 2 — and says so;
+    // "minimum" is not redefined, the request is answered with the nearest
+    // reachable level and the adjustment named.
+    if (applied.adjusted !== null) {
+      expect(applied.adjusted.why).toBe('parity');
+      expect(applied.adjusted.requested).not.toBe(applied.adjusted.applied);
     }
     expect(applied.armed).toBe(true);
     expect(applied.instant).toBe(position.expiryInstant);
@@ -561,4 +556,45 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     });
     await venue.stop();
   });
+
+  it('PH-24.17: an apply on an off-parity price arms the reachable neighbour on the requested side, and says so', async () => {
+    const { venue, clock, controller } = await labVenue();
+    await advance(venue, clock, 120_000);
+    // Find a delta that a preview refuses by parity, then apply it.
+    let refused: number | null = null;
+    for (const delta of [1, 2, 3, 4]) {
+      const preview = (await controller.closePreview(
+        id,
+        undefined,
+        'next',
+        '1m',
+        undefined,
+        undefined,
+        String(delta),
+      )) as { impossible: string | null };
+      if (preview.impossible !== null && /parity/.test(preview.impossible)) {
+        refused = delta;
+        break;
+      }
+    }
+    expect(refused, 'no delta in 1..4 was off-parity').not.toBeNull();
+    const applied = (await controller.applyClose(
+      id,
+      undefined,
+      'next',
+      '1m',
+      undefined,
+      undefined,
+      String(refused!),
+    )) as Applied & {
+      adjusted: { requested: string; applied: string; why: string } | null;
+      delta: number;
+    };
+    expect(applied.armed).toBe(true);
+    expect(applied.adjusted).not.toBeNull();
+    expect(applied.adjusted!.why).toBe('parity');
+    // Upward request → the neighbour above: one lattice step beyond the request.
+    expect(applied.delta).toBe(refused! + 1);
+    await venue.stop();
+  }, 60_000);
 });

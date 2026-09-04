@@ -165,11 +165,11 @@ export const TARGET_TIE_RATE = 0.01;
  * Sampling more horizons inside one run buys almost nothing.
  */
 export const MEASURED_LATTICE_TIE_RATES = {
-  eurusd: 0.00534,
-  gbpjpy: 0.00419,
-  btcusd: 0.00487,
-  spx: 0.00477,
-  xauusd: 0.00478,
+  eurusd: 0.00468,
+  gbpjpy: 0.00456,
+  btcusd: 0.00472,
+  spx: 0.00419,
+  xauusd: 0.00475,
 } as const;
 
 /** Horizon the quantum is calibrated against: the shortest contract. */

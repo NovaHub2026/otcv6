@@ -110,6 +110,47 @@ export function QualityPanel({
           </div>
         </div>
       )}
+      {quality?.granularity !== undefined && (
+        <div data-testid="lab-granularity" style={{ marginTop: 12 }}>
+          <div style={{ color: T.text, fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+            {es.lab.quality.granularity.title} <Info text={es.lab.quality.granularity.info} />
+          </div>
+          <Row
+            label={es.lab.quality.granularity.ticksPerMinute}
+            testId="lab-granularity-ticks"
+            value={es.lab.quality.granularity.ticksValue(
+              quality.granularity.ticksPerMinute.median,
+              quality.granularity.ticksPerMinute.p10,
+              quality.granularity.ticksPerMinute.p90,
+            )}
+          />
+          <Row
+            label={es.lab.quality.granularity.gap}
+            testId="lab-granularity-gap"
+            value={es.lab.quality.granularity.gapValue(
+              quality.granularity.gapOverRange.median,
+              quality.granularity.gapOverRange.shareAboveQuarter,
+            )}
+          />
+          <Row
+            label={es.lab.quality.granularity.step}
+            testId="lab-granularity-step"
+            value={es.lab.quality.granularity.stepValue(
+              quality.granularity.step.median,
+              quality.granularity.step.p90,
+              quality.granularity.step.zeroShare,
+            )}
+          />
+          <Row
+            label={es.lab.quality.granularity.interval}
+            testId="lab-granularity-interval"
+            value={es.lab.quality.granularity.intervalValue(
+              quality.granularity.intervalMs.median,
+              quality.granularity.intervalMs.p90,
+            )}
+          />
+        </div>
+      )}
     </Section>
   );
 }

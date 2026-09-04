@@ -46,7 +46,11 @@ describe('the default sample supports a verdict', () => {
     const body = (await new LabController(venue, new SignSelector(), new LabSession()).quality(
       'eurusd',
     )) as QualityBody;
-    expect(body.sampledTicks).toBe(1_000_000);
+    // PH-24.17: the default is a span — sixteen days, what a million ticks were on
+    // EUR/USD before the grain changed — in the asset's own ticks.
+    const expected = Math.round((1_000_000 * 1_380) / ASSET_CATALOGUE[0]!.evidence.meanIntervalMs);
+    expect(body.sampledTicks).toBe(Math.min(8_000_000, expected));
+    expect(body.sampledTicks).toBeGreaterThan(1_000_000);
     // 378 measured on 2026-09-03, against 2 at the 40,000 this route used to
     // sample. The floor is 100; the assertion is that the default clears it by
     // a margin, not that it hits a number.

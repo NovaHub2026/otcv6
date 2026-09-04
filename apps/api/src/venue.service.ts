@@ -9,6 +9,7 @@ import {
   type MasterKeyring,
   type RandomSource,
   type Tick,
+  yieldToLoop,
 } from '@otc/core';
 import { ASSET_CATALOGUE, configFor, createMarketEngine, type RegisteredAsset } from '@otc/engine';
 import {
@@ -397,6 +398,36 @@ export class VenueService implements OnModuleDestroy {
    * keystream position is consumed twice. The Lab reads the future; it does not
    * spend it.
    */
+  /**
+   * `labTicksAhead`, yielding to the event loop every `chunk` ticks (PH-24.17).
+   *
+   * The quality sample is a span in the asset's own ticks — millions at the
+   * finer grain — and a synchronous walk of that length held the process for
+   * seconds: the panel's polls answered 502 and the screen read the Lab as
+   * gone. The venue keeps ticking between chunks.
+   */
+  async labTicksAheadAsync(assetId: string, count: number, chunk = 250_000): Promise<Tick[]> {
+    const market = this.hostedMarket(assetId);
+    const asset = this.assetFor(assetId);
+    if (market === null || asset === null) return [];
+    const snapshot = market.snapshotEngine();
+    const fork = createMarketEngine({
+      config: configFor(asset),
+      keyring: this.keyring,
+      environment: 'production',
+      start: { instant: epochMillis(snapshot.instant), price: logPrice(snapshot.price) },
+    });
+    fork.restore(snapshot);
+    const ticks: Tick[] = [];
+    for (let i = 0; i < count; i += 1) {
+      const tick = fork.next();
+      if (tick === null) break;
+      ticks.push(tick);
+      if (ticks.length % chunk === 0) await yieldToLoop();
+    }
+    return ticks;
+  }
+
   labTicksAhead(assetId: string, count: number): Tick[] {
     const market = this.hostedMarket(assetId);
     const asset = this.assetFor(assetId);

@@ -120,6 +120,7 @@ state), INV-009 (a Lab settlement recomputes from the Lab's record), INV-010.
 | PH-24.14 | El panel se recupera solo: el gráfico reintenta su primera carga; el aviso del Lab dice lo que pasó                             | APPROVED                                                | [PH-24.14](PH-24.14-el-panel-se-recupera-solo.md)                   |
 | PH-24.15 | El ritmo del empuje: normal, medio, rápido — el paso de la ráfaga como parámetro del empuje                                     | APPROVED                                                | [PH-24.15](PH-24.15-el-ritmo-del-empuje.md)                         |
 | PH-24.16 | Empujar progresivo y la dirección sostenida: el primer tick anclado en ahora; sube/baja como sesgo de rachas                    | APPROVED                                                | [PH-24.16](PH-24.16-empujar-progresivo-y-la-direccion-sostenida.md) |
+| PH-24.17 | Granularidad del tick: más ticks por vela con pasos menores a igual dispersión; medida en el Lab; gate completo                 | APPROVED                                                | [PH-24.17](PH-24.17-granularidad-del-tick.md)                       |
 
 Each subphase owes its plants. PH-24.1 owes one that arms in the production
 composition and is caught.

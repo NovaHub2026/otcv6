@@ -328,6 +328,14 @@ const SECOND = 1_000;
  * an index, 65% for an alt-coin, with the hand-authored five landing at 1.5%,
  * 4.5%, 8.0%, 19.3% and 53.6%.
  */
+/**
+ * Tempos were divided by four on 2026-09-03 (PH-24.17; crypto by three, at the
+ * 250 ms trait floor): the catalogue's markets held 17–36 ticks a 1m candle at
+ * the old tempos, and a candle's boundary gap — one tick step — was visible in
+ * a fifth of them. The brief derives the tick RMS from the family's dispersion
+ * and the tempo (`provisionalTickRms`), so a faster tempo keeps the quarterly
+ * dispersion and shrinks the step: same market, finer grain.
+ */
 export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
   {
     id: 'major-fx',
@@ -337,7 +345,7 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
     dispersion: { min: 0.03, max: 0.06 },
     excessKurtosis: { min: 45, max: 75 },
     traits: {
-      tempoMs: { min: 2_200, max: 4_200 },
+      tempoMs: { min: 550, max: 1_050 },
       burstiness: { min: 0.52, max: 0.66 },
       regimeSpread: { min: 0.9, max: 1.15 },
       structureSpread: { min: 0.9, max: 1.15 },
@@ -357,7 +365,7 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
     dispersion: { min: 0.14, max: 0.24 },
     excessKurtosis: { min: 85, max: 130 },
     traits: {
-      tempoMs: { min: 1_400, max: 2_400 },
+      tempoMs: { min: 350, max: 600 },
       burstiness: { min: 0.55, max: 0.7 },
       regimeSpread: { min: 1.05, max: 1.3 },
       structureSpread: { min: 0.85, max: 1.1 },
@@ -383,7 +391,7 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
       // `|30s return|` is exactly zero and the calibration refuses with "the
       // asset does not move", blaming amplitude for a tempo problem. Narrowed
       // to a 3.5-second mean interval at the worst corner.
-      tempoMs: { min: 4_200, max: 6_000 },
+      tempoMs: { min: 1_050, max: 1_500 },
       burstiness: { min: 0.42, max: 0.56 },
       regimeSpread: { min: 0.75, max: 0.95 },
       structureSpread: { min: 1.2, max: 1.45 },
@@ -403,7 +411,7 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
     dispersion: { min: 0.035, max: 0.07 },
     excessKurtosis: { min: 40, max: 70 },
     traits: {
-      tempoMs: { min: 3_000, max: 5_200 },
+      tempoMs: { min: 750, max: 1_300 },
       burstiness: { min: 0.42, max: 0.58 },
       regimeSpread: { min: 0.85, max: 1.1 },
       structureSpread: { min: 1.1, max: 1.4 },
@@ -423,7 +431,7 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
     dispersion: { min: 0.06, max: 0.105 },
     excessKurtosis: { min: 80, max: 115 },
     traits: {
-      tempoMs: { min: 3_400, max: 5_200 },
+      tempoMs: { min: 850, max: 1_300 },
       burstiness: { min: 0.48, max: 0.62 },
       regimeSpread: { min: 1.1, max: 1.35 },
       structureSpread: { min: 0.8, max: 1.0 },
@@ -443,7 +451,7 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
     dispersion: { min: 0.13, max: 0.22 },
     excessKurtosis: { min: 100, max: 145 },
     traits: {
-      tempoMs: { min: 1_600, max: 2_800 },
+      tempoMs: { min: 400, max: 700 },
       burstiness: { min: 0.65, max: 0.8 },
       regimeSpread: { min: 1.2, max: 1.45 },
       structureSpread: { min: 0.85, max: 1.1 },
@@ -463,7 +471,7 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
     dispersion: { min: 0.34, max: 0.5 },
     excessKurtosis: { min: 115, max: 155 },
     traits: {
-      tempoMs: { min: 900, max: 1_500 },
+      tempoMs: { min: 300, max: 500 },
       burstiness: { min: 0.72, max: 0.82 },
       regimeSpread: { min: 1.25, max: 1.45 },
       structureSpread: { min: 0.9, max: 1.15 },
@@ -508,7 +516,7 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
       // `metal`; a depth floor of 6 misses about one draw in five hundred.
       // Seven keeps the band and the character — still the shallowest ladder
       // in the catalogue beside `cross-fx` and `energy`.
-      tempoMs: { min: 450, max: 1_100 },
+      tempoMs: { min: 250, max: 400 },
       burstiness: { min: 0.72, max: 0.88 },
       regimeSpread: { min: 1.2, max: 1.5 },
       structureSpread: { min: 0.8, max: 1.2 },

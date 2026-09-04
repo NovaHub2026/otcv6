@@ -482,3 +482,25 @@ controls" stay out of scope: the burst is a property of a push, not a dial.
 
 **Revisit if:** the Human Owner wants the burst's pace as a control — then
 `BURST_DIVISOR` becomes a per-push parameter with the same fences.
+
+## 2026-09-03 — Engine calibration inside the Lab phase: tick granularity (PH-24.17)
+
+**Decided:** The Human Owner found the candles gappy — the open far from the
+previous close most of the time — and asked whether it was the regime or
+something to improve. Measured: it is tick granularity (few, large ticks; the
+gap is one step), not the regime and not the chart. They chose to fix the
+engine now, inside PH-24: _"el Lab todavía necesita trabajo pero es importante
+que el motor funcione bien; vamos con el motor en esta misma fase."_ PH-24.17
+is engine work under the Lab phase, and it takes the **full** gate, because
+family traits change.
+
+**Alternative:** close PH-24 first and open an engine phase. That runs Cycle
+Audit 8 first (§28), which the Human Owner has deferred until the Lab is
+complete; and the Lab is the instrument this work measures itself with.
+
+**Consequence:** PH-24 now carries one subphase whose scope is the engine's
+personalities. The Cycle Audit that follows PH-24 will examine it with the
+rest — a longer audit, as the earlier decision foresaw.
+
+**Revisit if:** the calibration turns out to need more than family ranges —
+then it is a phase of its own after the audit.
