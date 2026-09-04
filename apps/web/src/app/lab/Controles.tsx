@@ -195,7 +195,7 @@ export function Controles({
               ))}
             </select>
           </Field>
-          <Field label={es.lab.close.bucket} width={110}>
+          <Field label={es.lab.close.bucket} width={150}>
             <select
               data-testid="lab-close-bucket"
               value={bucket === 'expiry' ? 'current' : bucket}

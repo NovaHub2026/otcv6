@@ -59,9 +59,11 @@ export function Empujar({
         flexWrap: 'wrap',
       }}
     >
-      <span style={{ color: T.text, fontSize: 13, fontWeight: 600 }}>
-        {p.title} <Info text={p.info} />
-      </span>
+      {layout === 'strip' && (
+        <span style={{ color: T.text, fontSize: 13, fontWeight: 600 }}>
+          {p.title} <Info text={p.info} />
+        </span>
+      )}
       <span style={{ color: T.faint, fontSize: 11 }}>{p.down}</span>
       {[...PUSH_SIZES].reverse().map((n) => (
         <Button
