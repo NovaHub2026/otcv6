@@ -18,7 +18,6 @@ import {
   readServedRecord,
   seamIndicesOf,
   servedAssurance,
-  ServedRecordError,
   type ServedRecord,
 } from '@otc/lab';
 
@@ -235,77 +234,53 @@ describe('the served record, read from outside the process', () => {
     expect(resumed.recovery?.kind, second.output().slice(-1_500)).not.toBe('fresh');
 
     // What the observer held ends at `last`; what the venue serves after the
-    // restart begins where it resumed. The first run of this test found the
-    // two are not the same window (PH-25.1 §6): the shipped service persists
-    // checkpoints and candles, not ticks, so its replay window is process-local
-    // and a restart forgets everything published before the resume point. A
-    // client holding an older sequence is refused as "evicted", and with
-    // `onGap=live` it is told — which is the honest behaviour, and is asserted;
-    // the ticks it cannot be given are still in the venue's candle record
-    // (INV-009), and that is asserted too.
-    let c: ServedRecord;
-    try {
-      c = await read(second, last + 1, RESUME_TICKS);
-    } catch (error) {
-      if (!(error instanceof ServedRecordError) || error.status !== 400) throw error;
-      const start = /starts at (\d+)/.exec(error.body);
-      expect(start, `a refusal that names the retained window: ${error.body}`).not.toBeNull();
-      const windowStart = Number(start![1]);
-      // Forgotten exactly up to its resume point, and nothing after it.
-      expect(resumed.recovery?.kind).toBe('resumed');
-      expect(windowStart).toBe((resumed.recovery as { fromSequence: number }).fromSequence + 1);
-      expect(windowStart).toBeGreaterThan(last + 1);
+    // restart begins where the observer left it. The first run of this test
+    // found otherwise (PH-25.1 §5, finding a): the shipped service persisted
+    // checkpoints and candles, not ticks, so its replay window was
+    // process-local and a restart forgot everything published before the
+    // resume point. PH-28.1 persists the published record and primes the feed
+    // from it at boot, so the resume is honoured — asserted here as a read
+    // that must not be refused, from a sequence the *first* process served.
+    const c = await read(second, last + 1, RESUME_TICKS);
+    expect(c.gaps, 'the resume was refused or told a gap').toEqual([]);
 
-      c = await readServedRecord({
-        baseUrl: second.base,
-        assetId: ASSET,
-        from: last + 1,
-        onGap: 'live',
-        stopAfter: { ticks: RESUME_TICKS },
-        signal: AbortSignal.timeout(480_000),
-      });
-      // Told the gap, then everything the venue still holds, from the start of
-      // its window — and the frame names where it picks up.
-      expect(c.gaps).toEqual([
-        {
-          requested: last + 1,
-          reason: expect.stringMatching(/retained/) as string,
-          resumesAt: windowStart,
-          afterSequence: null,
-        },
-      ]);
-      expect(c.ticks[0]!.sequence).toBe(windowStart);
-      expect(c.discontinuities).toEqual([]);
-
-      // The hole the stream cannot replay, against the record the venue
-      // stored. The fourth run measured **zero** stored candles spanning it
-      // (finding c, PH-25.1 §5): the minute the kill fell in was open in the
-      // recorder and died with the process, and after the resume the recorder
-      // sees that minute from inside and withholds it (CA6-30) — so a SIGKILL
-      // costs the candle record the minute it happened in. Measured and
-      // recorded rather than asserted away; what is asserted is that no stored
-      // bar claims sequences it did not fold: the record may have a hole, and
-      // must never paper over one.
-      await new Promise((resolve) => setTimeout(resolve, 7_000)); // a flush
-      const bars = await storedCandles(
-        second,
-        Math.floor(dataset.lastInstant / minute) * minute - minute,
-        Math.ceil(c.ticks[0]!.instant / minute) * minute + minute,
+    // Finding c, closed the same way: the minute the kill fell in was open in
+    // the first process's recorder and died with it, and the resumed recorder
+    // used to see that minute from inside and withhold it (a5-01) — a hole in
+    // the candle record at every SIGKILL, measured at zero bars spanning it
+    // on the fourth run. The recorder is now primed from the record's ticks
+    // after the newest stored bar before any live tick, so every minute
+    // through the kill is stored whole. Asserted: the stored minute bars from
+    // the observer's last whole minute to the resume are contiguous in
+    // sequence — no bar is missing and none claims what it did not fold.
+    await new Promise((resolve) => setTimeout(resolve, 7_000)); // a flush
+    const barsFrom = Math.floor(dataset.lastInstant / minute) * minute - minute;
+    const barsTo = Math.floor(c.ticks[0]!.instant / minute) * minute;
+    const bars = await storedCandles(second, barsFrom, barsTo + minute);
+    expect(bars.length, 'bars around the kill').toBeGreaterThanOrEqual(2);
+    for (const bar of bars) {
+      expect(bar.tickCount, `bar at ${String(bar.openInstant)}`).toBe(
+        bar.lastSequence - bar.firstSequence + 1,
       );
-      const spanning = bars.filter(
-        (bar) => bar.lastSequence >= last + 1 && bar.firstSequence <= windowStart - 1,
-      );
-      for (const bar of bars) {
-        expect(bar.tickCount, `bar at ${String(bar.openInstant)}`).toBe(
-          bar.lastSequence - bar.firstSequence + 1,
-        );
-      }
-      console.log(
-        `[PH-25.1] hole ${String(last + 1)}–${String(windowStart - 1)} after the kill: ` +
-          `${String(spanning.length)} stored 1m candle(s) span it; ${String(bars.length)} bars read around it`,
-      );
-      expect(c.ticks).toHaveLength(RESUME_TICKS);
     }
+    for (let i = 1; i < bars.length; i += 1) {
+      expect(
+        bars[i]!.firstSequence,
+        `the bar at ${String(bars[i]!.openInstant)} does not follow the one before it: a hole`,
+      ).toBe(bars[i - 1]!.lastSequence + 1);
+      expect(bars[i]!.openInstant - bars[i - 1]!.openInstant, 'a minute is missing').toBe(minute);
+    }
+    // The kill fell after `last` and before the resume point; a bar holding
+    // both sides of it exists only if the minute was stored whole.
+    const resumedFrom = (resumed.recovery as { fromSequence: number }).fromSequence;
+    const spanning = bars.filter(
+      (bar) => bar.firstSequence <= resumedFrom && bar.lastSequence > resumedFrom,
+    );
+    console.log(
+      `[PH-28.1] resumed at ${String(resumedFrom)}; ${String(bars.length)} contiguous 1m bars ` +
+        `from ${String(barsFrom)}; ${String(spanning.length)} span the resume point`,
+    );
+
     if (c.gaps.length === 0) {
       expect(c.ticks).toHaveLength(RESUME_TICKS);
       // Strictly continuing, across the boundary and after it.

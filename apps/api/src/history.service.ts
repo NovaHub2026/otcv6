@@ -20,6 +20,7 @@ import {
   type CandleHistory,
   type HostedMarket,
   type StateStore,
+  type TickRecord,
 } from '@otc/runtime';
 
 /**
@@ -203,6 +204,37 @@ export class HistoryService implements OnApplicationShutdown {
   }
 
   /**
+   * Fold what the record holds past the newest stored minute, before any live
+   * tick (PH-28.1).
+   *
+   * The recorder's first bucket is whole only when its first tick is the one
+   * that follows the stored head (a5-01). After a kill the previous process
+   * had published — and recorded — ticks of a minute it never closed; handing
+   * them to the recorder first, from the stored head onward, makes its first
+   * tick that one, so the minute is seen from its start and stored rather than
+   * withheld (PH-25.1 finding c). Where the record does not reach the stored
+   * head — a seam, a trim — the recorder decides `withheld` exactly as before,
+   * because the truth did not change. Returns how many ticks were folded.
+   */
+  async prime(assetId: string, record: TickRecord): Promise<number> {
+    if (this.recorders.has(assetId)) return 0; // Provisioned here: it has folded every tick.
+    const lastStored = await lastStoredSequence(this.history, assetId);
+    const recorder = new HistoryRecorder({ continuesAfter: lastStored });
+    this.recorders.set(assetId, recorder);
+    let from = (lastStored ?? 0) + 1;
+    let folded = 0;
+    for (;;) {
+      const page = await record.since(assetId, from, PRIME_PAGE);
+      if (page.length === 0) break;
+      recorder.accept(page);
+      folded += page.length;
+      from = page[page.length - 1]!.sequence + 1;
+      if (page.length < PRIME_PAGE) break;
+    }
+    return folded;
+  }
+
+  /**
    * Write out every bar that has closed.
    *
    * On the checkpoint cadence rather than per tick: a minute bar closes once a
@@ -279,6 +311,9 @@ export class HistoryService implements OnApplicationShutdown {
     }
   }
 }
+
+/** Ticks read from the record per page while priming; a page is one await. */
+const PRIME_PAGE = 100_000;
 
 function isClosable(value: object): value is { close(): void } {
   return 'close' in value && typeof value.close === 'function';

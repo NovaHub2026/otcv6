@@ -88,6 +88,14 @@ export {
 } from './follower.js';
 export { SqliteCoordinatedStore, STORE_SCHEMA_VERSION } from './sqliteStore.js';
 export { HISTORY_SCHEMA_VERSION, SqliteCandleHistory } from './sqliteHistory.js';
+export {
+  DEFAULT_RECORD_TICKS,
+  MemoryTickRecord,
+  RECORD_SCHEMA_VERSION,
+  SqliteTickRecord,
+  type AssetBatch,
+  type TickRecord,
+} from './tickRecord.js';
 export { DEFAULT_BUSY_TIMEOUT_MS } from './sqlite.js';
 export {
   FIRST_SEQUENCE,

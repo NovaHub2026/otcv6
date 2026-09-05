@@ -1,4 +1,9 @@
-import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  type OnApplicationShutdown,
+  type OnModuleDestroy,
+} from '@nestjs/common';
 import {
   epochMillis,
   logPrice,
@@ -14,15 +19,18 @@ import {
 import { ASSET_CATALOGUE, configFor, createMarketEngine, type RegisteredAsset } from '@otc/engine';
 import {
   checkpointMarket,
+  DEFAULT_RECORD_TICKS,
   resumeMarket,
   Venue,
+  type AssetBatch,
   type HostedMarket,
   type RecoveryOutcome,
   type SignSourceFactory,
   type StateStore,
   type AssetOverlay,
+  type TickRecord,
 } from '@otc/runtime';
-import { TickFeed } from '@otc/distribution';
+import { DEFAULT_RETAIN_TICKS, TickFeed } from '@otc/distribution';
 import { HistoryService } from './history.service.js';
 import { PublicationService } from './publication.service.js';
 
@@ -50,7 +58,7 @@ import { PublicationService } from './publication.service.js';
 const STALLED_BACKOFF_MS = 250;
 
 @Injectable()
-export class VenueService implements OnModuleDestroy {
+export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
   private readonly logger = new Logger(VenueService.name);
   private venue: Venue | null = null;
   private timer: NodeJS.Timeout | null = null;
@@ -150,6 +158,21 @@ export class VenueService implements OnModuleDestroy {
       readonly controlledSince: (assetId: string) => boolean;
       readonly checkpointTaken: (assetId: string) => void;
     } | null = null,
+    /**
+     * The persisted published record, or null when this deployment keeps none
+     * (PH-28.1).
+     *
+     * Written in `tick()` before the feed, the publisher and the history see a
+     * batch, and read at `start()` to prime the feed's window and the history
+     * recorder — so a client's resume sequence is honoured across a restart and
+     * the minute a kill fell in is stored whole. Optional for the reason the
+     * history is: the venue published a market for nine phases before the record
+     * outlived the process, and a test that wants neither should not have to
+     * build one.
+     */
+    private readonly record: TickRecord | null = null,
+    /** Ticks the record keeps per asset; trimmed on the checkpoint cadence. */
+    private readonly recordTicks = DEFAULT_RECORD_TICKS,
   ) {}
 
   /** Resume every asset, then begin publishing. */
@@ -210,8 +233,57 @@ export class VenueService implements OnModuleDestroy {
     }
     this.venue = new Venue({ clock: this.clock, markets });
     this.venue.prime();
+    // The record before the first pass: what the previous process served is
+    // what this one's feed resumes from, and what its recorder folds first.
+    for (const { asset } of markets) await this.#primeFromRecord(asset.definition.id);
     this.lastCheckpointAt = this.clock.now();
     this.schedule();
+  }
+
+  /**
+   * Close the record, last (PH-28.1).
+   *
+   * `onApplicationShutdown`, not `onModuleDestroy`, for the reason the history
+   * closes there (a6-09): the venue's own destroy hook is the final checkpoint
+   * and it trims the record, and Nest runs a module's destroy hooks
+   * concurrently. This runs after every destroy hook has resolved.
+   */
+  onApplicationShutdown(): void {
+    if (this.record !== null && isClosable(this.record)) {
+      this.record.close();
+      this.logger.log('tick record closed');
+    }
+  }
+
+  /**
+   * Hand a market what the record holds for it, before it publishes here.
+   *
+   * Two readers, both of the same tail. The **feed** takes the newest contiguous
+   * run up to its own window, so a client holding a sequence the previous
+   * process served resumes from it rather than being refused as evicted
+   * (PH-25.1 finding a). The **history recorder** takes every tick after the
+   * newest stored minute bar, so its first tick is the one that follows the
+   * stored head and the minute the previous process died inside is seen from
+   * its start and stored whole (finding c). Neither reaches the engine: this is
+   * the published record read back, and INV-001 is untouched.
+   */
+  async #primeFromRecord(assetId: string): Promise<void> {
+    if (this.record === null) return;
+    const tail = await this.record.tail(assetId, DEFAULT_RETAIN_TICKS);
+    if (tail.length > 0) {
+      this.feed.publish(assetId, tail);
+      const newest = tail[tail.length - 1]!;
+      const known = this.latest.get(assetId);
+      if (known === undefined || newest.sequence > known.sequence) this.latest.set(assetId, newest);
+    }
+    const folded = await this.history?.prime(assetId, this.record);
+    const head = tail.length > 0 ? tail[tail.length - 1]!.sequence : null;
+    this.logger.log(
+      head === null
+        ? `${assetId}: no published record to prime from`
+        : `${assetId}: feed primed from the record through sequence ${head} ` +
+            `(${tail.length} ticks); ${folded ?? 0} folded into the open minute`,
+    );
   }
 
   onModuleDestroy(): Promise<void> {
@@ -581,6 +653,7 @@ export class VenueService implements OnModuleDestroy {
     this.recovery.set(id, outcome);
     market.prime();
     this.venue?.host(asset, market);
+    await this.#primeFromRecord(id);
     this.publication.register(asset);
     this.logger.log(`${id}: hosted at runtime — ${outcome.kind}`);
   }
@@ -639,13 +712,22 @@ export class VenueService implements OnModuleDestroy {
         );
       }
     }
-    for (const { assetId, ticks } of published) {
+    // The record first (PH-28.1). What comes back is which ticks were new:
+    // a resumed market republishes the ticks between its checkpoint and the
+    // kill, the record verifies them against what it served and returns
+    // nothing for them, and the feed, the publisher and the history never see
+    // a tick twice. A tick the record refuses is not published at all.
+    const fresh = await this.#recordPass(published);
+    for (const { assetId, ticks: generated } of published) {
+      const ticks = fresh.get(assetId);
+      if (ticks === undefined) continue; // Refused by the record; stalled by name.
       if (this.stalled.delete(assetId)) {
         this.stalledLogged.delete(assetId);
         this.logger.log(`${assetId}: publishing again`);
       }
-      const last = ticks[ticks.length - 1];
+      const last = generated[generated.length - 1];
       if (last !== undefined) this.latest.set(assetId, last);
+      if (ticks.length === 0) continue;
       this.feed.publish(assetId, ticks);
       // After publication, never before: the publisher sees the record, it does
       // not participate in producing it (INV-001). The same is true of the
@@ -656,6 +738,48 @@ export class VenueService implements OnModuleDestroy {
     }
     if (this.clock.now() - this.lastCheckpointAt >= this.checkpointEveryMs) {
       await this.checkpoint();
+    }
+  }
+
+  /**
+   * Append a pass to the record and say, per asset, what was new.
+   *
+   * One transaction for the pass; if it is refused, each asset is appended on
+   * its own so the refusal is isolated to the market that caused it. A
+   * refusal — a fork, or a sequence the record cannot compare — means this
+   * market's stream disagrees with the record it published under this id.
+   * It is unhosted and stalled by name: `/health` reports it, nothing is
+   * published for it, and an operator decides. Publishing over the record
+   * would be a second market under one id, which is INV-002 broken where a
+   * client cannot see it.
+   */
+  async #recordPass(
+    published: readonly { assetId: string; ticks: readonly Tick[] }[],
+  ): Promise<ReadonlyMap<string, readonly Tick[]>> {
+    if (this.record === null) {
+      return new Map(published.map(({ assetId, ticks }) => [assetId, ticks]));
+    }
+    const batches: AssetBatch[] = published.map(({ assetId, ticks }) => ({ assetId, ticks }));
+    try {
+      return await this.record.append(batches);
+    } catch {
+      const fresh = new Map<string, readonly Tick[]>();
+      for (const batch of batches) {
+        try {
+          const one = await this.record.append([batch]);
+          fresh.set(batch.assetId, one.get(batch.assetId) ?? []);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.stalled.set(batch.assetId, `refused by the record — ${message}`);
+          this.stalledLogged.set(batch.assetId, 'RecordRefusal');
+          this.venue?.unhost(batch.assetId);
+          this.logger.error(
+            `${batch.assetId}: REFUSED BY THE RECORD and unhosted — ${message} ` +
+              `(nothing was published for it; the record was not modified)`,
+          );
+        }
+      }
+      return fresh;
     }
   }
 
@@ -671,6 +795,9 @@ export class VenueService implements OnModuleDestroy {
         checkpointMarket(this.venue.marketFor(assetId), assetId, now, undefined, controlled),
       );
       this.control?.checkpointTaken(assetId);
+      // The record's bound, on the same cadence: a handful of rows past the
+      // window every five seconds, never a sweep.
+      await this.record?.trim(assetId, this.recordTicks);
     }
     // Bars that closed since the last checkpoint. On the same cadence because a
     // minute bar closes at most once a minute: flushing per tick would be
@@ -739,4 +866,8 @@ export class VenueService implements OnModuleDestroy {
       void this.inFlight;
     }, waitMs);
   }
+}
+
+function isClosable(value: object): value is { close(): void } {
+  return 'close' in value && typeof value.close === 'function';
 }
