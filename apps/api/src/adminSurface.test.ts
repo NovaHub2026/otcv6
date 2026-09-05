@@ -860,10 +860,44 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     const gap = /event: gap\ndata: (.*)/.exec(out.body())?.[1];
     expect(gap, 'no gap event').toBeDefined();
     expect(JSON.parse(gap!)).toMatchObject({ asset: FIRST, requested: 1, resumesAt: 8 });
-    // The first asset's retained window follows its gap (PH-25.1).
-    expect(out.body()).toMatch(new RegExp(`"asset":"${FIRST}","sequence":8`));
+    // The first asset's retained window follows its gap (PH-25.1) — follows,
+    // in order: the gap frame is written before the replay it explains. Cycle
+    // Audit 9 (a4-04) found PH-25.1 claiming this order "watched failing" on
+    // the multiplexed stream when only the single-market stream's plant had
+    // been run; this is the multiplexed plant's guard.
+    const firstReplay = out.body().indexOf(`"asset":"${FIRST}","sequence":8`);
+    expect(firstReplay).toBeGreaterThan(-1);
+    expect(out.body().indexOf('event: gap')).toBeLessThan(firstReplay);
     // The third asset was servable and was served.
     expect(out.body()).toMatch(new RegExp(`"asset":"${THIRD}","sequence":2`));
+  });
+
+  it('multiplexed: past the replay budget a resume is told a gap and joined at the live edge, not replayed (CA9 a4-03)', () => {
+    // The single-market stream's budget check has a guard above; the
+    // multiplexed stream's had none — deleting it left every test green. A
+    // budget of one byte: the first resume that holds bytes fills it, and the
+    // next multiplexed resume must be joined at the live edge with a gap that
+    // names no resumption, never handed the retained window.
+    const feed = new TickFeed({ retainTicks: 50 });
+    feed.publish(FIRST, ticks(20));
+    const venue = { ...venueStub([FIRST]), feed } as unknown as VenueService;
+    const controller = new MarketController(venue, null, null, null, null, 1);
+    const stalled = recording(true);
+    controller.stream(FIRST, stalled.res, request(), '5', 'live');
+    expect(replayBudgetUsed()).toBeGreaterThan(0);
+
+    const told = recording();
+    controller.multiplexed(told.res, request(), FIRST, `${FIRST}:5`, 'live');
+    expect(told.status()).toBe(200);
+    const gap = /event: gap\ndata: (.*)/.exec(told.body())?.[1];
+    expect(gap, 'no gap event').toBeDefined();
+    expect(JSON.parse(gap!)).toMatchObject({ asset: FIRST, requested: 5, resumesAt: null });
+    expect(told.body()).not.toMatch(/"sequence":5\b/);
+    expect(told.body()).not.toMatch(/"sequence":19\b/);
+    // And refused outright without the policy.
+    expect(() => controller.multiplexed(untouched(), request(), FIRST, `${FIRST}:5`)).toThrow(
+      BadRequestException,
+    );
   });
 
   it('refuses a from that names an asset the stream does not carry (PH-22.2)', () => {

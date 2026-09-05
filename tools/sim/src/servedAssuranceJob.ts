@@ -78,13 +78,33 @@ async function longestRecord(
   let from = startFor(newest, maxTicks);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      return await readServedRecord({
+      const record = await readServedRecord({
         baseUrl: base,
         assetId,
         from,
         stopAfter: { sequence: newest },
         signal: AbortSignal.timeout(300_000),
       });
+      // The whole window, or nothing (Cycle Audit 9, a1-02/a4-01/a8-03): a read
+      // the venue closed — its 1 MB replay cap says "fell behind" — or that the
+      // timeout cut, or that ended short, is not the retained window, and a
+      // verdict recorded on it would say "the venue's record" of a fragment.
+      const expected = newest - from + 1;
+      if (
+        record.endedBy !== 'rule' ||
+        record.closes.length > 0 ||
+        record.ticks.length !== expected
+      ) {
+        throw new Error(
+          `${assetId}: the read ended by ${record.endedBy}` +
+            (record.closes.length > 0
+              ? ` (close: ${record.closes.map((c) => c.reason).join('; ')})`
+              : '') +
+            ` with ${String(record.ticks.length)} of the ${String(expected)} ticks asked for ` +
+            `(${String(from)}–${String(newest)}); a verdict is not recorded on a fragment.`,
+        );
+      }
+      return record;
     } catch (error) {
       if (!(error instanceof ServedRecordError) || error.status !== 400 || attempt === 1)
         throw error;

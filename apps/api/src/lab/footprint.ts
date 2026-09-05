@@ -177,17 +177,22 @@ export function measureFootprint(
       natural.push(tick);
     }
     if (natural.length < controlledTicks) return null;
+    // The bias asks the clock before each draw, and the clock it is given is
+    // the instant of the tick about to be drawn — the natural fork's, which the
+    // controlled fork shares (asserted by `instantsIdentical`). With the clock
+    // lagging one tick behind, the bias controlled one tick more than it said
+    // (Cycle Audit 9, a5-01/a8-01): the 200-tick row of the evidence held 201.
     const deadline = natural[controlledTicks - 1]!.instant;
-    let now = controlledFork.instant as number;
+    let drawn = 0;
     wrapper.setBias(intervention.direction, intervention.random, intervention.runs, {
       at: deadline + 0.5,
-      now: () => now,
+      now: () => natural[drawn]?.instant ?? Number.POSITIVE_INFINITY,
     });
     for (let i = 0; i < total; i += 1) {
       const tick = controlledFork.next();
       if (tick === null) break;
       controlled.push(tick);
-      now = tick.instant;
+      drawn += 1;
     }
     return {
       footprint: footprintOf(

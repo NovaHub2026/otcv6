@@ -54,8 +54,12 @@ afterAll(async () => {
   for (const directory of directories) await rm(directory, { recursive: true, force: true });
 });
 
-/** A venue that serves one asset's record, or refuses every resume. */
-function venue(ticks: readonly Tick[], refuseAll = false): Promise<string> {
+/** A venue that serves one asset's record, or refuses every resume, or closes mid-read. */
+function venue(
+  ticks: readonly Tick[],
+  refuseAll = false,
+  closeAfter: number | null = null,
+): Promise<string> {
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://venue');
     if (url.pathname === '/catalogue') {
@@ -88,11 +92,18 @@ function venue(ticks: readonly Tick[], refuseAll = false): Promise<string> {
         return;
       }
       response.writeHead(200, { 'content-type': 'text/event-stream' });
+      let served = 0;
       for (const tick of ticks) {
         if (tick.sequence < from) continue;
+        if (closeAfter !== null && served >= closeAfter) break;
         response.write(`id: ${String(tick.sequence)}\ndata: ${JSON.stringify(tick)}\n\n`);
+        served += 1;
       }
-      response.write(`event: close\ndata: ${JSON.stringify({ reason: 'record ends' })}\n\n`);
+      response.write(
+        `event: close\ndata: ${JSON.stringify({
+          reason: closeAfter === null ? 'record ends' : 'client fell behind during replay',
+        })}\n\n`,
+      );
       response.end();
       return;
     }
@@ -141,6 +152,24 @@ describe('the job as a scheduler runs it', () => {
     const { code, stderr } = await run(['--base', base]);
     expect(code).toBe(1);
     expect(stderr).toMatch(/wire-otc: FAILED — .*400/);
+  }, 60_000);
+
+  it('exits 1 and records no verdict when the venue closes the read short (CA9 a4-01)', async () => {
+    // The venue's 1 MB replay cap ends a long replay with a `close` that blames
+    // the client; the job used to take the fragment as the retained window and
+    // grade it. A read that did not reach the window's end is a failure with
+    // the count in it, not a record.
+    const base = await venue(predictableByTheClock(600), false, 1_000);
+    const directory = await mkdtemp(path.join(tmpdir(), 'otc-served-job-short-'));
+    directories.push(directory);
+    const out = path.join(directory, 'verdict.md');
+    const { code, stderr } = await run(['--base', base, '--out', out, '--max-ticks', '36000']);
+    expect(code, stderr).toBe(1);
+    expect(stderr).toMatch(/wire-otc: FAILED — .*ended by close.*1000 of the 36000 ticks/);
+    const text = await readFile(out, 'utf8');
+    expect(text).toContain('**failed**');
+    expect(text).toContain('Assets: 1 — 0 exploitable, 1 failed');
+    expect(text).not.toContain('**exploitable**');
   }, 60_000);
 
   it('exits 1 without a venue', async () => {

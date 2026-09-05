@@ -5,6 +5,7 @@ import {
   distanceUnitFrom,
   LabDistances,
   medianCandleRange,
+  MIN_RECORD_MINUTES,
   MEASUREMENT_SPAN_MS,
   recordWindow,
 } from './distance.js';
@@ -35,7 +36,23 @@ describe('the distance unit', () => {
       t(122_000, 100), // minute 2: range 20
       t(181_000, 100), // minute 3 (partial, dropped)
     ];
-    expect(medianCandleRange(ticks)).toEqual({ range: 20, minutes: 3 });
+    expect(medianCandleRange(ticks)).toEqual({ range: 20, minutes: 3, tradedMinutes: 2 });
+  });
+
+  it('a window is enough record only when enough minutes traded, whatever the span (CA9 a5-03)', () => {
+    // Two ticks twenty-eight minutes apart span twenty-seven complete minutes
+    // and traded in none of them; PH-27.1's quiet-minute count read that as a
+    // whole record and let the unit be measured on nothing.
+    const base = 1_776_000_000_000;
+    const t = (instant: number, price: number): Tick => ({
+      sequence: instant,
+      instant: epochMillis(base + instant),
+      price: logPrice(price),
+    });
+    const sparse = [t(60_000, 0), t(28 * 60_000 + 1, 80)];
+    expect(medianCandleRange(sparse).minutes).toBeGreaterThanOrEqual(MIN_RECORD_MINUTES);
+    expect(medianCandleRange(sparse).tradedMinutes).toBe(0);
+    expect(recordWindow(sparse, base + 29 * 60_000)).toEqual([]);
   });
 
   it('is a quarter of the median complete-minute range, at least one step, priced at the level', () => {
@@ -52,7 +69,7 @@ describe('the distance unit', () => {
       tick(7, base + 122_000, 400), // minute 3: range 400
       tick(8, base + 181_000, 0), // partial, dropped
     ];
-    expect(medianCandleRange(ticks)).toEqual({ range: 80, minutes: 3 });
+    expect(medianCandleRange(ticks)).toEqual({ range: 80, minutes: 3, tradedMinutes: 3 });
     const unit = distanceUnitFrom(ASSET_CATALOGUE[0]!, 0, ticks, base);
     expect(unit.unitSteps).toBe(20);
     expect(unit.candleRangeSteps).toBe(80);
