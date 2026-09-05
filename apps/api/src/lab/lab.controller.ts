@@ -864,8 +864,7 @@ export class LabController {
       }
       // The fork started at the snapshot's sequence; the landing is script.length ticks on.
       const sequence = this.venue.hostedMarket(id)!.snapshotEngine().sequence + script.length;
-      const natural =
-        script.length > 0 ? naturalAt(landingInstant) : { level, ticks: 0 };
+      const natural = script.length > 0 ? naturalAt(landingInstant) : { level, ticks: 0 };
       const naturalLevel = natural.level;
       return {
         level,
