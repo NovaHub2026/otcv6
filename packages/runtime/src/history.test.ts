@@ -136,6 +136,32 @@ describe('the recorder folds one stream into two tiers', () => {
     expect(await rollupOf(manyBatches)).toEqual(await rollupOf(oneBatch));
   });
 
+  it('withholds an hour whose minutes do not touch in sequence — a hole is a hole (CA9 a6-01)', async () => {
+    // The minute a kill fell in is withheld by the resumed recorder; the hour
+    // around it used to be folded from the minutes on either side and stored
+    // whole, with a high and a low that never saw the withheld ticks.
+    const base = flatten(recordAll(stream, 7));
+    const whole = await rollupOf(base);
+    expect(whole.length).toBeGreaterThanOrEqual(3);
+    // Drop one minute from inside the second hour.
+    const secondHour = whole[1]!;
+    const inside = base.findIndex(
+      (m) =>
+        m.openInstant > secondHour.openInstant &&
+        m.openInstant < secondHour.openInstant + 3_600_000 - 120_000,
+    );
+    expect(inside).toBeGreaterThan(0);
+    const holed = [...base.slice(0, inside), ...base.slice(inside + 1)];
+    const rollup = await rollupOf(holed);
+    // Every other hour is stored as before; the holed hour is not stored at all.
+    expect(rollup.map((c) => c.openInstant)).toEqual(
+      whole.map((c) => c.openInstant).filter((t) => t !== secondHour.openInstant),
+    );
+    for (const candle of rollup) {
+      expect(candle).toEqual(whole.find((c) => c.openInstant === candle.openInstant));
+    }
+  });
+
   it('builds the same hourly tier however the minutes were written', async () => {
     // The tier that used to depend on process lifetime. Whatever order or
     // grouping the minutes arrive in, the stored hours are the same hours.
