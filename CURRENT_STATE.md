@@ -12,12 +12,12 @@ Last synchronized: 2026-09-05
 
 ## Development cycle
 
-| Field                            | Value                                                                                                                                                                            |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 9 — **3 of 3** phases approved (PH-26, PH-25, PH-27); Cycle Audit 9 next                                                                                                   |
-| Approved phases in current cycle | **3 of 3** — PH-26, PH-25, PH-27                                                                                                                                                 |
-| Cycle Audit state                | **009 OPEN** — 62 findings confirmed, 61 resolved on `audit/ca9-fixes`, one carried; closes on that branch's gate, merge and hosted CI                                           |
-| Last Cycle Audit                 | [Cycle Audit 009](docs/audits/CYCLE-AUDIT-009.md) — 2026-09-05, eight independent auditors, one worktree each, every finding refuted independently; closing on `audit/ca9-fixes` |
+| Field                            | Value                                                                                                                                                      |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Active development cycle         | Cycle 9 — **3 of 3** phases approved (PH-26, PH-25, PH-27); Cycle Audit 9 next                                                                             |
+| Approved phases in current cycle | **3 of 3** — PH-26, PH-25, PH-27                                                                                                                           |
+| Cycle Audit state                | **009 closed** — 64 claims, 62 confirmed, 61 resolved with a guard each, one carried (a8-12)                                                               |
+| Last Cycle Audit                 | [Cycle Audit 009](docs/audits/CYCLE-AUDIT-009.md) — 2026-09-05, eight independent auditors, one worktree each, every finding refuted independently; closed |
 
 ## Phase and subphase
 
@@ -126,7 +126,7 @@ Found while closing Cycle Audit 8, and carried forward by nobody until then:
 | `c4757c5` | **PH-26 merge**          | **red** — Quality Gate on one unit test (`seats.test.ts`, 26.7 s hosted against a 20 s ceiling); Statistical Gate green, 88 min                                                                                                |
 | `7f03abe` | **PH-25 merge**          | **red on both** — Quality Gate on the same test; Statistical Gate on `guardrailMetaAudit`, because the merged state documents already failed `stateConsistency` (the handoff named PH-25 active after the roadmap approved it) |
 | `f2bab68` | PH-25 state fix          | Quality **red** (same test); Statistical **green**, 88 min                                                                                                                                                                     |
-| `e8ed2ae` | **PH-27 merge, audited** | recorded when the run lands (the `seats.test.ts` fix is in it)                                                                                                                                                                 |
+| `e8ed2ae` | **PH-27 merge, audited** | **green on both** — Quality Gate 3 min (with the `seats.test.ts` fix), Statistical Gate 112 min; the first phase-approval commit hosted CI has corroborated since PH-23                                                        |
 
 Two things follow, and neither is comfortable. **No commit carrying a phase
 approval has been corroborated by hosted CI since PH-23.** And the `9e44ffb`
@@ -192,7 +192,7 @@ on `audit/ca9-fixes`; that run replaces this block when it passes.
 
 ## EXACT NEXT LEGAL ACTION
 
-**Close Cycle Audit 9: the full gate on `audit/ca9-fixes`, the merge to `main`, hosted CI on it — then Cycle 10 opens from `docs/reports/IMPROVEMENT-REPORT-001.md` §4.**
+**Cycle 10 opens from `docs/reports/IMPROVEMENT-REPORT-001.md` §4 — the persisted record first; Cycle Audit 9 is closed and merged, and hosted CI on the closing merge is recorded in the table above when it lands.**
 
 PH-27 is approved on its integrated phase verification (`GATE_EXIT=0` first
 attempt, 45 statistical files in 4,472 s) and is being merged. Cycle 9 is

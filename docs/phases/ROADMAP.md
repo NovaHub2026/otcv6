@@ -722,12 +722,12 @@ path — and neither node was on the graph that exists to carry exactly that.
 Cycle 8's audit closed with every finding resolved and one thing handed forward,
 recorded here so it is not rediscovered:
 
-| Phase | Title                                                                                    | State                                                                                      |
-| ----- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| PH-26 | The catalogue of thirty                                                                  | **APPROVED**                                                                               |
-| PH-25 | The battery against a production venue's own record                                      | **APPROVED**                                                                               |
-| PH-27 | Review and improvement of the whole project                                              | **APPROVED**                                                                               |
-| —     | **Cycle Audit 9** — eight worktrees, eight auditors, every finding refuted independently | **OPEN** — 62 confirmed, 61 resolved, one carried — [record](../audits/CYCLE-AUDIT-009.md) |
+| Phase | Title                                                                                    | State                                                 |
+| ----- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| PH-26 | The catalogue of thirty                                                                  | **APPROVED**                                          |
+| PH-25 | The battery against a production venue's own record                                      | **APPROVED**                                          |
+| PH-27 | Review and improvement of the whole project                                              | **APPROVED**                                          |
+| —     | **Cycle Audit 9** — eight worktrees, eight auditors, every finding refuted independently | **APPROVED** — [record](../audits/CYCLE-AUDIT-009.md) |
 
 **PH-26 runs first, and the numbering says so rather than hiding it.** PH-25 was
 recorded when the audit closed and PH-26 was asked for afterwards; renumbering a
