@@ -116,6 +116,14 @@ export function QualityPanel({
             {es.lab.quality.granularity.title} <Info text={es.lab.quality.granularity.info} />
           </div>
           <Row
+            label={es.lab.quality.granularity.minutes}
+            testId="lab-granularity-minutes"
+            value={es.lab.quality.granularity.minutesValue(
+              quality.granularity.minutes,
+              quality.granularity.quietMinutes,
+            )}
+          />
+          <Row
             label={es.lab.quality.granularity.ticksPerMinute}
             testId="lab-granularity-ticks"
             value={es.lab.quality.granularity.ticksValue(

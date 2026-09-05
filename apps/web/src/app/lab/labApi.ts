@@ -375,6 +375,8 @@ export interface ScenarioPlan {
 
 export interface GranularityView {
   readonly minutes: number;
+  /** Complete minutes with no tick, counted rather than dropped (PH-27.1). */
+  readonly quietMinutes: number;
   readonly ticksPerMinute: { readonly median: number; readonly p10: number; readonly p90: number };
   readonly gapOverRange: { readonly median: number; readonly shareAboveQuarter: number };
   readonly step: { readonly median: number; readonly p90: number; readonly zeroShare: number };

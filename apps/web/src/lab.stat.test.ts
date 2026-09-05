@@ -942,6 +942,8 @@ describe('Candle Close Control, from the panel', () => {
       await page.click('[data-testid="tab-quality"]');
       await page.click('[data-testid="lab-quality"]');
       await page.waitForSelector('[data-testid="lab-granularity"]', { timeout: 120_000 });
+      // PH-27.1: the minutes measured, quiet ones counted rather than dropped.
+      expect(await text(page, 'lab-granularity-minutes')).toMatch(/^\d+ · \d+ sin ningún tick$/);
       expect(await text(page, 'lab-granularity-ticks')).toMatch(/^\d+ \(p10 \d+ · p90 \d+\)$/);
       expect(await text(page, 'lab-granularity-gap')).toMatch(/mediano · \d+ % de las velas/);
       // The harness points both bases at one process: Vista declares Lab mode; the Lab screen does not repeat it.

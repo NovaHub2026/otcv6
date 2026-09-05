@@ -25,10 +25,10 @@ Last synchronized: 2026-09-04
 | ---------------------- | ----------------------------------------------------------- |
 | Active phase           | **PH-27 — Review and improvement of the whole project**     |
 | Phase lifecycle        | ACTIVE                                                      |
-| Active subphase        | PH-27.1 — the guards that cannot fail                       |
+| Active subphase        | PH-27.2 — the records that are stale                        |
 | Subphase lifecycle     | ACTIVE                                                      |
 | Last approved phase    | PH-25 — The battery against a production venue's own record |
-| Last approved subphase | PH-25.3 — the recorded verdict and the standing job         |
+| Last approved subphase | PH-27.1 — the guards that cannot fail                       |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
@@ -195,14 +195,16 @@ the wrong thing.
 
 ## EXACT NEXT LEGAL ACTION
 
-**PH-27.1 — the guards that cannot fail: found by planting, fixed by anchoring.**
+**PH-27.2 — the records that are stale: every "leaves open" checked against the tree.**
 
 PH-25 is merged at `7f03abe` (state fix `f2bab68`) and pushed; hosted CI on
 it is running and its verdict is recorded here when it lands. PH-27 is active
 on `feature/ph-27-review`: the review phase, five subphases, the last of them
-`docs/reports/IMPROVEMENT-REPORT-001.md`. PH-27.1 re-plants every guard Cycle
-Audit 8's remaining-items map named as unable to fail and anchors the ones
-that still cannot; then PH-27.2 (records), PH-27.3 (small improvements),
+`docs/reports/IMPROVEMENT-REPORT-001.md`. PH-27.1 (approved) re-planted
+eleven guards from Cycle Audit 8's map and three of this cycle's own: ten
+held, one could not fail — the minute-bucket statistics that dropped quiet
+minutes — and is anchored, with the count on the Lab's quality screen. Then
+PH-27.2 (records), PH-27.3 (small improvements),
 PH-27.4 (the footprint of a Lab intervention), PH-27.5 (the report); then the
 phase gate, the merge, and Cycle Audit 9.
 
