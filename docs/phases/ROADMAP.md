@@ -763,11 +763,11 @@ covers publication, retention, reduction to columns and settlement at once. The
 mirror family answers the structural half in milliseconds; this is the other
 half, and it has never been run where the product lives.
 
-| Subphase | Title                                                            | State      |
-| -------- | ---------------------------------------------------------------- | ---------- |
-| PH-25.1  | An observer that builds a dataset from the served record alone   | APPROVED   |
-| PH-25.2  | The battery on the served record, across a restart and a resume  | APPROVED   |
-| PH-25.3  | The recorded verdict, and the standing job that keeps it current | **ACTIVE** |
+| Subphase | Title                                                            | State    |
+| -------- | ---------------------------------------------------------------- | -------- |
+| PH-25.1  | An observer that builds a dataset from the served record alone   | APPROVED |
+| PH-25.2  | The battery on the served record, across a restart and a resume  | APPROVED |
+| PH-25.3  | The recorded verdict, and the standing job that keeps it current | APPROVED |
 
 ## Known uncertainties
 

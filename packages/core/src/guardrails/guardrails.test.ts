@@ -148,6 +148,9 @@ const AMBIENT_STATE_ALLOWLIST = [
   'tools/sim/src/tieRateEvidence.ts',
   'tools/sim/src/observerLoadRun.ts',
   'tools/sim/src/venueScale.ts',
+  // PH-25.3's served-assurance job: `--base`, `--assets`, `--out` from argv,
+  // the same shape as the evidence runners above it.
+  'tools/sim/src/servedAssuranceJob.ts',
 ];
 
 /**
@@ -188,6 +191,10 @@ const AMBIENT_TIME_ALLOWLIST = [
    */
   'tools/sim/src/observerLoad.ts',
   'tools/sim/src/observerLoadRun.ts',
+  // PH-25.3's served-assurance job stamps its verdicts with the instant of
+  // the run and times each asset; nothing it reads reaches a draw — the ticks
+  // come over a socket from a venue that has its own clock.
+  'tools/sim/src/servedAssuranceJob.ts',
 ];
 
 interface Source {
