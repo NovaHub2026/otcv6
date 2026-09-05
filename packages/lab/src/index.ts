@@ -120,3 +120,9 @@ export {
   type ServedRecordOptions,
   type StopRule,
 } from './served/servedRecord.js';
+export {
+  joinServedRecords,
+  seamIndicesOf,
+  servedAssurance,
+  type ServedAssuranceOptions,
+} from './served/servedAssurance.js';

@@ -766,8 +766,8 @@ half, and it has never been run where the product lives.
 | Subphase | Title                                                            | State      |
 | -------- | ---------------------------------------------------------------- | ---------- |
 | PH-25.1  | An observer that builds a dataset from the served record alone   | APPROVED   |
-| PH-25.2  | The battery on the served record, across a restart and a resume  | **ACTIVE** |
-| PH-25.3  | The recorded verdict, and the standing job that keeps it current | PLANNED    |
+| PH-25.2  | The battery on the served record, across a restart and a resume  | APPROVED   |
+| PH-25.3  | The recorded verdict, and the standing job that keeps it current | **ACTIVE** |
 
 ## Known uncertainties
 

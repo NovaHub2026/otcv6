@@ -1,5 +1,6 @@
 // Invariant evidence: INV-002 (shared market), INV-003 (single underlying stream),
-// INV-008 (continuous market state), INV-010 (private generator state).
+// INV-006 (no exploitable directional rules), INV-008 (continuous market state),
+// INV-010 (private generator state).
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -9,7 +10,14 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { assertTickOrder, timeframe, type Candle } from '@otc/core';
 import { ASSET_CATALOGUE } from '@otc/engine';
-import { readServedRecord, ServedRecordError, type ServedRecord } from '@otc/lab';
+import {
+  joinServedRecords,
+  readServedRecord,
+  seamIndicesOf,
+  servedAssurance,
+  ServedRecordError,
+  type ServedRecord,
+} from '@otc/lab';
 
 /**
  * PH-25.1 — the served record, read from outside the process.
@@ -288,22 +296,69 @@ describe('the served record, read from outside the process', () => {
           `${String(spanning.length)} stored 1m candle(s) span it; ${String(bars.length)} bars read around it`,
       );
       expect(c.ticks).toHaveLength(RESUME_TICKS);
-      return;
     }
-    expect(c.gaps).toEqual([]);
-    expect(c.ticks).toHaveLength(RESUME_TICKS);
-    // Strictly continuing, across the boundary and after it.
-    assertTickOrder(a.ticks[a.ticks.length - 1]!, c.ticks[0]!);
-    if (resumed.recovery?.kind === 'seam') {
-      // A seam is a jump the record declares; the observer holds it as one
-      // discontinuity, starting where the venue says the record ended.
-      expect(c.discontinuities).toHaveLength(1);
-      expect(c.discontinuities[0]!.afterSequence).toBe(last);
-      expect(resumed.recovery.fromSequence).toBeGreaterThanOrEqual(last);
+    if (c.gaps.length === 0) {
+      expect(c.ticks).toHaveLength(RESUME_TICKS);
+      // Strictly continuing, across the boundary and after it.
+      assertTickOrder(a.ticks[a.ticks.length - 1]!, c.ticks[0]!);
+      if (resumed.recovery?.kind === 'seam') {
+        // A seam is a jump the record declares; the observer holds it as one
+        // discontinuity, starting where the venue says the record ended.
+        expect(c.discontinuities).toHaveLength(1);
+        expect(c.discontinuities[0]!.afterSequence).toBe(last);
+        expect(resumed.recovery.fromSequence).toBeGreaterThanOrEqual(last);
+      } else {
+        expect(c.discontinuities, JSON.stringify(resumed.recovery)).toEqual([]);
+        expect(c.ticks[0]!.sequence).toBe(last + 1);
+      }
+    }
+
+    // ---- PH-25.2: the battery on what the wire carried ----------------------
+    //
+    // At the size a test can afford the battery cannot see a product-margin
+    // edge, and the verdict must say so: `undecided` or `clean`, never
+    // `exploitable`, with a floor per horizon it measured rather than assumed.
+    // The occupancy floor is lowered as `standing.test.ts` lowers it, so that
+    // a record this short tests anything at all; every other setting is the
+    // one the venue would run with.
+    const battery = { minimumBucketSamples: 25 } as const;
+    const alone = await servedAssurance(a, { at: Date.now(), battery });
+    expect(alone.outcome, JSON.stringify(alone.exploitable)).not.toBe('exploitable');
+    expect(alone.ticks).toBe(SPAN_TICKS);
+    expect(alone.horizons.length).toBeGreaterThan(0);
+    for (const horizon of alone.horizons) expect(horizon.detectionFloorPp).toBeGreaterThan(0);
+    // No seam in a single uninterrupted read, and the verdict says which
+    // family it therefore could not build rather than running it on nothing.
+    expect(alone.withheldUnavailable).toContain('wh-seam-proximity');
+
+    // Across the restart: the two reads joined as one record, the join's hole
+    // — a told gap or a declared seam — reaching the battery as a seam index
+    // read off the record itself, so the withheld seam family is built.
+    const joined = joinServedRecords(a, c);
+    expect(joined.ticks).toHaveLength(SPAN_TICKS + RESUME_TICKS);
+    const seams = seamIndicesOf(joined);
+    if (c.gaps.length > 0 || c.discontinuities.length > 0) {
+      expect(seams).toEqual([SPAN_TICKS]);
     } else {
-      expect(c.discontinuities, JSON.stringify(resumed.recovery)).toEqual([]);
-      expect(c.ticks[0]!.sequence).toBe(last + 1);
+      expect(seams).toEqual([]);
     }
+    const across = await servedAssurance(joined, { at: Date.now(), battery });
+    expect(across.outcome, JSON.stringify(across.exploitable)).not.toBe('exploitable');
+    expect(across.ticks).toBe(SPAN_TICKS + RESUME_TICKS);
+    if (seams.length > 0) {
+      expect(across.families).toContain('wh-seam-proximity');
+      expect(across.withheldUnavailable).not.toContain('wh-seam-proximity');
+    }
+    console.log(
+      `[PH-25.2] served record ${String(alone.ticks)} ticks: ${alone.outcome}, ` +
+        `${String(alone.hypothesesTested)} hypotheses, floors ` +
+        alone.horizons
+          .map((h) => `${h.horizon} ${h.detectionFloorPp.toFixed(2)}pp/${String(h.samples)}`)
+          .join(' ') +
+        `; joined ${String(across.ticks)} ticks across the restart: ${across.outcome}, ` +
+        `${String(across.hypothesesTested)} hypotheses, seams at ${JSON.stringify(seams)}, ` +
+        `families ${String(across.families.length)}, unavailable ${JSON.stringify(across.withheldUnavailable)}`,
+    );
   }, 900_000);
 
   it('a resume the venue cannot honour is a refusal, and with onGap=live it is told and kept', async () => {

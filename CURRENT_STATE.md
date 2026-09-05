@@ -21,14 +21,14 @@ Last synchronized: 2026-09-04
 
 ## Phase and subphase
 
-| Field                  | Value                                                                     |
-| ---------------------- | ------------------------------------------------------------------------- |
-| Active phase           | **PH-25 — The battery against a production venue's own record**           |
-| Phase lifecycle        | ACTIVE                                                                    |
-| Active subphase        | PH-25.2 — the battery on the served record, across a restart and a resume |
-| Subphase lifecycle     | ACTIVE                                                                    |
-| Last approved phase    | PH-26 — The catalogue of thirty                                           |
-| Last approved subphase | PH-25.1 — the served-record observer                                      |
+| Field                  | Value                                                                      |
+| ---------------------- | -------------------------------------------------------------------------- |
+| Active phase           | **PH-25 — The battery against a production venue's own record**            |
+| Phase lifecycle        | ACTIVE                                                                     |
+| Active subphase        | PH-25.3 — the recorded verdict, and the standing job that keeps it current |
+| Subphase lifecycle     | ACTIVE                                                                     |
+| Last approved phase    | PH-26 — The catalogue of thirty                                            |
+| Last approved subphase | PH-25.2 — the battery on the served record                                 |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
@@ -195,7 +195,7 @@ the wrong thing.
 
 ## EXACT NEXT LEGAL ACTION
 
-**PH-25.2 — the battery on the served record, across a restart and a resume.**
+**PH-25.3 — the recorded verdict, and the standing job that keeps it current.**
 
 PH-26 is merged at `c4757c5` and pushed; hosted CI is running on it and its
 verdict is recorded here when it lands. PH-25 is active on
@@ -207,7 +207,10 @@ first runs against the spawned service produced three findings — one fixed in
 the stream endpoints (a told gap is now followed by the whole retained window,
 named by `resumesAt`), two carried to PH-27.5's report (the replay window and
 the candle of the minute a kill falls in do not survive a restart). PH-25.2
-runs the battery on that record, PH-25.3 records the verdict and the standing job; then PH-27, the review phase, closing with the
+(approved) ran the battery on that record, alone and joined across a kill:
+`undecided` at test size with its floors printed, never `exploitable`, the seam
+family built from the record's own told gap. PH-25.3 records the verdict
+against a long-running venue and adds the standing job; then PH-27, the review phase, closing with the
 improvement report; then Cycle Audit 9.
 
 This section named **PH-22.1** — a subphase approved and merged two phases ago —

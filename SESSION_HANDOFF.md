@@ -13,7 +13,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Remote             | `origin` → NovaHub2026/otcv6, public                                     |
 | Active cycle       | Cycle 9, **1 of 3** phases approved — PH-26                              |
 | Active phase       | **PH-25 — the battery against a production venue's own record** (ACTIVE) |
-| Active subphase    | PH-25.2 — the battery on the served record (ACTIVE)                      |
+| Active subphase    | PH-25.3 — the recorded verdict and the standing job (ACTIVE)             |
 | Cycle Audit        | **008 closed** — 60 confirmed, all 60 resolved, none tracked             |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                       |
 
@@ -55,8 +55,10 @@ flight when this was written — read its verdict first (`gh run list -c c4757c5
 repository has ever attacked `GET /markets/:id/stream` from outside the process;
 PH-25.1 (approved) built the SSE client in `packages/lab` that turns it into
 the `TickSource` the battery consumes, and found three things on its first runs
-(its document §5). PH-25.2 runs the battery on it across a restart and a
-resume, PH-25.3 records the verdict and the standing job. Then
+(its document §5). PH-25.2 (approved) ran the battery on it
+across a restart and a resume. PH-25.3 records the verdict against the
+long-running venue on `:7300` and adds the standing job (`npm run
+assurance:served`). Then
 PH-27, the review phase (five subphases, closing with
 `docs/reports/IMPROVEMENT-REPORT-001.md`), then Cycle Audit 9. The panel the
 Human Owner asked for runs at http://localhost:7301/ against an engine on 7300.
