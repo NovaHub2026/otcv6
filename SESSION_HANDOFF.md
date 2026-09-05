@@ -12,8 +12,8 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Branch             | `main` at `45187d9` (the Cycle Audit 9 merge)                            |
 | Remote             | `origin` → NovaHub2026/otcv6, public                                     |
 | Active cycle       | Cycle 10, **0 of 3** — planned as the closing cycle: PH-28, PH-29, PH-30 |
-| Active phase       | none                                                                     |
-| Active subphase    | none                                                                     |
+| Active phase       | PH-28 — the durable venue                                                |
+| Active subphase    | PH-28.1 — the record composed                                            |
 | Cycle Audit        | **009 closed** — 62 confirmed, 61 resolved, one carried (a8-12)          |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                       |
 

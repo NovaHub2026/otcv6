@@ -21,14 +21,14 @@ Last synchronized: 2026-09-05
 
 ## Phase and subphase
 
-| Field                  | Value                                               |
-| ---------------------- | --------------------------------------------------- |
-| Active phase           | none                                                |
-| Phase lifecycle        | none                                                |
-| Active subphase        | none                                                |
-| Subphase lifecycle     | none                                                |
-| Last approved phase    | PH-27 — Review and improvement of the whole project |
-| Last approved subphase | PH-27.5 — the improvement report                    |
+| Field                  | Value                                                      |
+| ---------------------- | ---------------------------------------------------------- |
+| Active phase           | PH-28 — The durable venue: the record outlives the process |
+| Phase lifecycle        | ACTIVE                                                     |
+| Active subphase        | PH-28.1 — The record composed                              |
+| Subphase lifecycle     | ACTIVE                                                     |
+| Last approved phase    | PH-27 — Review and improvement of the whole project        |
+| Last approved subphase | PH-27.5 — the improvement report                           |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was

@@ -809,7 +809,7 @@ departure is recorded ([decision](../decisions/DECISION-LOG.md), 2026-09-05).
 
 | Phase | Title                                                       | State   |
 | ----- | ----------------------------------------------------------- | ------- |
-| PH-28 | The durable venue: the record outlives the process          | PLANNED |
+| PH-28 | The durable venue: the record outlives the process          | ACTIVE  |
 | PH-29 | The integration boundary: what a broker's settlement needs  | PLANNED |
 | PH-30 | Release 1.0: the engine as a broker integrates it           | PLANNED |
 | —     | **Cycle Audit 10** — the closing audit, adversarial as ever | PLANNED |
@@ -846,7 +846,7 @@ settles against this record needs it to still be there after a restart.
 
 | Subphase | Title                                                                                  | State   |
 | -------- | -------------------------------------------------------------------------------------- | ------- |
-| PH-28.1  | The record composed: ticks persisted, replay served from the store across a restart    | PLANNED |
+| PH-28.1  | The record composed: ticks persisted, replay served from the store across a restart    | ACTIVE  |
 | PH-28.2  | The venue's handle: production controllers see a published view, never the engine      | PLANNED |
 | PH-28.3  | The store operated: integrity at boot, backup and restore, the commitments file (#19)  | PLANNED |
 | PH-28.4  | The served verdict across a kill and a restart, on the thirty (PH-25.1 a and c closed) | PLANNED |
