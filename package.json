@@ -30,6 +30,7 @@
     "evidence:ties": "npm run build && node tools/sim/dist/tieRateEvidence.js",
     "catalogue:library": "npm run build && node tools/sim/dist/catalogueLibraryWrite.js",
     "assurance:served": "npm run build && node tools/sim/dist/servedAssuranceJob.js",
+    "state:check": "vitest run --project unit packages/core/src/guardrails/stateConsistency.test.ts packages/core/src/guardrails/documentation.test.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

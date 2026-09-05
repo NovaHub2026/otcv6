@@ -226,3 +226,32 @@ the battery exists to police.
 
 `runBatteryAsync` yields to the event loop between family-horizon passes, so a
 long run does not starve everything else in the process.
+
+## The served record
+
+Every adversarial run above builds its own engine or runs against the Lab's
+composition. Since PH-25 the battery also runs on **the record a venue
+actually serves**: `packages/lab/src/served/` is an SSE client for
+`GET /markets/:id/stream` that holds nothing but what the wire carried — ticks,
+told gaps, closes, discontinuities, the public instrument from `/catalogue` —
+and hands the battery a `TickSource` it consumes unchanged
+(`readServedRecord`, `servedAssurance`, `joinServedRecords`,
+`seamIndicesOf`). It may import `@otc/core` and the rest of `@otc/lab` and
+nothing else; the scan in `servedRecord.test.ts` reads static and dynamic
+imports alike and every spelling of ambient time.
+
+Two things it must be, both asserted against a spawned `apps/api`
+(`servedRecord.stat.test.ts`): faithful — two connections hold byte-identical
+records, the folded candles equal the venue's stored ones — and honest — a
+told gap is a hole it never fills, a refused resume is an error, and a jump the
+server did not explain is a discontinuity it records. What the first runs
+found is in PH-25.1 §5: the shipped venue's replay window is process-local,
+and the minute a kill falls in is lost to the candle record.
+
+`npm run assurance:served -- --base URL` is the standing job: for every live
+asset it reads the whole retained window (the start learned from the venue's
+own refusal, never guessed; a read that ends short is a failure, not a record),
+runs the standing verdict with the previous asset as the cross-asset reference,
+and writes one Markdown record naming the venue as it described itself, the
+job's build, and each asset's sequence range and digest. The first record is
+`docs/evidence/PH-25-SERVED-VERDICT.md`; an `exploitable` verdict is exit 2.

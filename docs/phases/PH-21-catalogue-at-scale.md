@@ -207,5 +207,7 @@ the Human Owner has prioritised ahead of everything else.
 > virtualised — **still open**, report §2. `CYCLE-7-CATALOGUE-SCALE.md` one
 > parameter behind and the 400-brief probe — **superseded** by
 > `PH-26-CATALOGUE-OF-THIRTY.md`, which records every seat's draw, retreats and
-> clamps under seed; Issues #17 and #18 closed on that. Fan-out — **closed by**
+> retreats under seed (the evidence file carries a `retreats` column, not a
+> `clampedFrom` one — corrected by Cycle Audit 9, a7-09); Issues #17 and #18
+> closed on that. Fan-out — **closed by**
 > PH-22 to two thousand; ten thousand is report §4.

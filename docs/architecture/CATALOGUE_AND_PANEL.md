@@ -39,6 +39,23 @@ from a dispersion budget — and the definition records the result. Recording th
 request would publish a personality nothing computed, and only the number would
 be visible.
 
+## 1.1 The catalogue of thirty
+
+Since PH-26 the compiled catalogue is thirty assets — eight currency pairs,
+eight equities declared in the `etf` family, six crypto pairs, eight invented
+thematic indices — each drawn under seed from a **seat** (`seats.ts`): a
+narrowed archetype region, a reference price with its dated source, a
+dispersion budget, a character in prose. `tools/sim/src/buildCatalogue.ts`
+draws, authors and calibrates every seat exactly as `registerAsset` would and
+emits `catalogue.ts`; `catalogue.test.ts` re-derives the two solved traits
+from each entry's record and `catalogueBuild.stat.test.ts` holds the other ten,
+the drawn tail weight and the retreats to the seat's own draw. A resumed
+market carries a fingerprint of its personality in its checkpoint and seams if
+another personality wrote the record (`personality.ts`). `/catalogue` returns
+each entry with its `seat` — archetype, character, price source — and nothing
+private. The evidence is `docs/evidence/PH-26-CATALOGUE-OF-THIRTY.md`; the
+integration library a broker reads is `docs/integration/CATALOGUE.md`.
+
 ## 2. A family is a region
 
 Eight archetypes, and every asset a fresh draw from one. Copying a personality
@@ -216,12 +233,20 @@ failing on a status stuck at `live — reconnected after a gap`.
 
 So the endpoint takes **`onGap=live`**, and it is opt-in: without it the refusal
 is exactly what it was, and no existing client's contract moves. With it, a
-sequence the feed cannot serve yields the live edge **and an explicit `gap`
-event** carrying the sequence asked for and the feed's own reason. That is the
-whole difference between this and the silent jump forward the refusal exists to
-prevent: a gap a client is _told_ about is not a gap it mistakes for the market
-(INV-002). What the client does with it is its own business — the panel draws
-the forming bucket from the record instead, and re-reads it as it fills.
+sequence the feed cannot serve yields **an explicit `gap` event first** —
+carrying the sequence asked for, the feed's own reason, and `resumesAt`, the
+oldest sequence the feed still holds — **and then the whole retained window
+from that sequence**, not the live edge (PH-25.1: joined at the live edge, a
+client lost nine ticks the venue retained, inside a hole the frame said began
+earlier). The live edge follows only when the refusal was this process's own
+replay budget, and the frame then says `resumesAt: null`. A replay the
+per-connection cap cuts closes once, naming the cap and the sequence to resume
+from (Cycle Audit 9, a4-09). That is the whole difference between this and the
+silent jump forward the refusal exists to prevent: a gap a client is _told_
+about, and can bound, is not a gap it mistakes for the market (INV-002). What
+the client does with it is its own business — the panel draws the forming
+bucket from the record instead, and re-reads it as it fills; the preview chart
+names the hole's bounds in its status.
 
 **A seed is not a join.** The panel folds the record's complete minute bars into
 the bucket now forming, at any timeframe coarser than a minute. When the stream

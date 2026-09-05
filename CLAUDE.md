@@ -158,6 +158,12 @@ the statistical gate on every push to `main` (ADR-0009). CI is a _required
 corroborating_ layer — a red CI on a green local gate is a finding about the
 gate.
 
+**Before every approval commit, `npm run state:check`** — the two state
+guards, ten seconds. Cycle 9 merged PH-25 with them red (the handoff named a
+subphase the roadmap had approved) because the gate had run on an earlier
+tree and the approval then edited the records; hosted CI was red on both jobs
+of that merge for it (Cycle Audit 9, a7-02).
+
 A claim is only as true as the run behind it. Never write "PASSED" from a command
 whose exit code you did not see — `| tail -1` discards it, and that is how a
 failing `npm run lint` survived two subphase approvals in PH-4.
