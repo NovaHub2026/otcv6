@@ -21,14 +21,14 @@ Last synchronized: 2026-09-04
 
 ## Phase and subphase
 
-| Field                  | Value                                                       |
-| ---------------------- | ----------------------------------------------------------- |
-| Active phase           | **PH-27 — Review and improvement of the whole project**     |
-| Phase lifecycle        | ACTIVE                                                      |
-| Active subphase        | PH-27.5 — the improvement report                            |
-| Subphase lifecycle     | ACTIVE                                                      |
-| Last approved phase    | PH-25 — The battery against a production venue's own record |
-| Last approved subphase | PH-27.4 — the footprint of a Lab intervention               |
+| Field                  | Value                                                              |
+| ---------------------- | ------------------------------------------------------------------ |
+| Active phase           | **PH-27 — Review and improvement of the whole project**            |
+| Phase lifecycle        | ACTIVE                                                             |
+| Active subphase        | none — PH-27's five subphases are approved; the phase gate is next |
+| Subphase lifecycle     | none                                                               |
+| Last approved phase    | PH-25 — The battery against a production venue's own record        |
+| Last approved subphase | PH-27.5 — the improvement report                                   |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
@@ -195,7 +195,7 @@ the wrong thing.
 
 ## EXACT NEXT LEGAL ACTION
 
-**PH-27.5 — the improvement report: the engine's realism, the trader's screen, the Lab.**
+**PH-27's integrated phase verification: the full gate on the phase branch, then merge, then Cycle Audit 9.**
 
 PH-25 is merged at `7f03abe` (state fix `f2bab68`) and pushed; hosted CI on
 it is running and its verdict is recorded here when it lands. PH-27 is active
@@ -214,7 +214,8 @@ the report. PH-27.4 (approved) measured what a push, a close and a bias cost
 the record against the keystream's own continuation — the level moves, by
 30, 2 and 252 steps, and nothing else: no instant, no increment after
 release, no decay — and put the footprint on the session record
-(`PH-27-INTERVENTION-FOOTPRINT.md`). Then PH-27.3 (small improvements),
+(`PH-27-INTERVENTION-FOOTPRINT.md`). PH-27.5 (approved) wrote
+`docs/reports/IMPROVEMENT-REPORT-001.md`. Then PH-27.3 (small improvements),
 PH-27.4 (the footprint of a Lab intervention), PH-27.5 (the report); then the
 phase gate, the merge, and Cycle Audit 9.
 
