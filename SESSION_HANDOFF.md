@@ -6,16 +6,16 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                                    |
-| ------------------ | ------------------------------------------------------------------------ |
-| Last clean session | 2026-09-05                                                               |
-| Branch             | `feature/ph-25-production-record-battery`, off `main` at `c4757c5`       |
-| Remote             | `origin` → NovaHub2026/otcv6, public                                     |
-| Active cycle       | Cycle 9, **1 of 3** phases approved — PH-26                              |
-| Active phase       | **PH-25 — the battery against a production venue's own record** (ACTIVE) |
-| Active subphase    | none — PH-25 phase gate next                                             |
-| Cycle Audit        | **008 closed** — 60 confirmed, all 60 resolved, none tracked             |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                       |
+| Field              | Value                                                              |
+| ------------------ | ------------------------------------------------------------------ |
+| Last clean session | 2026-09-05                                                         |
+| Branch             | `feature/ph-25-production-record-battery`, off `main` at `c4757c5` |
+| Remote             | `origin` → NovaHub2026/otcv6, public                               |
+| Active cycle       | Cycle 9, **2 of 3** phases approved — PH-26, PH-25                 |
+| Active phase       | none — PH-25 approved, merge and PH-27 next                        |
+| Active subphase    | none                                                               |
+| Cycle Audit        | **008 closed** — 60 confirmed, all 60 resolved, none tracked       |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                 |
 
 ---
 
@@ -58,7 +58,10 @@ the `TickSource` the battery consumes, and found three things on its first runs
 (its document §5). PH-25.2 (approved) ran the battery on it
 across a restart and a resume. PH-25.3 (approved) recorded the first
 verdict against the venue on `:7300` and added the standing job (`npm run
-assurance:served`). The phase gate is next, then merge and CI. Then
+assurance:served`). The phase gate passed (`GATE_EXIT=0`, 72.5 min); merge, CI, then PH-27 —
+its five subphase documents are drafted and its first three are review work
+(guards re-planted, records re-checked, small improvements), the fourth the
+intervention footprint, the fifth `docs/reports/IMPROVEMENT-REPORT-001.md`. Then
 PH-27, the review phase (five subphases, closing with
 `docs/reports/IMPROVEMENT-REPORT-001.md`), then Cycle Audit 9. The panel the
 Human Owner asked for runs at http://localhost:7301/ against an engine on 7300.

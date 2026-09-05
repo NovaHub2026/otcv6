@@ -14,21 +14,21 @@ Last synchronized: 2026-09-04
 
 | Field                            | Value                                                                                                         |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 9 — opened when Cycle Audit 8 closed                                                                    |
-| Approved phases in current cycle | **1 of 3** — PH-26                                                                                            |
+| Active development cycle         | Cycle 9 — **2 of 3** phases approved (PH-26, PH-25); PH-27 next                                               |
+| Approved phases in current cycle | **2 of 3** — PH-26, PH-25                                                                                     |
 | Cycle Audit state                | **008 closed** — 86 claims, 60 confirmed, 26 refuted; all 60 resolved                                         |
 | Last Cycle Audit                 | [Cycle Audit 008](docs/audits/CYCLE-AUDIT-008.md) — 2026-09-04, eight independent auditors, one worktree each |
 
 ## Phase and subphase
 
-| Field                  | Value                                                               |
-| ---------------------- | ------------------------------------------------------------------- |
-| Active phase           | **PH-25 — The battery against a production venue's own record**     |
-| Phase lifecycle        | ACTIVE                                                              |
-| Active subphase        | none — PH-25's three subphases are approved; the phase gate is next |
-| Subphase lifecycle     | none                                                                |
-| Last approved phase    | PH-26 — The catalogue of thirty                                     |
-| Last approved subphase | PH-25.3 — the recorded verdict and the standing job                 |
+| Field                  | Value                                                       |
+| ---------------------- | ----------------------------------------------------------- |
+| Active phase           | none                                                        |
+| Phase lifecycle        | none                                                        |
+| Active subphase        | none                                                        |
+| Subphase lifecycle     | none                                                        |
+| Last approved phase    | PH-25 — The battery against a production venue's own record |
+| Last approved subphase | PH-25.3 — the recorded verdict and the standing job         |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
@@ -195,7 +195,7 @@ the wrong thing.
 
 ## EXACT NEXT LEGAL ACTION
 
-**PH-25's integrated phase verification: the full gate on the phase branch, then merge.**
+**Merge PH-25 to `main`, push, read hosted CI on the merge commit — then open PH-27, the review phase.**
 
 PH-26 is merged at `c4757c5` and pushed; hosted CI is running on it and its
 verdict is recorded here when it lands. PH-25 is active on
@@ -212,7 +212,8 @@ the candle of the minute a kill falls in do not survive a restart). PH-25.2
 family built from the record's own told gap. PH-25.3 (approved)
 recorded the first verdict against the venue on `:7300` (31 assets, all
 `undecided` at an hour of record, floors named) and added `npm run
-assurance:served`. The phase gate runs next; then PH-27, the review phase, closing with the
+assurance:served`. The phase gate passed first time (`GATE_EXIT=0`, 44 statistical files in
+4,352 s); PH-25 is approved. Then PH-27, the review phase, closing with the
 improvement report; then Cycle Audit 9.
 
 This section named **PH-22.1** — a subphase approved and merged two phases ago —

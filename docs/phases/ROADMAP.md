@@ -723,7 +723,7 @@ recorded here so it is not rediscovered:
 | Phase | Title                                               | State        |
 | ----- | --------------------------------------------------- | ------------ |
 | PH-26 | The catalogue of thirty                             | **APPROVED** |
-| PH-25 | The battery against a production venue's own record | **ACTIVE**   |
+| PH-25 | The battery against a production venue's own record | **APPROVED** |
 
 **PH-26 runs first, and the numbering says so rather than hiding it.** PH-25 was
 recorded when the audit closed and PH-26 was asked for afterwards; renumbering a

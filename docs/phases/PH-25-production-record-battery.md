@@ -2,7 +2,8 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-25
-Status: ACTIVE
+Status: APPROVED
+Approved: 2026-09-05 — from the integrated phase verification in §9
 Cycle: 9 (phase 2 of 3)
 Created: 2026-09-04
 Branch: `feature/ph-25-production-record-battery`
@@ -82,3 +83,42 @@ The multi-node composition (PH-14) is not hosted by the shipped service and is
 not attacked here. A battery against a fleet is a different instrument, and
 `docs/architecture/MULTI_NODE_AND_OPERATIONS.md` records that the shipped
 `apps/api` composes none of it.
+
+## 8. What the phase found
+
+The instrument was the point, and the instrument's first use produced the
+phase's results (PH-25.1 §5, PH-25.2 §5, PH-25.3 §5):
+
+1. **The venue joined a told-gap client at the live edge, past ticks it
+   retained** — nine of them on the first run. Fixed in both stream
+   endpoints: the `gap` frame is written first, names `resumesAt`, and the
+   retained window follows it. Guarded in `adminSurface.test.ts`, watched
+   failing. Issue #22 is closed by this.
+2. **The replay window is process-local.** A restart forgets everything
+   published before the resume point; a client holding an older sequence is
+   refused as evicted though nothing was evicted. The ticks are reproducible
+   (INV-009) and unservable. Measured, asserted as the honest behaviour, and
+   carried to the improvement report as the first item of Cycle 10.
+3. **A SIGKILL costs the candle record up to the minute it fell in** — the
+   open bar dies with the process and the resumed recorder withholds the
+   partial bucket (CA6-30). Measured at 0 and 1 bars spanning the hole on two
+   runs, printed rather than asserted; same fix as 2.
+4. **The battery through the wire loses nothing**: a Thue–Morse record
+   served as frames is `exploitable`; the venue's own served record is
+   `undecided` at the sizes read, never `exploitable`, with its floors named —
+   an hour of record on 31 assets after a boot, 21–31pp at 30 s.
+5. **The state guard sorted by number, not by chronology**, and named PH-26.4
+   as the latest approved subphase the day PH-25.1 was approved. Anchored on
+   the roadmap's phase order, watched failing.
+
+## 9. Integrated phase verification
+
+| Check                                                                            | Result                                                                                                                                                                                                                                                                                          |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Every subphase document APPROVED and the roadmap agrees                          | `documentation.test.ts`, `stateConsistency.test.ts` green                                                                                                                                                                                                                                       |
+| The observer imports the public read surface only                                | the boundary scan in `servedRecord.test.ts`, watched failing against a planted `@otc/fixtures` import                                                                                                                                                                                           |
+| Two observers, the stored record, a kill; the battery alone and joined across it | `servedRecord.stat.test.ts`, 2 tests, 345.9 s, six runs recorded in PH-25.1 §5                                                                                                                                                                                                                  |
+| The job as a scheduler runs it                                                   | `servedAssuranceJob.test.ts`, exit 2 on a leak, 1 on a refusal                                                                                                                                                                                                                                  |
+| Anti-predictability after the stream change (no price path touched)              | the mirror tests and the full battery in the gate below                                                                                                                                                                                                                                         |
+| Phase quality gate `npm run gate` with the browser prefix                        | `GATE_EXIT=0` on the first attempt — format, build, `typecheck:web`, `typecheck:config`, lint, unit 140 files / 2,973 tests in 108 s, statistical 44 files / 395 tests in 4,352 s (72.5 min, the browser suites included), `GATE COMPLETE`; started 06:26:57Z, finished 07:42:15Z, on `79c63c3` |
+| Hosted CI on the merge commit                                                    | recorded in `CURRENT_STATE.md` when the run on the merge commit lands                                                                                                                                                                                                                           |
