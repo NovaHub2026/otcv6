@@ -65,6 +65,13 @@ function venue(
 ): Promise<string> {
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://venue');
+    if (url.pathname === '/health') {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(
+        JSON.stringify({ status: 'ok', assets: 1, stalled: [], bootNonce: 'fake-venue' }),
+      );
+      return;
+    }
     if (url.pathname === '/catalogue') {
       response.writeHead(200, { 'content-type': 'application/json' });
       response.end(
@@ -150,6 +157,17 @@ function run(args: readonly string[]): Promise<{ code: number | null; stderr: st
 }
 
 describe('the job as a scheduler runs it', () => {
+  it('runs a build that is not older than its source (CA9 a8-05)', async () => {
+    // These tests spawn `dist/`; a source edit without a build passed the
+    // exit-code plant and failed it after `tsc -b`. A stale build is named.
+    const { statSync } = await import('node:fs');
+    const source = statSync(path.resolve(here, 'servedAssuranceJob.ts')).mtimeMs;
+    const built = statSync(entry).mtimeMs;
+    expect(built, `dist is older than source: run npx tsc -b tools/sim`).toBeGreaterThanOrEqual(
+      source,
+    );
+  });
+
   it('exits 2 and writes **exploitable** for a venue serving a leak', async () => {
     const base = await venue(predictableByTheClock(600));
     const directory = await mkdtemp(path.join(tmpdir(), 'otc-served-job-'));
@@ -160,6 +178,10 @@ describe('the job as a scheduler runs it', () => {
     const text = await readFile(out, 'utf8');
     expect(text).toContain('**exploitable**');
     expect(text).toContain(`Venue: \`${base}\``);
+    // What the venue said it was, and what the job was built from (CA9 a4-02).
+    expect(text).toContain('boot nonce fake-venue, 1 assets, production composition');
+    expect(text).toMatch(/Job built from commit `[0-9a-f]{7,}`/);
+    expect(text).toMatch(/\| wire-otc \| 36000 \|.*\| 1–36000 [0-9a-f]{12} \|/);
     expect(text).toContain('Assets: 1 — 1 exploitable, 0 failed');
     expect(stderr).toMatch(/wire-otc: 36000 ticks, exploitable/);
   }, 120_000);

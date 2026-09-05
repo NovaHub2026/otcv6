@@ -82,20 +82,29 @@ describe('the report says what the run did', () => {
     const row = verdictRow({
       assetId: 'eurusd-otc',
       record: { ticks: [], gaps: [], discontinuities: [], bytes: 0 },
+      range: { first: 100, last: 12_444, sha256: 'abcdef0123456789ff' },
       verdict: verdict('undecided'),
       failure: null,
       seconds: 12.4,
     });
     expect(row).toContain(
-      '| eurusd-otc | 12345 | 2.50 h | undecided | 321 / 3 / 1 | 30s 4.321pp (400) | -1.23 | 12s |',
+      '| eurusd-otc | 12345 | 2.50 h | undecided | 321 / 3 / 1 | 30s 4.321pp (400) | -1.23 | 12s | 100–12444 abcdef012345 |',
     );
     expect(
-      verdictRow({ assetId: 'x', record: null, verdict: null, failure: 'no route', seconds: 1 }),
+      verdictRow({
+        assetId: 'x',
+        record: null,
+        range: null,
+        verdict: null,
+        failure: 'no route',
+        seconds: 1,
+      }),
     ).toContain('**failed** | no route');
     expect(
       verdictRow({
         assetId: 'x',
         record: { ticks: [], gaps: [], discontinuities: [], bytes: 0 },
+        range: null,
         verdict: verdict('exploitable'),
         failure: null,
         seconds: 1,
@@ -110,6 +119,8 @@ describe('the report says what the run did', () => {
         base: 'http://127.0.0.1:7300',
         at: '2026-09-05T06:00:00.000Z',
         maxTicks: 50_000,
+        venue: { bootNonce: 'n-1', assets: 31, labComposition: true },
+        jobCommit: 'abc1234',
       },
       [
         {
@@ -120,16 +131,23 @@ describe('the report says what the run did', () => {
             discontinuities: [],
             bytes: 1,
           },
+          range: { first: 1, last: 2, sha256: 'ff' },
           verdict: verdict('clean'),
           failure: null,
           seconds: 1,
         },
-        { assetId: 'b', record: null, verdict: null, failure: 'down', seconds: 1 },
+        { assetId: 'b', record: null, range: null, verdict: null, failure: 'down', seconds: 1 },
       ],
     );
     expect(text).toContain('# Served-record assurance — first');
     expect(text).toContain('Venue: `http://127.0.0.1:7300`');
     expect(text).toContain('Assets: 2 — 0 exploitable, 1 failed');
+    // The venue as it described itself, and the build (CA9 a4-02).
+    expect(text).toContain('boot nonce n-1, 31 assets, **Lab composition**');
+    expect(text).toContain('Job built from commit `abc1234`');
+    // The venue as it described itself, and the build (CA9 a4-02).
+    expect(text).toContain('boot nonce n-1, 31 assets, **Lab composition**');
+    expect(text).toContain('Job built from commit `abc1234`');
     expect(text).toContain('- a: a note');
     expect(text).toContain('- a: 1 told gap(s), 0 discontinuit(ies)');
   });
