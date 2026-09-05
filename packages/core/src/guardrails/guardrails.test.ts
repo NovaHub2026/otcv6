@@ -136,6 +136,16 @@ const AMBIENT_STATE_ALLOWLIST = [
   'tools/sim/src/cli.ts',
   'tools/sim/src/dispersionEvidence.ts',
   'tools/sim/src/horizonEvidence.ts',
+  /**
+   * The catalogue builder (PH-26.3): the evidence run that produces the thirty
+   * compiled entries. It reads `process.argv` for the same reason the two
+   * evidence runners above it do — which seats, how many replicates, where to
+   * write — and nothing it produces enters a price path except through a
+   * recorded file a human commits.
+   */
+  'tools/sim/src/buildCatalogue.ts',
+  // The tie-rate evidence run (PH-26.3): the same shape as the two above.
+  'tools/sim/src/tieRateEvidence.ts',
   'tools/sim/src/observerLoadRun.ts',
   'tools/sim/src/venueScale.ts',
 ];
@@ -156,6 +166,10 @@ const AMBIENT_TIME_ALLOWLIST = [
   'packages/core/src/time/clock.ts',
   'tools/sim/src/catalogueScale.ts',
   'tools/sim/src/horizonEvidence.ts',
+  // The catalogue builder times its own run, as horizonEvidence does, and
+  // records the time beside the numbers; the wall clock never reaches a draw.
+  'tools/sim/src/buildCatalogue.ts',
+  'tools/sim/src/tieRateEvidence.ts',
   'tools/sim/src/runner.ts',
   'tools/sim/src/venueScale.ts',
   /**

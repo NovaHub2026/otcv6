@@ -6,6 +6,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import { ASSET_CATALOGUE } from '@otc/engine';
+
+/** The fastest tape in the catalogue, derived rather than named (PH-26.3). */
+const FASTEST = [...ASSET_CATALOGUE].sort(
+  (a, b) => a.evidence.meanIntervalMs - b.evidence.meanIntervalMs,
+)[0]!.definition.id;
 
 /**
  * The phase's acceptance: a restart across a **real process boundary**.
@@ -163,7 +169,7 @@ describe('the venue survives being killed', () => {
     await waitForTicks(running.port, 1);
 
     const controller = new AbortController();
-    const stream = await fetch(`http://127.0.0.1:${running.port}/markets/btcusd/stream`, {
+    const stream = await fetch(`http://127.0.0.1:${running.port}/markets/${FASTEST}/stream`, {
       signal: controller.signal,
     });
     expect(stream.status).toBe(200);

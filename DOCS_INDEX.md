@@ -69,18 +69,20 @@ of 2026-09-02 wrote it.
 
 ## Evidence documents
 
-| Document                                                                 | What it records                                                                                |
-| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| [`CYCLE-1-VERIFICATION.md`](docs/evidence/CYCLE-1-VERIFICATION.md)       | Cycle 1's numbers: the full-rigor battery run and the coverage figure                          |
-| [`PH-11-COVERAGE.md`](docs/evidence/PH-11-COVERAGE.md)                   | Coverage at PH-11.3, the first run to include `tools/`                                         |
-| [`PH-11-HORIZON-COVERAGE.md`](docs/evidence/PH-11-HORIZON-COVERAGE.md)   | Every asset/horizon cell policed below the promotional-payout threshold                        |
-| [`CYCLE-6-BACKFILL-SCALE.md`](docs/evidence/CYCLE-6-BACKFILL-SCALE.md)   | Ninety days of ticks against ninety days of candles, per asset                                 |
-| [`CYCLE-6-DRIFT.md`](docs/evidence/CYCLE-6-DRIFT.md)                     | Dispersion budgets per family, and why a price ceiling was refused                             |
-| [`CYCLE-7-DISPERSION.md`](docs/evidence/CYCLE-7-DISPERSION.md)           | The turnover floor and the recorded diffusion rates, re-measured in PH-19.3                    |
-| [`CYCLE-7-CATALOGUE-SCALE.md`](docs/evidence/CYCLE-7-CATALOGUE-SCALE.md) | A hundred assets registered, with cost by archetype and the closest pair (PH-21.1)             |
-| [`CYCLE-7-VENUE-SCALE.md`](docs/evidence/CYCLE-7-VENUE-SCALE.md)         | A hundred markets hosted: scheduling cost per market-advance, and a quarter on disk (PH-21.2)  |
-| [`CYCLE-8-OBSERVER-LOAD.md`](docs/evidence/CYCLE-8-OBSERVER-LOAD.md)     | Two thousand observers: what a delivered tick costs, and why it is not serialisation (PH-22.1) |
-| [`CYCLE-8-LAB-SURFACE.md`](docs/evidence/CYCLE-8-LAB-SURFACE.md)         | The Lab answering: engine state, measured reachability, and the quality dashboard (PH-23.1-3)  |
+| Document                                                                     | What it records                                                                                                                                                                      |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`CYCLE-1-VERIFICATION.md`](docs/evidence/CYCLE-1-VERIFICATION.md)           | Cycle 1's numbers: the full-rigor battery run and the coverage figure                                                                                                                |
+| [`PH-11-COVERAGE.md`](docs/evidence/PH-11-COVERAGE.md)                       | Coverage at PH-11.3, the first run to include `tools/`                                                                                                                               |
+| [`PH-11-HORIZON-COVERAGE.md`](docs/evidence/PH-11-HORIZON-COVERAGE.md)       | The directional verdict at all eight expirations for the catalogue of thirty: 235 of 240 cells policed below the promotional-payout threshold, the five that are not named (PH-26.3) |
+| [`CYCLE-6-BACKFILL-SCALE.md`](docs/evidence/CYCLE-6-BACKFILL-SCALE.md)       | Ninety days of ticks against ninety days of candles, per asset                                                                                                                       |
+| [`CYCLE-6-DRIFT.md`](docs/evidence/CYCLE-6-DRIFT.md)                         | Dispersion budgets per family, and why a price ceiling was refused                                                                                                                   |
+| [`CYCLE-7-DISPERSION.md`](docs/evidence/CYCLE-7-DISPERSION.md)               | The turnover floor and the recorded diffusion rates, re-measured in PH-19.3                                                                                                          |
+| [`CYCLE-7-CATALOGUE-SCALE.md`](docs/evidence/CYCLE-7-CATALOGUE-SCALE.md)     | A hundred assets registered, with cost by archetype and the closest pair (PH-21.1)                                                                                                   |
+| [`CYCLE-7-VENUE-SCALE.md`](docs/evidence/CYCLE-7-VENUE-SCALE.md)             | A hundred markets hosted: scheduling cost per market-advance, and a quarter on disk (PH-21.2)                                                                                        |
+| [`CYCLE-8-OBSERVER-LOAD.md`](docs/evidence/CYCLE-8-OBSERVER-LOAD.md)         | Two thousand observers: what a delivered tick costs, and why it is not serialisation (PH-22.1)                                                                                       |
+| [`PH-26-CATALOGUE-OF-THIRTY.md`](docs/evidence/PH-26-CATALOGUE-OF-THIRTY.md) | The run that produced the thirty compiled assets: seeds, spans, quanta, tie rates, and the two runs before it that were wrong (PH-26.3)                                              |
+| [`docs/integration/CATALOGUE.md`](docs/integration/CATALOGUE.md)             | The thirty as a broker reads them — generated by `npm run catalogue:library`, re-derived byte for byte by `catalogueLibrary.test.ts`, never edited by hand (PH-26.4)                 |
+| [`CYCLE-8-LAB-SURFACE.md`](docs/evidence/CYCLE-8-LAB-SURFACE.md)             | The Lab answering: engine state, measured reachability, and the quality dashboard (PH-23.1-3)                                                                                        |
 
 ## Decision records
 

@@ -158,34 +158,56 @@ export const TARGET_TIE_RATE = 0.01;
  * naive figure understated the real uncertainty by roughly four times.
  *
  * Each value below is therefore a mean over replicates. **These values are
- * PH-24.17's**: 12 replicates of 8,000 horizons each, produced by running
- * `latticeTies.stat.test.ts`'s own procedure on its own seeds
- * (`ties-verify-<asset>-<n>`) after the recalibration moved every rate. The
- * limiting quantity is not horizons sampled but independent volatility epochs
- * simulated: one replicate spans 67 hours — a horizon count, so a tempo change
- * does not move it — and the slowest cascade component turns over in 36 to 44,
- * so a replicate contains only a couple of independent volatility levels.
- * Sampling more horizons inside one run buys almost nothing.
+ * PH-26.3's**: twelve replicates of 8,000 horizons per asset, produced by
+ * `npm run evidence:ties` — `tools/sim/src/tieRateEvidence.ts`, the verifying
+ * test's own procedure — on `ties-verify-<asset>-<n>` for all thirty assets of
+ * the catalogue, on 2026-09-04. The limiting quantity is not horizons sampled
+ * but independent volatility epochs simulated: one replicate spans 67 hours —
+ * a horizon count, so a tempo change does not move it — and the slowest
+ * cascade components turn over in a day or two, so a replicate contains only a
+ * handful of independent volatility levels. Sampling more horizons inside one
+ * run buys almost nothing.
  *
- * Two things about that provenance, and both were findings.
- * The text here read "15 independent replicates across three unrelated stream
- * families" for a cycle after it stopped describing the numbers underneath it
- * (Cycle Audit 8, a5) — the same defect this comment is about, one paragraph
- * up. And because the constants were produced on `ties-verify-<asset>-<n>`, a
- * pass on those same seeds said only that a re-run reproduced a re-run.
- *
- * So the verifying test no longer runs them. It measures on `ties-fresh-<asset>-<n>`,
- * a family the recording never touched, and the five means come back within
- * their own three-standard-error bands (largest deviation btcusd, 0.044pp,
- * against a 0.2pp tolerance). The rates below are therefore a property of the
- * process at these parameters, not of the twelve seeds they were read from.
+ * The verifying test, `latticeTies.stat.test.ts`, measures a stratified sample
+ * of these on `ties-fresh-<asset>-<n>` — a family the recording never touched —
+ * so a pass means the rate is a property of the process at these parameters
+ * and not of the twelve seeds it was read from (Cycle Audit 8, a5, closed
+ * that way for the five; PH-26.3 keeps it for the thirty). Every one of the
+ * thirty sits below the 1% nominal target the quantum was calibrated to,
+ * because a tie is an integer-price event and the calibration measures a
+ * continuous proxy for it.
  */
 export const MEASURED_LATTICE_TIE_RATES = {
-  eurusd: 0.00468,
-  gbpjpy: 0.00456,
-  btcusd: 0.00472,
-  spx: 0.00419,
-  xauusd: 0.00475,
+  'eurusd-otc': 0.004,
+  'gbpusd-otc': 0.00591,
+  'usdjpy-otc': 0.00462,
+  'audusd-otc': 0.00529,
+  'usdchf-otc': 0.00595,
+  'eurgbp-otc': 0.00553,
+  'gbpjpy-otc': 0.00529,
+  'eurjpy-otc': 0.0045,
+  'aapl-otc': 0.00425,
+  'msft-otc': 0.00524,
+  'nvda-otc': 0.00554,
+  'tsla-otc': 0.0044,
+  'meta-otc': 0.00446,
+  'amzn-otc': 0.00441,
+  'pbr-otc': 0.00549,
+  'nu-otc': 0.00502,
+  'btcusdt-otc': 0.00685,
+  'ethusdt-otc': 0.00413,
+  'bnbusdt-otc': 0.00489,
+  'solusdt-otc': 0.00565,
+  'xrpusdt-otc': 0.00559,
+  'dogeusdt-otc': 0.00483,
+  'mmx-idx-otc': 0.00607,
+  'cgx-idx-otc': 0.00463,
+  'aix-idx-otc': 0.00545,
+  'tcx-idx-otc': 0.00501,
+  'scx-idx-otc': 0.00498,
+  'gmx-idx-otc': 0.0063,
+  'evx-idx-otc': 0.00558,
+  'brx-idx-otc': 0.00473,
 } as const;
 
 /** Horizon the quantum is calibrated against: the shortest contract. */

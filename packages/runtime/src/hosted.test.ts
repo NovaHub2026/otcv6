@@ -202,12 +202,27 @@ describe('a venue hosts the catalogue', () => {
   });
 
   it('gives the fast assets more ticks than the slow ones', () => {
-    // btcusd ticks at ~333ms and spx at ~3352ms, so over the same wall-clock
-    // window the venue must publish roughly ten times as many btcusd ticks.
+    // An hour, and five assets against five, rather than ten minutes of one
+    // against one (PH-26.3). Arrivals cluster and regimes last: over ten
+    // minutes a single realisation of the fastest tape came in at 2,474 ticks
+    // against the slowest's 3,235 — the five had passed on the luck of one
+    // window. Pace is a property of the mean, and the mean needs a span and a
+    // sample to show through the bursts.
     const { venue: v, clock } = venue();
-    clock.advance(durationMillis(600_000));
+    clock.advance(durationMillis(3_600_000));
     const counts = new Map(v.advanceTo(clock.now()).map((e) => [e.assetId, e.ticks.length]));
-    expect(counts.get('btcusd')!).toBeGreaterThan(counts.get('spx')! * 5);
+    const byPace = [...ASSET_CATALOGUE].sort(
+      (a, b) => a.evidence.meanIntervalMs - b.evidence.meanIntervalMs,
+    );
+    const total = (assets: typeof byPace): number =>
+      assets.reduce((sum, a) => sum + counts.get(a.definition.id)!, 0);
+    const fastFive = total(byPace.slice(0, 5));
+    const slowFive = total(byPace.slice(-5));
+    // The recorded mean intervals put the two groups more than six apart;
+    // three is the floor with the bursts allowed for.
+    expect(fastFive, `fast ${String(fastFive)} vs slow ${String(slowFive)}`).toBeGreaterThan(
+      slowFive * 3,
+    );
   });
 
   it('waits for the soonest deadline across all assets', () => {

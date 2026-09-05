@@ -8,6 +8,8 @@ import {
 } from './asset.js';
 import { dispersionLogSigma } from './dispersion.js';
 import { ASSET_CATALOGUE } from './catalogue.js';
+import { HEAVY_SUITE_SAMPLE, sampleCatalogue } from './catalogueSample.js';
+import { seatById } from './seats.js';
 
 /**
  * Registration evidence has to be reproducible or it is decoration.
@@ -16,8 +18,45 @@ import { ASSET_CATALOGUE } from './catalogue.js';
  * settlement for that asset. These tests recalibrate from entirely different
  * streams and require the recorded numbers to come back.
  */
+/**
+ * Which assets this run recalibrates (PH-26.1).
+ *
+ * A three-replicate, ten-day recalibration per asset is 50.1 M simulated ticks
+ * at five assets and would be 301 M at thirty. The run recalibrates a fixed,
+ * stratified sample and prints what it left out; every asset's evidence is
+ * reproduced by the evidence run at the phase boundary. At five assets the
+ * sample is the catalogue and nothing changes.
+ */
+const SAMPLE = sampleCatalogue(
+  ASSET_CATALOGUE,
+  (a) => a.definition.id,
+  MasterKeyring.forTesting('catalogue-sample').derive({
+    env: 'test',
+    asset: 'sample',
+    purpose: 'recalibration',
+    keyEpoch: 0,
+  }),
+  {
+    size: HEAVY_SUITE_SAMPLE,
+    // One stratum per archetype (eight), read from the seat each compiled asset
+    // was drawn from; family (four) for anything without a seat.
+    stratumOf: (a) => {
+      try {
+        return seatById(a.definition.id).archetype;
+      } catch {
+        return a.definition.family;
+      }
+    },
+  },
+);
+
 describe('recorded calibration evidence reproduces', () => {
-  it.each(ASSET_CATALOGUE.map((a) => [a.definition.id, a] as const))(
+  it('says which assets this run recalibrated, and which it did not (§68)', () => {
+    console.info(`recalibration: ${SAMPLE.describe()}`);
+    expect(SAMPLE.measured).toHaveLength(Math.min(HEAVY_SUITE_SAMPLE, ASSET_CATALOGUE.length));
+  });
+
+  it.each(SAMPLE.measured.map((a) => [a.definition.id, a] as const))(
     '%s recalibrates to its recorded quantum',
     async (id, asset) => {
       const keyring = MasterKeyring.forTesting(`recalibrate-${id}`);

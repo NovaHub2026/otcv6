@@ -23,9 +23,11 @@ import type { MarketEngine } from './engine.js';
  * This function compares a bounded run, and no caller in the repository reaches
  * past 120000 ticks, while the one that matters most —
  * `productionComposition.test.ts`, the only caller that drives the shipped
- * factory under `environment: 'production'` — runs 10000. At btcusd's recorded mean interval of 111 ms that is about 18
- * minutes at the narrow end and 3.7 hours at the wide one, against markets that
- * run for months with a monotonic sequence.
+ * factory under `environment: 'production'` — runs 10000. At dogeusdt-otc's
+ * recorded mean interval of 93 ms — the fastest tape in the catalogue, so the
+ * least market time a fixed window buys — that is about 16 minutes at the
+ * narrow end and 3.1 hours at the wide one, against markets that run for months
+ * with a monotonic sequence.
  *
  * Those market times are a tempo away from being wrong, and were: they read
  * "under an hour" and "about eleven hours" until PH-24.17 divided the

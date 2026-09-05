@@ -259,7 +259,7 @@ export default defineConfig({
         'packages/trading/src/**': { lines: 88 }, // measured 93.5
         'apps/api/src/**': { lines: 75 }, // measured 77.7
         'apps/web/src/**': { lines: 5 }, // measured 7.7
-        'tools/sim/src/**': { lines: 33 }, // measured 35.7
+        'tools/sim/src/**': { lines: 35 }, // measured 37.8 (PH-26: the builder's pure half is tested)
       },
     },
   },

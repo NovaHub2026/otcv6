@@ -16,6 +16,7 @@ import {
   type RegisteredAsset,
 } from '@otc/engine';
 import { DEFAULT_MAX_CATCH_UP_MS, HostedMarket } from './hosted.js';
+import { personalityFingerprint } from './personality.js';
 import {
   assertUsableRecord,
   DEFAULT_SEQUENCE_LEASE,
@@ -135,6 +136,7 @@ export async function resumeMarket(options: ResumeOptions): Promise<ResumeResult
   const assetId = asset.definition.id;
   const leaseBlocks = options.leaseBlocks ?? DEFAULT_LEASE_BLOCKS;
 
+  const personality = personalityFingerprint(asset);
   const record = await store.load(assetId);
   if (record === null) {
     return {
@@ -144,7 +146,7 @@ export async function resumeMarket(options: ResumeOptions): Promise<ResumeResult
   }
 
   try {
-    assertUsableRecord(record, assetId);
+    assertUsableRecord(record, assetId, personality);
   } catch (error) {
     if (!(error instanceof UnusableRecordError)) throw error;
     return seamFrom(options, record, error.detail, leaseBlocks);
@@ -268,6 +270,7 @@ export async function resumeMarket(options: ResumeOptions): Promise<ResumeResult
     market: new HostedMarket({
       engine,
       clock,
+      personality,
       resumePending: record.pending,
       resumeLastPublished: record.lastPublished,
       ...(options.maxCatchUpMs === undefined ? {} : { maxCatchUpMs: options.maxCatchUpMs }),
@@ -295,6 +298,7 @@ function freshMarket(
   return new HostedMarket({
     engine,
     clock: options.clock,
+    personality: personalityFingerprint(options.asset),
     ...(options.maxCatchUpMs === undefined ? {} : { maxCatchUpMs: options.maxCatchUpMs }),
     ...(options.retractable === undefined ? {} : { retractable: options.retractable }),
   });
@@ -392,6 +396,7 @@ function seamFrom(
     market: new HostedMarket({
       engine,
       clock: options.clock,
+      personality: personalityFingerprint(options.asset),
       ...(record.lastPublished === null ? {} : { resumeLastPublished: record.lastPublished }),
       ...(options.maxCatchUpMs === undefined ? {} : { maxCatchUpMs: options.maxCatchUpMs }),
       ...(options.retractable === undefined ? {} : { retractable: options.retractable }),
@@ -437,6 +442,7 @@ export function checkpointMarket(
   return {
     version: STATE_RECORD_VERSION,
     assetId,
+    ...(market.personality === null ? {} : { personality: market.personality }),
     savedAt,
     snapshot,
     pending: market.pending,

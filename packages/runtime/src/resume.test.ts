@@ -4,8 +4,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { durationMillis, epochMillis, MasterKeyring, SteppableClock, type Tick } from '@otc/core';
-import { ASSET_CATALOGUE } from '@otc/engine';
+import { ASSET_CATALOGUE, type RegisteredAsset } from '@otc/engine';
 import { FileStateStore, MemoryStateStore } from './fileStore.js';
+import { personalityFingerprint } from './personality.js';
 import { checkpointMarket, resumeMarket } from './resume.js';
 import {
   CorruptRecordError,
@@ -340,6 +341,81 @@ describe('every branch of the record check is exercised (CA7-08)', () => {
     expect(resumed.outcome.kind === 'seam' && resumed.outcome.reason).toMatch(
       /does not follow last published/,
     );
+  });
+});
+
+describe('a record says which personality wrote it (PH-26.3)', () => {
+  /**
+   * A `MarketStateRecord` carried the asset's id and nothing about the asset.
+   * A state file written under `eurusd` by one personality would be loaded,
+   * its snapshot restored, and its market continued by any personality
+   * compiled under that id later — nothing compared them. The catalogue of
+   * thirty dodged it by retiring every incumbent id; the runtime stops
+   * depending on that discipline here.
+   */
+  async function written(): Promise<{
+    record: ReturnType<typeof checkpointMarket>;
+    store: MemoryStateStore;
+    clock: SteppableClock;
+  }> {
+    const store = new MemoryStateStore();
+    const clock = new SteppableClock(GENESIS);
+    const first = await resumeMarket(base(store, clock));
+    clock.advance(durationMillis(60_000));
+    first.market.advance();
+    return {
+      record: checkpointMarket(first.market, asset.definition.id, clock.now()),
+      store,
+      clock,
+    };
+  }
+
+  it('writes the fingerprint into every checkpoint, and it is not hex', async () => {
+    const { record } = await written();
+    expect(record.personality).toBe(personalityFingerprint(asset));
+    expect(record.personality).toMatch(/^sha256:[A-Za-z0-9_-]{43}$/);
+  });
+
+  it('seams a record another personality wrote under the same id', async () => {
+    const { record, store, clock } = await written();
+    // The same id, a different market: one trait moved.
+    const other: RegisteredAsset = {
+      ...asset,
+      definition: {
+        ...asset.definition,
+        traits: {
+          ...asset.definition.traits,
+          burstiness: asset.definition.traits.burstiness * 0.9,
+        },
+      },
+    };
+    expect(personalityFingerprint(other)).not.toBe(personalityFingerprint(asset));
+    await store.save({ ...record, personality: personalityFingerprint(other) });
+    const resumed = await resumeMarket(base(store, new SteppableClock(clock.now())));
+    expect(resumed.outcome.kind).toBe('seam');
+    expect(resumed.outcome.kind === 'seam' && resumed.outcome.reason).toMatch(
+      /written by another personality under this id/,
+    );
+  });
+
+  it('seams a record that predates the field, because nothing can say what wrote it', async () => {
+    const { record, store, clock } = await written();
+    const { personality: _dropped, ...legacy } = record;
+    await store.save(legacy);
+    const resumed = await resumeMarket(base(store, new SteppableClock(clock.now())));
+    expect(resumed.outcome.kind).toBe('seam');
+    expect(resumed.outcome.kind === 'seam' && resumed.outcome.reason).toMatch(
+      /no personality fingerprint/,
+    );
+  });
+
+  it('is the same fingerprint under another id: the id is what the record is keyed by, not what it is', () => {
+    const renamed: RegisteredAsset = {
+      ...asset,
+      definition: { ...asset.definition, id: 'other-name' },
+      instrument: { ...asset.instrument, id: 'other-name' },
+    };
+    expect(personalityFingerprint(renamed)).toBe(personalityFingerprint(asset));
   });
 });
 

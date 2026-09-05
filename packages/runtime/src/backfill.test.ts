@@ -10,7 +10,7 @@ import {
   timeframe as timeframeById,
   type Tick,
 } from '@otc/core';
-import { assetById, configFor, createMarketEngine } from '@otc/engine';
+import { ASSET_CATALOGUE, configFor, createMarketEngine } from '@otc/engine';
 import { backfillMarket, BackfillError } from './backfill.js';
 import { HostedMarket, DEFAULT_MAX_CATCH_UP_MS } from './hosted.js';
 import {
@@ -21,7 +21,12 @@ import {
 import { MemoryStateStore } from './fileStore.js';
 import { resumeMarket } from './resume.js';
 
-const asset = assetById('spx');
+/** The slowest tape in the catalogue, derived rather than named (PH-26.3): a cheap backfill. */
+const SLOW_ASSET = [...ASSET_CATALOGUE].sort(
+  (a, b) => b.evidence.meanIntervalMs - a.evidence.meanIntervalMs,
+)[0]!;
+
+const asset = SLOW_ASSET;
 const keyring = MasterKeyring.forTesting('backfill-spec');
 const GENESIS = epochMillis(1_776_000_000_000);
 /** Six hours: long enough for hourly bars, short enough for a unit test. */
@@ -133,8 +138,8 @@ describe('what the backfill writes', () => {
     expect(result.baseCandles).toBeLessThanOrEqual(360);
     expect(result.rollupCandles).toBeGreaterThanOrEqual(5);
     expect(result.rollupCandles).toBeLessThanOrEqual(6);
-    expect(await history.head('spx', HISTORY_BASE_TIMEFRAME)).not.toBeNull();
-    expect(await history.head('spx', HISTORY_ROLLUP_TIMEFRAME)).not.toBeNull();
+    expect(await history.head(asset.definition.id, HISTORY_BASE_TIMEFRAME)).not.toBeNull();
+    expect(await history.head(asset.definition.id, HISTORY_ROLLUP_TIMEFRAME)).not.toBeNull();
   }, 60_000);
 
   it('keeps only the tail of the tick record', async () => {
@@ -156,7 +161,7 @@ describe('what the backfill writes', () => {
     // the checkpoint would resume cleanly into a market that is silently late.
     const store = new MemoryStateStore();
     const result = await backfillMarket(options({ store }));
-    const record = await store.load('spx');
+    const record = await store.load(asset.definition.id);
     const last = result.retainedTicks[result.retainedTicks.length - 1]!;
     expect(record!.lastPublished!.instant).toBe(last.instant);
     // The exact statement, and it does not depend on how far apart ticks
@@ -173,7 +178,7 @@ describe('what the backfill writes', () => {
   it('leaves a checkpoint the live market can resume from', async () => {
     const store = new MemoryStateStore();
     await backfillMarket(options({ store }));
-    const record = await store.load('spx');
+    const record = await store.load(asset.definition.id);
     expect(record).not.toBeNull();
     expect(record!.savedAt).toBe(TARGET);
     expect(record!.lastPublished).not.toBeNull();
@@ -263,11 +268,11 @@ describe('the minute containing the target is stored whole (a5-01)', () => {
       result.recorder.accept(result.market.advanceTo(epochMillis(now)));
     }
     const closed = result.recorder.drain();
-    await history.append('spx', HISTORY_BASE_TIMEFRAME, closed);
+    await history.append(asset.definition.id, HISTORY_BASE_TIMEFRAME, closed);
 
     const joinMinute = bucketStart(target, timeframeById(HISTORY_BASE_TIMEFRAME));
     const [stored] = await history.read(
-      'spx',
+      asset.definition.id,
       HISTORY_BASE_TIMEFRAME,
       joinMinute,
       epochMillis(joinMinute + 60_000),

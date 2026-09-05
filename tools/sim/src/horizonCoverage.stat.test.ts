@@ -109,7 +109,7 @@ function readRecordedRuns(): RecordedRun[] {
   const text = readFileSync(path.join(repoRoot, EVIDENCE), 'utf8');
   const runs: RecordedRun[] = [];
   let run = 0;
-  const header = /^(\w+): ([\d,]+) ticks, ([\d.]+) simulated days \(/;
+  const header = /^([\w-]+): ([\d,]+) ticks, ([\d.]+) simulated days \(/;
   for (const line of text.split('\n')) {
     const r = /^## Run (\d+)/.exec(line);
     if (r !== null) {
@@ -151,14 +151,20 @@ function readRecordedSummary(): RecordedSummary {
   // Whitespace-tolerant between words, for the reason the row parser is:
   // Prettier wraps prose, and the family-wise line already breaks mid-sentence.
   const phrase = (words: string): RegExp => new RegExp(words.split(' ').join('\\s+'));
+  // PH-26.3: the cell count is the catalogue's, not the word "forty". The
+  // record says how many cells it polices and which run they came from, and
+  // both are read back rather than assumed.
+  const cells = String(ASSET_CATALOGUE.length * 8);
   const totals = phrase(
-    'Total across all three runs: \\*\\*([\\d.]+) billion ticks\\*\\*, ([\\d.]+) asset-years\\. ' +
-      'The forty policed cells are runs 1 and 2 alone: \\*\\*([\\d.]+) billion ticks\\*\\*, ([\\d.]+) asset-years',
+    'Total across all runs: \\*\\*([\\d.]+) billion ticks\\*\\*, ([\\d.]+) asset-years\\. ' +
+      `The ${cells} cells are run 1 alone: \\*\\*([\\d.]+) billion ticks\\*\\*, ([\\d.]+) asset-years`,
   ).exec(text);
-  const worst = phrase('Worst \\|z\\| across the forty is ([\\d.]+) \\((\\w+), (\\w+)\\)').exec(
+  const worst = phrase(
+    `Worst \\|z\\| across the ${cells} is ([\\d.]+) \\(([\\w-]+), (\\w+)\\)`,
+  ).exec(text);
+  const effective = phrase(`Effective independent tests: \\*\\*≈ (\\d+) of ${cells}\\*\\*`).exec(
     text,
   );
-  const effective = phrase('Effective independent tests: \\*\\*≈ (\\d+) of 40\\*\\*').exec(text);
   const fwer = phrase('Family-wise error rate for the observed worst cell: ([\\d.]+)\\.').exec(
     text,
   );
@@ -184,7 +190,7 @@ function readRecordedRows(): RecordedRow[] {
   let asset: string | null = null;
   let threshold = Number.NaN;
   let simulatedDays = Number.NaN;
-  // The document records three runs, and one asset appears in two of them: the
+  // The document records its runs by heading, and one asset appears twice: the
   // btcusd replication is the whole basis for reading its eight positive
   // horizons as path displacement. Cycle Audit 4 (Minor 7) found that run
   // present only as prose, so it is a table now — and the table gets checked.
@@ -192,7 +198,10 @@ function readRecordedRows(): RecordedRow[] {
   const runHeading = /^## Run (\d+)/;
 
   const header =
-    /^(\w+): [\d,]+ ticks, ([\d.]+) simulated days \([\d.]+ years\), \d+ segments, payout threshold ([\d.]+)pp, net displacement -?[\d,]+ steps$/;
+    // `[\w-]+`, not `\w+`: the catalogue of thirty's ids carry hyphens
+    // (`eurusd-otc`), and a header regex that could not see them parsed zero
+    // rows from a 240-row record on the first run of PH-26.3.
+    /^([\w-]+): [\d,]+ ticks, ([\d.]+) simulated days \([\d.]+ years\), \d+ segments, payout threshold ([\d.]+)pp, net displacement -?[\d,]+ steps$/;
   // Whitespace-tolerant on purpose: every markdown file here is Prettier
   // formatted, and Prettier pads table cells to the widest entry in the column.
   // A parser written against one run's column widths silently matches nothing
@@ -241,6 +250,8 @@ describe('the recorded evidence re-derives from itself', () => {
   const all = readRecordedRows();
   /** Runs 1 and 2 are the coverage claim; run 3 is the replication. */
   const rows = all.filter((row) => row.run <= 2);
+  /** The asset run 3 replicates, read from the record rather than named. */
+  const replicated = new Set(all.filter((row) => row.run === 3).map((row) => row.asset));
   const replication = all.filter((row) => row.run === 3);
 
   it('covers every asset at every horizon', () => {
@@ -251,23 +262,24 @@ describe('the recorded evidence re-derives from itself', () => {
     }
   });
 
-  it('records the replication that the btcusd reading depends on', () => {
-    // The claim: btcusd's eight positive horizons are path displacement, not a
-    // leak, because an independent realisation flipped all eight. That is the
-    // single most load-bearing result in the phase, and Cycle Audit 4 found it
-    // recorded as four numbers in prose with no table, label or seed.
+  it('records a replication: the same market again, and a different realisation', () => {
+    // The five's record replicated btcusd because its primary run came out
+    // positive at all eight horizons, and the replication flipped every one —
+    // which settled it as path displacement rather than a leak. That sign flip
+    // was a fact about one draw; asserting it of every catalogue would assert a
+    // coin toss. What is asserted of any catalogue is what the replication is
+    // for: one asset, run again under another label, eight cells that are a
+    // *different* realisation of the *same* market (PH-26.3).
     expect(replication, 'the replication run is missing').toHaveLength(8);
-
-    const primary = rows.filter((r) => r.asset === 'btcusd');
-    const sign = (xs: RecordedRow[]) => Math.sign(xs.reduce((a, b) => a + b.edgePoints, 0));
-    expect(sign(primary), 'the primary run should be net positive').toBe(1);
-    expect(sign(replication), 'the replication should have flipped').toBe(-1);
-
-    // And the diagnostic must have flipped with them — that is what makes it
-    // path displacement rather than a coincidence of two runs.
-    const bias = (xs: RecordedRow[]) => Math.sign(xs.reduce((a, b) => a + b.pathBiasZ, 0));
-    expect(bias(primary)).toBe(1);
-    expect(bias(replication)).toBe(-1);
+    expect(replicated.size, 'run 3 replicates exactly one asset').toBe(1);
+    const [asset] = [...replicated];
+    const primary = rows.filter((r) => r.asset === asset);
+    expect(primary, `${asset!} has no primary run to replicate`).toHaveLength(8);
+    // A different realisation: the eight edges cannot all coincide.
+    const same = replication.filter((r, i) => r.edgePoints === primary[i]!.edgePoints).length;
+    expect(same, 'the replication repeats the primary run').toBeLessThan(8);
+    // The same market: the same horizons at comparable sample counts.
+    expect(replication.map((r) => r.horizon)).toEqual(primary.map((r) => r.horizon));
   });
 
   it('re-derives every floor from its own sample count and design effect', () => {
@@ -431,7 +443,7 @@ describe('the recorded evidence re-derives from itself', () => {
   });
 
   it('re-derives the worst cell and the family-wise error rate from the rows (a4-10)', () => {
-    // The interpretation says the forty cells are about 26 independent tests
+    // The interpretation says how many effective tests the cells are worth
     // and quotes the family-wise error rate of the worst cell at that count. The
     // count itself comes from a 400-realisation measurement this file cannot
     // repeat; what it can check is that the two statements agree with each
@@ -446,7 +458,7 @@ describe('the recorded evidence re-derives from itself', () => {
     expect(derived).toBeCloseTo(summary.familyWiseErrorRate, 2);
   });
 
-  it('finds no significant edge across all 40 recorded tests', () => {
+  it('finds no significant edge across every recorded cell', () => {
     // The z is already stated at the effective sample size, so this is the
     // verdict the record actually supports.
     const pValues = rows.map((row) => 2 * (1 - normalCdf(Math.abs(row.z))));

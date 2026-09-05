@@ -19,7 +19,7 @@ import { checkAssetId, type RegistrationRequest } from './registration.js';
  * succeeds. Ten percent is coarse enough to converge in one or two steps and
  * fine enough that the personality keeps the character its family drew.
  */
-const AUTHORING_RETREAT = 0.9;
+export const AUTHORING_RETREAT = 0.9;
 
 /** Retreats before giving up. 0.9^6 is 0.53 — past that the draw was wrong. */
 export const AUTHORING_ATTEMPTS = 6;

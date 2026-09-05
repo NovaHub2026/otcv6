@@ -5,6 +5,8 @@ import { epochMillis, logPrice, MasterKeyring } from '@otc/core';
 import { yieldToLoop } from '@otc/core';
 import { CALIBRATION_CHUNK_TICKS, MEASURED_LATTICE_TIE_RATES, TARGET_TIE_RATE } from './asset.js';
 import { ASSET_CATALOGUE, configFor } from './catalogue.js';
+import { HEAVY_SUITE_SAMPLE, sampleCatalogue } from './catalogueSample.js';
+import { seatById } from './seats.js';
 import { createMarketEngine } from './factory.js';
 
 /**
@@ -113,8 +115,45 @@ async function tieRate(index: number, label: string): Promise<number> {
   return counted === 0 ? Number.NaN : ties / counted;
 }
 
+/**
+ * Which assets this run measures (PH-26.1).
+ *
+ * Twelve replicates of 8,000 horizons per asset is 55.7 M simulated ticks at
+ * five assets and would be 334 M at thirty. The run measures a fixed,
+ * stratified sample and prints what it left out; the whole catalogue is
+ * measured by the evidence run at the phase boundary. At five assets the sample
+ * is the catalogue and nothing changes.
+ */
+const SAMPLE = sampleCatalogue(
+  ASSET_CATALOGUE,
+  (a) => a.definition.id,
+  MasterKeyring.forTesting('catalogue-sample').derive({
+    env: 'test',
+    asset: 'sample',
+    purpose: 'lattice-ties',
+    keyEpoch: 0,
+  }),
+  {
+    size: HEAVY_SUITE_SAMPLE,
+    // One stratum per archetype (eight), read from the seat each compiled asset
+    // was drawn from; family (four) for anything without a seat.
+    stratumOf: (a) => {
+      try {
+        return seatById(a.definition.id).archetype;
+      } catch {
+        return a.definition.family;
+      }
+    },
+  },
+);
+
 describe('the recorded lattice tie rates reproduce', () => {
-  it.each(ASSET_CATALOGUE.map((a, i) => [a.definition.id, i] as const))(
+  it('says which assets this run measured, and which it did not (§68)', () => {
+    console.info(`lattice ties: ${SAMPLE.describe()}`);
+    expect(SAMPLE.measured).toHaveLength(Math.min(HEAVY_SUITE_SAMPLE, ASSET_CATALOGUE.length));
+  });
+
+  it.each(SAMPLE.measured.map((a) => [a.definition.id, ASSET_CATALOGUE.indexOf(a)] as const))(
     '%s settles at the money at its recorded rate',
     async (id, index) => {
       const recorded = MEASURED_LATTICE_TIE_RATES[id as keyof typeof MEASURED_LATTICE_TIE_RATES];

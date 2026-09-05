@@ -590,8 +590,13 @@ describe('the window paragraph in mirror.ts still describes this repository', ()
       widest,
     );
 
-    const measured = ASSET_CATALOGUE.find((a) => a.definition.id === 'btcusd')!.evidence
-      .meanIntervalMs;
+    const fastest = [...ASSET_CATALOGUE].sort(
+      (a, b) => a.evidence.meanIntervalMs - b.evidence.meanIntervalMs,
+    )[0]!;
+    expect(adr, 'ADR-0003 no longer names the fastest asset').toContain(
+      `Against ${fastest.definition.id}'s recorded \`meanIntervalMs\``,
+    );
+    const measured = fastest.evidence.meanIntervalMs;
     const hours = (widest * measured) / 3_600_000;
     expect(
       Math.abs(hours - Number(stated![2])) / hours,
@@ -609,10 +614,20 @@ describe('the window paragraph in mirror.ts still describes this repository', ()
   });
 
   it('converts those ticks into market time at the catalogue’s own tempo', () => {
-    const interval = /mean interval of (\d+) ms/.exec(doc);
-    expect(interval, 'the paragraph no longer names the interval it converts with').not.toBeNull();
-    const btcusd = ASSET_CATALOGUE.find((a) => a.definition.id === 'btcusd')!;
-    const measured = btcusd.evidence.meanIntervalMs;
+    // The fastest tape in the catalogue, derived: it is the asset for which a
+    // fixed window in ticks is the least market time, so it is the honest
+    // conversion. The paragraph must name it and its recorded interval.
+    const fastest = [...ASSET_CATALOGUE].sort(
+      (a, b) => a.evidence.meanIntervalMs - b.evidence.meanIntervalMs,
+    )[0]!;
+    const interval = new RegExp(
+      `At ${fastest.definition.id}'s recorded mean interval of (\\d+) ms`,
+    ).exec(doc);
+    expect(
+      interval,
+      `the paragraph no longer names the fastest asset (${fastest.definition.id}) and its interval`,
+    ).not.toBeNull();
+    const measured = fastest.evidence.meanIntervalMs;
     expect(
       Math.round(measured),
       'the paragraph converts at an interval the catalogue no longer records',

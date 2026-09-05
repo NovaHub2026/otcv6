@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { assertValidInstrument, epochMillis, logPrice, MasterKeyring } from '@otc/core';
 import { calibrateAsset, type AssetDefinition } from './asset.js';
+import { AUTHORING_RETREAT } from './brief.js';
 import { ASSET_CATALOGUE, assetById, configFor, registrationKeyLabel } from './catalogue.js';
 import { createMarketEngine } from './factory.js';
 import {
   assertPersonalityTraits,
   authorPersonality,
-  cascadeRmsGain,
   cascadeTimescalesMs,
   DEFAULT_TRAITS,
   MIN_FASTEST_COMPONENT_TICKS,
@@ -53,8 +53,13 @@ describe('the catalogue is well formed', () => {
   );
 
   it('looks up by id and rejects an unknown one', () => {
-    expect(assetById('eurusd').definition.displayName).toBe('EUR/USD');
-    expect(() => assetById('nope')).toThrow(/Unknown asset nope.*eurusd/s);
+    const first = ASSET_CATALOGUE[0]!;
+    expect(assetById(first.definition.id).definition.displayName).toBe(
+      first.definition.displayName,
+    );
+    expect(() => assetById('nope')).toThrow(
+      new RegExp(`Unknown asset nope.*${first.definition.id}`, 's'),
+    );
   });
 });
 
@@ -146,12 +151,51 @@ describe('the recorded personalities reproduce from their targets', () => {
   it.each(ASSET_CATALOGUE.map((a) => [a.definition.id, a] as const))(
     '%s re-authors to exactly its recorded traits',
     (id, asset) => {
+      // Exactly the streams `registerAsset` authors with: keyring
+      // `registration-<id>`, stream label `registration-<id>`, environment
+      // `simulation` — which is what `buildCatalogue.ts` ran (PH-26.3). The five
+      // hand-authored entries were solved with the bare id as the stream label;
+      // the thirty carry the pipeline's convention, and this is it.
       const registration = MasterKeyring.forTesting(registrationKeyLabel(id));
-      const again = authorPersonality(asset.definition.traits, asset.authored, (purpose) =>
-        registration.derive({ env: 'simulation', asset: id, purpose, keyEpoch: 0 }),
+      // The target the pipeline authored *from*: the drawn tail weight, retreated
+      // as many times as the record says. Re-solving from the achieved value is
+      // a different input — the gate's structure term is estimated by
+      // simulation, so a different bisection path is a different stream — and
+      // two of the thirty landed one bracket away when this was tried.
+      const target =
+        asset.authored.drawnExcessKurtosis === undefined
+          ? asset.authored.excessKurtosis
+          : asset.authored.drawnExcessKurtosis *
+            AUTHORING_RETREAT ** (asset.authored.retreats ?? 0);
+      const targets = { excessKurtosis: target, tickRms: asset.authored.tickRms };
+      const again = authorPersonality(asset.definition.traits, targets, (purpose) =>
+        registration.derive({
+          env: 'simulation',
+          asset: registrationKeyLabel(id),
+          purpose,
+          keyEpoch: 0,
+        }),
       );
-      expect(again.traits).toEqual(asset.definition.traits);
-      expect(again.achievedExcessKurtosis).toBe(asset.evidence.predictedExcessKurtosis);
+      // A fixed point on every trait, `volatility` included: the pipeline
+      // rescales the base volatility after authoring so the asset hits its
+      // dispersion budget exactly, and records the rescaled `tickRms` beside it
+      // — so re-authoring from the recorded targets lands on the recorded
+      // volatility to floating-point resolution rather than to the bit.
+      const { volatility: recordedVolatility, ...recordedRest } = asset.definition.traits;
+      const { volatility: authoredVolatility, ...authoredRest } = again.traits;
+      expect(authoredRest).toEqual(recordedRest);
+      expect(Math.abs(authoredVolatility / recordedVolatility - 1)).toBeLessThan(1e-9);
+      // What the solve achieved is recorded exactly; the calibration's own
+      // estimate of the same gate, taken with its own stream, agrees to the
+      // structure estimator's resolution (PH-26.3: the five were recorded
+      // with one number for both, the thirty carry both as measured).
+      expect(again.achievedExcessKurtosis).toBe(asset.authored.excessKurtosis);
+      // Measured across the thirty on 2026-09-04: the largest gap is 7.9%
+      // (eurusd-otc); ten per cent is the estimator's resolution with room.
+      expect(
+        Math.abs(asset.evidence.predictedExcessKurtosis / asset.authored.excessKurtosis - 1),
+        `${id} predicted vs achieved`,
+      ).toBeLessThan(0.1);
     },
   );
 
@@ -162,155 +206,28 @@ describe('the recorded personalities reproduce from their targets', () => {
     const differences = ASSET_CATALOGUE.map((a) =>
       Math.abs(a.evidence.predictedExcessKurtosis - a.authored.excessKurtosis),
     );
-    expect(differences.every((d) => d < 1e-9)).toBe(true);
+    // Two independent computations of the same gate: they differ, and never by
+    // more than the structure estimator's resolution.
     expect(differences.some((d) => d > 0)).toBe(true);
+    expect(Math.max(...differences)).toBeLessThan(
+      0.1 * Math.max(...ASSET_CATALOGUE.map((a) => a.authored.excessKurtosis)),
+    );
   });
 });
 
-describe('re-authoring changed rhythm and grain, never scale or tail weight', () => {
-  /**
-   * Realised tick amplitude as PH-4 registered it, before any rhythm existed,
-   * and the mean tick interval each asset had then.
-   *
-   * Frozen deliberately. This is the assertion that stops a re-authoring from
-   * claiming a differentiation gain it bought by spreading the assets further
-   * apart in size — which would be trivial, true by construction, and
-   * meaningless. PH-10 held the amplitude itself. PH-24.17 raised every tempo
-   * (three to four times the ticks a minute) and divided the amplitude by the
-   * square root of the same factor, so the quantity that is still PH-4's is
-   * the **variance per millisecond** — the amplitude squared over the mean
-   * interval — which is what the quarterly dispersion is made of. A market
-   * with finer ticks and the same dispersion is the same market at a finer
-   * grain; a market with more dispersion would be a different one.
-   */
-  const PH4_TICK_RMS: Record<string, number> = {
-    eurusd: 0.000013932458128335953,
-    gbpjpy: 0.00004234061764642874,
-    btcusd: 0.00007938865808705389,
-    spx: 0.00000820990287547472,
-    xauusd: 0.00002846808863025055,
-  };
-  /** Mean tick interval each asset was measured at when PH-4's amplitude was set (ms). */
-  const PH4_MEAN_INTERVAL_MS: Record<string, number> = {
-    eurusd: 1379.8191861941425,
-    gbpjpy: 714.6766515523951,
-    btcusd: 332.9569156063406,
-    spx: 3352.3021210553543,
-    xauusd: 1969.0617253751434,
-  };
-  /** The factor PH-24.17 divided each tempo by. Part of the record, per §2. */
-  const GRAIN_FACTOR: Record<string, number> = {
-    eurusd: 4,
-    gbpjpy: 3,
-    btcusd: 3,
-    spx: 4,
-    xauusd: 4,
-  };
-  /** Tail weight as PH-4 registered it. */
-  const PH4_EXCESS_KURTOSIS: Record<string, number> = {
-    eurusd: 63.518987927858404,
-    gbpjpy: 108.62098096647418,
-    btcusd: 151.62450294348804,
-    spx: 44.40447547836519,
-    xauusd: 100.48688844255925,
-  };
-  it.each(ASSET_CATALOGUE.map((a) => [a.definition.id, a] as const))(
-    "%s keeps its variance per millisecond, PH-4's amplitude at its grain",
-    (id, asset) => {
-      const realised = asset.definition.traits.volatility * cascadeRmsGain(asset.definition.traits);
-      const perMs = (realised * realised) / asset.evidence.meanIntervalMs;
-      const ph4PerMs = (PH4_TICK_RMS[id]! * PH4_TICK_RMS[id]!) / PH4_MEAN_INTERVAL_MS[id]!;
-      // The measured mean interval carries the arrival process's excitation, so
-      // the ratio is a measurement, not an identity: the same 0.7-1.4 band
-      // `catalogue.stat.test.ts` holds a fresh calibration's dispersion to.
-      const ratio = perMs / ph4PerMs;
-      expect(ratio, `${id} variance per ms ratio`).toBeGreaterThan(0.7);
-      expect(ratio, `${id} variance per ms ratio`).toBeLessThan(1.4);
-    },
-  );
-  it.each(ASSET_CATALOGUE.map((a) => [a.definition.id, a] as const))(
-    '%s keeps its tail weight within 6%',
-    (id, asset) => {
-      const ratio = asset.evidence.predictedExcessKurtosis / PH4_EXCESS_KURTOSIS[id]!;
-      expect(ratio, `${id} kurtosis ratio`).toBeGreaterThan(0.94);
-      expect(ratio, `${id} kurtosis ratio`).toBeLessThan(1.06);
-    },
-  );
-
-  /**
-   * What a tick is worth in market time, and what that costs the measurements
-   * counted in ticks.
-   *
-   * **Cycle Audit 8, a5.** `packages/lab/src/realism.ts` counts four of its
-   * windows in ticks — `absolute-return-decay-is-slow` at 50,
-   * `absolute-return-long-memory` at 500, `aggregational-gaussianity` at 60 and
-   * the regime window at 300 — and none of them can see time. Dividing a tempo
-   * therefore divides the span of market each one asks about, and every band is
-   * re-passed against a shorter question with the band itself untouched.
-   * PH-24.17 did that to all four and recorded one.
-   *
-   * The seconds below are arithmetic on the recorded mean interval, so this
-   * fails the moment a recalibration moves it — before any statistical suite
-   * does, and in the file that made the change.
-   */
-  const REALISM_WINDOW_SECONDS: Record<string, Record<string, number>> = {
-    eurusd: { decay: 17.3, longMemory: 173.4, aggregation: 20.8, regime: 104.1 },
-    gbpjpy: { decay: 11.9, longMemory: 118.8, aggregation: 14.3, regime: 71.3 },
-    btcusd: { decay: 5.5, longMemory: 55.4, aggregation: 6.6, regime: 33.2 },
-    spx: { decay: 42.2, longMemory: 422.0, aggregation: 50.6, regime: 253.2 },
-    xauusd: { decay: 24.8, longMemory: 248.0, aggregation: 29.8, regime: 148.8 },
-  };
-  it.each(ASSET_CATALOGUE.map((a) => [a.definition.id, a] as const))(
-    "%s: the lab's tick-counted realism windows shrank by its grain factor",
-    (id, asset) => {
-      const meanIntervalMs = asset.evidence.meanIntervalMs;
-      // The measured interval is what the windows are made of, and it moved by
-      // the factor the tempo did: a window unchanged in ticks is a question
-      // changed in time.
-      const shrink = PH4_MEAN_INTERVAL_MS[id]! / meanIntervalMs;
-      expect(shrink, `${id} grain`).toBeGreaterThan(GRAIN_FACTOR[id]! * 0.95);
-      expect(shrink, `${id} grain`).toBeLessThan(GRAIN_FACTOR[id]! * 1.05);
-      const seconds = (ticks: number) => (ticks * meanIntervalMs) / 1_000;
-      const recorded = REALISM_WINDOW_SECONDS[id]!;
-      expect(seconds(50), `${id} absolute-return-decay-is-slow`).toBeCloseTo(recorded.decay!, 1);
-      expect(seconds(500), `${id} absolute-return-long-memory`).toBeCloseTo(
-        recorded.longMemory!,
-        1,
-      );
-      expect(seconds(60), `${id} aggregational-gaussianity`).toBeCloseTo(recorded.aggregation!, 1);
-      expect(seconds(300), `${id} regime window`).toBeCloseTo(recorded.regime!, 1);
-    },
-  );
-
-  it('carries every non-rhythm trait across unchanged', () => {
-    // The exclusion, enforced. If a future re-authoring moves burstiness or a
-    // spread while claiming to have changed only rhythm, this is what says so.
-    // PH-24.17 divided each tempo by a recorded factor (finer grain, same
-    // dispersion); the factor is part of the record, so a tempo that drifts
-    // from PH-4's over that factor is still caught.
-    const PH4_CARRIED: Record<string, Record<string, number>> = {
-      eurusd: { tempoMs: 3_000, burstiness: 0.6, regimeSpread: 1, structureSpread: 1 },
-      gbpjpy: { tempoMs: 1_850, burstiness: 0.62, regimeSpread: 1.15, structureSpread: 1 },
-      btcusd: { tempoMs: 1_100, burstiness: 0.78, regimeSpread: 1.35, structureSpread: 1 },
-      spx: { tempoMs: 5_450, burstiness: 0.45, regimeSpread: 0.85, structureSpread: 1.35 },
-      xauusd: { tempoMs: 4_300, burstiness: 0.55, regimeSpread: 1.25, structureSpread: 0.9 },
-    };
-    const drifted: string[] = [];
-    for (const asset of ASSET_CATALOGUE) {
-      const carried = PH4_CARRIED[asset.definition.id]!;
-      for (const [name, value] of Object.entries(carried)) {
-        const actual = asset.definition.traits[name as keyof typeof asset.definition.traits];
-        const expected = name === 'tempoMs' ? value / GRAIN_FACTOR[asset.definition.id]! : value;
-        if (actual !== expected)
-          drifted.push(`${asset.definition.id}.${name}: ${actual} != ${expected}`);
-      }
-      if (asset.definition.traits.durationCoupling !== DEFAULT_TRAITS.durationCoupling) {
-        drifted.push(`${asset.definition.id}.durationCoupling`);
-      }
-    }
-    expect(drifted).toEqual([]);
-  });
-});
+/**
+ * Retired with the five assets it was about (PH-26.3).
+ *
+ * "Re-authoring changed rhythm and grain, never scale or tail weight" pinned
+ * each of PH-4's five hand-authored assets to its PH-4 amplitude at PH-24.17's
+ * grain — six tables of frozen numbers keyed by `eurusd`, `gbpjpy`, `btcusd`,
+ * `spx` and `xauusd`. The catalogue of thirty has no PH-4 predecessor to hold
+ * to; what it holds to instead is its own recorded run, which
+ * `the recorded personalities reproduce from their targets` above re-derives
+ * entry by entry, and `catalogue.stat.test.ts` recalibrates. The tables went
+ * with the assets rather than being emptied, because an empty table under an
+ * `it.each` over the catalogue is a test that passes by having nothing to say.
+ */
 
 describe('the assets have genuinely different ladders', () => {
   it('shares no rhythm between any two assets', () => {

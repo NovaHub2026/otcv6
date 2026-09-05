@@ -21,6 +21,12 @@ export interface HostedMarketOptions {
   readonly engine: MarketEngine;
   readonly clock: Clock;
   /**
+   * The fingerprint of the personality this market runs (PH-26.3), written into
+   * every checkpoint so a resume can refuse a record another personality wrote
+   * under the same id. See `personality.ts`.
+   */
+  readonly personality?: string;
+  /**
    * How far behind the clock this market may fall before catching up is refused.
    *
    * A bound is required because catch-up is unbounded work: the engine will
@@ -134,9 +140,12 @@ export class HostedMarket {
   /** The engine as it was before the pending tick was drawn; null when unknown. */
   #beforePending: ReturnType<MarketEngine['snapshot']> | null = null;
 
+  readonly #personality: string | null;
+
   constructor(options: HostedMarketOptions) {
     this.#engine = options.engine;
     this.#clock = options.clock;
+    this.#personality = options.personality ?? null;
     this.#floorInstant = options.engine.snapshot().instant;
     this.#pending = options.resumePending ?? null;
     const resumed = options.resumeLastPublished ?? null;
@@ -153,6 +162,11 @@ export class HostedMarket {
   }
 
   /** The last tick published in this process, or `null` before the first. */
+  /** The personality fingerprint this market was hosted with, if it was given one. */
+  get personality(): string | null {
+    return this.#personality;
+  }
+
   get lastPublished(): Tick | null {
     return this.#lastPublished;
   }

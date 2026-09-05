@@ -444,26 +444,19 @@ describe('the panel, in a browser', () => {
 
       // One asset per screen: exactly one chart, before and after.
       expect(await page.locator('canvas').count()).toBeGreaterThan(0);
-      expect(await page.getByTestId('asset-eurusd').count()).toBe(1);
+      // The catalogue as the panel itself learns it: from the service, not from
+      // a list typed here (PH-26.3). Three assets — the second, the last and the
+      // first — so the selection changes market three times.
+      const listed = (await (await fetch(`http://127.0.0.1:${apiPort}/catalogue`)).json()) as {
+        id: string;
+        referencePrice: number;
+      }[];
+      expect(listed.length).toBeGreaterThanOrEqual(3);
+      const first = listed[0]!;
+      expect(await page.getByTestId(`asset-${first.id}`).count()).toBe(1);
+      const referenceOf = new Map(listed.map((e) => [e.id, e.referencePrice] as const));
 
-      // **What the panel asks the engine for is the only thing that identifies
-      // the market on screen.** This assertion took three attempts, and the two
-      // that failed are worth keeping in view:
-      //
-      // 1. comparing the *quantum* readout across a switch — passed against a
-      //    chart planted to be reused across assets, because the quantum is a
-      //    React prop and re-renders whether or not the chart followed;
-      // 2. comparing the *displayed price* against the asset's reference —
-      //    passed against a stream planted to stay subscribed to `eurusd`,
-      //    because `displayPrice` converts an integer count through *the
-      //    selected asset's* quantum and reference. Ticks from the wrong market
-      //    still land near the right price. The number on screen genuinely
-      //    cannot tell you whose market it is.
-      //
-      // The requests can. Each asset must be asked for by name, at both tiers —
-      // the stored candles and the live stream — and nothing may be asked of
-      // another market afterwards.
-      for (const id of ['spx', 'xauusd', 'eurusd'] as const) {
+      for (const id of [listed[1]!.id, listed[listed.length - 1]!.id, first.id]) {
         const before = observed.requested.length;
         await page.getByTestId(`asset-${id}`).click();
         await expect
@@ -480,14 +473,14 @@ describe('the panel, in a browser', () => {
           `stream opened for ${id}`,
         ).not.toEqual([]);
         expect(
-          after.filter((url) => /\/markets\/[a-z]+\//.test(url) && !url.includes(`/${id}/`)),
+          after.filter((url) => /\/markets\/[a-z0-9-]+\//.test(url) && !url.includes(`/${id}/`)),
           `no request for another market after selecting ${id}`,
         ).toEqual([]);
 
         // And the price on screen is at least in the asset's decade. Weak on its
         // own, as note 2 says; it costs nothing beside the request check and it
         // would catch a reference price wired to the wrong asset.
-        const reference = { spx: 5_400, xauusd: 2_380, eurusd: 1.085 }[id];
+        const reference = referenceOf.get(id)!;
         const price = Number(await page.getByTestId('last-price').textContent());
         expect(price).toBeGreaterThan(reference * 0.5);
         expect(price).toBeLessThan(reference * 1.5);
@@ -576,34 +569,40 @@ describe('the panel, in a browser', () => {
       await page.goto(`http://127.0.0.1:${webPort}/assets/manage`, { waitUntil: 'networkidle' });
 
       // Renaming a compiled catalogue asset, which is the case an overlay
-      // exists for: `gbpjpy` was never registered here and is administered
+      // exists for: a compiled asset was never registered here and is administered
       // exactly like one that was.
-      await page.getByTestId('rename-gbpjpy').click();
-      await page.getByTestId('rename-input-gbpjpy').fill('Sterling / Yen');
-      await page.getByTestId('rename-save-gbpjpy').click();
+      // Which assets: the service's own list, not names typed here (PH-26.3).
+      const manageable = (await (await fetch(`http://127.0.0.1:${apiPort}/catalogue`)).json()) as {
+        id: string;
+      }[];
+      const renamed = manageable[1]!.id;
+      const retired = manageable[manageable.length - 1]!.id;
+      await page.getByTestId(`rename-${renamed}`).click();
+      await page.getByTestId(`rename-input-${renamed}`).fill('Sterling / Yen');
+      await page.getByTestId(`rename-save-${renamed}`).click();
       // A failed write puts the engine's own words on the screen. Checking for
       // it first turns a timeout into a message.
       expect(await page.getByTestId('manage-error').count(), 'the rename was refused').toBe(0);
       await expect
-        .poll(async () => page.getByTestId('name-gbpjpy').textContent(), { timeout: 30_000 })
+        .poll(async () => page.getByTestId(`name-${renamed}`).textContent(), { timeout: 30_000 })
         .toBe('Sterling / Yen');
 
       // Retiring asks first, and the confirmation says it cannot be undone.
-      await page.getByTestId('retire-xauusd').click();
-      await page.getByTestId('retire-confirm-xauusd').waitFor({ state: 'visible' });
-      await page.getByTestId('retire-confirm-xauusd').click();
+      await page.getByTestId(`retire-${retired}`).click();
+      await page.getByTestId(`retire-confirm-${retired}`).waitFor({ state: 'visible' });
+      await page.getByTestId(`retire-confirm-${retired}`).click();
       await expect
-        .poll(async () => page.getByTestId('state-xauusd').textContent(), { timeout: 30_000 })
+        .poll(async () => page.getByTestId(`state-${retired}`).textContent(), { timeout: 30_000 })
         .toBe('retirado');
 
       // And it is gone from the screen that hosts markets, while the one that
       // was renamed is still there under its new name.
       await page.goto(`http://127.0.0.1:${webPort}/preview`, { waitUntil: 'networkidle' });
-      await page.getByTestId('asset-gbpjpy').click();
+      await page.getByTestId(`asset-${renamed}`).click();
       await expect
         .poll(async () => page.getByTestId('stream-status').textContent(), { timeout: 60_000 })
         .toMatch(LIVE);
-      await page.getByTestId('asset-xauusd').click();
+      await page.getByTestId(`asset-${retired}`).click();
       await expect
         .poll(async () => page.getByTestId('stream-status').textContent(), { timeout: 30_000 })
         .toContain('sin hospedar');
@@ -620,7 +619,16 @@ describe('the panel, in a browser', () => {
     const observed = watch(page);
     try {
       await page.goto(`http://127.0.0.1:${webPort}/preview`, { waitUntil: 'networkidle' });
-      await page.getByTestId('asset-eurusd').waitFor({ state: 'visible', timeout: 30_000 });
+      // Ids from the service, not typed here (PH-26.3): the first asset, one
+      // crypto pair, and one currency pair that is not the first.
+      const all = (await (await fetch(`http://127.0.0.1:${apiPort}/catalogue`)).json()) as {
+        id: string;
+        family: string;
+      }[];
+      const firstId = all[0]!.id;
+      const cryptoId = all.find((e) => e.family === 'crypto')!.id;
+      const otherForex = all.find((e) => e.family === 'forex' && e.id !== firstId)!.id;
+      await page.getByTestId(`asset-${firstId}`).waitFor({ state: 'visible', timeout: 30_000 });
 
       // Grouped by family, and the headings are the families the catalogue has.
       await page
@@ -631,19 +639,19 @@ describe('the panel, in a browser', () => {
       // A filter that narrows the list. `filterCatalogue` is unit-tested
       // exhaustively; what only a browser can show is that the box is wired to
       // it and that the list actually shrinks.
-      await page.getByTestId('asset-filter').fill('btc');
+      await page.getByTestId('asset-filter').fill(cryptoId.slice(0, 3));
       await expect
-        .poll(async () => page.getByTestId('asset-eurusd').count(), { timeout: 10_000 })
+        .poll(async () => page.getByTestId(`asset-${firstId}`).count(), { timeout: 10_000 })
         .toBe(0);
-      expect(await page.getByTestId('asset-btcusd').count()).toBe(1);
+      expect(await page.getByTestId(`asset-${cryptoId}`).count()).toBe(1);
 
       // By family, not just by id.
       await page.getByTestId('asset-filter').fill('forex');
       await expect
-        .poll(async () => page.getByTestId('asset-btcusd').count(), { timeout: 10_000 })
+        .poll(async () => page.getByTestId(`asset-${cryptoId}`).count(), { timeout: 10_000 })
         .toBe(0);
-      expect(await page.getByTestId('asset-eurusd').count()).toBe(1);
-      expect(await page.getByTestId('asset-gbpjpy').count()).toBe(1);
+      expect(await page.getByTestId(`asset-${firstId}`).count()).toBe(1);
+      expect(await page.getByTestId(`asset-${otherForex}`).count()).toBe(1);
 
       // Nothing matching says so rather than showing an empty sidebar.
       await page.getByTestId('asset-filter').fill('zzzz');
@@ -653,7 +661,7 @@ describe('the panel, in a browser', () => {
       // catalogue until something was typed would have broken the screen.
       await page.getByTestId('asset-filter').fill('');
       await expect
-        .poll(async () => page.getByTestId('asset-eurusd').count(), { timeout: 10_000 })
+        .poll(async () => page.getByTestId(`asset-${firstId}`).count(), { timeout: 10_000 })
         .toBe(1);
 
       // The chart never stopped: filtering narrows the list, not the selection.

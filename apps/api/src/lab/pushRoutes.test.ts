@@ -128,7 +128,12 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     // since the last published tick plus one burst step; the rest are burst steps.
     expect(labIntervals[0]!).toBeGreaterThanOrEqual(gap);
     expect(labIntervals[0]!).toBeLessThanOrEqual(gap + step + 1);
-    for (let i = 1; i < 3; i += 1) expect(labIntervals[i]!).toBeLessThanOrEqual(step);
+    // The scheduler lands each burst interval within ±1 ms of the pace — the
+    // bisection in `lab.controller.ts` stops at |interval − target| ≤ 1 — so the
+    // tolerance the first interval already carried belongs to every one of
+    // them. PH-26.3: at the catalogue of thirty's tempos this read 71 against a
+    // step of 70, which the five's tempos had never happened to produce.
+    for (let i = 1; i < 3; i += 1) expect(labIntervals[i]!).toBeLessThanOrEqual(step + 1);
     for (let i = 0; i < 3; i += 1) expect(labDeltas[i]!).toBeGreaterThanOrEqual(0);
     // The landing announced is the third pushed tick's price.
     expect(labTicks[2]!.price).toBe(pushed.landing.latticeLevel);
@@ -348,7 +353,8 @@ describe('PH-24.10 — a push is N natural ticks', () => {
       expect(ticks[0]!.instant).toBeGreaterThanOrEqual(now);
       expect(ticks[0]!.instant).toBeLessThanOrEqual(now + step + 1);
       for (let i = 1; i < 5; i += 1) {
-        expect(ticks[i]!.instant - ticks[i - 1]!.instant).toBeLessThanOrEqual(step);
+        // ±1 ms: the scheduler's own tolerance (see the burst test above).
+        expect(ticks[i]!.instant - ticks[i - 1]!.instant).toBeLessThanOrEqual(step + 1);
       }
     }
     // normal: the first tick is at or after now as well, at the keystream's own interval.

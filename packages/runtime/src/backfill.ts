@@ -3,6 +3,7 @@ import { yieldToLoop } from '@otc/core';
 import { configFor, createMarketEngine, type RegisteredAsset } from '@otc/engine';
 import type { Environment, MasterKeyring } from '@otc/core';
 import { DEFAULT_MAX_CATCH_UP_MS, HostedMarket } from './hosted.js';
+import { personalityFingerprint } from './personality.js';
 import {
   HistoryRecorder,
   HISTORY_BASE_TIMEFRAME,
@@ -193,6 +194,8 @@ export async function backfillMarket(options: BackfillOptions): Promise<Backfill
 
   const clock = new SteppableClock(options.genesisInstant);
   const market = new HostedMarket({
+    // The checkpoint this backfill writes must say what wrote it (PH-26.3).
+    personality: personalityFingerprint(options.asset),
     engine: createMarketEngine({
       config: configFor(options.asset),
       keyring: options.keyring,

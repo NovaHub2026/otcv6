@@ -103,7 +103,7 @@ describe('a bounded battery run says what it could not see', () => {
   it('calls a sample too thin to test inconclusive, not clean', async () => {
     const venue = await labVenue();
     const body = (await new LabController(venue, new SignSelector(), new LabSession()).quality(
-      'eurusd',
+      ASSET_CATALOGUE[0]!.definition.id,
       '40000',
     )) as QualityBody;
     expect(body.predictability.hypothesesTested).toBeLessThan(100);
@@ -129,7 +129,7 @@ describe('a bounded battery run says what it could not see', () => {
   it('holds the floor at a sample that tests some hypotheses but not enough (a8)', async () => {
     const venue = await labVenue();
     const body = (await new LabController(venue, new SignSelector(), new LabSession()).quality(
-      'eurusd',
+      ASSET_CATALOGUE[0]!.definition.id,
       '400000',
     )) as QualityBody;
     const tested = body.predictability.hypothesesTested;
@@ -152,7 +152,10 @@ describe('a bounded battery run says what it could not see', () => {
     const controller = new LabController(venue, new SignSelector(), new LabSession());
     const measured: [number, number][] = [];
     for (const ticks of [40_000, 400_000, 1_000_000]) {
-      const body = (await controller.quality('eurusd', String(ticks))) as QualityBody;
+      const body = (await controller.quality(
+        ASSET_CATALOGUE[0]!.definition.id,
+        String(ticks),
+      )) as QualityBody;
       measured.push([ticks, body.predictability.hypothesesTested]);
     }
     console.log(`hypotheses by sample: ${JSON.stringify(measured)}`);
@@ -166,11 +169,15 @@ describe('a bounded battery run says what it could not see', () => {
   it('refuses a sample size outside the stated bounds', async () => {
     const venue = await labVenue();
     const controller = new LabController(venue, new SignSelector(), new LabSession());
-    await expect(controller.quality('eurusd', '10')).rejects.toBeInstanceOf(BadRequestException);
-    await expect(controller.quality('eurusd', '9000000')).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
-    await expect(controller.quality('eurusd', 'lots')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      controller.quality(ASSET_CATALOGUE[0]!.definition.id, '10'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      controller.quality(ASSET_CATALOGUE[0]!.definition.id, '9000000'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      controller.quality(ASSET_CATALOGUE[0]!.definition.id, 'lots'),
+    ).rejects.toBeInstanceOf(BadRequestException);
     await venue.stop();
   });
 });

@@ -22,7 +22,7 @@ import {
   type Tick,
 } from '@otc/core';
 import { TickFeed } from '@otc/distribution';
-import { ASSET_ARCHETYPES, ASSET_CATALOGUE, assetById, MAX_ASSET_ID_LENGTH } from '@otc/engine';
+import { ASSET_ARCHETYPES, ASSET_CATALOGUE, MAX_ASSET_ID_LENGTH } from '@otc/engine';
 import { FileAssetRegistry, InMemoryCandleHistory, MemoryStateStore } from '@otc/runtime';
 import {
   AdminWriteGuard,
@@ -44,6 +44,22 @@ import {
 } from './market.controller.js';
 import { PublicationService } from './publication.service.js';
 import { VenueService } from './venue.service.js';
+
+/** The slowest tape in the catalogue, derived rather than named (PH-26.3): a cheap backfill. */
+const SLOW_ASSET = [...ASSET_CATALOGUE].sort(
+  (a, b) => b.evidence.meanIntervalMs - a.evidence.meanIntervalMs,
+)[0]!;
+
+/**
+ * Which compiled assets this file talks about, derived rather than named
+ * (PH-26.3): the first three in the catalogue, the fourth, and the slowest
+ * tape — the one a cheap backfill wants.
+ */
+const FIRST = ASSET_CATALOGUE[0]!.definition.id;
+const SECOND = ASSET_CATALOGUE[1]!.definition.id;
+const THIRD = ASSET_CATALOGUE[2]!.definition.id;
+const FOURTH = ASSET_CATALOGUE[3]!.definition.id;
+const SLOW = SLOW_ASSET.definition.id;
 
 const ORIGIN = 1_776_000_000_000;
 
@@ -77,7 +93,7 @@ function ticks(count: number, everyMs = 6_000): Tick[] {
   }));
 }
 
-async function populated(assetId = 'eurusd'): Promise<HistoryService> {
+async function populated(assetId = FIRST): Promise<HistoryService> {
   const service = new HistoryService(new InMemoryCandleHistory(), ASSET_CATALOGUE);
   service.observe(assetId, ticks(1_800));
   await service.flush();
@@ -86,7 +102,7 @@ async function populated(assetId = 'eurusd'): Promise<HistoryService> {
 
 describe('health says whether the venue is publishing, not merely running', () => {
   it('is ok when every market is advancing', () => {
-    expect(new MarketController(venueStub(['eurusd'])).health()).toEqual({
+    expect(new MarketController(venueStub([FIRST])).health()).toEqual({
       status: 'ok',
       assets: 1,
       stalled: [],
@@ -99,8 +115,8 @@ describe('health says whether the venue is publishing, not merely running', () =
     // later advance — `#lastAdvancedAt` only moves after the check — so it stops
     // for good. `Venue.advance()` drops the failure list and this service called
     // only that, so the venue reported `ok` while every chart froze.
-    const stalled = [{ assetId: 'btcusd', reason: 'Market is 20s behind the clock' }];
-    expect(new MarketController(venueStub(['eurusd', 'btcusd'], stalled)).health()).toEqual({
+    const stalled = [{ assetId: SECOND, reason: 'Market is 20s behind the clock' }];
+    expect(new MarketController(venueStub([FIRST, SECOND], stalled)).health()).toEqual({
       status: 'degraded',
       assets: 2,
       stalled,
@@ -113,20 +129,21 @@ describe('health says whether the venue is publishing, not merely running', () =
     // took the first `ok` as its own child. A foreign engine already on that
     // port answers at once, while the child is still provisioning for minutes;
     // the suite then ran its assertions against somebody else's market.
-    const controller = new MarketController(venueStub(['eurusd']), null, null, null, 'nonce-1');
+    const controller = new MarketController(venueStub([FIRST]), null, null, null, 'nonce-1');
     expect((controller.health() as { bootNonce: string | null }).bootNonce).toBe('nonce-1');
   });
 });
 
 describe('the catalogue an operator picks from', () => {
   it('reports every asset with the evidence its registration produced', () => {
-    const controller = new MarketController(venueStub(['eurusd', 'spx']));
+    const controller = new MarketController(venueStub([FIRST, SLOW]));
     const rows = controller.catalogue() as {
       id: string;
       live: boolean;
       dispersion: { quarterlyLogSigma: number; quarterlyPercent: number };
       meanIntervalMs: number;
       tieRate: number;
+      seat: { archetype: string; character: string; priceSource: string } | null;
     }[];
     expect(rows).toHaveLength(ASSET_CATALOGUE.length);
     for (const row of rows) {
@@ -134,9 +151,20 @@ describe('the catalogue an operator picks from', () => {
       expect(row.dispersion.quarterlyPercent).toBeGreaterThan(0);
       expect(row.meanIntervalMs).toBeGreaterThan(0);
       expect(row.tieRate).toBeGreaterThan(0);
+      // PH-26.4: every compiled asset says which seat it was drawn from, in
+      // prose a broker can show — and nothing a trader could trade on.
+      expect(row.seat, `${row.id} has no seat`).not.toBeNull();
+      expect(ASSET_ARCHETYPES.map((a) => a.id)).toContain(row.seat!.archetype);
+      expect(row.seat!.character.length).toBeGreaterThan(40);
+      expect(row.seat!.priceSource.length).toBeGreaterThan(10);
+      // Field shapes, not words: a character may say "volatility"; a JSON key
+      // named after a trait may not exist (INV-010).
+      expect(JSON.stringify(row.seat)).not.toMatch(
+        /"(tempoMs|volatility|clustering|burstiness|cascadeDepth|logQuantum)"|cursor|registration-/,
+      );
     }
     // Registered and hosted are different questions, and an operator needs both.
-    expect(rows.filter((row) => row.live).map((row) => row.id)).toEqual(['eurusd', 'spx']);
+    expect(rows.filter((row) => row.live).map((row) => row.id)).toEqual([FIRST, SLOW]);
   });
 
   it('carries nothing economic', () => {
@@ -183,8 +211,8 @@ describe('reading stored history over HTTP', () => {
   const window = { from: String(ORIGIN - 86_400_000), to: String(ORIGIN + 86_400_000) };
 
   it('returns candles at a timeframe folded from what was stored', async () => {
-    const controller = new MarketController(venueStub(['eurusd']), await populated());
-    const body = (await controller.history_('eurusd', '15m', window.from, window.to)) as {
+    const controller = new MarketController(venueStub([FIRST]), await populated());
+    const body = (await controller.history_(FIRST, '15m', window.from, window.to)) as {
       timeframe: string;
       candles: { timeframe: string }[];
     };
@@ -198,8 +226,8 @@ describe('reading stored history over HTTP', () => {
     // screen that no tick produced. INV-004 says the displayed timeframe never
     // changes the market; it must not change what the market appears to have
     // been either.
-    const controller = new MarketController(venueStub(['eurusd']), await populated());
-    await expect(controller.history_('eurusd', '1s', window.from, window.to)).rejects.toThrow(
+    const controller = new MarketController(venueStub([FIRST]), await populated());
+    await expect(controller.history_(FIRST, '1s', window.from, window.to)).rejects.toThrow(
       BadRequestException,
     );
   });
@@ -214,8 +242,8 @@ describe('reading stored history over HTTP', () => {
     ['a window that ends before it starts', '1h', window.to, window.from],
     ['an empty window', '1h', window.from, window.from],
   ])('refuses %s', async (_label, timeframe, from, to) => {
-    const controller = new MarketController(venueStub(['eurusd']), await populated());
-    await expect(controller.history_('eurusd', timeframe, from, to)).rejects.toThrow(
+    const controller = new MarketController(venueStub([FIRST]), await populated());
+    await expect(controller.history_(FIRST, timeframe, from, to)).rejects.toThrow(
       BadRequestException,
     );
   });
@@ -224,8 +252,8 @@ describe('reading stored history over HTTP', () => {
     // Measured: a 90-day minute request is 20.5 MB of JSON and 1,496 ms of
     // blocked event loop, and sixty concurrent ones took the process from
     // 100 MB to 1.86 GB. No cap, no pagination, no auth.
-    const controller = new MarketController(venueStub(['eurusd']), await populated());
-    await expect(controller.history_('eurusd', '1m', '0', String(ORIGIN))).rejects.toThrow(
+    const controller = new MarketController(venueStub([FIRST]), await populated());
+    await expect(controller.history_(FIRST, '1m', '0', String(ORIGIN))).rejects.toThrow(
       /past the 20,000 a single request may return/,
     );
   });
@@ -241,8 +269,8 @@ describe('reading stored history over HTTP', () => {
     // Null is a real deployment: the venue published and settled for three
     // phases before a history tier existed. A 404 that names the reason beats an
     // empty array that reads as "this asset did nothing".
-    const controller = new MarketController(venueStub(['eurusd']));
-    await expect(controller.history_('eurusd', '1h', window.from, window.to)).rejects.toThrow(
+    const controller = new MarketController(venueStub([FIRST]));
+    await expect(controller.history_(FIRST, '1h', window.from, window.to)).rejects.toThrow(
       /keeps no candle history/,
     );
   });
@@ -254,14 +282,14 @@ describe('recording history as the venue runs', () => {
     // Half a minute of ticks: nothing has closed, so nothing may be written. A
     // stored open bar has a high and a low that are not yet true, and no reader
     // can tell the difference afterwards.
-    service.observe('eurusd', ticks(5, 6_000));
+    service.observe(FIRST, ticks(5, 6_000));
     await service.flush();
-    const empty = await service.read('eurusd', '1m', epochMillis(0), epochMillis(ORIGIN + 1e9));
+    const empty = await service.read(FIRST, '1m', epochMillis(0), epochMillis(ORIGIN + 1e9));
     expect(empty).toEqual([]);
 
-    service.observe('eurusd', ticks(1_800).slice(5));
+    service.observe(FIRST, ticks(1_800).slice(5));
     await service.flush();
-    const bars = await service.read('eurusd', '1m', epochMillis(0), epochMillis(ORIGIN + 1e9));
+    const bars = await service.read(FIRST, '1m', epochMillis(0), epochMillis(ORIGIN + 1e9));
     expect(bars.length).toBeGreaterThan(100);
   });
 
@@ -274,14 +302,14 @@ describe('recording history as the venue runs', () => {
     const stream = ticks(1_800);
     const batched = new HistoryService(new InMemoryCandleHistory(), ASSET_CATALOGUE);
     const wholesale = new HistoryService(new InMemoryCandleHistory(), ASSET_CATALOGUE);
-    for (let i = 0; i < stream.length; i += 7) batched.observe('eurusd', stream.slice(i, i + 7));
-    wholesale.observe('eurusd', stream);
+    for (let i = 0; i < stream.length; i += 7) batched.observe(FIRST, stream.slice(i, i + 7));
+    wholesale.observe(FIRST, stream);
     await batched.flush();
     await wholesale.flush();
 
     const window = [epochMillis(0), epochMillis(ORIGIN + 1e9)] as const;
-    const fromBatches = await batched.read('eurusd', '1m', ...window);
-    expect(fromBatches).toEqual(await wholesale.read('eurusd', '1m', ...window));
+    const fromBatches = await batched.read(FIRST, '1m', ...window);
+    expect(fromBatches).toEqual(await wholesale.read(FIRST, '1m', ...window));
     expect(fromBatches.length).toBeGreaterThan(170);
   });
 
@@ -294,28 +322,28 @@ describe('recording history as the venue runs', () => {
     const stream = ticks(1_800);
     for (let i = 0; i < stream.length; i += 7) {
       const batch = stream.slice(i, i + 7);
-      service.observe('eurusd', batch);
-      service.observe('spx', batch);
+      service.observe(FIRST, batch);
+      service.observe(SLOW, batch);
     }
     await service.flush();
     const window = [epochMillis(0), epochMillis(ORIGIN + 1e9)] as const;
-    const eurusd = await service.read('eurusd', '1m', ...window);
-    const spx = await service.read('spx', '1m', ...window);
+    const eurusd = await service.read(FIRST, '1m', ...window);
+    const spx = await service.read(SLOW, '1m', ...window);
     expect(eurusd.length).toBeGreaterThan(170);
     expect(spx).toEqual(eurusd);
   });
 
   it('keeps assets apart', async () => {
     const service = new HistoryService(new InMemoryCandleHistory(), ASSET_CATALOGUE);
-    service.observe('eurusd', ticks(1_800));
+    service.observe(FIRST, ticks(1_800));
     await service.flush();
-    expect(await service.read('spx', '1m', epochMillis(0), epochMillis(ORIGIN + 1e9))).toEqual([]);
+    expect(await service.read(SLOW, '1m', epochMillis(0), epochMillis(ORIGIN + 1e9))).toEqual([]);
   });
 });
 
 describe('provisioning a market that has no past', () => {
   const keyring = MasterKeyring.forTesting('admin-surface');
-  const asset = assetById('spx');
+  const asset = SLOW_ASSET;
 
   it('does nothing when no days are asked for', async () => {
     const store = new MemoryStateStore();
@@ -329,7 +357,7 @@ describe('provisioning a market that has no past', () => {
         clock: new FixedClock(epochMillis(ORIGIN)),
       }),
     ).toEqual([]);
-    expect(await store.load('spx')).toBeNull();
+    expect(await store.load(SLOW)).toBeNull();
   });
 
   it('gives an asset with no record a past, and leaves one that has a record alone', async () => {
@@ -342,9 +370,9 @@ describe('provisioning a market that has no past', () => {
       days: 0.25,
       clock: new FixedClock(epochMillis(ORIGIN)),
     };
-    expect(await service.provision(options)).toEqual(['spx']);
-    expect(await store.load('spx')).not.toBeNull();
-    const bars = await service.read('spx', '1h', epochMillis(0), epochMillis(ORIGIN + 1));
+    expect(await service.provision(options)).toEqual([SLOW]);
+    expect(await store.load(SLOW)).not.toBeNull();
+    const bars = await service.read(SLOW, '1h', epochMillis(0), epochMillis(ORIGIN + 1));
     expect(bars.length).toBeGreaterThanOrEqual(5);
 
     // A restart is the ordinary case and it is not an error for a market to
@@ -371,18 +399,18 @@ describe('what an operator may edit, and what the surface refuses', () => {
       add: () => Promise.resolve(),
     };
     return {
-      controller: new MarketController(venueStub(['eurusd']), null, null, registry),
+      controller: new MarketController(venueStub([FIRST]), null, null, registry),
       written,
     };
   }
 
   it('renames, and stores only the name', async () => {
     const { controller, written } = editable();
-    expect(await controller.editAsset('eurusd', { displayName: 'Euro / Dollar' })).toEqual({
-      id: 'eurusd',
+    expect(await controller.editAsset(FIRST, { displayName: 'Euro / Dollar' })).toEqual({
+      id: FIRST,
       displayName: 'Euro / Dollar',
     });
-    expect(written).toEqual([{ id: 'eurusd', patch: { displayName: 'Euro / Dollar' } }]);
+    expect(written).toEqual([{ id: FIRST, patch: { displayName: 'Euro / Dollar' } }]);
   });
 
   it('refuses every field that decided what already happened, by name', async () => {
@@ -395,10 +423,9 @@ describe('what an operator may edit, and what the surface refuses', () => {
       ['family', 'forex'],
     ] as const) {
       const { controller, written } = editable();
-      await expect(
-        controller.editAsset('eurusd', { [field]: value }),
-        field,
-      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(controller.editAsset(FIRST, { [field]: value }), field).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
       // Nothing was written. A refusal that half-applied would be worse than a
       // silent success, because the record and the catalogue would disagree.
       expect(written, field).toEqual([]);
@@ -410,14 +437,14 @@ describe('what an operator may edit, and what the surface refuses', () => {
     // Retiring has consequences for a running market — a final checkpoint, a
     // market removed from the venue — and a PATCH that only wrote the overlay
     // would leave the market publishing until the next restart.
-    await expect(controller.editAsset('eurusd', { retiredAt: 1 })).rejects.toThrow(
+    await expect(controller.editAsset(FIRST, { retiredAt: 1 })).rejects.toThrow(
       /POST \/assets\/:id\/retire/,
     );
   });
 
   it('refuses an edit with nothing in it, saying what is editable', async () => {
     const { controller } = editable();
-    await expect(controller.editAsset('eurusd', {})).rejects.toThrow(/displayName/);
+    await expect(controller.editAsset(FIRST, {})).rejects.toThrow(/displayName/);
   });
 
   it('refuses an unknown asset before it refuses the body', async () => {
@@ -534,14 +561,14 @@ describe('twenty concurrent renames are all stored, in order, with no 500 (a6-02
     const registry = new FileAssetRegistry(directory, new FixedClock(epochMillis(ORIGIN)));
     const inMemory = new Map<string, string>();
     const venue = {
-      ...venueStub(['eurusd', 'btcusd', 'xauusd', 'spx']),
+      ...venueStub([FIRST, SECOND, FOURTH, SLOW]),
       rename: (id: string, displayName: string) => {
         inMemory.set(id, displayName);
       },
     } as unknown as VenueService;
     const controller = new MarketController(venue, null, null, registry);
 
-    const ids = ['eurusd', 'btcusd', 'xauusd', 'spx'];
+    const ids = [FIRST, SECOND, FOURTH, SLOW];
     const results = await Promise.allSettled(
       Array.from({ length: 20 }, (_, i) =>
         controller.editAsset(ids[i % ids.length]!, { displayName: `name-${i}` }),
@@ -562,8 +589,8 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
   /** A venue whose feed is real, so the controller meets the feed's own errors. */
   function streaming(): { controller: MarketController; feed: TickFeed } {
     const feed = new TickFeed({ retainTicks: 5 });
-    feed.publish('eurusd', ticks(10));
-    const venue = { ...venueStub(['eurusd']), feed } as unknown as VenueService;
+    feed.publish(FIRST, ticks(10));
+    const venue = { ...venueStub([FIRST]), feed } as unknown as VenueService;
     return { controller: new MarketController(venue), feed };
   }
   const untouched = (): Response =>
@@ -582,21 +609,21 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     // which; a 500 here was an internal error for a request the feed already
     // refuses in words, and a way to fill the log with stack traces.
     const { controller } = streaming();
-    expect(() => controller.stream('eurusd', untouched(), request(), '99999')).toThrow(
+    expect(() => controller.stream(FIRST, untouched(), request(), '99999')).toThrow(
       BadRequestException,
     );
-    expect(() => controller.stream('eurusd', untouched(), request(), '99999')).toThrow(
+    expect(() => controller.stream(FIRST, untouched(), request(), '99999')).toThrow(
       /never been published/,
     );
     // And the same request written the way a browser resumes it.
     expect(() =>
-      controller.stream('eurusd', untouched(), request({ 'last-event-id': '99999' })),
+      controller.stream(FIRST, untouched(), request({ 'last-event-id': '99999' })),
     ).toThrow(BadRequestException);
   });
 
   it('still answers an evicted sequence with a 400 (CA6-31)', () => {
     const { controller } = streaming();
-    expect(() => controller.stream('eurusd', untouched(), request(), '1')).toThrow(
+    expect(() => controller.stream(FIRST, untouched(), request(), '1')).toThrow(
       BadRequestException,
     );
   });
@@ -675,21 +702,21 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     // a gap a client is told about is not one it mistakes for the market.
     const { controller, feed } = streaming();
     const evicted = recording();
-    controller.stream('eurusd', evicted.res, request(), '1', 'live');
+    controller.stream(FIRST, evicted.res, request(), '1', 'live');
     expect(evicted.status()).toBe(200);
     expect(evicted.body()).toMatch(/^event: gap\ndata: /);
     expect(JSON.parse(/^event: gap\ndata: (.*)\n\n/.exec(evicted.body())![1]!)).toMatchObject({
       requested: 1,
     });
     // And it is a live subscription, not a consolation prize.
-    feed.publish('eurusd', [
+    feed.publish(FIRST, [
       { sequence: 11, instant: epochMillis(ORIGIN + 66_000), price: logPrice(1_003) },
     ]);
     expect(evicted.body()).toMatch(/\nid: 11\ndata: /);
 
     // A sequence that was never published is the same kind of unanswerable.
     const future = recording();
-    controller.stream('eurusd', future.res, request(), '99999', 'live');
+    controller.stream(FIRST, future.res, request(), '99999', 'live');
     expect(future.status()).toBe(200);
     expect(future.body()).toMatch(/event: gap/);
   });
@@ -700,20 +727,20 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     // the moment one number stands for eight, a reconnect either replays or
     // skips — and a gap served in silence is indistinguishable from the market.
     const feed = new TickFeed({ retainTicks: 50 });
-    feed.publish('eurusd', ticks(6));
-    feed.publish('gbpjpy', ticks(4));
-    const venue = { ...venueStub(['eurusd', 'gbpjpy']), feed } as unknown as VenueService;
+    feed.publish(FIRST, ticks(6));
+    feed.publish(THIRD, ticks(4));
+    const venue = { ...venueStub([FIRST, THIRD]), feed } as unknown as VenueService;
     const controller = new MarketController(venue);
 
     const out = recording();
-    controller.multiplexed(out.res, request(), 'eurusd,gbpjpy');
+    controller.multiplexed(out.res, request(), `${FIRST},${THIRD}`);
     expect(out.status()).toBe(200);
 
     // Every event names its asset, so a client demultiplexes what it parses.
-    feed.publish('eurusd', [
+    feed.publish(FIRST, [
       { sequence: 7, instant: epochMillis(ORIGIN + 42_000), price: logPrice(1_001) },
     ]);
-    feed.publish('gbpjpy', [
+    feed.publish(THIRD, [
       { sequence: 5, instant: epochMillis(ORIGIN + 43_000), price: logPrice(1_002) },
     ]);
     const frames = out
@@ -724,29 +751,29 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
       const data = /data: (.*)$/m.exec(frame)?.[1] ?? '{}';
       return JSON.parse(data) as { asset?: string; sequence?: number };
     });
-    expect(named.some((entry) => entry.asset === 'eurusd' && entry.sequence === 7)).toBe(true);
-    expect(named.some((entry) => entry.asset === 'gbpjpy' && entry.sequence === 5)).toBe(true);
+    expect(named.some((entry) => entry.asset === FIRST && entry.sequence === 7)).toBe(true);
+    expect(named.some((entry) => entry.asset === THIRD && entry.sequence === 5)).toBe(true);
 
     // And the id carries the whole stream's position, per asset.
     const lastId = [...out.body().matchAll(/^id: (.*)$/gm)].pop()?.[1] ?? '';
-    expect(lastId).toContain('eurusd:7');
-    expect(lastId).toContain('gbpjpy:5');
+    expect(lastId).toContain(`${FIRST}:7`);
+    expect(lastId).toContain(`${THIRD}:5`);
   });
 
   it('resumes each asset at its own sequence, exactly (PH-22.2)', () => {
     const feed = new TickFeed({ retainTicks: 50 });
-    feed.publish('eurusd', ticks(6));
-    feed.publish('gbpjpy', ticks(4));
-    const venue = { ...venueStub(['eurusd', 'gbpjpy']), feed } as unknown as VenueService;
+    feed.publish(FIRST, ticks(6));
+    feed.publish(THIRD, ticks(4));
+    const venue = { ...venueStub([FIRST, THIRD]), feed } as unknown as VenueService;
     const controller = new MarketController(venue);
 
     const out = recording();
-    controller.multiplexed(out.res, request(), 'eurusd,gbpjpy', 'eurusd:5,gbpjpy:3');
+    controller.multiplexed(out.res, request(), `${FIRST},${THIRD}`, `${FIRST}:5,${THIRD}:3`);
     const delivered = [...out.body().matchAll(/data: (.*)$/gm)]
       .map((match) => JSON.parse(match[1]!) as { asset: string; sequence: number })
       .filter((entry) => entry.sequence !== undefined);
-    expect(delivered.filter((e) => e.asset === 'eurusd').map((e) => e.sequence)).toEqual([5, 6]);
-    expect(delivered.filter((e) => e.asset === 'gbpjpy').map((e) => e.sequence)).toEqual([3, 4]);
+    expect(delivered.filter((e) => e.asset === FIRST).map((e) => e.sequence)).toEqual([5, 6]);
+    expect(delivered.filter((e) => e.asset === THIRD).map((e) => e.sequence)).toEqual([3, 4]);
   });
 
   it('resumes a browser reconnect after the last event it was given, not on it (a3)', () => {
@@ -757,9 +784,9 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     // the mirror image of CA6-32's silent skip. The single-asset endpoint has
     // always distinguished them.
     const feed = new TickFeed({ retainTicks: 50 });
-    feed.publish('eurusd', ticks(6));
-    feed.publish('gbpjpy', ticks(4));
-    const venue = { ...venueStub(['eurusd', 'gbpjpy']), feed } as unknown as VenueService;
+    feed.publish(FIRST, ticks(6));
+    feed.publish(THIRD, ticks(4));
+    const venue = { ...venueStub([FIRST, THIRD]), feed } as unknown as VenueService;
     const controller = new MarketController(venue);
 
     const sequences = (body: string, asset: string): number[] =>
@@ -772,28 +799,28 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     const resumed = recording();
     controller.multiplexed(
       resumed.res,
-      request({ 'last-event-id': 'eurusd:5,gbpjpy:3' }),
-      'eurusd,gbpjpy',
+      request({ 'last-event-id': `${FIRST}:5,${THIRD}:3` }),
+      `${FIRST},${THIRD}`,
     );
-    expect(sequences(resumed.body(), 'eurusd'), 'eurusd:5 was delivered twice').toEqual([6]);
-    expect(sequences(resumed.body(), 'gbpjpy'), 'gbpjpy:3 was delivered twice').toEqual([4]);
+    expect(sequences(resumed.body(), FIRST), `${FIRST}:5 was delivered twice`).toEqual([6]);
+    expect(sequences(resumed.body(), THIRD), `${THIRD}:3 was delivered twice`).toEqual([4]);
 
     // And `?from=` keeps its inclusive meaning, which the harnesses rely on.
     const asked = recording();
-    controller.multiplexed(asked.res, request(), 'eurusd,gbpjpy', 'eurusd:5,gbpjpy:3');
-    expect(sequences(asked.body(), 'eurusd')).toEqual([5, 6]);
-    expect(sequences(asked.body(), 'gbpjpy')).toEqual([3, 4]);
+    controller.multiplexed(asked.res, request(), `${FIRST},${THIRD}`, `${FIRST}:5,${THIRD}:3`);
+    expect(sequences(asked.body(), FIRST)).toEqual([5, 6]);
+    expect(sequences(asked.body(), THIRD)).toEqual([3, 4]);
 
     // An explicit `from` wins over a stale header, and is still inclusive.
     const both = recording();
     controller.multiplexed(
       both.res,
-      request({ 'last-event-id': 'eurusd:1,gbpjpy:1' }),
-      'eurusd,gbpjpy',
-      'eurusd:6,gbpjpy:4',
+      request({ 'last-event-id': `${FIRST}:1,${THIRD}:1` }),
+      `${FIRST},${THIRD}`,
+      `${FIRST}:6,${THIRD}:4`,
     );
-    expect(sequences(both.body(), 'eurusd')).toEqual([6]);
-    expect(sequences(both.body(), 'gbpjpy')).toEqual([4]);
+    expect(sequences(both.body(), FIRST)).toEqual([6]);
+    expect(sequences(both.body(), THIRD)).toEqual([4]);
   });
 
   it('gaps one asset without tearing down the other seven (PH-22.2)', () => {
@@ -801,33 +828,39 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     // of them would make an eviction on a quiet market look like an outage on a
     // busy one.
     const feed = new TickFeed({ retainTicks: 3 });
-    feed.publish('eurusd', ticks(10));
-    feed.publish('gbpjpy', ticks(4));
-    const venue = { ...venueStub(['eurusd', 'gbpjpy']), feed } as unknown as VenueService;
+    feed.publish(FIRST, ticks(10));
+    feed.publish(THIRD, ticks(4));
+    const venue = { ...venueStub([FIRST, THIRD]), feed } as unknown as VenueService;
     const controller = new MarketController(venue);
 
     const out = recording();
-    controller.multiplexed(out.res, request(), 'eurusd,gbpjpy', 'eurusd:1,gbpjpy:2', 'live');
+    controller.multiplexed(
+      out.res,
+      request(),
+      `${FIRST},${THIRD}`,
+      `${FIRST}:1,${THIRD}:2`,
+      'live',
+    );
     expect(out.status()).toBe(200);
     const gap = /event: gap\ndata: (.*)/.exec(out.body())?.[1];
     expect(gap, 'no gap event').toBeDefined();
-    expect(JSON.parse(gap!)).toMatchObject({ asset: 'eurusd', requested: 1 });
-    // gbpjpy was servable and was served.
-    expect(out.body()).toMatch(/"asset":"gbpjpy","sequence":2/);
+    expect(JSON.parse(gap!)).toMatchObject({ asset: FIRST, requested: 1 });
+    // The third asset was servable and was served.
+    expect(out.body()).toMatch(new RegExp(`"asset":"${THIRD}","sequence":2`));
   });
 
   it('refuses a from that names an asset the stream does not carry (PH-22.2)', () => {
     const { feed } = streaming();
-    const venue = { ...venueStub(['eurusd', 'gbpjpy']), feed } as unknown as VenueService;
+    const venue = { ...venueStub([FIRST, THIRD]), feed } as unknown as VenueService;
     const controller = new MarketController(venue);
-    expect(() => controller.multiplexed(untouched(), request(), 'eurusd', 'gbpjpy:3')).toThrow(
+    expect(() => controller.multiplexed(untouched(), request(), FIRST, `${THIRD}:3`)).toThrow(
       /does not carry/,
     );
-    expect(() => controller.multiplexed(untouched(), request(), 'eurusd', 'eurusd:x')).toThrow(
+    expect(() => controller.multiplexed(untouched(), request(), FIRST, `${FIRST}:x`)).toThrow(
       /asset:sequence/,
     );
     expect(() => controller.multiplexed(untouched(), request(), '')).toThrow(/at least one asset/);
-    expect(() => controller.multiplexed(untouched(), request(), 'eurusd,eurusd')).toThrow(
+    expect(() => controller.multiplexed(untouched(), request(), `${FIRST},${FIRST}`)).toThrow(
       /more than once/,
     );
     // **Cycle Audit 8 (a3).** The cap was the only bound between one GET and a
@@ -858,20 +891,20 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     // `restart.stat.test.ts` watches the promise on the single-asset endpoint
     // only, which is why this went unseen.
     const feed = new TickFeed({ retainTicks: 50 });
-    feed.publish('eurusd', ticks(6));
-    feed.publish('gbpjpy', ticks(4));
-    const venue = { ...venueStub(['eurusd', 'gbpjpy']), feed } as unknown as VenueService;
+    feed.publish(FIRST, ticks(6));
+    feed.publish(THIRD, ticks(4));
+    const venue = { ...venueStub([FIRST, THIRD]), feed } as unknown as VenueService;
     const controller = new MarketController(venue);
 
     const many = recording();
-    controller.multiplexed(many.res, request(), 'eurusd,gbpjpy');
+    controller.multiplexed(many.res, request(), `${FIRST},${THIRD}`);
     const one = recording();
-    controller.stream('eurusd', one.res, request());
+    controller.stream(FIRST, one.res, request());
     expect(many.ended(), 'ended before the shutdown').toBe(false);
 
     await controller.beforeApplicationShutdown();
 
-    for (const asset of ['eurusd', 'gbpjpy']) {
+    for (const asset of [FIRST, THIRD]) {
       expect(many.body(), `${asset} was not told why`).toContain(
         `event: close\ndata: ${JSON.stringify({ asset, reason: 'server shutting down' })}`,
       );
@@ -894,13 +927,13 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
 
     // A client that drains: nothing owed.
     const fast = recording();
-    controller.stream('eurusd', fast.res, request(), '10');
+    controller.stream(FIRST, fast.res, request(), '10');
     expect(replayBudgetUsed(), 'a draining client owes nothing').toBe(startedAt);
 
     // A client that cannot read: its undrained bytes are charged, then released
     // when the connection closes.
     const slow = recording(true);
-    controller.stream('eurusd', slow.res, request(), '10');
+    controller.stream(FIRST, slow.res, request(), '10');
     expect(replayBudgetUsed(), 'a stalled client owes its buffer').toBeGreaterThan(startedAt);
 
     // And it stops owing when the socket catches up. A budget that is charged
@@ -916,28 +949,28 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     // Told, it can refetch. Silently jumped forward, it cannot tell the
     // difference from a quiet market (INV-002).
     const feed = new TickFeed({ retainTicks: 50 });
-    feed.publish('eurusd', ticks(20));
-    const venue = { ...venueStub(['eurusd']), feed } as unknown as VenueService;
+    feed.publish(FIRST, ticks(20));
+    const venue = { ...venueStub([FIRST]), feed } as unknown as VenueService;
     const controller = new MarketController(venue, null, null, null, null, 1);
 
     // Fill the budget with one client that cannot read.
     const stalled = recording(true);
-    controller.stream('eurusd', stalled.res, request(), '5', 'live');
+    controller.stream(FIRST, stalled.res, request(), '5', 'live');
     expect(replayBudgetUsed()).toBeGreaterThan(0);
 
     // The live edge still works: no resume, no budget needed.
     const live = recording();
-    controller.stream('eurusd', live.res, request());
+    controller.stream(FIRST, live.res, request());
     expect(live.status()).toBe(200);
     expect(live.body()).not.toMatch(/event: gap/);
 
     // A resume past the ceiling is refused without a gap policy...
-    expect(() => controller.stream('eurusd', untouched(), request(), '5')).toThrow(
+    expect(() => controller.stream(FIRST, untouched(), request(), '5')).toThrow(
       BadRequestException,
     );
     // ...and served at the live edge, with a gap, when asked to be told.
     const told = recording();
-    controller.stream('eurusd', told.res, request(), '5', 'live');
+    controller.stream(FIRST, told.res, request(), '5', 'live');
     expect(told.status()).toBe(200);
     expect(told.body()).toMatch(/event: gap/);
     expect(told.body()).not.toMatch(/"sequence":5/);
@@ -947,7 +980,7 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     // A mistyped policy that fell through to "refuse" would be a client
     // believing it had asked to be told, and finding out as a dead stream.
     const { controller } = streaming();
-    expect(() => controller.stream('eurusd', untouched(), request(), '1', 'lives')).toThrow(
+    expect(() => controller.stream(FIRST, untouched(), request(), '1', 'lives')).toThrow(
       /onGap must be 'live'/,
     );
   });
@@ -959,13 +992,13 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     // silent empty stream.
     const { controller } = streaming();
     for (const bad of ['1.9', '12abc', '1e3', '0x2', ' 3', '+3', '-1', '']) {
-      expect(() => controller.stream('eurusd', untouched(), request(), bad), bad).toThrow(
+      expect(() => controller.stream(FIRST, untouched(), request(), bad), bad).toThrow(
         /from must be a non-negative integer/,
       );
     }
     // And the honest forms still pass through.
     const served = recording();
-    controller.stream('eurusd', served.res, request(), '10');
+    controller.stream(FIRST, served.res, request(), '10');
     expect(served.status()).toBe(200);
   });
 
@@ -976,12 +1009,12 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     // `deliver` returned `!headersSent || ...`, so during replay — the single
     // largest write this endpoint ever makes — backpressure was ignored.
     const feed = new TickFeed({ retainTicks: 100_000 });
-    feed.publish('eurusd', ticks(40_000));
-    const venue = { ...venueStub(['eurusd']), feed } as unknown as VenueService;
+    feed.publish(FIRST, ticks(40_000));
+    const venue = { ...venueStub([FIRST]), feed } as unknown as VenueService;
     const controller = new MarketController(venue);
 
     const full = recording(true);
-    controller.stream('eurusd', full.res, request(), '1');
+    controller.stream(FIRST, full.res, request(), '1');
 
     expect(full.status()).toBe(200);
     // Far short of the 40,000 the window holds, and short of the byte bound.
@@ -994,7 +1027,7 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
   it('leaves a resume the feed can serve exactly alone, gap policy or not', () => {
     const { controller } = streaming();
     const served = recording();
-    controller.stream('eurusd', served.res, request(), '10', 'live');
+    controller.stream(FIRST, served.res, request(), '10', 'live');
     expect(served.status()).toBe(200);
     expect(served.body()).not.toMatch(/event: gap/);
     expect(served.body()).toMatch(/^id: 10\ndata: /);
@@ -1054,8 +1087,8 @@ describe('what the brief parser refuses by name (a6-07, a6-08)', () => {
     expect(() =>
       controller.createAsset({ ...brief, id: 'a'.repeat(MAX_ASSET_ID_LENGTH + 1) }),
     ).toThrow(new RegExp(`maximum is ${MAX_ASSET_ID_LENGTH}`));
-    expect(() => controller.createAsset({ ...brief, id: 'eurusd' })).toThrow(ConflictException);
-    expect(() => controller.createAsset({ ...brief, id: 'eurusd' })).toThrow(/already registered/);
+    expect(() => controller.createAsset({ ...brief, id: FIRST })).toThrow(ConflictException);
+    expect(() => controller.createAsset({ ...brief, id: FIRST })).toThrow(/already registered/);
   });
 
   it('trims and bounds the display name here too', () => {
@@ -1073,13 +1106,11 @@ describe('history instants are digits and nothing else (a6-12)', () => {
     // `Number.parseInt` discarded the tail before the check ran, so the first
     // was accepted as an instant, `1.9` as 1 and `0x10` as 0 — the defect
     // Cycle Audit 6 corrected on the stream's `from` and left here.
-    const controller = new MarketController(venueStub(['eurusd']), await populated());
-    await expect(controller.history_('eurusd', '1h', from, String(ORIGIN))).rejects.toThrow(
+    const controller = new MarketController(venueStub([FIRST]), await populated());
+    await expect(controller.history_(FIRST, '1h', from, String(ORIGIN))).rejects.toThrow(
       BadRequestException,
     );
-    await expect(controller.history_('eurusd', '1h', '0', from)).rejects.toThrow(
-      BadRequestException,
-    );
+    await expect(controller.history_(FIRST, '1h', '0', from)).rejects.toThrow(BadRequestException);
   });
 });
 
@@ -1096,7 +1127,7 @@ describe('a display name is a string of bounded length (a6-13)', () => {
       add: () => Promise.resolve(),
     };
     return {
-      controller: new MarketController(venueStub(['eurusd']), null, null, registry),
+      controller: new MarketController(venueStub([FIRST]), null, null, registry),
       written,
     };
   }
@@ -1106,13 +1137,13 @@ describe('a display name is a string of bounded length (a6-13)', () => {
     // "named.displayName.trim is not a function" and `null` with "Cannot read
     // properties of null".
     const { controller, written } = editable();
-    await expect(controller.editAsset('eurusd', { displayName: 123 })).rejects.toThrow(
+    await expect(controller.editAsset(FIRST, { displayName: 123 })).rejects.toThrow(
       /displayName must be a string, got number/,
     );
-    await expect(controller.editAsset('eurusd', { displayName: null })).rejects.toThrow(
+    await expect(controller.editAsset(FIRST, { displayName: null })).rejects.toThrow(
       /displayName must be a string, got null/,
     );
-    await expect(controller.editAsset('eurusd', { displayName: '   ' })).rejects.toThrow(
+    await expect(controller.editAsset(FIRST, { displayName: '   ' })).rejects.toThrow(
       /must not be empty/,
     );
     expect(written).toEqual([]);
@@ -1123,11 +1154,11 @@ describe('a display name is a string of bounded length (a6-13)', () => {
     // sidebar.
     const { controller, written } = editable();
     await expect(
-      controller.editAsset('eurusd', { displayName: 'n'.repeat(MAX_DISPLAY_NAME_LENGTH + 1) }),
+      controller.editAsset(FIRST, { displayName: 'n'.repeat(MAX_DISPLAY_NAME_LENGTH + 1) }),
     ).rejects.toThrow(BadRequestException);
-    await controller.editAsset('eurusd', { displayName: '  Euro / Dollar  ' });
+    await controller.editAsset(FIRST, { displayName: '  Euro / Dollar  ' });
     expect(written).toEqual([{ displayName: 'Euro / Dollar' }]);
-    await controller.editAsset('eurusd', { displayName: 'n'.repeat(MAX_DISPLAY_NAME_LENGTH) });
+    await controller.editAsset(FIRST, { displayName: 'n'.repeat(MAX_DISPLAY_NAME_LENGTH) });
     expect(written).toHaveLength(2);
   });
 });
@@ -1160,7 +1191,7 @@ describe('a stalled market is logged once per kind of failure (a6-05)', () => {
     // behind, which grows every tick: five assets wrote five ERROR lines a
     // second for the life of the process, and the line that mattered — the
     // first — was buried.
-    const asset = assetById('spx');
+    const asset = SLOW_ASSET;
     const clock: Clock & { current: EpochMillis } = {
       current: epochMillis(ORIGIN),
       now() {
@@ -1194,7 +1225,7 @@ describe('a stalled market is logged once per kind of failure (a6-05)', () => {
       expect(String(stalledLines[0]![0])).toContain('CatchUpTooLargeError');
       // The changing number lives in `/health`, where a monitor reads it.
       expect(venue.stalledMarkets).toEqual([
-        { assetId: 'spx', reason: expect.stringMatching(/22s behind the clock/) as string },
+        { assetId: SLOW, reason: expect.stringMatching(/22s behind the clock/) as string },
       ]);
     } finally {
       errors.mockRestore();
@@ -1212,15 +1243,15 @@ describe('a fresh HistoryService after a restart (a5-01)', () => {
     const store = new InMemoryCandleHistory();
     const stream = ticks(1_800);
     const first = new HistoryService(store, ASSET_CATALOGUE);
-    first.observe('eurusd', stream.slice(0, 1_003));
+    first.observe(FIRST, stream.slice(0, 1_003));
     await first.flush();
 
     const second = new HistoryService(store, ASSET_CATALOGUE);
-    second.observe('eurusd', stream.slice(1_003));
+    second.observe(FIRST, stream.slice(1_003));
     await second.flush();
 
     const window = [epochMillis(0), epochMillis(ORIGIN + 1e9)] as const;
-    const bars = await second.read('eurusd', '1m', ...window);
+    const bars = await second.read(FIRST, '1m', ...window);
     const minute = (index: number): EpochMillis => epochMillis(ORIGIN + index * 60_000);
     const opens = new Set(bars.map((bar) => bar.openInstant));
     expect(opens.has(minute(99)), 'the last whole minute before the restart').toBe(true);
@@ -1230,10 +1261,10 @@ describe('a fresh HistoryService after a restart (a5-01)', () => {
     // And the bars either side of the hole are exactly the bars an unbroken
     // process would have stored.
     const wholesale = new HistoryService(new InMemoryCandleHistory(), ASSET_CATALOGUE);
-    wholesale.observe('eurusd', stream);
+    wholesale.observe(FIRST, stream);
     await wholesale.flush();
     const reference = new Map(
-      (await wholesale.read('eurusd', '1m', ...window)).map((bar) => [bar.openInstant, bar]),
+      (await wholesale.read(FIRST, '1m', ...window)).map((bar) => [bar.openInstant, bar]),
     );
     for (const bar of bars)
       expect(bar, String(bar.openInstant)).toEqual(reference.get(bar.openInstant));

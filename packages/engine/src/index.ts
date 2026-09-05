@@ -1,4 +1,9 @@
-export { AUTHORING_ATTEMPTS, requestFromBrief, type AssetBrief } from './brief.js';
+export {
+  AUTHORING_ATTEMPTS,
+  AUTHORING_RETREAT,
+  requestFromBrief,
+  type AssetBrief,
+} from './brief.js';
 export { PoissonArrivalModel } from './arrival.js';
 export {
   createMarketEngine,
@@ -135,6 +140,13 @@ export {
   DISPERSION_WINDOW_MS,
   minimumDispersionSpanMs,
 } from './dispersion.js';
+export { ASSET_SEATS, seatArchetype, seatById, type AssetSeat } from './seats.js';
+export {
+  HEAVY_SUITE_SAMPLE,
+  sampleCatalogue,
+  type CatalogueSample,
+  type CatalogueSampleOptions,
+} from './catalogueSample.js';
 export {
   ASSET_CATALOGUE,
   assetById,
