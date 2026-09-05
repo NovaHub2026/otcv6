@@ -6,16 +6,16 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                              |
-| ------------------ | ------------------------------------------------------------------ |
-| Last clean session | 2026-09-05                                                         |
-| Branch             | `feature/ph-25-production-record-battery`, off `main` at `c4757c5` |
-| Remote             | `origin` → NovaHub2026/otcv6, public                               |
-| Active cycle       | Cycle 9, **2 of 3** phases approved — PH-26, PH-25                 |
-| Active phase       | none                                                               |
-| Active subphase    | none                                                               |
-| Cycle Audit        | **008 closed** — 60 confirmed, all 60 resolved, none tracked       |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                 |
+| Field              | Value                                                            |
+| ------------------ | ---------------------------------------------------------------- |
+| Last clean session | 2026-09-05                                                       |
+| Branch             | `feature/ph-27-review`, off `main` at `f2bab68`                  |
+| Remote             | `origin` → NovaHub2026/otcv6, public                             |
+| Active cycle       | Cycle 9, **2 of 3** phases approved — PH-26, PH-25               |
+| Active phase       | **PH-27 — review and improvement of the whole project** (ACTIVE) |
+| Active subphase    | PH-27.1 — the guards that cannot fail (ACTIVE)                   |
+| Cycle Audit        | **008 closed** — 60 confirmed, all 60 resolved, none tracked     |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)               |
 
 ---
 
@@ -58,7 +58,8 @@ the `TickSource` the battery consumes, and found three things on its first runs
 (its document §5). PH-25.2 (approved) ran the battery on it
 across a restart and a resume. PH-25.3 (approved) recorded the first
 verdict against the venue on `:7300` and added the standing job (`npm run
-assurance:served`). The phase gate passed (`GATE_EXIT=0`, 72.5 min); merge, CI, then PH-27 —
+assurance:served`). The phase gate passed (`GATE_EXIT=0`, 72.5 min) and PH-25 is merged
+(`7f03abe`). **PH-27 is active** —
 its five subphase documents are drafted and its first three are review work
 (guards re-planted, records re-checked, small improvements), the fourth the
 intervention footprint, the fifth `docs/reports/IMPROVEMENT-REPORT-001.md`. Then
