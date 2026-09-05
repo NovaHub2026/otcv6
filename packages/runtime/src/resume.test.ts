@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { durationMillis, epochMillis, MasterKeyring, SteppableClock, type Tick } from '@otc/core';
-import { ASSET_CATALOGUE, type RegisteredAsset } from '@otc/engine';
+import { ASSET_CATALOGUE, type PersonalityTraits, type RegisteredAsset } from '@otc/engine';
 import { FileStateStore, MemoryStateStore } from './fileStore.js';
 import { personalityFingerprint } from './personality.js';
 import { checkpointMarket, resumeMarket } from './resume.js';
@@ -396,6 +396,63 @@ describe('a record says which personality wrote it (PH-26.3)', () => {
     expect(resumed.outcome.kind === 'seam' && resumed.outcome.reason).toMatch(
       /written by another personality under this id/,
     );
+  });
+
+  // Every ingredient, not one (Cycle Audit 9, a6-03): the guard above moved one
+  // trait, so a fingerprint blind to the lattice quantum, the reference price,
+  // the family or eleven of the twelve traits passed it.
+  const INGREDIENTS: { name: string; alter: (a: RegisteredAsset) => RegisteredAsset }[] = [
+    { name: 'family', alter: (a) => ({ ...a, definition: { ...a.definition, family: 'crypto' } }) },
+    {
+      name: 'referencePrice',
+      alter: (a) => ({
+        ...a,
+        definition: { ...a.definition, referencePrice: a.definition.referencePrice * 2 },
+        instrument: { ...a.instrument, referencePrice: a.instrument.referencePrice * 2 },
+      }),
+    },
+    {
+      name: 'logQuantum',
+      alter: (a) => ({
+        ...a,
+        instrument: { ...a.instrument, logQuantum: a.instrument.logQuantum * 2 },
+      }),
+    },
+    ...Object.keys(asset.definition.traits).map((trait) => ({
+      name: `traits.${trait}`,
+      alter: (a: RegisteredAsset): RegisteredAsset => ({
+        ...a,
+        definition: {
+          ...a.definition,
+          traits: {
+            ...a.definition.traits,
+            [trait]: a.definition.traits[trait as keyof PersonalityTraits] * 1.5 + 1,
+          },
+        },
+      }),
+    })),
+  ];
+
+  it.each(INGREDIENTS)('seams when $name differs, and for nothing else', async ({ alter }) => {
+    const { record, store, clock } = await written();
+    const other = alter(asset);
+    expect(personalityFingerprint(other)).not.toBe(personalityFingerprint(asset));
+    await store.save({ ...record, personality: personalityFingerprint(other) });
+    const resumed = await resumeMarket(base(store, new SteppableClock(clock.now())));
+    expect(resumed.outcome.kind).toBe('seam');
+    expect(resumed.outcome.kind === 'seam' && resumed.outcome.reason).toMatch(
+      /written by another personality under this id/,
+    );
+  });
+
+  it('does not seam on a change that is not the personality', () => {
+    // The display name is presentation; the fingerprint must not carry it, or
+    // renaming a market would restart it.
+    const renamed: RegisteredAsset = {
+      ...asset,
+      definition: { ...asset.definition, displayName: 'Another name' },
+    };
+    expect(personalityFingerprint(renamed)).toBe(personalityFingerprint(asset));
   });
 
   it('seams a record that predates the field, because nothing can say what wrote it', async () => {

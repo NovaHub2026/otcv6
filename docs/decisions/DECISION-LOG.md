@@ -546,3 +546,35 @@ cycle's three approved phases). Findings are fixed under §31.
 in their own message alongside the work that closes the Lab. Nothing else about
 the loop changes: the audit is adversarial and independent (§28.1), and its
 findings are recorded whether or not they are convenient.
+
+## 2026-09-05 — Cycle 9's decisions, recorded (Cycle Audit 9, a7-07)
+
+Five decisions were made in Cycle 9 without a record here; each is recorded
+now with the date it was made.
+
+**a. PH-26 ran before PH-25, and the numbering says so (2026-09-04).** PH-25
+was recorded when Cycle Audit 8 closed and PH-26 was asked for afterwards;
+renumbering a recorded phase would make the roadmap tidier and the history
+false. The state guard sorts by the roadmap's chronology, not by number
+(`535a6d0`).
+
+**b. A told gap is followed by the retained window, and names `resumesAt`
+(2026-09-05, PH-25.1).** `onGap=live` joined a client at the live edge past
+ticks the venue retained. The `gap` frame is written first, carries the oldest
+retained sequence, and the window follows; the live edge only when the refusal
+was the process's replay budget. Both stream endpoints; guarded.
+
+**c. The heavy suites sample six, one per populated archetype (2026-09-05,
+Cycle Audit 9 a2-01).** Five over six archetypes dropped one per suite. A
+sample that cannot reach every stratum is refused by name; the cost is measured
+at the next gate rather than assumed.
+
+**d. The improvement report proposes Cycle 10 and decides nothing
+(2026-09-05, PH-27.5).** `docs/reports/IMPROVEMENT-REPORT-001.md` §4 ranks
+seven phase-sized items and proposes three; the choice is the next cycle's,
+made from that page.
+
+**e. The audit's worktree script lives in the repository (2026-09-05).**
+`tools/sim/scripts/cycle-audit-worktrees.sh` cuts one detached worktree per auditor
+at the audited commit with dependencies installed, so the next audit does not
+rebuild the method from a transcript.

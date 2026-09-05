@@ -198,7 +198,9 @@ function tickOf(data: string): Tick {
     throw new ServedRecordError(`unparseable tick frame: ${data}`, 0, data);
   }
   const row = parsed as Partial<Record<keyof Tick, unknown>>;
-  if (!isInteger(row.sequence) || !isInteger(row.price) || typeof row.instant !== 'number') {
+  // Three fields, each present and finite (Cycle Audit 9, a4-07: a frame
+  // without an instant read as a tick at `undefined`).
+  if (!isInteger(row.sequence) || !isInteger(row.price) || !Number.isFinite(row.instant)) {
     throw new ServedRecordError(`a tick frame without a tick in it: ${data}`, 0, data);
   }
   // Only the three fields a tick has, whatever else the server put beside them

@@ -79,6 +79,8 @@ export function startFor(newest: number, maxTicks: number): number {
 export interface AssetRun {
   readonly assetId: string;
   readonly record: Pick<ServedRecord, 'ticks' | 'gaps' | 'discontinuities' | 'bytes'> | null;
+  /** The sequences read and a digest of the ticks, so the row names its range (CA9 a4-02). */
+  readonly range: { readonly first: number; readonly last: number; readonly sha256: string } | null;
   readonly verdict: StandingVerdict | null;
   readonly failure: string | null;
   readonly seconds: number;
@@ -90,7 +92,7 @@ function pct(value: number): string {
 
 export function verdictRow(run: AssetRun): string {
   if (run.verdict === null || run.record === null) {
-    return `| ${run.assetId} | — | — | **failed** | ${run.failure ?? 'unknown'} | — | — | ${run.seconds.toFixed(0)}s |`;
+    return `| ${run.assetId} | — | — | **failed** | ${run.failure ?? 'unknown'} | — | — | ${run.seconds.toFixed(0)}s | — |`;
   }
   const v = run.verdict;
   const floors = v.horizons
@@ -98,7 +100,11 @@ export function verdictRow(run: AssetRun): string {
     .join(', ');
   const outcome = v.outcome === 'exploitable' ? `**${v.outcome}**` : v.outcome;
   const covered = (v.coveredMs / 3_600_000).toFixed(2);
-  return `| ${run.assetId} | ${String(v.ticks)} | ${covered} h | ${outcome} | ${String(v.hypothesesTested)} / ${String(v.families.length)} / ${String(v.withheldUnavailable.length)} | ${floors} | ${v.worstZ === null ? '—' : v.worstZ.toFixed(2)} | ${run.seconds.toFixed(0)}s |`;
+  const range =
+    run.range === null
+      ? '—'
+      : `${String(run.range.first)}–${String(run.range.last)} ${run.range.sha256.slice(0, 12)}`;
+  return `| ${run.assetId} | ${String(v.ticks)} | ${covered} h | ${outcome} | ${String(v.hypothesesTested)} / ${String(v.families.length)} / ${String(v.withheldUnavailable.length)} | ${floors} | ${v.worstZ === null ? '—' : v.worstZ.toFixed(2)} | ${run.seconds.toFixed(0)}s | ${range} |`;
 }
 
 export interface ReportMeta {
@@ -106,6 +112,19 @@ export interface ReportMeta {
   readonly base: string;
   readonly at: string;
   readonly maxTicks: number;
+  /**
+   * What the venue said it was (Cycle Audit 9, a4-02): its `/health` boot
+   * nonce, whether `/lab/markets` answered — the Lab composition, which is
+   * never production (ADR-0018) — and the commit this job was built from. A
+   * verdict that names no composition, build or range is a verdict on
+   * something unnamed.
+   */
+  readonly venue: {
+    readonly bootNonce: string | null;
+    readonly assets: number | null;
+    readonly labComposition: boolean;
+  };
+  readonly jobCommit: string;
 }
 
 export function report(meta: ReportMeta, runs: readonly AssetRun[]): string {
@@ -118,6 +137,10 @@ export function report(meta: ReportMeta, runs: readonly AssetRun[]): string {
     `Venue: \`${meta.base}\``,
     `Run at: ${meta.at}`,
     `Read per asset: up to ${String(meta.maxTicks)} ticks, the venue’s retained window if smaller`,
+    `Venue as it described itself: boot nonce ${meta.venue.bootNonce ?? 'none'}, ${
+      meta.venue.assets === null ? 'asset count unknown' : `${String(meta.venue.assets)} assets`
+    }, ${meta.venue.labComposition ? '**Lab composition** (`/lab/markets` answered — never production, ADR-0018)' : 'production composition (`/lab/markets` absent)'}`,
+    `Job built from commit \`${meta.jobCommit}\``,
     `Assets: ${String(runs.length)} — ${String(exploitable)} exploitable, ${String(failed)} failed`,
     '',
     'Every number below came over `GET /markets/:id/stream` from the venue named',
@@ -125,8 +148,8 @@ export function report(meta: ReportMeta, runs: readonly AssetRun[]): string {
     'could not see a product-margin edge at this size, and the floors say how',
     'far from seeing one it was (samples in parentheses).',
     '',
-    '| Asset | Ticks | Covered | Outcome | Hypotheses / families / withheld-unavailable | Detection floor per horizon | Worst z | Time |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| Asset | Ticks | Covered | Outcome | Hypotheses / families / withheld-unavailable | Detection floor per horizon | Worst z | Time | Sequences read · sha256 of the ticks |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
     ...runs.map(verdictRow),
     '',
   ];

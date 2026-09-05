@@ -562,7 +562,7 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     family: 'crypto',
     referencePrice: 85,
     priceSource:
-      'CoinCodex daily closes, August 2026 (26 sessions, low 72.55 on Aug 6, late-month rally): mean 83.57',
+      'CoinCodex daily closes, August 2026 (26 sessions, low 72.55 on Aug 6, late-month rally): mean 85.73 (sum 2,228.90; the digits swapped, 83.57, stood here until Cycle Audit 9 a3-06 re-summed the closes)',
     character:
       'Fast, shallow and extreme: a handful of widely separated rungs turning over in a few hours, so the chart changes character abruptly rather than gradually.',
     dispersion: 0.59,

@@ -422,7 +422,31 @@ export async function refreshRollup(history: CandleHistory, assetId: string): Pr
     epochMillis(openHourStart),
   );
   if (minutes.length === 0) return 0;
-  let hours = foldCandles(hour, minutes);
+  // **Cycle Audit 9 (a6-01).** An hour whose minutes are not sequence-contiguous
+  // has a hole in it — the minute a kill fell in, withheld by the resumed
+  // recorder (PH-25.1 finding c) — and an hourly bar folded across it carried
+  // a `high` and a `low` that never saw the withheld ticks, labelled whole. A
+  // quiet minute is not a hole: it prints no bar and the sequences on either
+  // side still touch. A hole is where they do not, and that hour is withheld
+  // rather than stored with extremes it cannot vouch for; the minute tier
+  // beneath it stays readable and says, in its sequences, where the hole is.
+  const contiguous: Candle[] = [];
+  const withheld = new Set<number>();
+  for (let i = 0; i < minutes.length; i += 1) {
+    const minute = minutes[i]!;
+    const previous = minutes[i - 1];
+    if (previous !== undefined && minute.firstSequence !== previous.lastSequence + 1) {
+      const hourOf = (c: Candle): number => Math.floor(c.openInstant / hour.durationMs);
+      // The hole lies between two minutes: both their hours are unvouched.
+      withheld.add(hourOf(previous));
+      withheld.add(hourOf(minute));
+    }
+  }
+  for (const minute of minutes) {
+    if (!withheld.has(Math.floor(minute.openInstant / hour.durationMs))) contiguous.push(minute);
+  }
+  if (contiguous.length === 0) return 0;
+  let hours = foldCandles(hour, contiguous);
   // **a5-04.** The first hour ever rolled up is whole only if the minute series
   // covers it from its start: its first minute opens on the hour, or carries
   // sequence 1 and so has nothing before it. Otherwise the history *begins*
@@ -430,7 +454,7 @@ export async function refreshRollup(history: CandleHistory, assetId: string): Pr
   // to store (a5-01), one tier up — measured as an hour stored from 53 of its
   // 60 minutes. Later hours are stored whatever they hold: a hole inside a
   // series that precedes it is a hole, visible in the sequences either side.
-  if (rollupHead === null && hours.length > 0 && !beginsWhole(hours[0]!, minutes[0]!)) {
+  if (rollupHead === null && hours.length > 0 && !beginsWhole(hours[0]!, contiguous[0]!)) {
     hours = hours.slice(1);
   }
   if (hours.length === 0) return 0;

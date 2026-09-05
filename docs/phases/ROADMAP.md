@@ -4,7 +4,7 @@ Type: SUPPORTING DOCUMENTATION (living)
 Status: Dynamic — phases may be split, merged, reordered or replaced as
 implementation reveals information (`GOVERNANCE.md` §13). Approved phases are
 never rewritten as though they had not happened.
-Last revised: 2026-09-04 (Cycle 8 closed — PH-22, PH-23, PH-24 and Cycle Audit 8; Cycle 9 opening)
+Last revised: 2026-09-05 (Cycle 9 complete — PH-26, PH-25, PH-27; Cycle Audit 9 in progress; the likely Cycle 10 is IMPROVEMENT-REPORT-001 §4)
 
 ---
 
@@ -705,6 +705,8 @@ PH-1 substrate
                 └────────────> PH-25 the battery against a production venue's own record <───┘
                                      (instrument: packages/lab; subject: apps/api's published
                                       record over the PH-22 distribution path)
+        PH-26 the catalogue of thirty ──> PH-25 (ran second: its subject is the feed the thirty carry)
+                                     ──> PH-27 review and improvement (acts on what PH-25 and PH-26 recorded)
 ```
 
 Every phase from PH-10 on depends on the whole of Cycle 1 through PH-9; the arrows
@@ -715,16 +717,17 @@ which mattered more than a stale diagram usually does: PH-25's whole premise is 
 dependency claim — the instrument is the Lab's, the subject is the distribution
 path — and neither node was on the graph that exists to carry exactly that.
 
-## Cycle 9 — opening
+## Cycle 9 — complete (PH-26, PH-25, PH-27), audited by Cycle Audit 9
 
 Cycle 8's audit closed with every finding resolved and one thing handed forward,
 recorded here so it is not rediscovered:
 
-| Phase | Title                                               | State        |
-| ----- | --------------------------------------------------- | ------------ |
-| PH-26 | The catalogue of thirty                             | **APPROVED** |
-| PH-25 | The battery against a production venue's own record | **APPROVED** |
-| PH-27 | Review and improvement of the whole project         | **APPROVED** |
+| Phase | Title                                                                                    | State                                                 |
+| ----- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| PH-26 | The catalogue of thirty                                                                  | **APPROVED**                                          |
+| PH-25 | The battery against a production venue's own record                                      | **APPROVED**                                          |
+| PH-27 | Review and improvement of the whole project                                              | **APPROVED**                                          |
+| —     | **Cycle Audit 9** — eight worktrees, eight auditors, every finding refuted independently | **APPROVED** — [record](../audits/CYCLE-AUDIT-009.md) |
 
 **PH-26 runs first, and the numbering says so rather than hiding it.** PH-25 was
 recorded when the audit closed and PH-26 was asked for afterwards; renumbering a

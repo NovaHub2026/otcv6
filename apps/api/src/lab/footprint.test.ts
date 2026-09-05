@@ -1,6 +1,14 @@
 // Invariant evidence: INV-001 (economic independence), INV-006 (no exploitable directional rules).
 import { describe, expect, it } from 'vitest';
-import { epochMillis, logPrice, MasterKeyring, type Tick } from '@otc/core';
+import { epochMillis, logPrice, MasterKeyring, type RandomSource, type Tick } from '@otc/core';
+import {
+  CascadeMagnitudeModel,
+  DEFAULT_CASCADE,
+  MarketEngine,
+  PoissonArrivalModel,
+  type MagnitudeContext,
+  type MagnitudeModel,
+} from '@otc/engine';
 import { footprintOf } from './footprint.js';
 
 /**
@@ -40,6 +48,15 @@ describe('footprintOf', () => {
     // Never rejoining within the horizon is said, not rounded to a number.
     const never = [1, 2, 3, 5, 7, 9, 11].map((p, i) => at(i, p));
     expect(footprintOf(never, natural, 3, 0, null).decay.ticksUntilIdentical).toBeNull();
+  });
+
+  it('sees an instant that moved (CA9 a8-02)', () => {
+    const natural = [1, 2, 1, 2].map((p, i) => at(i, p));
+    const shifted = natural.map((t, i) =>
+      i === 2 ? { ...t, instant: epochMillis(t.instant + 1) } : t,
+    );
+    expect(footprintOf(shifted, natural, 1, 0, null).detectability.instantsIdentical).toBe(false);
+    expect(footprintOf(natural, natural, 1, 0, null).detectability.instantsIdentical).toBe(true);
   });
 
   it('refuses paths that do not reach the release', () => {
@@ -99,5 +116,118 @@ describe('the decay figure is a measurement (the leverage plant)', () => {
     // ...and on a leverage process the magnitudes after it differ too.
     expect(f.decay.ticksUntilIdentical === null || f.decay.ticksUntilIdentical > 0).toBe(true);
     expect(f.detectability.divergentIncrements).toBeGreaterThan(1);
+  });
+});
+
+/**
+ * The plant through the real engine's magnitude path (Cycle Audit 9, a5-05).
+ *
+ * The walker above shows the arithmetic; this shows the engine. Two
+ * `MarketEngine`s from identical streams, both with the mirror test's
+ * `LeverageMagnitudeModel` — a magnitude model that keeps its own copy of the
+ * last sign — one of them with its first sign forced the other way. On the
+ * shipped `CascadeMagnitudeModel` the same forced sign leaves every later
+ * increment identical (decay 0); with the back door wired, the magnitudes
+ * after the forced sign differ and the decay figure is not zero. The figure
+ * therefore measures the engine's sign-blindness, not the walker's.
+ */
+class LeverageMagnitudeModel implements MagnitudeModel {
+  #boost = 1;
+  #lastSign = 1;
+  constructor(private readonly inner: MagnitudeModel) {}
+  observeSign(sign: number): void {
+    this.#lastSign = sign;
+  }
+  advance(context: MagnitudeContext): number {
+    this.#boost = this.#boost * 0.95 + (this.#lastSign < 0 ? 1.6 : 1) * 0.05;
+    return this.inner.advance(context) * this.#boost;
+  }
+  snapshot(): unknown {
+    return { inner: this.inner.snapshot(), boost: this.#boost, lastSign: this.#lastSign };
+  }
+  restore(state: unknown): void {
+    const typed = state as { inner: unknown; boost: number; lastSign: number };
+    this.inner.restore(typed.inner);
+    this.#boost = typed.boost;
+    this.#lastSign = typed.lastSign;
+  }
+}
+
+function engineTicks(
+  leverage: boolean,
+  forceFirst: (1 | -1) | null,
+  count: number,
+): { ticks: Tick[]; startPrice: number } {
+  const keyring = MasterKeyring.forTesting('footprint-engine-plant');
+  const derive = (purpose: string): RandomSource =>
+    keyring.derive({ env: 'test', asset: 'plant', purpose, keyEpoch: 0 });
+  const cascade = derive('cascade');
+  const shock = derive('shock');
+  const arrival = derive('arrival');
+  const base = new CascadeMagnitudeModel(1e-5, DEFAULT_CASCADE, cascade, shock);
+  const lever = leverage ? new LeverageMagnitudeModel(base) : null;
+  const sign = derive('sign');
+  let drawn = 0;
+  // The sign stream, with the first draw forced when asked and — when the
+  // back door is wired — every draw reported to the magnitude model.
+  const observing: RandomSource = {
+    ...sign,
+    label: sign.label,
+    nextBoolean: () => {
+      const natural = sign.nextBoolean();
+      const value = drawn === 0 && forceFirst !== null ? forceFirst === 1 : natural;
+      drawn += 1;
+      lever?.observeSign(value ? 1 : -1);
+      return value;
+    },
+    nextUint32: () => sign.nextUint32(),
+    nextUint64: () => sign.nextUint64(),
+    nextFloat64: () => sign.nextFloat64(),
+    nextBoundedUint32: (b: number) => sign.nextBoundedUint32(b),
+    nextBytes: (n: number) => sign.nextBytes(n),
+    position: () => sign.position(),
+    seek: (c) => sign.seek(c),
+  };
+  const engine = new MarketEngine({
+    instrument: {
+      id: 'plant-otc',
+      family: 'forex',
+      logQuantum: 1e-5,
+      displayPrecision: 5,
+      referencePrice: 1,
+    },
+    magnitude: lever ?? base,
+    arrival: new PoissonArrivalModel(1_000, arrival),
+    streams: { sign: observing, rounding: derive('rounding'), models: { cascade, shock, arrival } },
+    start: { instant: epochMillis(1_776_000_000_000), price: logPrice(0) },
+  });
+  const ticks: Tick[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const tick = engine.next();
+    if (tick === null) break;
+    ticks.push(tick);
+  }
+  return { ticks, startPrice: 0 };
+}
+
+describe('the decay figure on the engine itself (CA9 a5-05)', () => {
+  it('is zero on the shipped magnitude path and non-zero when the magnitude path sees the sign', () => {
+    const natural = engineTicks(false, null, 300);
+    const naturalFirst: 1 | -1 = natural.ticks[0]!.price > 0 ? 1 : -1;
+    const forced: 1 | -1 = naturalFirst === 1 ? -1 : 1;
+
+    const shipped = footprintOf(engineTicks(false, forced, 300).ticks, natural.ticks, 1, 0, null);
+    expect(shipped.displacement.steps).not.toBe(0);
+    expect(shipped.detectability.instantsIdentical).toBe(true);
+    expect(shipped.decay.ticksUntilIdentical).toBe(0);
+
+    const levered = engineTicks(true, null, 300);
+    const leveredForced = engineTicks(true, forced, 300);
+    const leak = footprintOf(leveredForced.ticks, levered.ticks, 1, 0, null);
+    expect(leak.detectability.instantsIdentical).toBe(true);
+    expect(leak.decay.ticksUntilIdentical === null || leak.decay.ticksUntilIdentical > 0).toBe(
+      true,
+    );
+    expect(leak.detectability.divergentIncrements).toBeGreaterThan(1);
   });
 });

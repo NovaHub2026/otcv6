@@ -102,8 +102,15 @@ describe('PH-24.10 — a push is N natural ticks', () => {
 
     const gap = lab.clock.now() - lastPublished.instant;
     const bare = lab.venue.labFork(id)!;
-    bare.next();
-    const naturalThird = bare.next()!.price;
+    const bareTicks: Tick[] = [];
+    for (let i = 0; i < 50; i += 1) bareTicks.push(bare.next()!);
+    // Before any natural tick has printed, the market is where the record left
+    // it: a rapid push lands before the keystream's own next tick is due.
+    const naturalSeries = [pending, ...bareTicks];
+    const naturalAtLanding = (instant: number): number =>
+      naturalSeries.filter((t) => t.instant <= instant).at(-1)?.price ?? lastPublished.price;
+    const naturalTicksBy = (instant: number): number =>
+      naturalSeries.filter((t) => t.instant <= instant).length;
     const pushed = (await lab.controller.push(id, '+3')) as Pushed;
     expect(pushed).toMatchObject({
       direction: 'up',
@@ -143,16 +150,28 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     // PH-27.4: the footprint is the landing against a bare fork's third tick —
     // where the keystream would have taken the market — and it is on the record.
     const footprint = (
-      pushed as unknown as { footprint: { displacementSteps: number; naturalLevel: number } }
+      pushed as unknown as {
+        footprint: {
+          displacementSteps: number;
+          naturalLevel: number;
+          naturalTicks: number;
+          basis: string;
+          pace: string;
+        };
+      }
     ).footprint;
     expect(footprint.displacementSteps).toBe(pushed.landing.latticeLevel - footprint.naturalLevel);
     expect(Number.isInteger(footprint.displacementSteps)).toBe(true);
-    // The natural level is a bare fork's third tick from the snapshot the push
-    // walked — the one after the pending tick was retracted. A fork taken here,
-    // before the push, starts one tick later (the pending tick is drawn), so
-    // its second tick is the route's third; a footprint that reported the
-    // landing against itself (displacement zero) is caught by this.
-    expect(footprint.naturalLevel).toBe(naturalThird);
+    // The natural level is a bare fork's level **at the landing instant** from
+    // the snapshot the push walked (CA9 a5-02: by instant, so a paced push is
+    // compared with the same market time, not the same tick count). The fork
+    // taken here before the push starts one tick later than the route's (the
+    // pending tick is drawn), so the pending tick is put back in front; a
+    // footprint that reported the landing against itself is caught by this.
+    expect(footprint.naturalLevel).toBe(naturalAtLanding(pushed.landing.instant));
+    expect(footprint.basis).toBe('same-instant');
+    expect(footprint.naturalTicks).toBe(naturalTicksBy(pushed.landing.instant));
+    expect(footprint.pace).toBe('rapido');
     const recorded = lab.session.labActions.find((a) => a.action === 'push')!;
     expect((recorded.diagnostics as { footprint: unknown }).footprint).toEqual(footprint);
 

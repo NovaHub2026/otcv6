@@ -208,8 +208,13 @@ export class HistoryService implements OnApplicationShutdown {
    * On the checkpoint cadence rather than per tick: a minute bar closes once a
    * minute at most, so flushing per tick would be thousands of no-op writes for
    * each real one. Nothing is lost by waiting — the recorder holds closed bars
-   * until they are drained, and a process that dies before a flush simply
-   * re-derives them when the resumed market republishes those ticks.
+   * until they are drained. A process that dies before a flush loses the bars
+   * closed since the last flush **only if the checkpoint precedes their
+   * bucket** — then the resumed market republishes those ticks and the bars
+   * are re-derived; the bucket the kill fell in is seen from inside by the
+   * resumed recorder and withheld (a5-01, PH-25.1 finding c), and the hour
+   * around it is withheld by the rollup (Cycle Audit 9, a6-01), until a
+   * persisted tick record exists to refold from (IMPROVEMENT-REPORT-001 §4).
    */
   async flush(): Promise<void> {
     for (const [assetId, recorder] of this.recorders) {

@@ -1,9 +1,12 @@
 // Invariant evidence: INV-002 (shared market), INV-003 (single underlying stream),
-// INV-006 (no exploitable directional rules), INV-008 (continuous market state),
-// INV-010 (private generator state).
+// INV-008 (continuous market state), INV-010 (private generator state).
+// Not INV-006: at the size a test can afford the battery tests no hypothesis
+// (Cycle Audit 9, a4-05/a1-03); the leak-through-the-wire evidence is the fake
+// venue in `servedAssurance.test.ts`, and the venue's own record is graded by
+// `npm run assurance:served` at the sizes a venue retains.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -63,6 +66,12 @@ async function boot(stateDir: string, basePort: number): Promise<Running> {
       return await bootOn(stateDir, port);
     } catch (error) {
       if (!String((error as Error).message).includes('EADDRINUSE')) throw error;
+      // A failed attempt may have written into the state directory before the
+      // port refused it (CA9 a8-11); the next attempt starts from nothing
+      // rather than from a half-written record. The deliberate restart later
+      // reuses the directory on purpose, after a clean boot.
+      await rm(stateDir, { recursive: true, force: true });
+      await mkdir(stateDir, { recursive: true });
     }
   }
   throw new Error(`no free port from ${basePort}`);
@@ -323,7 +332,12 @@ describe('the served record, read from outside the process', () => {
     // one the venue would run with.
     const battery = { minimumBucketSamples: 25 } as const;
     const alone = await servedAssurance(a, { at: Date.now(), battery });
-    expect(alone.outcome, JSON.stringify(alone.exploitable)).not.toBe('exploitable');
+    // Honest about what this size can decide (CA9 a4-05): at 1,800 ticks no
+    // bucket qualifies, zero hypotheses are tested, and the verdict is
+    // `undecided` with its floors — never `clean`, and `not exploitable` here
+    // would be vacuous. The assertion is the exact shape of that verdict.
+    expect(alone.hypothesesTested).toBe(0);
+    expect(alone.outcome).toBe('undecided');
     expect(alone.ticks).toBe(SPAN_TICKS);
     expect(alone.horizons.length).toBeGreaterThan(0);
     for (const horizon of alone.horizons) expect(horizon.detectionFloorPp).toBeGreaterThan(0);
@@ -343,7 +357,8 @@ describe('the served record, read from outside the process', () => {
       expect(seams).toEqual([]);
     }
     const across = await servedAssurance(joined, { at: Date.now(), battery });
-    expect(across.outcome, JSON.stringify(across.exploitable)).not.toBe('exploitable');
+    expect(across.hypothesesTested).toBe(0);
+    expect(across.outcome).toBe('undecided');
     expect(across.ticks).toBe(SPAN_TICKS + RESUME_TICKS);
     if (seams.length > 0) {
       expect(across.families).toContain('wh-seam-proximity');

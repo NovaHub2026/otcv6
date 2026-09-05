@@ -1,6 +1,8 @@
 // Invariant evidence: INV-001 (economic independence), INV-005 (expiration independence).
 import { describe, expect, it } from 'vitest';
-import { listSourceFiles, readRepositoryFile } from './repository.js';
+import { existsSync, readdirSync } from 'node:fs';
+import path from 'node:path';
+import { listSourceFiles, readRepositoryFile, repoRoot } from './repository.js';
 import {
   AMBIENT_RULES,
   ECONOMIC_BLINDNESS_RULES,
@@ -76,7 +78,26 @@ const REPLAYABLE_ROOTS = [
    * corrected rather than made true.
    */
   'apps/api/src',
+  // **Cycle Audit 9 (a2-04).** The package that computes every battery verdict
+  // and realism metric the project's evidence cites was in no scan root: an
+  // ambient-state read in the Lab — a verdict armed from the environment — was
+  // caught by nothing. Its measurements of its own elapsed time are allowed by
+  // name below, as the evidence runners' are.
+  'packages/lab/src',
 ];
+
+/**
+ * Workspaces deliberately outside every scan root, each with its reason. A
+ * workspace in none of the three lists fails `every workspace is scanned or
+ * excused` below — the roots were an enumerated list a new package could fall
+ * outside of silently (Cycle Audit 9, a2-04).
+ */
+const UNSCANNED_ROOTS: Record<string, string> = {
+  // The browser app reads the wall clock to draw a countdown and to pace its
+  // reconnects; it generates nothing and settles nothing, and its contract is
+  // guarded by the browser suites (PH-20, PH-22) and the dependency guard.
+  'apps/web/src': 'browser presentation; guarded by the browser suites and the dependency guard',
+};
 
 /**
  * The evidence generators.
@@ -195,6 +216,13 @@ const AMBIENT_TIME_ALLOWLIST = [
   // the run and times each asset; nothing it reads reaches a draw — the ticks
   // come over a socket from a venue that has its own clock.
   'tools/sim/src/servedAssuranceJob.ts',
+  // The Lab's three verdict producers time their own run for `elapsedSeconds`
+  // (Cycle Audit 9, a2-04 brought the package under this scan): a measurement
+  // of the run, reported beside the verdict, never an input to a draw or a
+  // hypothesis. Every other read of the Lab is a dataset it was handed.
+  'packages/lab/src/attacks/battery.ts',
+  'packages/lab/src/realism.ts',
+  'packages/lab/src/report.ts',
 ];
 
 interface Source {
@@ -582,5 +610,26 @@ describe('dependency direction', () => {
       }))
       .filter(({ imports }) => imports.length > 0);
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('every workspace is scanned or excused (CA9 a2-04)', () => {
+  it('names each workspace source root in a scan root or in UNSCANNED_ROOTS with a reason', () => {
+    const roots = new Set([...REPLAYABLE_ROOTS, ...TOOLING_ROOTS, ...Object.keys(UNSCANNED_ROOTS)]);
+    const workspaces: string[] = [];
+    for (const group of ['packages', 'apps', 'tools']) {
+      const groupDir = path.join(repoRoot, group);
+      if (!existsSync(groupDir)) continue;
+      for (const name of readdirSync(groupDir)) {
+        const src = path.join(group, name, 'src');
+        if (existsSync(path.join(repoRoot, src))) workspaces.push(src);
+      }
+    }
+    expect(workspaces.length).toBeGreaterThanOrEqual(9);
+    const unplaced = workspaces.filter((src) => !roots.has(src));
+    expect(unplaced, 'a workspace no scan opens and no decision excuses').toEqual([]);
+    for (const [root, reason] of Object.entries(UNSCANNED_ROOTS)) {
+      expect(reason.length, `${root} needs a reason`).toBeGreaterThan(10);
+    }
   });
 });

@@ -49,5 +49,27 @@ describe('the integration library is the catalogue', () => {
     for (const forbidden of ['keyring', 'cursor', 'registration-', 'logQuantum']) {
       expect(text, forbidden).not.toContain(forbidden);
     }
+    // And by value, not only by name (Cycle Audit 9, a8-10): a trait or a
+    // lattice quantum emitted as a bare number, without its field name, passed
+    // the checks above. No numeric token in the library may equal any trait
+    // value or quantum of any compiled entry, as JavaScript prints them.
+    const printed = new Set(
+      [...text.matchAll(/-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi)].map((m) => m[0].toLowerCase()),
+    );
+    const secrets = new Map<string, string>();
+    for (const asset of ASSET_CATALOGUE) {
+      for (const [name, value] of Object.entries(asset.definition.traits) as [string, number][]) {
+        // A small integer (`cascadeDepth: 16`) is not a fingerprint and any text
+        // contains it; every other trait prints with a dozen digits or more.
+        if (Number.isInteger(value) && Math.abs(value) < 1_000) continue;
+        secrets.set(String(value).toLowerCase(), `${asset.definition.id}.${name}`);
+      }
+      secrets.set(
+        String(asset.instrument.logQuantum).toLowerCase(),
+        `${asset.definition.id}.logQuantum`,
+      );
+    }
+    const leaked = [...secrets].filter(([value]) => printed.has(value)).map(([, who]) => who);
+    expect(leaked, 'a trait or quantum value appears in the library').toEqual([]);
   });
 });

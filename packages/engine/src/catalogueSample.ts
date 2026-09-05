@@ -27,7 +27,7 @@ import type { RandomSource } from '@otc/core';
  *   can fail on a draw is a defect, not a flake.
  * - **Stratified.** One asset from every stratum — the archetype an asset was
  *   drawn from, or its family when it was hand-authored — before a second from
- *   any. Thirty assets on eight archetypes and a sample of five that happened to
+ *   any. Thirty assets on six populated archetypes (eight declared) and a sample that happened to
  *   land on five currency pairs would verify nothing about crypto.
  * - **Inert when it is not needed.** A catalogue no larger than the sample is
  *   measured whole. At five assets every suite produces exactly the verdict it
@@ -73,8 +73,15 @@ export interface CatalogueSample<A> {
  * 2026-09-04 was taken at: a sample of five keeps each heavy suite at the cost
  * it has today whatever the catalogue grows to. Raising it is a decision about
  * the hosted ceiling and belongs in a phase document, not here.
+ *
+ * **Six since Cycle Audit 9 (a2-01), one per populated archetype.** At five,
+ * every suite dropped one of the six archetypes and `alt-crypto` met no
+ * battery and no tie check at any gate; the 72-minute measurement of
+ * 2026-09-04 was taken at five, and the next phase gate measures six.
+ * `sampleCatalogue` refuses a size below the populated strata, so a catalogue
+ * that grows an archetype fails the gate by name until this is raised.
  */
-export const HEAVY_SUITE_SAMPLE = 5;
+export const HEAVY_SUITE_SAMPLE = 6;
 
 /**
  * Draw a fixed, stratified sample of a catalogue.
@@ -106,7 +113,20 @@ export function sampleCatalogue<A>(
     }
   }
 
-  if (catalogue.length <= options.size) {
+  // Never fewer draws than there are strata (Cycle Audit 9, a2-01): a sample
+  // of five over six archetypes dropped one whole archetype per suite, and
+  // the `alt-crypto` stratum met no battery and no tie check at any gate. A
+  // sample that cannot reach every stratum is refused by name rather than
+  // drawn short or silently widened — the size is a recorded cost, and a
+  // catalogue that grows an archetype must grow it on the record.
+  const size = options.size;
+  if (catalogue.length > size && strata.length > size) {
+    throw new RangeError(
+      `A sample of ${String(size)} cannot reach every stratum: the catalogue has ` +
+        `${String(strata.length)} (${strata.join(', ')}). Raise the size or coarsen the strata.`,
+    );
+  }
+  if (catalogue.length <= size) {
     return finish(catalogue, [], strata, true, idOf);
   }
 
@@ -118,10 +138,10 @@ export function sampleCatalogue<A>(
   const remaining = new Map<string, A[]>();
   for (const [stratum, members] of byStratum) remaining.set(stratum, [...members]);
   const chosen = new Set<A>();
-  while (chosen.size < options.size) {
+  while (chosen.size < size) {
     let drewAny = false;
     for (const stratum of order) {
-      if (chosen.size >= options.size) break;
+      if (chosen.size >= size) break;
       const pool = remaining.get(stratum)!;
       if (pool.length === 0) continue;
       const index = stream.nextBoundedUint32(pool.length);

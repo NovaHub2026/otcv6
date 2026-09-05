@@ -796,18 +796,26 @@ export class LabController {
       };
       const first = walk(script, draws, targetSteps, carried.length);
       let { level, landingInstant, startLevel } = first;
-      // PH-27.4: the footprint. The same number of ticks on a bare fork from the
-      // same snapshot is where the market would have been; the difference is
-      // what this push costs the record, and it is recorded with the act.
-      const naturalLevelAfter = (ticks: number): number => {
+      // PH-27.4: the footprint. Where the market would have been **at the
+      // landing's instant** on a bare fork from the same snapshot; the
+      // difference is what this push costs the record, and it is recorded with
+      // the act. By instant, not by tick count (Cycle Audit 9, a5-02): a paced
+      // push compresses its ticks into less market time than the keystream
+      // would have used, so the same *count* of natural ticks reaches further
+      // in time and the comparison conflated the pace with the direction.
+      // Walking the bare fork to the landing instant compares the same market
+      // time; the count it needed is recorded beside the level.
+      const naturalAt = (instant: number): { level: number; ticks: number } => {
         const bare = this.venue.labFork(id)!;
-        let at = bare.price;
-        for (let i = 0; i < ticks; i += 1) {
+        let level = bare.price;
+        let ticks = 0;
+        for (;;) {
           const tick = bare.next();
-          if (tick === null) break;
-          at = tick.price;
+          if (tick === null || tick.instant > instant) break;
+          level = tick.price;
+          ticks += 1;
         }
-        return at;
+        return { level, ticks };
       };
       if (targetSteps !== null) {
         count = Math.max(1, first.walked - carried.length);
@@ -856,7 +864,8 @@ export class LabController {
       }
       // The fork started at the snapshot's sequence; the landing is script.length ticks on.
       const sequence = this.venue.hostedMarket(id)!.snapshotEngine().sequence + script.length;
-      const naturalLevel = script.length > 0 ? naturalLevelAfter(script.length) : level;
+      const natural = script.length > 0 ? naturalAt(landingInstant) : { level, ticks: 0 };
+      const naturalLevel = natural.level;
       return {
         level,
         landingInstant,
@@ -868,7 +877,13 @@ export class LabController {
         startLevel,
         netted,
         survivor,
-        footprint: { displacementSteps: level - naturalLevel, naturalLevel },
+        footprint: {
+          displacementSteps: level - naturalLevel,
+          naturalLevel,
+          naturalTicks: natural.ticks,
+          basis: 'same-instant' as const,
+          pace: survivorPace,
+        },
       };
     });
     // The burst's first instant is already in the past: publish it now, not on the old timer.

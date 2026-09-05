@@ -60,6 +60,10 @@ jobs:
         run: npm run lint
       - name: Unit tests
         run: npm run test:unit
+      # Cycle Audit 9 (a2-02): the gate's coverage floors ran locally and never
+      # here; a floor nobody hosted enforces is a floor the next merge can lower.
+      - name: Coverage floors
+        run: npm run test:cov:unit
 
   statistical-gate:
     name: Statistical Gate

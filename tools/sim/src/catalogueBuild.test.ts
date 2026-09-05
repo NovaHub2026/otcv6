@@ -1,7 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { epochMillis } from '@otc/core';
-import { ASSET_SEATS, seatById, type RegisteredAsset } from '@otc/engine';
-import { entry, evidenceRow, parse, registrationKeyring, requestFor } from './catalogueBuild.js';
+import { epochMillis, MasterKeyring, type RandomSource } from '@otc/core';
+import {
+  ASSET_SEATS,
+  AUTHORING_RETREAT,
+  seatById,
+  TailWeightUnreachableError,
+  type RegisteredAsset,
+} from '@otc/engine';
+import {
+  entry,
+  evidenceRow,
+  parse,
+  reachableTarget,
+  registrationKeyring,
+  requestFor,
+} from './catalogueBuild.js';
 
 /**
  * PH-26.3, tested under PH-26's phase gate: the builder's pure half.
@@ -126,6 +139,10 @@ describe('the emitted entry carries every value it was given', () => {
       authored: { ...asset.authored, clampedFrom: 130 },
     });
     expect(clamped).toContain('clampedFrom: 130');
+    // And the retreats a draw actually took, not a constant (CA9 a8-09).
+    const retreated = entry(seat, { ...asset, authored: { ...asset.authored, retreats: 2 } });
+    expect(retreated).toContain('retreats: 2');
+    expect(retreated).not.toContain('retreats: 0');
   });
 
   it('writes a round integer as a readable literal that is still the integer', () => {
@@ -152,7 +169,7 @@ describe('the evidence row says what the run did', () => {
         dispersion: 0.038,
       },
       retreats: 0,
-      spanMs: 786_240_000,
+      simulatedMs: 786_240_000,
       replicates: 3,
       seconds: 10,
     });
@@ -161,7 +178,24 @@ describe('the evidence row says what the run did', () => {
     expect(cells[2]).toBe(seat.archetype);
     expect(cells[3]).toBe('51.7 → 51.7 (0 retreats)');
     expect(cells[6]).toBe('0.950%');
+    // The span each replicate simulated, as the entry records it — not the
+    // fit's need (CA9 a3-01).
     expect(cells[9]).toBe('9.1 d × 3');
+    const floored = evidenceRow({
+      seat,
+      asset: { ...asset, evidence: { ...asset.evidence, simulatedMs: 288_000_000 } },
+      sample: {
+        traits: asset.definition.traits,
+        excessKurtosis: 51.7,
+        tickRms: 7.5e-6,
+        dispersion: 0.038,
+      },
+      retreats: 0,
+      simulatedMs: 288_000_000,
+      replicates: 3,
+      seconds: 10,
+    });
+    expect(floored.split('|').map((c) => c.trim())[9]).toBe('3.3 d × 3');
     expect(cells[10]).toBe('10s');
   });
 
@@ -177,7 +211,7 @@ describe('the evidence row says what the run did', () => {
         clampedFrom: 130,
       },
       retreats: 2,
-      spanMs: 786_240_000,
+      simulatedMs: 786_240_000,
       replicates: 3,
       seconds: 10,
     });
@@ -263,6 +297,40 @@ describe('a seat becomes a registration request', () => {
   it('is reproducible: the same seat asks for the same thing twice', () => {
     expect(requestFor(seat).request.traits).toEqual(requestFor(seat).request.traits);
   }, 20_000);
+});
+
+describe('the authoring retreat (CA9 a8-09)', () => {
+  const derive = (purpose: string): RandomSource =>
+    MasterKeyring.forTesting('retreat-spec').derive({
+      env: 'simulation',
+      asset: 'retreat',
+      purpose,
+      keyEpoch: 0,
+    });
+
+  it('retreats by nine-tenths until the tail weight is reachable, and counts the steps', () => {
+    const sample = requestFor(seat).sample;
+    const reachable = reachableTarget(sample, derive);
+    expect(reachable.retreats).toBe(0);
+    expect(reachable.target).toBe(sample.excessKurtosis);
+    // A drawn tail weight far above what the rhythm can carry: the builder
+    // retreats, and the target it returns is the draw times 0.9 per retreat.
+    // Probed on this seat: the authoring reaches 5,000 outright and refuses
+    // above about 6,300, so 8,000 needs three nine-tenths steps (5,832).
+    const heavy = { ...sample, excessKurtosis: 8_000 };
+    const retreated = reachableTarget(heavy, derive);
+    expect(retreated.retreats).toBeGreaterThan(0);
+    expect(retreated.target).toBeCloseTo(
+      heavy.excessKurtosis * AUTHORING_RETREAT ** retreated.retreats,
+      9,
+    );
+  }, 60_000);
+
+  it('never returns a target it did not verify', () => {
+    // 12,000 × 0.9⁶ is still above the seat's reach: every retreat fails.
+    const absurd = { ...requestFor(seat).sample, excessKurtosis: 12_000 };
+    expect(() => reachableTarget(absurd, derive)).toThrow(TailWeightUnreachableError);
+  }, 60_000);
 });
 
 describe('every seat can be asked for', () => {

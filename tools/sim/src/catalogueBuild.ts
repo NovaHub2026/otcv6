@@ -101,14 +101,22 @@ export function reachableTarget(
       target *= AUTHORING_RETREAT;
     }
   }
-  return { target, retreats: AUTHORING_ATTEMPTS };
+  // Never an unverified target (Cycle Audit 9, a8-09): a seat whose tail
+  // weight is unreachable after every retreat is a seat the builder cannot
+  // author, and saying so beats compiling a personality nobody solved.
+  throw new TailWeightUnreachableError(
+    `${String(sample.excessKurtosis)} is unreachable after ${String(AUTHORING_ATTEMPTS)} retreats ` +
+      `(last tried ${String(target)})`,
+  );
 }
 
 /**
  * The streams an asset is authored from.
  *
  * Exactly the convention `catalogue.test.ts` re-derives every entry with —
- * `MasterKeyring.forTesting(registrationKeyLabel(id))`, asset label the id —
+ * `MasterKeyring.forTesting(registrationKeyLabel(id))` — the seat's draw derives
+ * under asset label `<id>`, and `registerAsset` then authors under
+ * `registration-<id>` (Cycle Audit 9, a3-07 named the two) —
  * so "the recorded personalities reproduce from their targets" stays a guard
  * over the thirty rather than a property of five hand-authored entries. The
  * label is per asset and is the id; nothing else seeds a personality.
@@ -218,18 +226,25 @@ export function evidenceRow(options: {
   readonly asset: RegisteredAsset;
   readonly sample: ArchetypeSample;
   readonly retreats: number;
-  readonly spanMs: number;
+  /**
+   * Days simulated per replicate, as the compiled entry records them
+   * (`evidence.simulatedMs`). **Cycle Audit 9 (a3-01):** this column printed
+   * the dispersion fit's *need* (`minimumDispersionSpanMs`), not the span the
+   * calibration ran — false for the six assets whose need fell under the
+   * ten-day floor (DOGE read "1.2 d × 3" for a 3.3-day replicate).
+   */
+  readonly simulatedMs: number;
   readonly replicates: number;
   readonly seconds: number;
 }): string {
-  const { seat, asset, sample, retreats, spanMs, replicates, seconds } = options;
+  const { seat, asset, sample, retreats, simulatedMs, replicates, seconds } = options;
   const clamped = sample.clampedFrom === undefined ? '' : `, clamped from ${sample.clampedFrom}`;
   return (
     `| ${seat.id} | ${seat.archetype} | ${sample.excessKurtosis.toFixed(1)} → ` +
     `${asset.authored.excessKurtosis.toFixed(1)} (${String(retreats)} retreats${clamped}) ` +
     `| ${asset.evidence.logQuantum.toExponential(4)} | ${String(asset.instrument.displayPrecision)} ` +
     `| ${(asset.evidence.tieRate * 100).toFixed(3)}% | ${asset.evidence.medianSteps.toFixed(0)} ` +
-    `| ${asset.evidence.meanIntervalMs.toFixed(1)} | ${(spanMs / 86_400_000).toFixed(1)} d × ` +
+    `| ${asset.evidence.meanIntervalMs.toFixed(1)} | ${(simulatedMs / 86_400_000).toFixed(1)} d × ` +
     `${String(replicates)} | ${String(seconds)}s |`
   );
 }

@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import {
   readServedRecord,
@@ -78,13 +80,33 @@ async function longestRecord(
   let from = startFor(newest, maxTicks);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      return await readServedRecord({
+      const record = await readServedRecord({
         baseUrl: base,
         assetId,
         from,
         stopAfter: { sequence: newest },
         signal: AbortSignal.timeout(300_000),
       });
+      // The whole window, or nothing (Cycle Audit 9, a1-02/a4-01/a8-03): a read
+      // the venue closed — its 1 MB replay cap says "fell behind" — or that the
+      // timeout cut, or that ended short, is not the retained window, and a
+      // verdict recorded on it would say "the venue's record" of a fragment.
+      const expected = newest - from + 1;
+      if (
+        record.endedBy !== 'rule' ||
+        record.closes.length > 0 ||
+        record.ticks.length !== expected
+      ) {
+        throw new Error(
+          `${assetId}: the read ended by ${record.endedBy}` +
+            (record.closes.length > 0
+              ? ` (close: ${record.closes.map((c) => c.reason).join('; ')})`
+              : '') +
+            ` with ${String(record.ticks.length)} of the ${String(expected)} ticks asked for ` +
+            `(${String(from)}–${String(newest)}); a verdict is not recorded on a fragment.`,
+        );
+      }
+      return record;
     } catch (error) {
       if (!(error instanceof ServedRecordError) || error.status !== 400 || attempt === 1)
         throw error;
@@ -96,9 +118,54 @@ async function longestRecord(
   throw new Error('unreachable');
 }
 
+/** What the venue says it is: its health, and whether it is the Lab composition. */
+async function describeVenue(
+  base: string,
+): Promise<{ bootNonce: string | null; assets: number | null; labComposition: boolean }> {
+  let bootNonce: string | null = null;
+  let assets: number | null = null;
+  try {
+    const health = (await (await fetch(`${base}/health`)).json()) as {
+      bootNonce?: unknown;
+      assets?: unknown;
+    };
+    bootNonce = typeof health.bootNonce === 'string' ? health.bootNonce : null;
+    assets = typeof health.assets === 'number' ? health.assets : null;
+  } catch {
+    /* a venue without /health is described as such */
+  }
+  let labComposition = false;
+  try {
+    labComposition = (await fetch(`${base}/lab/markets`)).status === 200;
+  } catch {
+    /* unreachable reads as absent */
+  }
+  return { bootNonce, assets, labComposition };
+}
+
+/** The commit this job was built from, or 'unknown' outside a checkout. */
+function jobCommit(): string {
+  try {
+    return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim();
+  } catch {
+    return 'unknown';
+  }
+}
+
+function digestOf(record: ServedRecord): { first: number; last: number; sha256: string } | null {
+  const first = record.ticks[0];
+  const last = record.ticks[record.ticks.length - 1];
+  if (first === undefined || last === undefined) return null;
+  const hash = createHash('sha256');
+  for (const tick of record.ticks)
+    hash.update(`${String(tick.sequence)}:${String(tick.instant)}:${String(tick.price)}\n`);
+  return { first: first.sequence, last: last.sequence, sha256: hash.digest('hex') };
+}
+
 async function main(): Promise<number> {
   const options = parse(process.argv.slice(2));
   const startedAt = Date.now();
+  const venue = await describeVenue(options.base);
   const assets = await liveAssets(options.base, options.assets);
   const runs: AssetRun[] = [];
   // The cross-asset family needs a second series; each asset is given the
@@ -115,7 +182,14 @@ async function main(): Promise<number> {
         ...(reference === undefined ? {} : { reference }),
       });
       reference = record;
-      runs.push({ assetId, record, verdict, failure: null, seconds: (Date.now() - began) / 1_000 });
+      runs.push({
+        assetId,
+        record,
+        range: digestOf(record),
+        verdict,
+        failure: null,
+        seconds: (Date.now() - began) / 1_000,
+      });
       process.stderr.write(
         `${assetId}: ${String(record.ticks.length)} ticks, ${verdict.outcome}, ` +
           `${String(verdict.hypothesesTested)} hypotheses, ${((Date.now() - began) / 1_000).toFixed(0)}s\n`,
@@ -124,6 +198,7 @@ async function main(): Promise<number> {
       runs.push({
         assetId,
         record: null,
+        range: null,
         verdict: null,
         failure: error instanceof Error ? error.message : String(error),
         seconds: (Date.now() - began) / 1_000,
@@ -139,6 +214,8 @@ async function main(): Promise<number> {
       base: options.base,
       at: new Date(startedAt).toISOString(),
       maxTicks: options.maxTicks,
+      venue,
+      jobCommit: jobCommit(),
     },
     runs,
   );

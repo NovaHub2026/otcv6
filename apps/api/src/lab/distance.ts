@@ -86,17 +86,29 @@ export function recordWindow(
   for (const tick of ticks) {
     if (tick.instant >= from && tick.instant <= at) window.push(tick);
   }
-  return medianCandleRange(window).minutes < MIN_RECORD_MINUTES ? [] : window;
+  // Minutes that traded, not minutes that elapsed (Cycle Audit 9, a5-03): with
+  // quiet minutes counted, two ticks half an hour apart read as a whole record
+  // and the unit was measured on nothing.
+  return medianCandleRange(window).tradedMinutes < MIN_RECORD_MINUTES ? [] : window;
 }
 
-/** Median 1m candle range over complete minutes of a tick series, in lattice steps. */
-export function medianCandleRange(ticks: readonly Tick[]): { range: number; minutes: number } {
-  const buckets: { start: number; high: number; low: number }[] = [];
+/**
+ * Median 1m candle range over complete minutes of a tick series, in lattice
+ * steps. `minutes` counts every complete minute of the span, quiet ones
+ * included (PH-27.1); `tradedMinutes` counts the ones a tick fell in, and is
+ * what a floor on "enough record" must read (Cycle Audit 9, a5-03).
+ */
+export function medianCandleRange(ticks: readonly Tick[]): {
+  range: number;
+  minutes: number;
+  tradedMinutes: number;
+} {
+  const buckets: { start: number; high: number; low: number; traded: boolean }[] = [];
   for (const tick of ticks) {
     const start = Math.floor(tick.instant / MINUTE_MS) * MINUTE_MS;
     const last = buckets[buckets.length - 1];
     if (last === undefined || last.start !== start)
-      buckets.push({ start, high: tick.price, low: tick.price });
+      buckets.push({ start, high: tick.price, low: tick.price, traded: true });
     else {
       last.high = Math.max(last.high, tick.price);
       last.low = Math.min(last.low, tick.price);
@@ -110,15 +122,19 @@ export function medianCandleRange(ticks: readonly Tick[]): { range: number; minu
     const last = filled[filled.length - 1];
     if (last !== undefined) {
       for (let start = last.start + MINUTE_MS; start < bucket.start; start += MINUTE_MS) {
-        filled.push({ start, high: 0, low: 0 });
+        filled.push({ start, high: 0, low: 0, traded: false });
       }
     }
     filled.push(bucket);
   }
   const complete = filled.slice(1, -1);
-  if (complete.length === 0) return { range: 0, minutes: 0 };
+  if (complete.length === 0) return { range: 0, minutes: 0, tradedMinutes: 0 };
   const ranges = complete.map((b) => b.high - b.low).sort((a, b) => a - b);
-  return { range: ranges[Math.floor(ranges.length / 2)]!, minutes: complete.length };
+  return {
+    range: ranges[Math.floor(ranges.length / 2)]!,
+    minutes: complete.length,
+    tradedMinutes: complete.filter((b) => b.traded).length,
+  };
 }
 
 export function distanceUnitFrom(

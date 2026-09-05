@@ -9,12 +9,12 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Field              | Value                                                                         |
 | ------------------ | ----------------------------------------------------------------------------- |
 | Last clean session | 2026-09-05                                                                    |
-| Branch             | `feature/ph-27-review`, off `main` at `f2bab68`                               |
+| Branch             | `audit/ca9-fixes`, off `main` at `e8ed2ae` (the PH-27 merge)                  |
 | Remote             | `origin` → NovaHub2026/otcv6, public                                          |
 | Active cycle       | Cycle 9, **3 of 3** phases approved — PH-26, PH-25, PH-27; Cycle Audit 9 next |
 | Active phase       | none                                                                          |
 | Active subphase    | none                                                                          |
-| Cycle Audit        | **008 closed** — 60 confirmed, all 60 resolved, none tracked                  |
+| Cycle Audit        | **009 closed** — 62 confirmed, 61 resolved, one carried (a8-12)               |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                            |
 
 ---
@@ -24,58 +24,23 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 `CURRENT_STATE.md` is authoritative for where the project stands; this file is
 only what a fresh session needs first.
 
-**PH-23.5 and PH-23.6 are approved**, gated on this tree; hosted CI
-corroborated `3582d04`, Quality Gate and Statistical Gate both green
-(`GOVERNANCE.md` §40.1). The
-browser suite skips under a bare `npm run gate` on this machine and executes
-with the library prefix — run the gate as:
+**Cycle 9 is complete and Cycle Audit 9 is in progress.** PH-26, PH-25 and
+PH-27 are approved and merged (`e8ed2ae`); eight independent auditors, one
+worktree each under `~/.otc-audit9/` (cut by
+`tools/sim/scripts/cycle-audit-worktrees.sh`), raised 64 claims and independent
+refuters confirmed 62 — one critical (an aliased engine snapshot on a
+production route passed the INV-010 scan; guarded by value now), 22 material,
+39 minor. The fixes are on `audit/ca9-fixes`, each with a guard watched
+failing; the audit record is `docs/audits/CYCLE-AUDIT-009.md`. Hosted CI on
+this cycle's merges is recorded truthfully in `CURRENT_STATE.md` § "Hosted CI,
+honestly" — the PH-25 merge was red on both gates, and **`npm run
+state:check` before every approval commit** is the rule that came out of it.
+
+The gate is run as:
 
 ```
 LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
 ```
-
-**PH-24 is APPROVED and merged (`d1aa02c`); Cycle Audit 8 has run and is
-CLOSED.** Eight auditors, one worktree each under `~/.otc-audit8/`, every
-finding put to an independent refuter: 86 claims, 60 confirmed, 26 refuted.
-**All 60 are resolved** — eighteen inside the audit (`ce2a544`, `769ce80`,
-`396c0f4`, `fa362e4`), the rest after it, each with a guard watched failing
-against a planted defect before it was believed. Nothing is tracked and nothing
-was deferred to an Issue. The record is
-[Cycle Audit 008](docs/audits/CYCLE-AUDIT-008.md); the full finding set, with
-every verdict, is in `~/.otc-audit8/all-findings.json`.
-
-**Cycle 9 is open: PH-26 is APPROVED and merged (`c4757c5`), PH-25 is
-ACTIVE.** PH-26 replaced the five hand-authored assets with a catalogue of
-thirty drawn under seed and calibrated ([evidence](docs/evidence/PH-26-CATALOGUE-OF-THIRTY.md));
-the statistical suite runs the heavy files on a stratified sample of five and
-took 4,159 s at thirty against 4,326 s at five. Hosted CI on `c4757c5` was in
-flight when this was written — read its verdict first (`gh run list -c c4757c5`).
-
-**PH-25 is the battery against the feed a real observer reads.** Nothing in the
-repository has ever attacked `GET /markets/:id/stream` from outside the process;
-PH-25.1 (approved) built the SSE client in `packages/lab` that turns it into
-the `TickSource` the battery consumes, and found three things on its first runs
-(its document §5). PH-25.2 (approved) ran the battery on it
-across a restart and a resume. PH-25.3 (approved) recorded the first
-verdict against the venue on `:7300` and added the standing job (`npm run
-assurance:served`). PH-25 is merged (`7f03abe`) and **PH-27 is approved** (`GATE_EXIT=0`,
-74.5 min) and merged; Cycle 9 is complete and **Cycle Audit 9 is the next
-action** — the prepared worktree script, subjects and prompts are in this
-session's scratchpad and mirror Cycle Audit 8's method. Hosted CI was red on
-both earlier merges on one slow unit test, fixed in the PH-27 merge. PH-27 —
-its five subphase documents are drafted and its first three are review work
-(guards re-planted, records re-checked, small improvements), the fourth the
-intervention footprint, the fifth `docs/reports/IMPROVEMENT-REPORT-001.md`. Then
-PH-27, the review phase (five subphases, closing with
-`docs/reports/IMPROVEMENT-REPORT-001.md`), then Cycle Audit 9. The panel the
-Human Owner asked for runs at http://localhost:7301/ against an engine on 7300.
-
-Hosted CI needed two fixes of its own, neither a product defect: the unit
-project now yields an event-loop turn between tests (a worker that cannot read
-the main thread's reply inside sixty seconds turns a green suite into exit 1),
-and two per-test ceilings plus the job ceiling were raised to fit a suite that
-PH-24.17 made three to four times more expensive. Browser suites run under
-`LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu`.
 
 **PH-24 delivered what LA-03 named**, so this is history rather than the next
 step. The Lab specification audit

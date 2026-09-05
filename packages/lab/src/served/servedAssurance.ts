@@ -62,7 +62,24 @@ export function joinServedRecords(earlier: ServedRecord, later: ServedRecord): S
     throw new RangeError(`cannot join ${earlier.assetId} with ${later.assetId}.`);
   }
   const last = earlier.ticks[earlier.ticks.length - 1];
-  if (last === undefined) return later;
+  if (last === undefined) {
+    // An earlier read that held no tick still held what it was told (CA9
+    // a8-08): its gaps, closes and bytes join the record, and the later read
+    // must have asked for what the earlier one asked for.
+    if (later.requestedFrom !== earlier.requestedFrom) {
+      throw new RangeError(
+        `the later read asked for ${String(later.requestedFrom)}, not ${String(earlier.requestedFrom)}: ` +
+          'it does not continue an earlier read that held no tick.',
+      );
+    }
+    return {
+      ...later,
+      gaps: [...earlier.gaps, ...later.gaps],
+      closes: [...earlier.closes, ...later.closes],
+      discontinuities: [...earlier.discontinuities, ...later.discontinuities],
+      bytes: earlier.bytes + later.bytes,
+    };
+  }
   if (later.requestedFrom !== last.sequence + 1) {
     throw new RangeError(
       `the later read asked for ${String(later.requestedFrom)}, not ${String(last.sequence + 1)}: ` +

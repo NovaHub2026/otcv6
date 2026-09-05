@@ -193,7 +193,10 @@ path is an ADR to write, not a change to make.
    on one test — `seats.test.ts`, "no two seats can draw personalities the
    differentiation check would refuse" — which takes 26.7 s on the hosted
    runner against the unit project's 20 s and 3.3 s here. The Statistical
-   Gate was green on both (88 minutes hosted). Found while this phase's gate
+   Gate was green on `c4757c5` and on `f2bab68` (88 minutes hosted) and
+   **red on the PH-25 merge `7f03abe` itself**, where the merged state
+   documents failed `stateConsistency.test.ts` and the meta-audit with them
+   (Cycle Audit 9, a7-01/a7-02 — this item first said "green on both"). Found while this phase's gate
    ran; fixed in this phase's merge (ten draws per seat, its own ceiling), and
    recorded here rather than folded into a subphase: an approval CI did not
    corroborate is the finding Cycle Audit 8 asked the next audit to look for,
