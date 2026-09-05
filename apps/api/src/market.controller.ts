@@ -274,10 +274,16 @@ export class MarketController implements BeforeApplicationShutdown {
         .join(',');
 
     const subscriptions: { cancel: (reason?: string) => void }[] = [];
+    const cappedAfter = new Map<string, number | null>();
     const sinkFor = (assetId: string): FeedSink => ({
       deliver: (_id, ticks): boolean => {
         for (const tick of ticks) {
-          if (!headersSent && bufferedBytes >= MAX_REPLAY_BYTES) return false;
+          if (!headersSent && bufferedBytes >= MAX_REPLAY_BYTES) {
+            // Cut by this process's per-connection cap, not by the client
+            // (Cycle Audit 9, a4-09): the close names it and where to resume.
+            cappedAfter.set(assetId, position.get(assetId) ?? null);
+            return false;
+          }
           position.set(assetId, tick.sequence);
           write(`id: ${positionId()}\ndata: ${JSON.stringify({ asset: assetId, ...tick })}\n\n`);
         }
@@ -286,7 +292,15 @@ export class MarketController implements BeforeApplicationShutdown {
       close: (reason): void => {
         // One asset ending is not the stream ending: the client is told which,
         // and the others keep delivering.
-        write(`event: close\ndata: ${JSON.stringify({ asset: assetId, reason })}\n\n`);
+        const after = cappedAfter.get(assetId);
+        const why =
+          after === undefined
+            ? reason
+            : `replay capped at ${String(MAX_REPLAY_BYTES)} bytes` +
+              (after === null
+                ? ''
+                : ` after sequence ${String(after)}; resume from ${String(after + 1)}`);
+        write(`event: close\ndata: ${JSON.stringify({ asset: assetId, reason: why })}\n\n`);
       },
     });
 
@@ -719,16 +733,29 @@ export class MarketController implements BeforeApplicationShutdown {
       }
     };
 
+    // The last sequence this connection was handed, and whether the replay was
+    // cut by the per-connection cap rather than by the socket. **Cycle Audit 9
+    // (a4-09):** a replay older than about thirteen thousand ticks was cut at
+    // 1 MB and closed with "client fell behind" — the client's fault, in the
+    // feed's words, for a bound this process set — and a client could not tell
+    // where to resume. The close now names the cap and the sequence to resume
+    // from, and is written once.
+    let lastDelivered: number | null = null;
+    let cappedAfter: number | null = null;
     const sink = {
       deliver: (_assetId: string, ticks: readonly Tick[]): boolean => {
         for (const tick of ticks) {
           // The bound is checked *inside* the loop, because the whole replay
           // arrives as a single `deliver` call: the feed hands over the entire
           // retained backlog at once, so a check on the way out bounds nothing.
-          if (!headersSent && bufferedBytes >= MAX_REPLAY_BYTES) return false;
+          if (!headersSent && bufferedBytes >= MAX_REPLAY_BYTES) {
+            cappedAfter = lastDelivered;
+            return false;
+          }
           // One event per tick, carrying the sequence as the SSE id so a
           // reconnecting client knows exactly where it stopped.
           write(`id: ${tick.sequence}\ndata: ${JSON.stringify(tick)}\n\n`);
+          lastDelivered = tick.sequence;
         }
         // False once the client cannot keep up: the feed then disconnects
         // rather than degrading this client's view.
@@ -747,7 +774,12 @@ export class MarketController implements BeforeApplicationShutdown {
         return headersSent ? !res.writableNeedDrain : bufferedBytes < MAX_REPLAY_BYTES;
       },
       close: (reason: string): void => {
-        write(`event: close\ndata: ${JSON.stringify({ reason })}\n\n`);
+        const why =
+          cappedAfter === null
+            ? reason
+            : `replay capped at ${String(MAX_REPLAY_BYTES)} bytes after sequence ` +
+              `${String(cappedAfter)}; resume from ${String(cappedAfter + 1)}`;
+        write(`event: close\ndata: ${JSON.stringify({ reason: why })}\n\n`);
         if (headersSent) res.end();
       },
     };
@@ -818,13 +850,18 @@ export class MarketController implements BeforeApplicationShutdown {
     chargeUndrained(res);
 
     const live = subscription;
-    if (full) {
+    if (full && cappedAfter === null) {
       // Told rather than truncated: a client that is handed a short stream and
       // no reason cannot tell it from a quiet market.
       res.write(
         `event: close\ndata: ${JSON.stringify({ reason: 'client fell behind during replay' })}\n\n`,
       );
       live.cancel('client fell behind during replay');
+      res.end();
+      return;
+    }
+    if (cappedAfter !== null) {
+      // The cap's own close frame was written by the sink; nothing else is owed.
       res.end();
       return;
     }

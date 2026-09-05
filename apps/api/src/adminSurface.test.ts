@@ -900,6 +900,31 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     );
   });
 
+  it('a replay cut by the per-connection cap says so, once, and where to resume (CA9 a4-09)', () => {
+    // Fifteen thousand ticks retained and asked for from the first: more than
+    // the 1 MB cap holds. The close used to blame the client ("fell behind")
+    // and could arrive twice; it names the cap and the next sequence now.
+    const feed = new TickFeed({ retainTicks: 20_000 });
+    feed.publish(FIRST, ticks(15_000));
+    const venue = { ...venueStub([FIRST]), feed } as unknown as VenueService;
+    const controller = new MarketController(venue);
+    const out = recording();
+    controller.stream(FIRST, out.res, request(), '1');
+    expect(out.status()).toBe(200);
+    const closes = [...out.body().matchAll(/event: close\ndata: (.*)\n/g)].map((m) => m[1]!);
+    expect(closes).toHaveLength(1);
+    const reason = (JSON.parse(closes[0]!) as { reason: string }).reason;
+    expect(reason).toMatch(
+      /^replay capped at 1000000 bytes after sequence (\d+); resume from (\d+)$/,
+    );
+    const [, after, next] = /after sequence (\d+); resume from (\d+)/.exec(reason)!;
+    expect(Number(next)).toBe(Number(after) + 1);
+    expect(reason).not.toMatch(/fell behind/);
+    // The last tick delivered is the one the reason names.
+    const delivered = [...out.body().matchAll(/\nid: (\d+)\ndata: /g)].map((m) => Number(m[1]));
+    expect(delivered[delivered.length - 1]).toBe(Number(after));
+  });
+
   it('refuses a from that names an asset the stream does not carry (PH-22.2)', () => {
     const { feed } = streaming();
     const venue = { ...venueStub([FIRST, THIRD]), feed } as unknown as VenueService;
@@ -1071,7 +1096,16 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     // Far short of the 40,000 the window holds, and short of the byte bound.
     expect(full.body().length).toBeLessThan(2_000_000);
     expect(full.body()).toMatch(/event: close/);
-    expect(full.body()).toMatch(/fell behind during replay/);
+    // Forty thousand frames is past the 1 MB per-connection cap, and the cap
+    // is what stopped the replay before any byte reached the socket — so the
+    // close names the cap and the resume point, not the client (CA9 a4-09).
+    // The backpressure contract is the assertions above and below; the reason
+    // is the true one.
+    expect(full.body()).toMatch(
+      /replay capped at 1000000 bytes after sequence \d+; resume from \d+/,
+    );
+    expect(full.body()).not.toMatch(/fell behind during replay/);
+    expect([...full.body().matchAll(/event: close/g)]).toHaveLength(1);
     expect(full.ended()).toBe(true);
   });
 
