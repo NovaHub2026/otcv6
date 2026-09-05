@@ -59,6 +59,9 @@ function venue(
   ticks: readonly Tick[],
   refuseAll = false,
   closeAfter: number | null = null,
+  /** As the real feed: retain from here and refuse anything older, naming the start. */
+  windowStart: number | null = null,
+  requests: string[] = [],
 ): Promise<string> {
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://venue');
@@ -86,6 +89,20 @@ function venue(
     }
     if (url.pathname === `/markets/${ASSET}/stream`) {
       const from = Number(url.searchParams.get('from') ?? '1');
+      requests.push(url.search);
+      if (windowStart !== null && from < windowStart) {
+        response.writeHead(400, { 'content-type': 'application/json' });
+        response.end(
+          JSON.stringify({
+            message:
+              `Sequence ${String(from)} for ${ASSET} is older than the retained window, which ` +
+              `starts at ${String(windowStart)}. The feed will not guess at what it no longer has.`,
+            error: 'Bad Request',
+            statusCode: 400,
+          }),
+        );
+        return;
+      }
       if (refuseAll) {
         response.writeHead(400, { 'content-type': 'application/json' });
         response.end(JSON.stringify({ message: 'this venue serves no history' }));
@@ -170,6 +187,23 @@ describe('the job as a scheduler runs it', () => {
     expect(text).toContain('**failed**');
     expect(text).toContain('Assets: 1 — 0 exploitable, 1 failed');
     expect(text).not.toContain('**exploitable**');
+  }, 60_000);
+
+  it('reads the window from the venue’s refusal, exactly, and never guesses (CA9 a4-08)', async () => {
+    // A venue retaining from 30,001: the job asks for the full 36,000, is
+    // refused with the start named, asks again from exactly that start, and
+    // records exactly the window — a job that guessed (`from + 1000`) would
+    // read a record the venue never named.
+    const requests: string[] = [];
+    const base = await venue(predictableByTheClock(600), false, null, 30_001, requests);
+    const directory = await mkdtemp(path.join(tmpdir(), 'otc-served-job-window-'));
+    directories.push(directory);
+    const out = path.join(directory, 'verdict.md');
+    const { code, stderr } = await run(['--base', base, '--out', out, '--max-ticks', '36000']);
+    expect(code, stderr).toBe(2);
+    expect(requests).toEqual(['?from=1', '?from=30001']);
+    expect(stderr).toMatch(/wire-otc: 6000 ticks/);
+    expect(await readFile(out, 'utf8')).toMatch(/\| wire-otc \| 6000 \|/);
   }, 60_000);
 
   it('exits 1 without a venue', async () => {
