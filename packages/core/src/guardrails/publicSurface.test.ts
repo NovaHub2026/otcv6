@@ -84,6 +84,7 @@ const INTERNAL: Record<string, readonly string[]> = {
     'tieRateEvidence.ts',
     // PH-26.4: the integration library — a pure function and the runner that
     // writes it; the guard beside them re-derives the file.
+    'catalogueBuild.ts',
     'catalogueLibrary.ts',
     'catalogueLibraryWrite.ts',
     // PH-22.1's observer load harness: a deliberate act like the two scale

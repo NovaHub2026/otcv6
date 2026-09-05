@@ -2,9 +2,10 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-26
-Status: ACTIVE
+Status: APPROVED
 Cycle: 9 (phase 1 of 3)
 Created: 2026-09-04
+Approved: 2026-09-05
 Branch: `feature/ph-26-catalogue-of-thirty`
 
 ---
@@ -156,3 +157,46 @@ the market tracks nothing. Two consequences are recorded rather than hidden:
 than the lattice's own is refused at stage `calibration` — after the simulation
 that produced the quantum — so supplying one buys nothing and costs a re-run. The
 lattice answers, and the answer is recorded.
+
+## 9. Integrated phase verification (2026-09-05)
+
+Full `npm run gate` on `feature/ph-26-catalogue-of-thirty` with all four
+subphases in, third attempt, `OTC_REQUIRE_BROWSER=1`, zero skipped:
+
+```
+format:check     0
+build            0
+typecheck:web    0
+typecheck:config 0
+lint             0
+unit         136 files, 2,935 tests           39.4s
+coverage     136 files, 2,935 tests          120.0s   floors held; tools/sim 37.8%
+statistical   43 files,   393 tests        4,158.8s
+GATE COMPLETE: unit, coverage floors and statistical suites all ran, with a real browser
+GATE_EXIT=0
+```
+
+**Sixty-nine minutes for the statistical suite at thirty assets, against
+seventy-two at five.** That is the number PH-26.1 was for.
+
+The first two attempts failed, and both failures were the phase's own:
+
+1. **Coverage.** PH-26.3's two evidence runners — `buildCatalogue.ts` and
+   `tieRateEvidence.ts`, deliberate acts with no unit coverage by nature —
+   dropped `tools/sim` from 35.7% to 29.5% against a 33% floor. The floor is a
+   ratchet and lowering it is a decision; the honest answer was that the
+   builder's emitter deserved a test anyway, being what writes thirty markets'
+   numbers into source. Its pure half is `catalogueBuild.ts` now, tested by
+   fifteen cases and four plants — two of which survived the first version of
+   the guard, one because the fixture made two lattices equal that must be
+   allowed to differ, one because it compared keyrings by their labels rather
+   than by what they produce. Coverage rose to 37.8% and the floor to 35.
+2. **A type error in that new test**, which `vitest` transpiles past and
+   `tsc -b` refuses — the second gate step, minutes in. Recorded in the
+   session's memory rather than in the repository, because it is about how the
+   agent works.
+
+The catalogue served after the gate: `GET /catalogue` on the local engine
+reports thirty-one assets live — the thirty compiled, and one an operator had
+registered through the panel in an earlier session, which survived in the state
+directory as it should.

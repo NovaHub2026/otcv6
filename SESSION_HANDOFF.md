@@ -6,16 +6,16 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                           |
-| ------------------ | --------------------------------------------------------------- |
-| Last clean session | 2026-09-04                                                      |
-| Branch             | `feature/ph-26-catalogue-of-thirty`, off `main` at `c2a32a1`    |
-| Remote             | `origin` → NovaHub2026/otcv6, public                            |
-| Active cycle       | Cycle 9, **0 of 3** phases approved — Cycle 8's audit is closed |
-| Active phase       | **PH-26 — The catalogue of thirty** (ACTIVE)                    |
-| Active subphase    | none — PH-26 complete, phase gate next                          |
-| Cycle Audit        | **008 closed** — 60 confirmed, all 60 resolved, none tracked    |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)              |
+| Field              | Value                                                        |
+| ------------------ | ------------------------------------------------------------ |
+| Last clean session | 2026-09-04                                                   |
+| Branch             | `feature/ph-26-catalogue-of-thirty`, off `main` at `c2a32a1` |
+| Remote             | `origin` → NovaHub2026/otcv6, public                         |
+| Active cycle       | Cycle 9, **1 of 3** phases approved — PH-26                  |
+| Active phase       | none                                                         |
+| Active subphase    | none                                                         |
+| Cycle Audit        | **008 closed** — 60 confirmed, all 60 resolved, none tracked |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)           |
 
 ---
 

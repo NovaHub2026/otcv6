@@ -15,7 +15,7 @@ Last synchronized: 2026-09-04
 | Field                            | Value                                                                                                         |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | Active development cycle         | Cycle 9 — opened when Cycle Audit 8 closed                                                                    |
-| Approved phases in current cycle | **0 of 3** — Cycle 8 approved PH-22, PH-23 and PH-24, and its audit is closed                                 |
+| Approved phases in current cycle | **1 of 3** — PH-26                                                                                            |
 | Cycle Audit state                | **008 closed** — 86 claims, 60 confirmed, 26 refuted; all 60 resolved                                         |
 | Last Cycle Audit                 | [Cycle Audit 008](docs/audits/CYCLE-AUDIT-008.md) — 2026-09-04, eight independent auditors, one worktree each |
 
@@ -23,11 +23,11 @@ Last synchronized: 2026-09-04
 
 | Field                  | Value                                                              |
 | ---------------------- | ------------------------------------------------------------------ |
-| Active phase           | **PH-26 — The catalogue of thirty**                                |
-| Phase lifecycle        | ACTIVE                                                             |
+| Active phase           | none                                                               |
+| Phase lifecycle        | none                                                               |
 | Active subphase        | none — PH-26's four subphases are approved; the phase gate is next |
 | Subphase lifecycle     | none                                                               |
-| Last approved phase    | PH-24 — The Lab's controls: applying a selection                   |
+| Last approved phase    | PH-26 — The catalogue of thirty                                    |
 | Last approved subphase | PH-26.4 — The integration library                                  |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
@@ -195,17 +195,18 @@ the wrong thing.
 
 ## EXACT NEXT LEGAL ACTION
 
-**PH-26's integrated phase verification: the full gate on the phase branch,
-then the merge to `main` and hosted CI on the merge commit.**
+**Merge PH-26 to `main`, push, and read hosted CI on the merge commit — then
+activate PH-25.**
 
-All four subphases are approved — the suites scale, the thirty seats, the
-catalogue compiled and measured, the integration library. `GOVERNANCE.md`
-places a full `npm run gate` at the phase boundary rather than a targeted one;
-the statistical suite already ran whole at thirty during PH-26.3 (3,843 s, three
-test-file defects corrected and re-run green), and the phase gate runs it again
-on the final tree with the PH-26.4 changes in. After the merge, PH-25 — the
-battery against a production venue's own record — is the next phase, then
-PH-27, then Cycle Audit 9.
+PH-26 is approved on its integrated phase verification: `GATE_EXIT=0` on the
+third attempt, 136 unit files / 2,935 tests, 43 statistical files / 393 tests
+in 4,159 s, coverage floors held. The first two attempts were the phase's own
+failures and are recorded in its document §9. Hosted CI on the merge commit
+would be the first phase approval CI has corroborated since PH-23.
+
+After the merge: PH-25, the battery against a production venue's own record;
+then PH-27, the review phase, closing with the improvement report; then Cycle
+Audit 9.
 
 This section named **PH-22.1** — a subphase approved and merged two phases ago —
 until Cycle Audit 8 (a7) found it. A fresh session following `CLAUDE.md` §1 read
