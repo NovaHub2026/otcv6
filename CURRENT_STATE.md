@@ -14,21 +14,21 @@ Last synchronized: 2026-09-04
 
 | Field                            | Value                                                                                                         |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 9 — **2 of 3** phases approved (PH-26, PH-25); PH-27 next                                               |
-| Approved phases in current cycle | **2 of 3** — PH-26, PH-25                                                                                     |
+| Active development cycle         | Cycle 9 — **3 of 3** phases approved (PH-26, PH-25, PH-27); Cycle Audit 9 next                                |
+| Approved phases in current cycle | **3 of 3** — PH-26, PH-25, PH-27                                                                              |
 | Cycle Audit state                | **008 closed** — 86 claims, 60 confirmed, 26 refuted; all 60 resolved                                         |
 | Last Cycle Audit                 | [Cycle Audit 008](docs/audits/CYCLE-AUDIT-008.md) — 2026-09-04, eight independent auditors, one worktree each |
 
 ## Phase and subphase
 
-| Field                  | Value                                                              |
-| ---------------------- | ------------------------------------------------------------------ |
-| Active phase           | **PH-27 — Review and improvement of the whole project**            |
-| Phase lifecycle        | ACTIVE                                                             |
-| Active subphase        | none — PH-27's five subphases are approved; the phase gate is next |
-| Subphase lifecycle     | none                                                               |
-| Last approved phase    | PH-25 — The battery against a production venue's own record        |
-| Last approved subphase | PH-27.5 — the improvement report                                   |
+| Field                  | Value                                               |
+| ---------------------- | --------------------------------------------------- |
+| Active phase           | none                                                |
+| Phase lifecycle        | none                                                |
+| Active subphase        | none                                                |
+| Subphase lifecycle     | none                                                |
+| Last approved phase    | PH-27 — Review and improvement of the whole project |
+| Last approved subphase | PH-27.5 — the improvement report                    |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
@@ -195,29 +195,22 @@ the wrong thing.
 
 ## EXACT NEXT LEGAL ACTION
 
-**PH-27's integrated phase verification: the full gate on the phase branch, then merge, then Cycle Audit 9.**
+**Run Cycle Audit 9 (GOVERNANCE §28): three phases are approved, normal development stops, and the merge of the third phase is pushed before the auditors' worktrees are cut from it.**
 
-PH-25 is merged at `7f03abe` (state fix `f2bab68`) and pushed; hosted CI on
-it is running and its verdict is recorded here when it lands. PH-27 is active
-on `feature/ph-27-review`: the review phase, five subphases, the last of them
-`docs/reports/IMPROVEMENT-REPORT-001.md`. PH-27.1 (approved) re-planted
-eleven guards from Cycle Audit 8's map and three of this cycle's own: ten
-held, one could not fail — the minute-bucket statistics that dropped quiet
-minutes — and is anchored, with the count on the Lab's quality screen. PH-27.2 (approved) re-checked
-every "leaves open" section from PH-20 on and every open Issue against the
-tree: six sections annotated with dated verdicts, six Issues closed on
-evidence (#2, #5, #6, #17, #18, #21), CLAUDE.md §5 re-measured from the PH-25
-gate. PH-27.3 (approved) made `assessRealism` yield between metrics on the
-Lab's quality route and taught the preview chart to bound a told hole from
-the frame's `resumesAt`; three larger candidates are measured and carried to
-the report. PH-27.4 (approved) measured what a push, a close and a bias cost
-the record against the keystream's own continuation — the level moves, by
-30, 2 and 252 steps, and nothing else: no instant, no increment after
-release, no decay — and put the footprint on the session record
-(`PH-27-INTERVENTION-FOOTPRINT.md`). PH-27.5 (approved) wrote
-`docs/reports/IMPROVEMENT-REPORT-001.md`. Then PH-27.3 (small improvements),
-PH-27.4 (the footprint of a Lab intervention), PH-27.5 (the report); then the
-phase gate, the merge, and Cycle Audit 9.
+PH-27 is approved on its integrated phase verification (`GATE_EXIT=0` first
+attempt, 45 statistical files in 4,472 s) and is being merged. Cycle 9 is
+complete: PH-26 (the catalogue of thirty), PH-25 (the battery against a
+production venue's own record), PH-27 (review and improvement, closing with
+`docs/reports/IMPROVEMENT-REPORT-001.md`). The next legal action is Cycle
+Audit 9: eight independent auditors, one worktree each (B-020), every finding
+refuted before it is believed (CA8 §8).
+
+**Hosted CI on this cycle's merges.** `c4757c5` (PH-26) and `f2bab68`
+(PH-25): Statistical Gate **green** on both (88 min hosted); Quality Gate
+**red** on both, on one unit test that takes 26.7 s hosted against a 20 s
+ceiling (`seats.test.ts`, PH-27 §6 item 6). Fixed in the PH-27 merge; the
+run on that merge commit is the corroboration this cycle's approvals still
+owe, and is recorded here when it lands.
 
 This section named **PH-22.1** — a subphase approved and merged two phases ago —
 until Cycle Audit 8 (a7) found it. A fresh session following `CLAUDE.md` §1 read

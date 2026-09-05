@@ -2,7 +2,8 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-27
-Status: ACTIVE
+Status: APPROVED
+Approved: 2026-09-05 — from the integrated phase verification in §7
 Cycle: 9 (phase 3 of 3)
 Created: 2026-09-05
 Branch: `feature/ph-27-review`
@@ -165,3 +166,46 @@ path is an ADR to write, not a change to make.
    test, and it ends in a ranked Cycle 10.
 5. The full gate, hosted CI green on the merge commit — the first phase
    approval CI will have corroborated since PH-23.
+
+## 6. What the phase found
+
+1. **One guard that could not fail, out of fourteen re-planted** (PH-27.1):
+   the minute-bucket statistics dropped quiet minutes on both sites; anchored,
+   counted, shown on the quality screen. The other thirteen failed their
+   plants by name, and the record now says which plant.
+2. **Twenty open items, six sections, sixteen Issues** (PH-27.2): six Issues
+   closed on evidence in the tree, ten kept and referenced from the report,
+   every "leaves open" section annotated with a dated verdict, CLAUDE.md
+   re-measured.
+3. **Two small improvements closed, three measured and carried** (PH-27.3):
+   the Lab's quality route no longer holds the process for seconds; the
+   preview chart bounds a told hole exactly.
+4. **What an intervention costs, in the record's own numbers** (PH-27.4): the
+   level, by the sum of the changed signs times the engine's own magnitudes
+   — 30, 2 and 252 steps for a push, a close and a bias — and nothing else,
+   measured against the keystream's own continuation, with the decay figure
+   shown non-zero on a leverage walker so it is known to measure. Recorded
+   with every push.
+5. **The report** (PH-27.5): every engine proposal classed against the mirror
+   test, and a Cycle 10 proposed from a page.
+6. **Hosted CI was red on both of this cycle's merges, and nobody had read
+   it.** The Quality Gate failed on `c4757c5` (PH-26) and `f2bab68` (PH-25)
+   on one test — `seats.test.ts`, "no two seats can draw personalities the
+   differentiation check would refuse" — which takes 26.7 s on the hosted
+   runner against the unit project's 20 s and 3.3 s here. The Statistical
+   Gate was green on both (88 minutes hosted). Found while this phase's gate
+   ran; fixed in this phase's merge (ten draws per seat, its own ceiling), and
+   recorded here rather than folded into a subphase: an approval CI did not
+   corroborate is the finding Cycle Audit 8 asked the next audit to look for,
+   and this cycle produced two of them before anyone looked.
+
+## 7. Integrated phase verification
+
+| Check                                                                                         | Result                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Every subphase document APPROVED and the roadmap agrees                                       | `documentation.test.ts`, `stateConsistency.test.ts` green                                                                                                                                                                                                                                                                                                                                 |
+| The price path untouched by the whole phase                                                   | `git diff --stat main -- packages/engine` empty at every subphase commit; the mirror tests in the gate below                                                                                                                                                                                                                                                                              |
+| The browser suites, with the quality screen's new row and the session screen's footprint line | `lab.stat.test.ts` 9 flows, `panel.stat.test.ts` 8 flows, each run on its subphase's tree state                                                                                                                                                                                                                                                                                           |
+| Anti-predictability after the phase                                                           | the mirror tests and the full battery in the gate below                                                                                                                                                                                                                                                                                                                                   |
+| Phase quality gate `npm run gate` with the browser prefix                                     | `GATE_EXIT=0` on the first attempt — format, build, `typecheck:web`, `typecheck:config`, lint, unit 142 files / 2,995 tests in 111 s, statistical 45 files / 396 tests in 4,472 s (74.5 min, the browser suites included), `GATE COMPLETE`; started 08:29:27Z, finished 09:46:53Z, on `fe1550f`. The `seats.test.ts` fix landed after the gate and re-ran its own file (127 tests, 3.3 s) |
+| Hosted CI on the merge commit                                                                 | recorded in `CURRENT_STATE.md` when the run lands                                                                                                                                                                                                                                                                                                                                         |

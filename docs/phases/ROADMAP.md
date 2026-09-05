@@ -724,7 +724,7 @@ recorded here so it is not rediscovered:
 | ----- | --------------------------------------------------- | ------------ |
 | PH-26 | The catalogue of thirty                             | **APPROVED** |
 | PH-25 | The battery against a production venue's own record | **APPROVED** |
-| PH-27 | Review and improvement of the whole project         | **ACTIVE**   |
+| PH-27 | Review and improvement of the whole project         | **APPROVED** |
 
 **PH-26 runs first, and the numbering says so rather than hiding it.** PH-25 was
 recorded when the audit closed and PH-26 was asked for afterwards; renumbering a
