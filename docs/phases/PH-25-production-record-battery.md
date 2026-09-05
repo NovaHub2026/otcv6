@@ -84,6 +84,9 @@ not attacked here. A battery against a fleet is a different instrument, and
 `docs/architecture/MULTI_NODE_AND_OPERATIONS.md` records that the shipped
 `apps/api` composes none of it.
 
+> **Re-checked against the tree, 2026-09-05 (PH-27.2).** The multi-node
+> composition — **still open** (Issue #9), `IMPROVEMENT-REPORT-001.md` §4.
+
 ## 8. What the phase found
 
 The instrument was the point, and the instrument's first use produced the

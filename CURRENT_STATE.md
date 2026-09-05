@@ -25,10 +25,10 @@ Last synchronized: 2026-09-04
 | ---------------------- | ----------------------------------------------------------- |
 | Active phase           | **PH-27 — Review and improvement of the whole project**     |
 | Phase lifecycle        | ACTIVE                                                      |
-| Active subphase        | PH-27.2 — the records that are stale                        |
+| Active subphase        | PH-27.3 — the small improvements with no owner              |
 | Subphase lifecycle     | ACTIVE                                                      |
 | Last approved phase    | PH-25 — The battery against a production venue's own record |
-| Last approved subphase | PH-27.1 — the guards that cannot fail                       |
+| Last approved subphase | PH-27.2 — the records that are stale                        |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
@@ -186,7 +186,7 @@ the wrong thing.
 | ADR-0016 | Server-sent events stay; the cost is a syscall and every transport pays it (APPROVED)                                                                                                                                                                                                                                                                                                                                                              |
 | ADR-0017 | The expiry price is the tick at or before expiry; a candle is half-open; settlement is authoritative (APPROVED)                                                                                                                                                                                                                                                                                                                                    |
 | ADR-0018 | One engine per deployment; a Lab-composed process is the engine in simulation mode; production is never Lab-composed (APPROVED)                                                                                                                                                                                                                                                                                                                    |
-| Backlog  | [GitHub Issues](https://github.com/NovaHub2026/otcv6/issues) #1–#22; #1, #13 and #15 closed. Two remain the Human Owner's: #3 and #14                                                                                                                                                                                                                                                                                                              |
+| Backlog  | [GitHub Issues](https://github.com/NovaHub2026/otcv6/issues) #1–#22; closed: #1, #2, #5, #6, #13, #15, #17, #18, #21, #22. Two remain the Human Owner's: #3 and #14; the rest are referenced from `docs/reports/IMPROVEMENT-REPORT-001.md`                                                                                                                                                                                                         |
 | Roadmap  | `docs/phases/ROADMAP.md`                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Branch   | `feature/ph-27-review` off `main` at `f2bab68` (the PH-25 merge is `7f03abe`); before it the PH-26 merge `c4757c5`; before it the PH-24 merge `d1aa02c` and the Cycle Audit 8 fixes after it; before it PH-23 at `8f62e4b`, Cycle Audit 7 and PH-22.1 at `f07e71d`, PH-21 at `3e4ec7e`. PH-21.1 sits under two hashes (`3a5f0a5`, `36bbf89`) because the branch was merged rather than rebased; both are ancestors and the duplication is cosmetic |
 | Audit    | [`CYCLE-AUDIT-008.md`](docs/audits/CYCLE-AUDIT-008.md) — 86 claims, 60 confirmed, all resolved, eight independent auditors. Before it, [`OUT-OF-BAND-AUDIT-001.md`](docs/audits/OUT-OF-BAND-AUDIT-001.md) — 83 findings, 6 critical, seven auditors                                                                                                                                                                                                |
@@ -195,7 +195,7 @@ the wrong thing.
 
 ## EXACT NEXT LEGAL ACTION
 
-**PH-27.2 — the records that are stale: every "leaves open" checked against the tree.**
+**PH-27.3 — the small improvements with no owner, closed.**
 
 PH-25 is merged at `7f03abe` (state fix `f2bab68`) and pushed; hosted CI on
 it is running and its verdict is recorded here when it lands. PH-27 is active
@@ -203,8 +203,11 @@ on `feature/ph-27-review`: the review phase, five subphases, the last of them
 `docs/reports/IMPROVEMENT-REPORT-001.md`. PH-27.1 (approved) re-planted
 eleven guards from Cycle Audit 8's map and three of this cycle's own: ten
 held, one could not fail — the minute-bucket statistics that dropped quiet
-minutes — and is anchored, with the count on the Lab's quality screen. Then
-PH-27.2 (records), PH-27.3 (small improvements),
+minutes — and is anchored, with the count on the Lab's quality screen. PH-27.2 (approved) re-checked
+every "leaves open" section from PH-20 on and every open Issue against the
+tree: six sections annotated with dated verdicts, six Issues closed on
+evidence (#2, #5, #6, #17, #18, #21), CLAUDE.md §5 re-measured from the PH-25
+gate. Then PH-27.3 (small improvements),
 PH-27.4 (the footprint of a Lab intervention), PH-27.5 (the report); then the
 phase gate, the merge, and Cycle Audit 9.
 

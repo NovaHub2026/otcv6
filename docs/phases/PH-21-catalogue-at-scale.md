@@ -197,3 +197,15 @@ which could not locate it. Issue #18.
 **Fan-out.** The phase proved a hundred assets can exist and be scheduled. It
 says nothing about a thousand clients watching them, which is PH-22 and which
 the Human Owner has prioritised ahead of everything else.
+
+> **Re-checked against the tree, 2026-09-05 (PH-27.2).** INV-007 at a hundred —
+> **superseded**: the catalogue is thirty (PH-26), and
+> `tools/sim/src/multiAsset.stat.test.ts` measures behavioural separation on
+> all thirty (shape accuracy above 1.6× chance; rhythm and tail features each
+> above chance and together above either); Issue #21 closed on that. A hundred
+> hosted — **still open**, `IMPROVEMENT-REPORT-001.md` §4. The panel not
+> virtualised — **still open**, report §2. `CYCLE-7-CATALOGUE-SCALE.md` one
+> parameter behind and the 400-brief probe — **superseded** by
+> `PH-26-CATALOGUE-OF-THIRTY.md`, which records every seat's draw, retreats and
+> clamps under seed; Issues #17 and #18 closed on that. Fan-out — **closed by**
+> PH-22 to two thousand; ten thousand is report §4.

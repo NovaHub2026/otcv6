@@ -106,7 +106,7 @@ npm run format:check   # Prettier check
 npm run typecheck:web     # the Next.js app, which is outside the reference graph
 npm run typecheck:config  # vitest.config.ts and the root setup/reporter files
 
-npm run test:unit      # fast unit suite, ~130 files            (~30s)
+npm run test:unit      # fast unit suite, ~140 files            (~110s)
 npm run test:stat      # statistical suite, SERIAL — over an hour, see below
 npm test               # both, in that order
 
@@ -125,12 +125,14 @@ bare command (a7-07).
 
 **Budget the time.** `npm run gate` is dominated by the statistical suite, which
 runs serially by design — that is single-core wall clock, and a bigger machine
-does not shorten it. Measured on 2026-09-04: the statistical suite is **70
-minutes locally** (4,217 s) and **105 minutes hosted** (6,280 s), against ~40
-minutes hosted the day before; PH-24.17 recalibrated the engine to print three
-to four times as many ticks per candle, and every suite that samples in ticks
-grew with it. The unit suite is the cheap half: ~130 files and ~2,600 tests in
-about half a minute, same machine, same day. Nothing has hung, but the hosted
+does not shorten it. Measured on 2026-09-05 (the PH-25 phase gate): the
+statistical suite is **72.5 minutes locally** (4,352 s, 44 files / 395 tests,
+the two browser suites included) and was **105 minutes hosted** (6,280 s) the
+day before; PH-24.17 recalibrated the engine to print three to four times as
+many ticks per candle, and every suite that samples in ticks grew with it —
+the catalogue of thirty did not, because the heavy suites sample five assets
+(PH-26.1). The unit suite is the cheap half: 140 files and 2,973 tests in
+about 110 s, same machine, same day (the coverage leg adds another ~105 s). Nothing has hung, but the hosted
 Statistical Gate was **cancelled at its own 90-minute ceiling** on the PH-24
 merge and left that commit with no statistical verdict (Cycle Audit 8, finding
 18; the ceiling is 180 minutes now).

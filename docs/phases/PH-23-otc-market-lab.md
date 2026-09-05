@@ -211,3 +211,11 @@ with an id and a record, like registration (PH-23.3 §6, criterion 5).
 
 **No replay or snapshot UI** (§74–§77). The determinism it would rest on exists
 and is tested; the surface is not built.
+
+> **Re-checked against the tree, 2026-09-05 (PH-27.2).** Interventions not
+> wired — **closed by** PH-24 (`POST /lab/markets/:id/push`, `/close`, `/bias`,
+> `/release`; `pushRoutes.test.ts`, `closeRoutes.test.ts`, `biasRoutes.test.ts`).
+> §67's large runs as jobs — **still open**, `IMPROVEMENT-REPORT-001.md` §3. No
+> replay or snapshot UI — **partly**: the screen exists (`Reproducir.tsx`) and
+> no `/lab` route serves a replay or a mirror, so it is wired to nothing;
+> report §3.
