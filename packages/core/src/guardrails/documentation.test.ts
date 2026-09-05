@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -559,6 +560,16 @@ describe('a document that names a test names one that exists', () => {
     'DOCS_INDEX.md',
     ...listMarkdown('docs/decisions').map((name) => `docs/decisions/${name}`),
     ...listMarkdown('docs/architecture').map((name) => `docs/architecture/${name}`),
+    // **Cycle Audit 9 (a7-03).** The phase documents, the audits, the evidence
+    // and the reports name tests too — PH-27.2's "closed by … (the guard that
+    // holds it)" annotations name one per item — and none of them was read.
+    // Not the audit records: an audit quotes the false claims it found — CA8
+    // recorded a docstring naming a `labModule.test.ts` that never existed —
+    // and holding the quotation to the disk would hold the finding to be the
+    // lie. Phases, evidence and reports assert; audits report.
+    ...listMarkdown('docs/phases').map((name) => `docs/phases/${name}`),
+    ...listMarkdown('docs/evidence').map((name) => `docs/evidence/${name}`),
+    ...listMarkdown('docs/reports').map((name) => `docs/reports/${name}`),
   ];
 
   /** Every `*.test.ts` file in the repository, by basename. */
@@ -590,16 +601,41 @@ describe('a document that names a test names one that exists', () => {
     expect(files.has('mirror.test.ts'), 'the primary structural gate is gone').toBe(true);
   });
 
+  /**
+   * Every `*.test.ts` basename ever tracked, from git's own history. A phase
+   * document approved when `recalibration.test.ts` existed, or an audit record
+   * quoting a file a docstring falsely claimed, is history and stays true; a
+   * name that never existed anywhere is a lie in any document. Canonical
+   * documents — the ones a fresh session reads first — are held to the disk.
+   */
+  const everTracked = (): Set<string> => {
+    const out = execFileSync(
+      'git',
+      ['log', '--all', '--diff-filter=A', '--name-only', '--pretty=format:', '--', '*.test.ts'],
+      { cwd: repoRoot, encoding: 'utf8' },
+    );
+    return new Set(
+      out
+        .split('\n')
+        .filter((line) => line.endsWith('.test.ts'))
+        .map((line) => path.basename(line)),
+    );
+  };
+  const HISTORICAL = /^docs\/(phases|evidence|reports)\//;
+
   it('names no test file that does not exist', () => {
     const files = onDisk();
+    const tracked = everTracked();
     const missing: string[] = [];
     let named = 0;
     for (const document of documents) {
       if (!existsSync(path.join(repoRoot, document))) continue;
+      const historical = HISTORICAL.test(document);
       for (const match of read(document).matchAll(/`([A-Za-z0-9_.\-/]+\.test\.ts)`/g)) {
         named += 1;
         const base = path.basename(match[1]!);
-        if (!files.has(base)) missing.push(`${document} names ${match[1]!}`);
+        const known = files.has(base) || (historical && tracked.has(base));
+        if (!known) missing.push(`${document} names ${match[1]!}`);
       }
     }
     // A scan that matched nothing would pass this silently, which is the failure
@@ -648,5 +684,42 @@ describe('the documented repository layout is real', () => {
     const actual = readdirSync(path.join(repoRoot, 'packages')).map((name) => `packages/${name}`);
     expect(actual.length).toBeGreaterThan(0);
     for (const pkg of actual) expect(documented, `${pkg} is undocumented`).toContain(pkg);
+  });
+});
+
+/**
+ * **Cycle Audit 9 (a7-03).** PH-27.2 annotated every "leaves open" section
+ * with a dated verdict per item — *closed by PH-N (the guard that holds it)*,
+ * *still open*, *superseded*. A "closed by" that names a phase the roadmap
+ * does not show as approved is a closure by narrative; this reads every such
+ * block and holds each named phase to the roadmap.
+ */
+describe('a "closed by" annotation names an approved phase', () => {
+  const roadmap = read('docs/phases/ROADMAP.md');
+  const approved = new Set<string>();
+  for (const line of roadmap.split('\n')) {
+    const row = /^\| (PH-\d+(?:\.\d+)?)\s*\|[^|]*\|\s*([^|]*?)\s*\|/.exec(line);
+    if (row !== null && /APPROVED/.test(row[2]!)) approved.add(row[1]!);
+  }
+
+  it('finds the roadmap rows it holds the annotations to', () => {
+    expect(approved.size).toBeGreaterThan(20);
+  });
+
+  it('every phase a re-check annotation says closed an item is APPROVED in the roadmap', () => {
+    const offenders: string[] = [];
+    for (const name of listMarkdown('docs/phases')) {
+      const text = read(`docs/phases/${name}`);
+      const blocks = text.match(/> \*\*Re-checked against the tree[\s\S]*?(?=\n\n(?!>)|$)/g) ?? [];
+      for (const block of blocks) {
+        for (const match of block.matchAll(/closed by\*\*?\s*(PH-\d+(?:\.\d+)?)/g)) {
+          if (!approved.has(match[1]!)) offenders.push(`${name}: closed by ${match[1]!}`);
+        }
+        for (const match of block.matchAll(/\*\*closed by\*\*\s+(PH-\d+(?:\.\d+)?)/g)) {
+          if (!approved.has(match[1]!)) offenders.push(`${name}: closed by ${match[1]!}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });
