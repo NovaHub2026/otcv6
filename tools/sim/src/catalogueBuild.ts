@@ -114,7 +114,9 @@ export function reachableTarget(
  * The streams an asset is authored from.
  *
  * Exactly the convention `catalogue.test.ts` re-derives every entry with —
- * `MasterKeyring.forTesting(registrationKeyLabel(id))`, asset label the id —
+ * `MasterKeyring.forTesting(registrationKeyLabel(id))` — the seat's draw derives
+ * under asset label `<id>`, and `registerAsset` then authors under
+ * `registration-<id>` (Cycle Audit 9, a3-07 named the two) —
  * so "the recorded personalities reproduce from their targets" stays a guard
  * over the thirty rather than a property of five hand-authored entries. The
  * label is per asset and is the id; nothing else seeds a personality.

@@ -27,7 +27,7 @@ import type { RandomSource } from '@otc/core';
  *   can fail on a draw is a defect, not a flake.
  * - **Stratified.** One asset from every stratum — the archetype an asset was
  *   drawn from, or its family when it was hand-authored — before a second from
- *   any. Thirty assets on eight archetypes and a sample of five that happened to
+ *   any. Thirty assets on six populated archetypes (eight declared) and a sample that happened to
  *   land on five currency pairs would verify nothing about crypto.
  * - **Inert when it is not needed.** A catalogue no larger than the sample is
  *   measured whole. At five assets every suite produces exactly the verdict it
