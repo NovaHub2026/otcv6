@@ -143,6 +143,7 @@ describe('the catalogue an operator picks from', () => {
       dispersion: { quarterlyLogSigma: number; quarterlyPercent: number };
       meanIntervalMs: number;
       tieRate: number;
+      seat: { archetype: string; character: string; priceSource: string } | null;
     }[];
     expect(rows).toHaveLength(ASSET_CATALOGUE.length);
     for (const row of rows) {
@@ -150,6 +151,17 @@ describe('the catalogue an operator picks from', () => {
       expect(row.dispersion.quarterlyPercent).toBeGreaterThan(0);
       expect(row.meanIntervalMs).toBeGreaterThan(0);
       expect(row.tieRate).toBeGreaterThan(0);
+      // PH-26.4: every compiled asset says which seat it was drawn from, in
+      // prose a broker can show — and nothing a trader could trade on.
+      expect(row.seat, `${row.id} has no seat`).not.toBeNull();
+      expect(ASSET_ARCHETYPES.map((a) => a.id)).toContain(row.seat!.archetype);
+      expect(row.seat!.character.length).toBeGreaterThan(40);
+      expect(row.seat!.priceSource.length).toBeGreaterThan(10);
+      // Field shapes, not words: a character may say "volatility"; a JSON key
+      // named after a trait may not exist (INV-010).
+      expect(JSON.stringify(row.seat)).not.toMatch(
+        /"(tempoMs|volatility|clustering|burstiness|cascadeDepth|logQuantum)"|cursor|registration-/,
+      );
     }
     // Registered and hosted are different questions, and an operator needs both.
     expect(rows.filter((row) => row.live).map((row) => row.id)).toEqual([FIRST, SLOW]);

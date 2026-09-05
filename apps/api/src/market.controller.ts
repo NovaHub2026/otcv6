@@ -23,6 +23,7 @@ import {
   checkIdentity,
   dispersionLogSigma,
   dispersionPercent,
+  seatById,
   type AssetBrief,
 } from '@otc/engine';
 import { epochMillis, isTimeframeId, timeframe as timeframeById, type Tick } from '@otc/core';
@@ -542,6 +543,12 @@ export class MarketController implements BeforeApplicationShutdown {
   catalogue(): unknown {
     const live = new Set(this.venue.assetIds);
     return this.venue.catalogue.map((asset) => ({
+      // The seat a compiled asset was drawn from, or null for one registered
+      // at runtime (PH-26.4): a broker's screen wants to say what an
+      // instrument is without a second lookup, and the seat's prose is the only
+      // place that lives. Archetype, prose and a citation — no trait, no label,
+      // no cursor (INV-010).
+      seat: seatOf(asset.definition.id),
       id: asset.definition.id,
       displayName: asset.definition.displayName,
       family: asset.definition.family,
@@ -916,6 +923,16 @@ const MAX_REPLAY_BYTES = 1_000_000;
  * counter for the whole connection however many assets it carries, so replay was
  * never what this protects. Exported so the refusal is testable.
  */
+/** The seat a compiled asset was drawn from, or null for a runtime registration. */
+function seatOf(id: string): { archetype: string; character: string; priceSource: string } | null {
+  try {
+    const seat = seatById(id);
+    return { archetype: seat.archetype, character: seat.character, priceSource: seat.priceSource };
+  } catch {
+    return null;
+  }
+}
+
 export const MAX_MULTIPLEXED_ASSETS = 32;
 
 /**

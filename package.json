@@ -28,6 +28,7 @@
     "evidence:horizons": "npm run build && node tools/sim/dist/horizonEvidence.js",
     "catalogue:build": "npm run build && node tools/sim/dist/buildCatalogue.js",
     "evidence:ties": "npm run build && node tools/sim/dist/tieRateEvidence.js",
+    "catalogue:library": "npm run build && node tools/sim/dist/catalogueLibraryWrite.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

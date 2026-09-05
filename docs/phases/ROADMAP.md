@@ -745,12 +745,12 @@ six to seven hours against a 180-minute CI ceiling. Six per-asset-id tables
 indexed with non-null assertions do not slow down when the catalogue changes —
 they throw.
 
-| Subphase | Title                                                                     | State      |
-| -------- | ------------------------------------------------------------------------- | ---------- |
-| PH-26.1  | The suites scale: stratified sampling, id-keyed tables, N-free thresholds | APPROVED   |
-| PH-26.2  | The thirty personalities: drawn under seed, filtered by profile           | APPROVED   |
-| PH-26.3  | The catalogue compiled and calibrated, with its evidence recorded         | APPROVED   |
-| PH-26.4  | The integration library: the thirty as something a broker can consume     | **ACTIVE** |
+| Subphase | Title                                                                     | State    |
+| -------- | ------------------------------------------------------------------------- | -------- |
+| PH-26.1  | The suites scale: stratified sampling, id-keyed tables, N-free thresholds | APPROVED |
+| PH-26.2  | The thirty personalities: drawn under seed, filtered by profile           | APPROVED |
+| PH-26.3  | The catalogue compiled and calibrated, with its evidence recorded         | APPROVED |
+| PH-26.4  | The integration library: the thirty as something a broker can consume     | APPROVED |
 
 **PH-25 — the battery against a production venue's own record.** Every
 adversarial run in this repository builds its own engine, or runs against the

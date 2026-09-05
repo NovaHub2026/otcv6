@@ -21,14 +21,14 @@ Last synchronized: 2026-09-04
 
 ## Phase and subphase
 
-| Field                  | Value                                            |
-| ---------------------- | ------------------------------------------------ |
-| Active phase           | **PH-26 — The catalogue of thirty**              |
-| Phase lifecycle        | ACTIVE                                           |
-| Active subphase        | PH-26.4 — the integration library                |
-| Subphase lifecycle     | ACTIVE                                           |
-| Last approved phase    | PH-24 — The Lab's controls: applying a selection |
-| Last approved subphase | PH-26.3 — The catalogue compiled and calibrated  |
+| Field                  | Value                                                              |
+| ---------------------- | ------------------------------------------------------------------ |
+| Active phase           | **PH-26 — The catalogue of thirty**                                |
+| Phase lifecycle        | ACTIVE                                                             |
+| Active subphase        | none — PH-26's four subphases are approved; the phase gate is next |
+| Subphase lifecycle     | none                                                               |
+| Last approved phase    | PH-24 — The Lab's controls: applying a selection                   |
+| Last approved subphase | PH-26.4 — The integration library                                  |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
@@ -195,22 +195,17 @@ the wrong thing.
 
 ## EXACT NEXT LEGAL ACTION
 
-**PH-26.4 — the integration library: the thirty as something a broker can
-consume.**
+**PH-26's integrated phase verification: the full gate on the phase branch,
+then the merge to `main` and hosted CI on the merge commit.**
 
-PH-26.3 is approved. `ASSET_CATALOGUE` is the thirty, every number produced by
-`npm run catalogue:build` from recorded seeds; the five incumbents and the tests
-that were about them are retired by name; thirty lattice tie rates and 240
-horizon-coverage cells are measured and recorded; a checkpoint now carries the
-fingerprint of the personality that wrote it and a resume refuses another's;
-and the statistical suite ran whole at thirty in **3,843 s** — shorter than at
-five, because the heavy suites sample — with the three test-file defects it
-found corrected and re-run green.
-
-PH-26.4 makes the catalogue consumable: `GET /catalogue` carries each asset's
-seat (archetype, character, price source), `docs/integration/CATALOGUE.md` is
-generated from the compiled catalogue and guarded against drift, and the
-integration package the Human Owner asked for is refreshed with the thirty.
+All four subphases are approved — the suites scale, the thirty seats, the
+catalogue compiled and measured, the integration library. `GOVERNANCE.md`
+places a full `npm run gate` at the phase boundary rather than a targeted one;
+the statistical suite already ran whole at thirty during PH-26.3 (3,843 s, three
+test-file defects corrected and re-run green), and the phase gate runs it again
+on the final tree with the PH-26.4 changes in. After the merge, PH-25 — the
+battery against a production venue's own record — is the next phase, then
+PH-27, then Cycle Audit 9.
 
 This section named **PH-22.1** — a subphase approved and merged two phases ago —
 until Cycle Audit 8 (a7) found it. A fresh session following `CLAUDE.md` §1 read
