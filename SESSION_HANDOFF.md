@@ -32,8 +32,8 @@ refuters confirmed 62 — one critical (an aliased engine snapshot on a
 production route passed the INV-010 scan; guarded by value now), 22 material,
 39 minor. The fixes are merged, each with a guard watched failing; the audit
 record is `docs/audits/CYCLE-AUDIT-009.md`. **Cycle 10 is planned as the
-closing cycle** — PH-28 the durable venue, PH-29 the trading boundary, PH-30
-the release — on the Human Owner's direction of 2026-09-05; the plan and its
+closing cycle** — PH-28 the durable venue, PH-29 the integration boundary,
+PH-30 the release — on the Human Owner's direction of 2026-09-05; the plan and its
 subphases are in `docs/phases/ROADMAP.md`, the decision in the decision log. Hosted CI on
 this cycle's merges is recorded truthfully in `CURRENT_STATE.md` § "Hosted CI,
 honestly" — the PH-25 merge was red on both gates, and **`npm run

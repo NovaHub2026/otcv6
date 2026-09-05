@@ -609,3 +609,26 @@ deposits and identity checks — and the two Governance amendments (Issues #3
 and #14), which only they can make. Cycle Audit 10 runs in full at the end;
 "last planned" shortens nothing. After it, the loop continues in maintenance
 cycles unless the Human Owner says `PARAR`.
+
+## 2026-09-05 — The engine is integrated into a broker; the broker is not built here
+
+**Clarification from the Human Owner**, the same day, on the Cycle 10 plan:
+_"esto es el motor de OTC de un broker, nosotros no estamos construyendo el
+broker, solo debemos dejar preparado el motor para integrarlo al broker de
+opciones binarias."_
+
+**What changed.** PH-29 was planned as a trading boundary on the venue —
+contracts opened and settled by the engine, payout a venue parameter, money in
+minor units. That is the broker's product, and it is withdrawn. PH-29 is now
+the integration boundary: the settlement query a broker's own settlement
+needs (price at a sequence and at an instant, with its inclusion proof under
+INV-009), the API contract frozen and versioned, a conformance suite the
+broker runs against its deployment, and a reference client exercised by the
+release. `packages/trading` stays a reference implementation a broker may
+embed; Issue #11 is decided as that library's concern. PH-30's screen work is
+the stream at scale for the broker's frontend and the operator's panel, not a
+trader's interface. PH-28 is unchanged: a broker that settles against the
+record needs the record to survive a restart.
+
+**What is now explicitly out of scope.** Accounts, positions, payout, money,
+risk, and the trader's user interface — all the broker's.
