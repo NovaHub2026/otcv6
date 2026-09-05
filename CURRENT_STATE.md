@@ -21,14 +21,14 @@ Last synchronized: 2026-09-04
 
 ## Phase and subphase
 
-| Field                  | Value                                                                    |
-| ---------------------- | ------------------------------------------------------------------------ |
-| Active phase           | **PH-25 — The battery against a production venue's own record**          |
-| Phase lifecycle        | ACTIVE                                                                   |
-| Active subphase        | PH-25.1 — an observer that builds a dataset from the served record alone |
-| Subphase lifecycle     | ACTIVE                                                                   |
-| Last approved phase    | PH-26 — The catalogue of thirty                                          |
-| Last approved subphase | PH-26.4 — The integration library                                        |
+| Field                  | Value                                                                     |
+| ---------------------- | ------------------------------------------------------------------------- |
+| Active phase           | **PH-25 — The battery against a production venue's own record**           |
+| Phase lifecycle        | ACTIVE                                                                    |
+| Active subphase        | PH-25.2 — the battery on the served record, across a restart and a resume |
+| Subphase lifecycle     | ACTIVE                                                                    |
+| Last approved phase    | PH-26 — The catalogue of thirty                                           |
+| Last approved subphase | PH-25.1 — the served-record observer                                      |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
@@ -195,17 +195,19 @@ the wrong thing.
 
 ## EXACT NEXT LEGAL ACTION
 
-**PH-25.1 — an observer that builds a dataset from the served record alone.**
+**PH-25.2 — the battery on the served record, across a restart and a resume.**
 
 PH-26 is merged at `c4757c5` and pushed; hosted CI is running on it and its
 verdict is recorded here when it lands. PH-25 is active on
 `feature/ph-25-production-record-battery`: the battery against the feed a real
 observer reads, which no adversarial run in this repository has ever attacked.
-PH-25.1 builds the instrument's missing half — an SSE client in `packages/lab`
-that turns `GET /markets/:id/stream` into the `TickSource` the battery already
-consumes, faithful across two connections and a restart, and honest about every
-gap it is told. Then PH-25.2 runs the battery on that record, PH-25.3 records
-the verdict and the standing job; then PH-27, the review phase, closing with the
+PH-25.1 is approved: the SSE client in `packages/lab` turns
+`GET /markets/:id/stream` into the `TickSource` the battery consumes, and its
+first runs against the spawned service produced three findings — one fixed in
+the stream endpoints (a told gap is now followed by the whole retained window,
+named by `resumesAt`), two carried to PH-27.5's report (the replay window and
+the candle of the minute a kill falls in do not survive a restart). PH-25.2
+runs the battery on that record, PH-25.3 records the verdict and the standing job; then PH-27, the review phase, closing with the
 improvement report; then Cycle Audit 9.
 
 This section named **PH-22.1** — a subphase approved and merged two phases ago —

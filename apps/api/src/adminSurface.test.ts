@@ -707,7 +707,16 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     expect(evicted.body()).toMatch(/^event: gap\ndata: /);
     expect(JSON.parse(/^event: gap\ndata: (.*)\n\n/.exec(evicted.body())![1]!)).toMatchObject({
       requested: 1,
+      resumesAt: 6,
     });
+    // **PH-25.1.** After the gap, everything the feed still holds — from the
+    // oldest sequence it retains, not the live edge. The first served-record
+    // run found the venue joining an observer at the live edge, nine ticks
+    // past a window start it had retained and never served. The frame names
+    // where the record picks up, and the ticks follow the gap, in order.
+    const replayed = [...evicted.body().matchAll(/\nid: (\d+)\ndata: /g)].map((m) => Number(m[1]));
+    expect(replayed).toEqual([6, 7, 8, 9, 10]);
+    expect(evicted.body().indexOf('event: gap')).toBeLessThan(evicted.body().indexOf('id: 6'));
     // And it is a live subscription, not a consolation prize.
     feed.publish(FIRST, [
       { sequence: 11, instant: epochMillis(ORIGIN + 66_000), price: logPrice(1_003) },
@@ -719,6 +728,12 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     controller.stream(FIRST, future.res, request(), '99999', 'live');
     expect(future.status()).toBe(200);
     expect(future.body()).toMatch(/event: gap/);
+    // Nothing to replay for a sequence that never existed: the live edge, and
+    // the frame says it names no resumption.
+    expect(JSON.parse(/event: gap\ndata: (.*)\n\n/.exec(future.body())![1]!)).toMatchObject({
+      resumesAt: null,
+    });
+    expect(future.body()).not.toMatch(/\nid: \d+\ndata: /);
   });
 
   it('carries several assets on one connection, each with its own position (PH-22.2)', () => {
@@ -844,7 +859,9 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     expect(out.status()).toBe(200);
     const gap = /event: gap\ndata: (.*)/.exec(out.body())?.[1];
     expect(gap, 'no gap event').toBeDefined();
-    expect(JSON.parse(gap!)).toMatchObject({ asset: FIRST, requested: 1 });
+    expect(JSON.parse(gap!)).toMatchObject({ asset: FIRST, requested: 1, resumesAt: 8 });
+    // The first asset's retained window follows its gap (PH-25.1).
+    expect(out.body()).toMatch(new RegExp(`"asset":"${FIRST}","sequence":8`));
     // The third asset was servable and was served.
     expect(out.body()).toMatch(new RegExp(`"asset":"${THIRD}","sequence":2`));
   });

@@ -60,13 +60,32 @@ function saysOnlyNone(cell: string): boolean {
   return /^none\b[\s.—-]*$/i.test(cell.trim());
 }
 
-/** `PH-21.1` sorts after `PH-20.3`; a phase sorts before its subphases. */
-function later(a: RoadmapRow, b: RoadmapRow): boolean {
-  if (a.phase !== b.phase) return a.phase > b.phase;
-  return (a.subphase ?? -1) > (b.subphase ?? -1);
+/**
+ * Chronology, which is not numbering.
+ *
+ * Phases are ordered as the roadmap's phase rows list them, because that is
+ * the order they ran in: PH-26 runs before PH-25 by a recorded decision
+ * ("the numbering says so rather than hiding it"), and a guard that sorted by
+ * number named PH-26.4 as the latest approved subphase the moment PH-25.1
+ * was — a false failure on the first day it could fire (PH-25.1). Within a
+ * phase, `PH-21.3` follows `PH-21.1`, and a phase precedes its subphases.
+ */
+function chronology(phases: readonly RoadmapRow[]): (a: RoadmapRow, b: RoadmapRow) => boolean {
+  const order = new Map<number, number>();
+  phases.forEach((row, index) => {
+    if (!order.has(row.phase)) order.set(row.phase, index);
+  });
+  const rank = (row: RoadmapRow): number => order.get(row.phase) ?? row.phase + 1_000;
+  return (a, b) => {
+    if (a.phase !== b.phase) return rank(a) > rank(b);
+    return (a.subphase ?? -1) > (b.subphase ?? -1);
+  };
 }
 
-function latest(rows: readonly RoadmapRow[]): RoadmapRow | undefined {
+function latest(
+  rows: readonly RoadmapRow[],
+  later: (a: RoadmapRow, b: RoadmapRow) => boolean,
+): RoadmapRow | undefined {
   return rows.reduce<RoadmapRow | undefined>(
     (best, row) => (best === undefined || later(row, best) ? row : best),
     undefined,
@@ -77,6 +96,7 @@ describe('canonical state agrees with the roadmap', () => {
   const rows = roadmapRows(readRepositoryFile('docs/phases/ROADMAP.md'));
   const phases = rows.filter((row) => row.subphase === null);
   const subphases = rows.filter((row) => row.subphase !== null);
+  const later = chronology(phases);
   const current = readRepositoryFile('CURRENT_STATE.md');
   const handoff = readRepositoryFile('SESSION_HANDOFF.md');
 
@@ -111,7 +131,7 @@ describe('canonical state agrees with the roadmap', () => {
   it('names the correct last approved phase', () => {
     const approved = phases.filter((row) => isApprovedStatus(row.status));
     expect(approved.length).toBeGreaterThan(0);
-    const last = latest(approved)!;
+    const last = latest(approved, later)!;
     const recorded = rowValue(current, 'Last approved phase');
     expect(recorded, 'CURRENT_STATE.md has no "Last approved phase" row').not.toBeNull();
     expect(
@@ -124,7 +144,7 @@ describe('canonical state agrees with the roadmap', () => {
     // **a2-08, DOC-11.** This row named an ACTIVE subphase and nothing noticed.
     const approved = subphases.filter((row) => isApprovedStatus(row.status));
     expect(approved.length).toBeGreaterThan(0);
-    const last = latest(approved)!;
+    const last = latest(approved, later)!;
     const recorded = rowValue(current, 'Last approved subphase');
     expect(recorded, 'CURRENT_STATE.md has no "Last approved subphase" row').not.toBeNull();
     expect(

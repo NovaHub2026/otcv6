@@ -108,3 +108,15 @@ export {
   composeFamilies,
 } from './standing.js';
 export { tickGranularity, type GranularityReport } from './granularity.js';
+export {
+  readServedRecord,
+  PUBLIC_INSTRUMENT_FIELDS,
+  ServedRecordError,
+  SseParser,
+  type Discontinuity,
+  type ServedClose,
+  type ServedGap,
+  type ServedRecord,
+  type ServedRecordOptions,
+  type StopRule,
+} from './served/servedRecord.js';
