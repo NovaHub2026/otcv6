@@ -101,7 +101,13 @@ export function reachableTarget(
       target *= AUTHORING_RETREAT;
     }
   }
-  return { target, retreats: AUTHORING_ATTEMPTS };
+  // Never an unverified target (Cycle Audit 9, a8-09): a seat whose tail
+  // weight is unreachable after every retreat is a seat the builder cannot
+  // author, and saying so beats compiling a personality nobody solved.
+  throw new TailWeightUnreachableError(
+    `${String(sample.excessKurtosis)} is unreachable after ${String(AUTHORING_ATTEMPTS)} retreats ` +
+      `(last tried ${String(target)})`,
+  );
 }
 
 /**

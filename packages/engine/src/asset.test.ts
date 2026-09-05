@@ -1,7 +1,12 @@
 // Invariant evidence: INV-009 (reproducible settlement).
 import { describe, expect, it } from 'vitest';
 import { MasterKeyring } from '@otc/core';
-import { calibrateAsset, rescaleCalibration } from './asset.js';
+import {
+  calibrateAsset,
+  MEASURED_LATTICE_TIE_RATES,
+  rescaleCalibration,
+  TARGET_TIE_RATE,
+} from './asset.js';
 import { ASSET_CATALOGUE, registrationKeyLabel } from './catalogue.js';
 import { dispersionLogSigma } from './dispersion.js';
 
@@ -112,5 +117,19 @@ describe('a calibration can be moved to another volatility without simulating', 
     // asset outside the trait bounds rather than as a quietly clipped one.
     expect(() => rescaleCalibration(measured, 1e6)).toThrow(/volatility/);
     expect(() => rescaleCalibration(measured, 1e-6)).toThrow(/volatility/);
+  });
+});
+
+describe('the measured tie-rate table is complete (CA9 a3-05)', () => {
+  it('names every catalogue id, no other, with a rate inside (0, TARGET_TIE_RATE)', () => {
+    // A constant deleted or zeroed for an asset the heavy suites do not sample
+    // passed every cheap gate step; the table is a record of thirty
+    // measurements and this holds it to the thirty.
+    const ids = ASSET_CATALOGUE.map((asset) => asset.definition.id).sort();
+    expect(Object.keys(MEASURED_LATTICE_TIE_RATES).sort()).toEqual(ids);
+    for (const [id, rate] of Object.entries(MEASURED_LATTICE_TIE_RATES)) {
+      expect(rate, id).toBeGreaterThan(0);
+      expect(rate, id).toBeLessThan(TARGET_TIE_RATE);
+    }
   });
 });
