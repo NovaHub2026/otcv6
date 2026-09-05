@@ -12,12 +12,12 @@ Last synchronized: 2026-09-05
 
 ## Development cycle
 
-| Field                            | Value                                                                                                         |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 9 — **3 of 3** phases approved (PH-26, PH-25, PH-27); Cycle Audit 9 next                                |
-| Approved phases in current cycle | **3 of 3** — PH-26, PH-25, PH-27                                                                              |
-| Cycle Audit state                | **008 closed** — 86 claims, 60 confirmed, 26 refuted; all 60 resolved                                         |
-| Last Cycle Audit                 | [Cycle Audit 008](docs/audits/CYCLE-AUDIT-008.md) — 2026-09-04, eight independent auditors, one worktree each |
+| Field                            | Value                                                                                                                                                                            |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Active development cycle         | Cycle 9 — **3 of 3** phases approved (PH-26, PH-25, PH-27); Cycle Audit 9 next                                                                                                   |
+| Approved phases in current cycle | **3 of 3** — PH-26, PH-25, PH-27                                                                                                                                                 |
+| Cycle Audit state                | **009 OPEN** — 62 findings confirmed, 61 resolved on `audit/ca9-fixes`, one carried; closes on that branch's gate, merge and hosted CI                                           |
+| Last Cycle Audit                 | [Cycle Audit 009](docs/audits/CYCLE-AUDIT-009.md) — 2026-09-05, eight independent auditors, one worktree each, every finding refuted independently; closing on `audit/ca9-fixes` |
 
 ## Phase and subphase
 
@@ -186,21 +186,25 @@ on `audit/ca9-fixes`; that run replaces this block when it passes.
 | Backlog  | [GitHub Issues](https://github.com/NovaHub2026/otcv6/issues) #1–#22; closed: #1, #2, #5, #6, #13, #15, #17, #18, #21, #22. Two remain the Human Owner's: #3 and #14; the rest are referenced from `docs/reports/IMPROVEMENT-REPORT-001.md`                                                                                                                                                                                                                                                                         |
 | Roadmap  | `docs/phases/ROADMAP.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Branch   | `audit/ca9-fixes` off `main` at the PH-27 merge `e8ed2ae` (Cycle 9 complete); before it the PH-25 merge `7f03abe` and its state fix `f2bab68`; before it the PH-26 merge `c4757c5`; before it the PH-24 merge `d1aa02c` and the Cycle Audit 8 fixes after it; before it PH-23 at `8f62e4b`, Cycle Audit 7 and PH-22.1 at `f07e71d`, PH-21 at `3e4ec7e`. PH-21.1 sits under two hashes (`3a5f0a5`, `36bbf89`) because the branch was merged rather than rebased; both are ancestors and the duplication is cosmetic |
-| Audit    | [`CYCLE-AUDIT-008.md`](docs/audits/CYCLE-AUDIT-008.md) — 86 claims, 60 confirmed, all resolved, eight independent auditors. Before it, [`OUT-OF-BAND-AUDIT-001.md`](docs/audits/OUT-OF-BAND-AUDIT-001.md) — 83 findings, 6 critical, seven auditors                                                                                                                                                                                                                                                                |
+| Audit    | [`CYCLE-AUDIT-009.md`](docs/audits/CYCLE-AUDIT-009.md) — 64 claims, 62 confirmed, 61 resolved with a guard each, one carried (a8-12), eight independent auditors. Before it, [`CYCLE-AUDIT-008.md`](docs/audits/CYCLE-AUDIT-008.md) — 86 claims, 60 confirmed, all resolved                                                                                                                                                                                                                                        |
 
 ---
 
 ## EXACT NEXT LEGAL ACTION
 
-**Run Cycle Audit 9 (GOVERNANCE §28): three phases are approved, normal development stops, and the merge of the third phase is pushed before the auditors' worktrees are cut from it.**
+**Close Cycle Audit 9: the full gate on `audit/ca9-fixes`, the merge to `main`, hosted CI on it — then Cycle 10 opens from `docs/reports/IMPROVEMENT-REPORT-001.md` §4.**
 
 PH-27 is approved on its integrated phase verification (`GATE_EXIT=0` first
 attempt, 45 statistical files in 4,472 s) and is being merged. Cycle 9 is
 complete: PH-26 (the catalogue of thirty), PH-25 (the battery against a
 production venue's own record), PH-27 (review and improvement, closing with
-`docs/reports/IMPROVEMENT-REPORT-001.md`). The next legal action is Cycle
-Audit 9: eight independent auditors, one worktree each (B-020), every finding
-refuted before it is believed (CA8 §8).
+`docs/reports/IMPROVEMENT-REPORT-001.md`). Cycle Audit 9 has run: eight
+independent auditors, one worktree each (B-020), 64 claims, 62 confirmed by
+independent refuters — one critical, 22 material, 39 minor — 61 resolved with
+a guard watched failing each and one carried by name
+(`docs/audits/CYCLE-AUDIT-009.md`). The fixes are on `audit/ca9-fixes`; the
+full gate on that branch, the merge and hosted CI close the audit, and Cycle
+10 opens from the improvement report's ranked page.
 
 **Hosted CI on this cycle's merges — corrected by Cycle Audit 9 (a7-01,
 a2-03).** The PH-26 merge `c4757c5` was red on the Quality Gate (one unit

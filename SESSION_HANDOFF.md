@@ -6,16 +6,16 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                                         |
-| ------------------ | ----------------------------------------------------------------------------- |
-| Last clean session | 2026-09-05                                                                    |
-| Branch             | `audit/ca9-fixes`, off `main` at `e8ed2ae` (the PH-27 merge)                  |
-| Remote             | `origin` → NovaHub2026/otcv6, public                                          |
-| Active cycle       | Cycle 9, **3 of 3** phases approved — PH-26, PH-25, PH-27; Cycle Audit 9 next |
-| Active phase       | none                                                                          |
-| Active subphase    | none                                                                          |
-| Cycle Audit        | **008 closed** — 60 confirmed, all 60 resolved, none tracked                  |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                            |
+| Field              | Value                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------ |
+| Last clean session | 2026-09-05                                                                                                   |
+| Branch             | `audit/ca9-fixes`, off `main` at `e8ed2ae` (the PH-27 merge)                                                 |
+| Remote             | `origin` → NovaHub2026/otcv6, public                                                                         |
+| Active cycle       | Cycle 9, **3 of 3** phases approved — PH-26, PH-25, PH-27; Cycle Audit 9 next                                |
+| Active phase       | none                                                                                                         |
+| Active subphase    | none                                                                                                         |
+| Cycle Audit        | **009 OPEN** — 62 confirmed, 61 resolved on `audit/ca9-fixes`, one carried; closes on the gate, merge and CI |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                                                           |
 
 ---
 
