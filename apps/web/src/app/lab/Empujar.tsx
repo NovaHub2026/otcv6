@@ -181,6 +181,12 @@ export function Empujar({
             : p.landing(last.landing.price, last.landing.afterTicks)}
           {last.pace !== undefined ? ` · ${p.pace[last.pace]}` : ''}
           {last.extended ? ` · ${p.extended}` : ''}
+          {last.footprint !== undefined && (
+            <span data-testid="lab-push-footprint">
+              {' '}
+              · {p.footprint(last.footprint.displacementSteps)}
+            </span>
+          )}
         </span>
       )}
       {pushing === null &&

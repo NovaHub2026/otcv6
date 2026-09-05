@@ -726,6 +726,29 @@ describe('Candle Close Control, from the panel', () => {
       expect(await page.locator('[data-testid="lab-push-+3"]').isDisabled()).toBe(false);
       await sessionHas('"action":"push"');
       await sessionHas('"pace":"rapido"');
+      // PH-27.4: the push's footprint — the landing against the market without
+      // the intervention — on the record, and on the session screen's line for
+      // the act (the controls screen shows no announcement by design, PH-24.20).
+      await sessionHas('"footprint":{"displacementSteps":');
+      // The control panel (`/lab`) shows no announcement by design; the
+      // session screen is on `/lab/avanzado`, read on its own page so the
+      // flow's page is left where it is.
+      const sessionPage = await requireBrowser(ctx).newPage({
+        viewport: { width: 1440, height: 900 },
+      });
+      try {
+        await sessionPage.goto(`http://127.0.0.1:${webPort}/lab/avanzado`, {
+          waitUntil: 'networkidle',
+        });
+        await sessionPage.click('[data-testid="tab-session"]');
+        await expect
+          .poll(async () => sessionPage.getByTestId('lab-session-lab').innerText(), {
+            timeout: 30_000,
+          })
+          .toMatch(/huella [+-]?\d+ pasos/);
+      } finally {
+        await sessionPage.close();
+      }
 
       // PH-24.16/24.20: baja is a toggle — pressed it holds, pressed again the market is free.
       await page.click('[data-testid="lab-direction-down"]');

@@ -796,6 +796,19 @@ export class LabController {
       };
       const first = walk(script, draws, targetSteps, carried.length);
       let { level, landingInstant, startLevel } = first;
+      // PH-27.4: the footprint. The same number of ticks on a bare fork from the
+      // same snapshot is where the market would have been; the difference is
+      // what this push costs the record, and it is recorded with the act.
+      const naturalLevelAfter = (ticks: number): number => {
+        const bare = this.venue.labFork(id)!;
+        let at = bare.price;
+        for (let i = 0; i < ticks; i += 1) {
+          const tick = bare.next();
+          if (tick === null) break;
+          at = tick.price;
+        }
+        return at;
+      };
       if (targetSteps !== null) {
         count = Math.max(1, first.walked - carried.length);
         script.length = carried.length + count;
@@ -843,6 +856,7 @@ export class LabController {
       }
       // The fork started at the snapshot's sequence; the landing is script.length ticks on.
       const sequence = this.venue.hostedMarket(id)!.snapshotEngine().sequence + script.length;
+      const naturalLevel = script.length > 0 ? naturalLevelAfter(script.length) : level;
       return {
         level,
         landingInstant,
@@ -854,6 +868,7 @@ export class LabController {
         startLevel,
         netted,
         survivor,
+        footprint: { displacementSteps: level - naturalLevel, naturalLevel },
       };
     });
     // The burst's first instant is already in the past: publish it now, not on the old timer.
@@ -897,6 +912,9 @@ export class LabController {
         landing,
         released: result.released,
         retracted: result.retracted,
+        // PH-27.4: what the push costs the record — the landing against where
+        // the keystream would have taken the market in the same ticks.
+        footprint: result.footprint,
       },
     });
     return {
@@ -918,6 +936,7 @@ export class LabController {
               fromLevel: result.startLevel,
             },
       landing,
+      footprint: result.footprint,
       released: result.released,
       retracted: result.retracted,
       ...this.controlState(id),

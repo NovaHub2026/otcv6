@@ -101,6 +101,9 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     expect(pending.sequence).toBe(lastPublished.sequence + 1);
 
     const gap = lab.clock.now() - lastPublished.instant;
+    const bare = lab.venue.labFork(id)!;
+    bare.next();
+    const naturalThird = bare.next()!.price;
     const pushed = (await lab.controller.push(id, '+3')) as Pushed;
     expect(pushed).toMatchObject({
       direction: 'up',
@@ -137,6 +140,21 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     for (let i = 0; i < 3; i += 1) expect(labDeltas[i]!).toBeGreaterThanOrEqual(0);
     // The landing announced is the third pushed tick's price.
     expect(labTicks[2]!.price).toBe(pushed.landing.latticeLevel);
+    // PH-27.4: the footprint is the landing against a bare fork's third tick —
+    // where the keystream would have taken the market — and it is on the record.
+    const footprint = (
+      pushed as unknown as { footprint: { displacementSteps: number; naturalLevel: number } }
+    ).footprint;
+    expect(footprint.displacementSteps).toBe(pushed.landing.latticeLevel - footprint.naturalLevel);
+    expect(Number.isInteger(footprint.displacementSteps)).toBe(true);
+    // The natural level is a bare fork's third tick from the snapshot the push
+    // walked — the one after the pending tick was retracted. A fork taken here,
+    // before the push, starts one tick later (the pending tick is drawn), so
+    // its second tick is the route's third; a footprint that reported the
+    // landing against itself (displacement zero) is caught by this.
+    expect(footprint.naturalLevel).toBe(naturalThird);
+    const recorded = lab.session.labActions.find((a) => a.action === 'push')!;
+    expect((recorded.diagnostics as { footprint: unknown }).footprint).toEqual(footprint);
 
     // The mirror on the burst (ADR-0003): the same push, every sign flipped, on a
     // second venue from the same keyring — identical intervals, magnitudes negated.

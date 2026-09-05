@@ -223,6 +223,8 @@ export interface PushResult extends Control {
     readonly price: string;
     readonly afterTicks: number;
   };
+  /** PH-27.4: the landing against where the keystream would have been after the same ticks. */
+  readonly footprint?: { readonly displacementSteps: number; readonly naturalLevel: number };
   readonly released: { readonly discarded: number } | null;
   readonly distance?: {
     readonly units: number;

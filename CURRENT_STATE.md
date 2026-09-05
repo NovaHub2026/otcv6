@@ -25,10 +25,10 @@ Last synchronized: 2026-09-04
 | ---------------------- | ----------------------------------------------------------- |
 | Active phase           | **PH-27 — Review and improvement of the whole project**     |
 | Phase lifecycle        | ACTIVE                                                      |
-| Active subphase        | PH-27.4 — the footprint of a Lab intervention               |
+| Active subphase        | PH-27.5 — the improvement report                            |
 | Subphase lifecycle     | ACTIVE                                                      |
 | Last approved phase    | PH-25 — The battery against a production venue's own record |
-| Last approved subphase | PH-27.3 — the small improvements with no owner              |
+| Last approved subphase | PH-27.4 — the footprint of a Lab intervention               |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
@@ -195,7 +195,7 @@ the wrong thing.
 
 ## EXACT NEXT LEGAL ACTION
 
-**PH-27.4 — the footprint of a Lab intervention, measured on the record it wrote.**
+**PH-27.5 — the improvement report: the engine's realism, the trader's screen, the Lab.**
 
 PH-25 is merged at `7f03abe` (state fix `f2bab68`) and pushed; hosted CI on
 it is running and its verdict is recorded here when it lands. PH-27 is active
@@ -210,7 +210,11 @@ evidence (#2, #5, #6, #17, #18, #21), CLAUDE.md §5 re-measured from the PH-25
 gate. PH-27.3 (approved) made `assessRealism` yield between metrics on the
 Lab's quality route and taught the preview chart to bound a told hole from
 the frame's `resumesAt`; three larger candidates are measured and carried to
-the report. Then PH-27.3 (small improvements),
+the report. PH-27.4 (approved) measured what a push, a close and a bias cost
+the record against the keystream's own continuation — the level moves, by
+30, 2 and 252 steps, and nothing else: no instant, no increment after
+release, no decay — and put the footprint on the session record
+(`PH-27-INTERVENTION-FOOTPRINT.md`). Then PH-27.3 (small improvements),
 PH-27.4 (the footprint of a Lab intervention), PH-27.5 (the report); then the
 phase gate, the merge, and Cycle Audit 9.
 

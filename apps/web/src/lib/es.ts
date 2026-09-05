@@ -218,6 +218,9 @@ export const es = {
         `empujando ${dir === 'up' ? '↑' : '↓'} · ${String(n)} ticks por jugar`,
       idle: 'sin empuje — el mercado sigue su camino',
       landing: (price: string, n: number) => `llegará a ${price} tras ${String(n)} ticks`,
+      footprint: (steps: number) =>
+        `huella: ${steps > 0 ? '+' : ''}${String(steps)} pasos respecto al mercado sin intervenir`,
+      footprintShort: (steps: number) => `huella ${steps > 0 ? '+' : ''}${String(steps)} pasos`,
       landingUnits: (price: string, units: number, n: number) =>
         `llegará a ${price} — ${String(units)} unidades en ${String(n)} ticks`,
       extended: 'alargado',

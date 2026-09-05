@@ -15,6 +15,17 @@ import {
  * Sesión: dos cronologías, nunca mezcladas (§72–§73), y el diagnóstico §70
  * sobre los cierres del operador (PH-24.5).
  */
+/**
+ * PH-27.4: what a push cost the record — the landing against the market
+ * without the intervention — read off the act's own diagnostics.
+ */
+function footprintSteps(action: { diagnostics?: Record<string, unknown> }): number | null {
+  const footprint = action.diagnostics?.['footprint'];
+  if (typeof footprint !== 'object' || footprint === null) return null;
+  const steps = (footprint as { displacementSteps?: unknown }).displacementSteps;
+  return typeof steps === 'number' ? steps : null;
+}
+
 export function Sesion({
   session,
   closes,
@@ -74,6 +85,12 @@ export function Sesion({
                       .map(([k, v]) => `${k}=${String(v)}`)
                       .join(' ')}
                   </span>
+                  {footprintSteps(action) !== null && (
+                    <span data-testid="lab-session-footprint" style={{ color: T.muted }}>
+                      {' '}
+                      · {es.lab.push.footprintShort(footprintSteps(action)!)}
+                    </span>
+                  )}
                 </div>
               ))
             )}
