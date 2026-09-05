@@ -6,16 +6,16 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                        |
-| ------------------ | ------------------------------------------------------------ |
-| Last clean session | 2026-09-04                                                   |
-| Branch             | `feature/ph-26-catalogue-of-thirty`, off `main` at `c2a32a1` |
-| Remote             | `origin` → NovaHub2026/otcv6, public                         |
-| Active cycle       | Cycle 9, **1 of 3** phases approved — PH-26                  |
-| Active phase       | none                                                         |
-| Active subphase    | none                                                         |
-| Cycle Audit        | **008 closed** — 60 confirmed, all 60 resolved, none tracked |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)           |
+| Field              | Value                                                                    |
+| ------------------ | ------------------------------------------------------------------------ |
+| Last clean session | 2026-09-05                                                               |
+| Branch             | `feature/ph-25-production-record-battery`, off `main` at `c4757c5`       |
+| Remote             | `origin` → NovaHub2026/otcv6, public                                     |
+| Active cycle       | Cycle 9, **1 of 3** phases approved — PH-26                              |
+| Active phase       | **PH-25 — the battery against a production venue's own record** (ACTIVE) |
+| Active subphase    | PH-25.1 — the served-record observer (ACTIVE)                            |
+| Cycle Audit        | **008 closed** — 60 confirmed, all 60 resolved, none tracked             |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                       |
 
 ---
 
@@ -44,21 +44,21 @@ was deferred to an Issue. The record is
 [Cycle Audit 008](docs/audits/CYCLE-AUDIT-008.md); the full finding set, with
 every verdict, is in `~/.otc-audit8/all-findings.json`.
 
-**Cycle 9 is open and PH-26 is running.** The Human Owner asked for a library of
-thirty predefined OTC assets to replace the five hand-authored ones, and that is
-Cycle 9's first phase. Three decisions are theirs and are recorded as given:
-equities are declared in the existing `etf` family, no archetype is added, and
-the five incumbents go away. Reference prices are August 2026 monthly averages,
-measured against dated sources.
+**Cycle 9 is open: PH-26 is APPROVED and merged (`c4757c5`), PH-25 is
+ACTIVE.** PH-26 replaced the five hand-authored assets with a catalogue of
+thirty drawn under seed and calibrated ([evidence](docs/evidence/PH-26-CATALOGUE-OF-THIRTY.md));
+the statistical suite runs the heavy files on a stratified sample of five and
+took 4,159 s at thirty against 4,326 s at five. Hosted CI on `c4757c5` was in
+flight when this was written — read its verdict first (`gh run list -c c4757c5`).
 
-It is a phase and not data entry because the verification does not survive the
-size: nine statistical files do work per asset, 97.5% of it in three of them, and
-at thirty assets the suite needs six to seven hours against a 180-minute hosted
-ceiling. **PH-26.1 is that problem** and comes before any asset is written.
-
-PH-25 — the battery against a production venue's own record — is still Cycle 9's
-other phase and still planned. It runs after PH-26 because its subject is the
-feed a real observer reads, and that feed is about to carry thirty assets.
+**PH-25 is the battery against the feed a real observer reads.** Nothing in the
+repository has ever attacked `GET /markets/:id/stream` from outside the process;
+PH-25.1 builds the SSE client in `packages/lab` that turns it into the
+`TickSource` the battery consumes, PH-25.2 runs the battery on it across a
+restart and a resume, PH-25.3 records the verdict and the standing job. Then
+PH-27, the review phase (five subphases, closing with
+`docs/reports/IMPROVEMENT-REPORT-001.md`), then Cycle Audit 9. The panel the
+Human Owner asked for runs at http://localhost:7301/ against an engine on 7300.
 
 Hosted CI needed two fixes of its own, neither a product defect: the unit
 project now yields an event-loop turn between tests (a worker that cannot read
