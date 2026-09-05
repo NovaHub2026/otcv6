@@ -357,8 +357,9 @@ the history recorder; both are views of what happened (`venue.service.ts`).
 ## 8. What is deliberately not offered, and what remains open
 
 **The service is single-process and composes none of §1–§4's coordination.**
-`apps/api/src/app.module.ts` wires `FileStateStore`, `SqliteCandleHistory` and
-`FileAssetRegistry`; `VenueService` resumes with `resumeMarket`, checkpoints
+`apps/api/src/app.module.ts` wires `FileStateStore`, `SqliteCandleHistory`,
+`SqliteTickRecord` (PH-28.1, the published record persisted; not the
+coordinated store's fenced one) and `FileAssetRegistry`; `VenueService` resumes with `resumeMarket`, checkpoints
 through the **unfenced** `save` every 5 000 ms, and nothing in `apps/api`
 references `LeaderSession`, `FollowerMarket`, `AssetLease` or
 `SqliteCoordinatedStore`. PH-14.3 §9 deferred the holder id, the follower's

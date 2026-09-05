@@ -245,8 +245,10 @@ Two things it must be, both asserted against a spawned `apps/api`
 records, the folded candles equal the venue's stored ones — and honest — a
 told gap is a hole it never fills, a refused resume is an error, and a jump the
 server did not explain is a discontinuity it records. What the first runs
-found is in PH-25.1 §5: the shipped venue's replay window is process-local,
-and the minute a kill falls in is lost to the candle record.
+found is in PH-25.1 §5: the shipped venue's replay window was process-local,
+and the minute a kill fell in was lost to the candle record — both closed by
+PH-28.1, whose persisted record primes the feed and the recorder at boot, and
+the suite now asserts the resume across the kill and the whole minute.
 
 `npm run assurance:served -- --base URL` is the standing job: for every live
 asset it reads the whole retained window (the start learned from the venue's

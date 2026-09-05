@@ -844,12 +844,12 @@ exposes `snapshotEngine()` to production controllers (a1-01). Both are the
 record failing to outlive the process, and both are this phase. A broker that
 settles against this record needs it to still be there after a restart.
 
-| Subphase | Title                                                                                  | State   |
-| -------- | -------------------------------------------------------------------------------------- | ------- |
-| PH-28.1  | The record composed: ticks persisted, replay served from the store across a restart    | ACTIVE  |
-| PH-28.2  | The venue's handle: production controllers see a published view, never the engine      | PLANNED |
-| PH-28.3  | The store operated: integrity at boot, backup and restore, the commitments file (#19)  | PLANNED |
-| PH-28.4  | The served verdict across a kill and a restart, on the thirty (PH-25.1 a and c closed) | PLANNED |
+| Subphase | Title                                                                                  | State    |
+| -------- | -------------------------------------------------------------------------------------- | -------- |
+| PH-28.1  | The record composed: ticks persisted, replay served from the store across a restart    | APPROVED |
+| PH-28.2  | The venue's handle: production controllers see a published view, never the engine      | ACTIVE   |
+| PH-28.3  | The store operated: integrity at boot, backup and restore, the commitments file (#19)  | PLANNED  |
+| PH-28.4  | The served verdict across a kill and a restart, on the thirty (PH-25.1 a and c closed) | PLANNED  |
 
 **PH-29 — the integration boundary.** The venue publishes prices; the broker
 settles. Today the integration guide's §5 tells the broker to keep its own copy

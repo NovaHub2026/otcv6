@@ -245,8 +245,9 @@ export class HistoryService implements OnApplicationShutdown {
    * bucket** — then the resumed market republishes those ticks and the bars
    * are re-derived; the bucket the kill fell in is seen from inside by the
    * resumed recorder and withheld (a5-01, PH-25.1 finding c), and the hour
-   * around it is withheld by the rollup (Cycle Audit 9, a6-01), until a
-   * persisted tick record exists to refold from (IMPROVEMENT-REPORT-001 §4).
+   * around it is withheld by the rollup (Cycle Audit 9, a6-01) — unless the
+   * recorder was primed from the persisted tick record ({@link
+   * HistoryService.prime}, PH-28.1), which the shipped composition does.
    */
   async flush(): Promise<void> {
     for (const [assetId, recorder] of this.recorders) {
