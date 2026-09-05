@@ -42,6 +42,8 @@ export const es = {
       reloadingHistory: 'recargando historial tras un hueco',
       live: 'en vivo',
       liveAfterGap: 'en vivo — reconectado tras un hueco',
+      holeBounded: (from: number, to: number) =>
+        `hueco avisado por el motor: secuencias ${String(from)}–${String(to)} no servidas`,
       interrupted: 'stream interrumpido',
       notHosted: 'sin hospedar',
       reconnecting: 'reconectando',

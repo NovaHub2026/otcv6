@@ -785,8 +785,8 @@ the trader's screen, the Lab, and a ranked Cycle 10.
 | -------- | -------------------------------------------------------------------------- | ---------- |
 | PH-27.1  | The guards that cannot fail: found by planting, fixed by anchoring         | APPROVED   |
 | PH-27.2  | The records that are stale: every "leaves open" checked against the tree   | APPROVED   |
-| PH-27.3  | The small improvements with no owner, closed                               | **ACTIVE** |
-| PH-27.4  | The footprint of a Lab intervention, measured on the record it wrote       | PLANNED    |
+| PH-27.3  | The small improvements with no owner, closed                               | APPROVED   |
+| PH-27.4  | The footprint of a Lab intervention, measured on the record it wrote       | **ACTIVE** |
 | PH-27.5  | The improvement report: the engine's realism, the trader's screen, the Lab | PLANNED    |
 
 ## Known uncertainties

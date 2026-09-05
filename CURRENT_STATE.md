@@ -25,10 +25,10 @@ Last synchronized: 2026-09-04
 | ---------------------- | ----------------------------------------------------------- |
 | Active phase           | **PH-27 — Review and improvement of the whole project**     |
 | Phase lifecycle        | ACTIVE                                                      |
-| Active subphase        | PH-27.3 — the small improvements with no owner              |
+| Active subphase        | PH-27.4 — the footprint of a Lab intervention               |
 | Subphase lifecycle     | ACTIVE                                                      |
 | Last approved phase    | PH-25 — The battery against a production venue's own record |
-| Last approved subphase | PH-27.2 — the records that are stale                        |
+| Last approved subphase | PH-27.3 — the small improvements with no owner              |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
@@ -195,7 +195,7 @@ the wrong thing.
 
 ## EXACT NEXT LEGAL ACTION
 
-**PH-27.3 — the small improvements with no owner, closed.**
+**PH-27.4 — the footprint of a Lab intervention, measured on the record it wrote.**
 
 PH-25 is merged at `7f03abe` (state fix `f2bab68`) and pushed; hosted CI on
 it is running and its verdict is recorded here when it lands. PH-27 is active
@@ -207,7 +207,10 @@ minutes — and is anchored, with the count on the Lab's quality screen. PH-27.2
 every "leaves open" section from PH-20 on and every open Issue against the
 tree: six sections annotated with dated verdicts, six Issues closed on
 evidence (#2, #5, #6, #17, #18, #21), CLAUDE.md §5 re-measured from the PH-25
-gate. Then PH-27.3 (small improvements),
+gate. PH-27.3 (approved) made `assessRealism` yield between metrics on the
+Lab's quality route and taught the preview chart to bound a told hole from
+the frame's `resumesAt`; three larger candidates are measured and carried to
+the report. Then PH-27.3 (small improvements),
 PH-27.4 (the footprint of a Lab intervention), PH-27.5 (the report); then the
 phase gate, the merge, and Cycle Audit 9.
 

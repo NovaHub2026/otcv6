@@ -18,7 +18,12 @@ import {
   type LogPrice,
   type Tick,
 } from '@otc/core';
-import { assessRealism, buildObserverDataset, runBatteryAsync, tickGranularity } from '@otc/lab';
+import {
+  assessRealismAsync,
+  buildObserverDataset,
+  runBatteryAsync,
+  tickGranularity,
+} from '@otc/lab';
 import {
   INTERVENTIONS,
   nextShock,
@@ -351,7 +356,9 @@ export class LabController {
       source: { instrument: asset.instrument, next: () => ticks[at++] ?? null },
       maxTicks: ticks.length,
     });
-    const realism = assessRealism(dataset);
+    // Between metrics the loop turns (PH-27.3): a million-tick run no longer
+    // holds the process for seconds with a keep-alive socket idling.
+    const realism = await assessRealismAsync(dataset);
     // PH-24.17: what the chart shows of the tick structure — ticks per candle, the boundary gap.
     const granularity = tickGranularity(ticks);
     const predictability = await runBatteryAsync(dataset);
