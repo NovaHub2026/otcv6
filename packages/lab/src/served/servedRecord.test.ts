@@ -255,10 +255,20 @@ describe('the client is an observer and nothing more', () => {
   const sources = readdirSync(here).filter((f) => f.endsWith('.ts') && !f.includes('.test.'));
 
   it('imports nothing that generates, hosts or stores a market', () => {
+    // Static `from '…'`, dynamic `import('…')` and `require('…')` alike (Cycle
+    // Audit 9, a8-06: a dynamic import passed the scan, tsc and eslint). A
+    // relative path into the rest of `@otc/lab` is allowed here because the
+    // package boundary is the guard: `@otc/lab` depends on `@otc/core` alone
+    // (`package.json`, `publicSurface.test.ts`), so nothing reachable through
+    // `../` generates, hosts or stores a market either.
     expect(sources.length).toBeGreaterThan(0);
     for (const file of sources) {
       const text = readFileSync(path.join(here, file), 'utf8');
-      const imports = [...text.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]!);
+      const imports = [
+        ...[...text.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]!),
+        ...[...text.matchAll(/\bimport\(\s*'([^']+)'\s*\)/g)].map((m) => m[1]!),
+        ...[...text.matchAll(/\brequire\(\s*'([^']+)'\s*\)/g)].map((m) => m[1]!),
+      ];
       for (const specifier of imports) {
         expect(
           specifier === '@otc/core' || specifier.startsWith('../') || specifier.startsWith('./'),
