@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MasterKeyring, type RandomSource } from '@otc/core';
 import { HEAVY_SUITE_SAMPLE, sampleCatalogue } from './catalogueSample.js';
+import { ASSET_SEATS } from './seats.js';
 
 /**
  * PH-26.1: the sample the heavy suites measure is fixed, stratified, inert
@@ -48,14 +49,20 @@ const FIVE: readonly Fake[] = [
 ];
 
 describe('the size the heavy suites sample at', () => {
-  it('is the five the 72-minute measurement of 2026-09-04 was taken at', () => {
+  it('is six — one per populated archetype — since Cycle Audit 9 (a2-01)', () => {
     // Not a tautology. The three heavy suites assert their sample against this
     // constant, so a constant that quietly shrank to three would pass every one
     // of them while measuring less — the first plant against PH-26.1 did exactly
     // that and survived. The number is a decision recorded in the phase
     // document; changing it is a phase-document change, and this is where that
     // shows up.
-    expect(HEAVY_SUITE_SAMPLE).toBe(5);
+    expect(HEAVY_SUITE_SAMPLE).toBe(6);
+    // And never below the archetypes the seats populate: a catalogue that
+    // grows an archetype must grow the constant, or the floor in
+    // `sampleCatalogue` silently draws more than the recorded cost.
+    expect(new Set(ASSET_SEATS.map((seat) => seat.archetype)).size).toBeLessThanOrEqual(
+      HEAVY_SUITE_SAMPLE,
+    );
   });
 });
 
@@ -75,19 +82,23 @@ describe('a catalogue sample', () => {
   });
 
   it('is fixed: the same stream label draws the same assets every time', () => {
-    const a = sampleCatalogue(THIRTY, idOf, stream('fixed'), { size: 5 });
-    const b = sampleCatalogue(THIRTY, idOf, stream('fixed'), { size: 5 });
+    const a = sampleCatalogue(THIRTY, idOf, stream('fixed'), { size: 6 });
+    const b = sampleCatalogue(THIRTY, idOf, stream('fixed'), { size: 6 });
     expect(a.measured.map(idOf)).toEqual(b.measured.map(idOf));
-    expect(a.measured).toHaveLength(5);
-    expect(a.unmeasured).toHaveLength(25);
+    expect(a.measured).toHaveLength(6);
+    expect(a.unmeasured).toHaveLength(24);
     expect(a.whole).toBe(false);
   });
 
   it('is stratified: no stratum is drawn twice before every stratum is drawn once', () => {
-    // Six strata and a sample of five: five distinct strata, no repeats.
-    const five = sampleCatalogue(THIRTY, idOf, stream('strata'), { size: 5 });
-    const strata = five.measured.map((a) => a.definition.family);
-    expect(new Set(strata).size).toBe(5);
+    // Six strata and a sample of six: six distinct strata, no repeats; a
+    // sample of five over six is refused (CA9 a2-01).
+    expect(() => sampleCatalogue(THIRTY, idOf, stream('strata'), { size: 5 })).toThrow(
+      /cannot reach every stratum/,
+    );
+    const six = sampleCatalogue(THIRTY, idOf, stream('strata'), { size: 6 });
+    const strata = six.measured.map((a) => a.definition.family);
+    expect(new Set(strata).size).toBe(6);
 
     // Six strata and a sample of ten: all six represented, four of them reached
     // twice and none three times — the second round starts only after the first
@@ -102,31 +113,40 @@ describe('a catalogue sample', () => {
     expect(Math.max(...counts.values())).toBe(2);
   });
 
-  it('draws from every stratum, not only the ones declared first', () => {
-    // Across purposes the permutation of strata varies, so a stratum declared
-    // last is reached by some sample of five. Thirty-two purposes over six
-    // strata: every stratum appears in at least one sample, or the permutation
-    // is not a permutation.
-    const seen = new Set<string>();
-    for (let i = 0; i < 32; i += 1) {
-      const sample = sampleCatalogue(THIRTY, idOf, stream(`p${String(i)}`), { size: 5 });
-      for (const asset of sample.measured) seen.add(asset.definition.family);
-    }
-    expect([...seen].sort()).toEqual(
-      [
-        'alt-crypto',
-        'blue-chip-index',
-        'cross-fx',
-        'major-crypto',
-        'major-fx',
-        'sector-etf',
-      ].sort(),
-    );
+  it('refuses a size that cannot reach every stratum, by name (CA9 a2-01)', () => {
+    // Five over six archetypes dropped one archetype per suite, silently. A
+    // sample that cannot cover the strata is refused with the counts in it.
+    const catalogue = ['a1', 'a2', 'b1', 'b2', 'c1', 'c2', 'd1', 'd2'];
+    expect(() =>
+      sampleCatalogue(catalogue, (id) => id, stream('floor'), {
+        size: 3,
+        stratumOf: (id) => id[0]!,
+      }),
+    ).toThrow(/A sample of 3 cannot reach every stratum: the catalogue has 4/);
+    const exact = sampleCatalogue(catalogue, (id) => id, stream('floor'), {
+      size: 4,
+      stratumOf: (id) => id[0]!,
+    });
+    expect(new Set(exact.measured.map((id) => id[0])).size).toBe(4);
   });
 
-  it('gives different purposes different draws, so the heavy suites do not all measure the same five', () => {
+  it('reaches every asset across purposes, not only the ones declared first', () => {
+    // Within a stratum the draw is uniform over what is left, and the stream
+    // decides it: across enough purposes every one of the thirty is measured
+    // by some sample — or the draw favours declaration order. (Before CA9
+    // a2-01 this asserted that every *stratum* was reached by some sample of
+    // five over six; a sample short of the strata is refused now.)
+    const seen = new Set<string>();
+    for (let i = 0; i < 64; i += 1) {
+      const sample = sampleCatalogue(THIRTY, idOf, stream(`p${String(i)}`), { size: 6 });
+      for (const asset of sample.measured) seen.add(idOf(asset));
+    }
+    expect(seen.size).toBe(THIRTY.length);
+  });
+
+  it('gives different purposes different draws, so the heavy suites do not all measure the same six', () => {
     const draws = ['lattice-ties', 'recalibration', 'battery'].map((purpose) =>
-      sampleCatalogue(THIRTY, idOf, stream(purpose), { size: 5 }).measured.map(idOf).join(','),
+      sampleCatalogue(THIRTY, idOf, stream(purpose), { size: 6 }).measured.map(idOf).join(','),
     );
     expect(new Set(draws).size).toBeGreaterThan(1);
   });
@@ -143,23 +163,25 @@ describe('a catalogue sample', () => {
   });
 
   it('says what it did not measure, by name and by count', () => {
-    const sample = sampleCatalogue(THIRTY, idOf, stream('describe'), { size: 5 });
+    const sample = sampleCatalogue(THIRTY, idOf, stream('describe'), { size: 6 });
     const line = sample.describe();
-    expect(line).toMatch(/^measured 5 of 30 assets, stratified over 6 strata: /);
-    expect(line).toMatch(/NOT MEASURED BY THIS RUN \(25\): /);
+    expect(line).toMatch(/^measured 6 of 30 assets, stratified over 6 strata: /);
+    expect(line).toMatch(/NOT MEASURED BY THIS RUN \(24\): /);
     for (const asset of sample.measured) expect(line).toContain(idOf(asset));
     for (const asset of sample.unmeasured) expect(line).toContain(idOf(asset));
   });
 
   it('stratifies by family when nothing finer is given, and by the caller’s function when it is', () => {
-    const byFamily = sampleCatalogue(THIRTY, idOf, stream('family'), { size: 5 });
+    const byFamily = sampleCatalogue(THIRTY, idOf, stream('family'), { size: 6 });
     expect(byFamily.strata).toHaveLength(6);
+    const letters = new Set(THIRTY.map((a) => idOf(a)[0])).size;
+    expect(letters).toBeGreaterThan(6);
     const byFirstLetter = sampleCatalogue(THIRTY, idOf, stream('family'), {
-      size: 5,
+      size: letters,
       stratumOf: (a) => idOf(a)[0]!,
     });
-    expect(byFirstLetter.strata.length).toBeGreaterThan(6);
-    expect(new Set(byFirstLetter.measured.map((a) => idOf(a)[0])).size).toBe(5);
+    expect(byFirstLetter.strata.length).toBe(letters);
+    expect(new Set(byFirstLetter.measured.map((a) => idOf(a)[0])).size).toBe(letters);
   });
 
   it('refuses a size that is not a positive integer', () => {
