@@ -93,6 +93,11 @@ const INTERNAL: Record<string, readonly string[]> = {
     'observerLoad.ts',
     'observerLoadRun.ts',
     'venueScale.ts',
+    // PH-25.3: the served-assurance job and its pure half, run by
+    // `npm run assurance:served` and reached by no barrel; the pure half is
+    // guarded by `servedAssuranceRun.test.ts`.
+    'servedAssuranceJob.ts',
+    'servedAssuranceRun.ts',
   ],
 };
 

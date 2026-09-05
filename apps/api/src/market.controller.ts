@@ -293,8 +293,10 @@ export class MarketController implements BeforeApplicationShutdown {
     try {
       for (const assetId of requested) {
         const at = resumeAt.get(assetId);
+        let budgetRefused = false;
         try {
           if (at !== undefined && replayBudgetInUse >= this.replayBudgetBytes) {
+            budgetRefused = true;
             throw new EvictedError(assetId, at, at);
           }
           subscriptions.push(this.venue.feed.subscribe(assetId, sinkFor(assetId), at));
@@ -302,14 +304,20 @@ export class MarketController implements BeforeApplicationShutdown {
           if (!(error instanceof EvictedError || error instanceof UnknownSequenceError))
             throw error;
           if (!liveOnGap) throw new BadRequestException(`${assetId}: ${error.message}`);
-          subscriptions.push(this.venue.feed.subscribe(assetId, sinkFor(assetId)));
+          // From the oldest retained sequence after the gap, as the
+          // single-market stream does (PH-25.1); the live edge only when the
+          // refusal was this process's replay budget.
+          const resumesAt =
+            error instanceof EvictedError && !budgetRefused ? error.oldestRetained : undefined;
           write(
             `event: gap\ndata: ${JSON.stringify({
               asset: assetId,
               requested: at,
               reason: error.message,
+              resumesAt: resumesAt ?? null,
             })}\n\n`,
           );
+          subscriptions.push(this.venue.feed.subscribe(assetId, sinkFor(assetId), resumesAt));
         }
       }
     } catch (error) {
@@ -745,29 +753,46 @@ export class MarketController implements BeforeApplicationShutdown {
     };
 
     let subscription: { cancel: (reason?: string) => void } | null = null;
+    let budgetRefused = false;
     try {
       if (fromSequence !== undefined && replayBudgetInUse >= this.replayBudgetBytes) {
         // The process is already replaying to as many clients as it will hold.
         // Treated exactly like an eviction, because from the client's side it is
         // one: the ticks it asked for are not coming (PH-22.3).
+        budgetRefused = true;
         throw new EvictedError(id, fromSequence, fromSequence);
       }
       subscription = this.venue.feed.subscribe(id, sink, fromSequence);
     } catch (error) {
       if (error instanceof EvictedError || error instanceof UnknownSequenceError) {
         if (!liveOnGap) throw new BadRequestException(error.message);
-        // Asked to be told rather than refused. The client gets the live edge
-        // **and an explicit `gap` event naming what it will not receive**,
-        // which is the whole difference between this and a silent jump
-        // forward: a gap a client is told about is not a gap it mistakes for
-        // the market (INV-002).
-        subscription = this.venue.feed.subscribe(id, sink);
+        // Asked to be told rather than refused. The client gets **an explicit
+        // `gap` event naming what it will not receive**, which is the whole
+        // difference between this and a silent jump forward: a gap a client is
+        // told about is not a gap it mistakes for the market (INV-002).
+        //
+        // And then everything the feed still holds, from the oldest sequence it
+        // retains — not the live edge. **PH-25.1's first served-record run
+        // found the difference**: after a restart an observer holding sequence
+        // 1803 was refused (the window began at 1899), asked to be told, and
+        // was joined at 1908 — nine ticks the venue retained and never served,
+        // inside a hole the gap frame said started at 1804. `resumesAt` names
+        // where the record picks up, so a client can bound the hole exactly.
+        // When the refusal is this process's replay budget there is nothing
+        // to replay with, and the live edge is what remains.
+        const resumesAt =
+          error instanceof EvictedError && !budgetRefused ? error.oldestRetained : undefined;
+        // The gap first, then the replay: `subscribe` delivers what it retains
+        // synchronously, and a hole told after the ticks that follow it is a
+        // hole told too late.
         write(
           `event: gap\ndata: ${JSON.stringify({
             requested: fromSequence,
             reason: error.message,
+            resumesAt: resumesAt ?? null,
           })}\n\n`,
         );
+        subscription = this.venue.feed.subscribe(id, sink, resumesAt);
       } else {
         throw error;
       }

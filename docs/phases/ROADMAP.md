@@ -723,7 +723,7 @@ recorded here so it is not rediscovered:
 | Phase | Title                                               | State        |
 | ----- | --------------------------------------------------- | ------------ |
 | PH-26 | The catalogue of thirty                             | **APPROVED** |
-| PH-25 | The battery against a production venue's own record | PLANNED      |
+| PH-25 | The battery against a production venue's own record | **APPROVED** |
 
 **PH-26 runs first, and the numbering says so rather than hiding it.** PH-25 was
 recorded when the audit closed and PH-26 was asked for afterwards; renumbering a
@@ -762,6 +762,12 @@ an observer can see leak anything a market built inside a test does not?_ —
 covers publication, retention, reduction to columns and settlement at once. The
 mirror family answers the structural half in milliseconds; this is the other
 half, and it has never been run where the product lives.
+
+| Subphase | Title                                                            | State    |
+| -------- | ---------------------------------------------------------------- | -------- |
+| PH-25.1  | An observer that builds a dataset from the served record alone   | APPROVED |
+| PH-25.2  | The battery on the served record, across a restart and a resume  | APPROVED |
+| PH-25.3  | The recorded verdict, and the standing job that keeps it current | APPROVED |
 
 ## Known uncertainties
 

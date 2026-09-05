@@ -44,3 +44,8 @@ npm-debug.log*
 # agent worktrees and session scratch (Cycle Audit 7: eight audit trees appeared
 # as untracked files inside the repository, one `git add -A` from being committed)
 .claude/
+
+# A screenshot helper something outside this repository writes into its root
+# (mtime mid-suite, no writer in the tree or in ~/.otc-local); ignored so it
+# cannot fail the next gate at format:check.
+_shot.mjs
