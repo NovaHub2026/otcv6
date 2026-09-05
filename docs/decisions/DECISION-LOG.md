@@ -578,3 +578,34 @@ made from that page.
 `tools/sim/scripts/cycle-audit-worktrees.sh` cuts one detached worktree per auditor
 at the audited commit with dependencies installed, so the next audit does not
 rebuild the method from a transcript.
+
+## 2026-09-05 — Cycle 10 is the closing cycle: a venue a broker can deploy
+
+**Decision.** Cycle 10 is planned as the cycle after which a broker can deploy
+the venue: PH-28 makes the record outlive the process, PH-29 puts contracts and
+settlement on the venue, PH-30 is the release — operations, the screen at
+scale, ten thousand observers held, the whole catalogue measured, every open
+Issue closed or decided, `v1.0.0` tagged. The roadmap holds the subphases.
+
+**Who decided, and on what.** The Human Owner gave the direction after Cycle
+Audit 9 closed: finish the project in the next cycle, close and solve
+everything, so the engine can be deployed in a real broker. The shape of the
+cycle is the Development Agent's (ADR-0008), chosen from the record: PH-25.1's
+findings a and c, Cycle Audit 9's hand-forward (a1-01, a8-12), the improvement
+report's ranking, and the open Issues.
+
+**Where this departs from the improvement report.** The report proposed ranks
+1, 2 and 3 — the record, the trading boundary, the engine's class-A stylised
+facts. This cycle takes 1 and 2 and replaces 3 with the release, because a
+broker deploying the venue needs an operator's surface, a screen that holds at
+thirty assets and a measured catalogue more than session seasonality; and
+because the engine is the one place a mistake is silent, which is an argument
+for not touching it in a closing cycle. Ranks 3, 6 and 7 are deferred and
+named, not dropped.
+
+**What "finished" does not include.** Anything that binds the Human Owner
+outside the repository — licensing, regulation, custody, the broker's accounts,
+deposits and identity checks — and the two Governance amendments (Issues #3
+and #14), which only they can make. Cycle Audit 10 runs in full at the end;
+"last planned" shortens nothing. After it, the loop continues in maintenance
+cycles unless the Human Owner says `PARAR`.

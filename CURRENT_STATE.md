@@ -14,8 +14,8 @@ Last synchronized: 2026-09-05
 
 | Field                            | Value                                                                                                                                                      |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 9 — **3 of 3** phases approved (PH-26, PH-25, PH-27); Cycle Audit 9 next                                                                             |
-| Approved phases in current cycle | **3 of 3** — PH-26, PH-25, PH-27                                                                                                                           |
+| Active development cycle         | Cycle 10 — **0 of 3** phases approved; planned as the closing cycle (PH-28, PH-29, PH-30), Cycle 9 audited and closed                                      |
+| Approved phases in current cycle | **0 of 3** — PH-28, PH-29, PH-30 planned; none active yet                                                                                                  |
 | Cycle Audit state                | **009 closed** — 64 claims, 62 confirmed, 61 resolved with a guard each, one carried (a8-12)                                                               |
 | Last Cycle Audit                 | [Cycle Audit 009](docs/audits/CYCLE-AUDIT-009.md) — 2026-09-05, eight independent auditors, one worktree each, every finding refuted independently; closed |
 
@@ -192,7 +192,7 @@ on `audit/ca9-fixes`; that run replaces this block when it passes.
 
 ## EXACT NEXT LEGAL ACTION
 
-**Cycle 10 opens from `docs/reports/IMPROVEMENT-REPORT-001.md` §4 — the persisted record first; Cycle Audit 9 is closed and merged, and hosted CI on the closing merge is recorded in the table above when it lands.**
+**Create the PH-28 Phase Context Document (`docs/phases/PH-28.md`, the durable venue) and activate PH-28.1, per the Cycle 10 plan in `docs/phases/ROADMAP.md`; hosted CI on the Cycle Audit 9 merge (`45187d9`) is recorded in the table above when it lands.**
 
 PH-27 is approved on its integrated phase verification (`GATE_EXIT=0` first
 attempt, 45 statistical files in 4,472 s) and is being merged. Cycle 9 is

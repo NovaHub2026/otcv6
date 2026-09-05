@@ -6,16 +6,16 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                                         |
-| ------------------ | ----------------------------------------------------------------------------- |
-| Last clean session | 2026-09-05                                                                    |
-| Branch             | `audit/ca9-fixes`, off `main` at `e8ed2ae` (the PH-27 merge)                  |
-| Remote             | `origin` → NovaHub2026/otcv6, public                                          |
-| Active cycle       | Cycle 9, **3 of 3** phases approved — PH-26, PH-25, PH-27; Cycle Audit 9 next |
-| Active phase       | none                                                                          |
-| Active subphase    | none                                                                          |
-| Cycle Audit        | **009 closed** — 62 confirmed, 61 resolved, one carried (a8-12)               |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                            |
+| Field              | Value                                                                    |
+| ------------------ | ------------------------------------------------------------------------ |
+| Last clean session | 2026-09-05                                                               |
+| Branch             | `main` at `45187d9` (the Cycle Audit 9 merge)                            |
+| Remote             | `origin` → NovaHub2026/otcv6, public                                     |
+| Active cycle       | Cycle 10, **0 of 3** — planned as the closing cycle: PH-28, PH-29, PH-30 |
+| Active phase       | none                                                                     |
+| Active subphase    | none                                                                     |
+| Cycle Audit        | **009 closed** — 62 confirmed, 61 resolved, one carried (a8-12)          |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                       |
 
 ---
 
@@ -24,14 +24,17 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 `CURRENT_STATE.md` is authoritative for where the project stands; this file is
 only what a fresh session needs first.
 
-**Cycle 9 is complete and Cycle Audit 9 is in progress.** PH-26, PH-25 and
+**Cycle 9 is complete and Cycle Audit 9 is closed and merged (`45187d9`).** PH-26, PH-25 and
 PH-27 are approved and merged (`e8ed2ae`); eight independent auditors, one
 worktree each under `~/.otc-audit9/` (cut by
 `tools/sim/scripts/cycle-audit-worktrees.sh`), raised 64 claims and independent
 refuters confirmed 62 — one critical (an aliased engine snapshot on a
 production route passed the INV-010 scan; guarded by value now), 22 material,
-39 minor. The fixes are on `audit/ca9-fixes`, each with a guard watched
-failing; the audit record is `docs/audits/CYCLE-AUDIT-009.md`. Hosted CI on
+39 minor. The fixes are merged, each with a guard watched failing; the audit
+record is `docs/audits/CYCLE-AUDIT-009.md`. **Cycle 10 is planned as the
+closing cycle** — PH-28 the durable venue, PH-29 the trading boundary, PH-30
+the release — on the Human Owner's direction of 2026-09-05; the plan and its
+subphases are in `docs/phases/ROADMAP.md`, the decision in the decision log. Hosted CI on
 this cycle's merges is recorded truthfully in `CURRENT_STATE.md` § "Hosted CI,
 honestly" — the PH-25 merge was red on both gates, and **`npm run
 state:check` before every approval commit** is the rule that came out of it.

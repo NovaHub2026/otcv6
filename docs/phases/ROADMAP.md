@@ -792,6 +792,92 @@ the trader's screen, the Lab, and a ranked Cycle 10.
 | PH-27.4  | The footprint of a Lab intervention, measured on the record it wrote       | APPROVED |
 | PH-27.5  | The improvement report: the engine's realism, the trader's screen, the Lab | APPROVED |
 
+## Cycle 10 — planned: the closing cycle (PH-28, PH-29, PH-30)
+
+The Human Owner's direction on 2026-09-05, after Cycle Audit 9 closed: _"quiero
+dejar todo pronto para finalizar el proyecto en el próximo ciclo, cerrar y
+solucionar todo para poder implementar el motor en un broker real."_ Cycle 10 is
+therefore shaped as the cycle after which a broker can deploy the venue, and its
+three phases are chosen from what the record says stands between the engine and
+that deployment — not from what would be most interesting to build. The
+improvement report's ranking (`../reports/IMPROVEMENT-REPORT-001.md` §4) is
+followed where it serves that end and departed from where it does not, and the
+departure is recorded ([decision](../decisions/DECISION-LOG.md), 2026-09-05).
+
+| Phase | Title                                                       | State   |
+| ----- | ----------------------------------------------------------- | ------- |
+| PH-28 | The durable venue: the record outlives the process          | PLANNED |
+| PH-29 | The trading boundary: contracts settled on the venue        | PLANNED |
+| PH-30 | Release 1.0: the venue as a broker deploys it               | PLANNED |
+| —     | **Cycle Audit 10** — the closing audit, adversarial as ever | PLANNED |
+
+**What "finished" means here, and what it does not.** At the end of Cycle 10 a
+broker runs the venue from the release, on one machine, with its record durable
+across restarts, its contracts opened and settled by the venue against the
+published record, its operations documented and its whole catalogue measured
+under production composition. Three things in the report's ranking are **not**
+required for that and are deferred, recorded rather than dropped: the engine's
+next stylised facts (rank 3), the hosted multi-node composition (rank 6) and
+jumps and volume (rank 7). Each is a later cycle if the Human Owner wants one.
+Two things cannot be finished inside this repository at all and are the Human
+Owner's under `GOVERNANCE.md` §5.1: whatever binds them outside it — licensing,
+regulation, custody, the broker's own accounts, deposits and identity checks —
+and the two Governance amendments open as Issues #3 and #14. The Cycle Audit at
+the end of the cycle is not optional and is not shortened because the cycle is
+the last one planned; after it closes, the loop continues in maintenance
+cycles unless the Human Owner says `PARAR`.
+
+**PH-28 — the durable venue.** PH-25.1 found that the shipped venue's replay
+window is process-local: `FileStateStore` keeps checkpoints and candles, not
+ticks, and a `SIGKILL` loses the minute's candle. The sqlite store already holds
+a per-tick `record` table written by the multi-node layer and read by nobody in
+the service. Cycle Audit 9 handed forward that `VenueService.hostedMarket()`
+exposes `snapshotEngine()` to production controllers (a1-01). Both are the
+record failing to outlive the process, and both are this phase.
+
+| Subphase | Title                                                                                  | State   |
+| -------- | -------------------------------------------------------------------------------------- | ------- |
+| PH-28.1  | The record composed: ticks persisted, replay served from the store across a restart    | PLANNED |
+| PH-28.2  | The venue's handle: production controllers see a published view, never the engine      | PLANNED |
+| PH-28.3  | The store operated: integrity at boot, backup and restore, the commitments file (#19)  | PLANNED |
+| PH-28.4  | The served verdict across a kill and a restart, on the thirty (PH-25.1 a and c closed) | PLANNED |
+
+**PH-29 — the trading boundary.** The venue publishes prices; the broker
+settles. `packages/trading` holds the contract, deterministic settlement,
+exposure and the limiter, and no route on the venue uses them; the integration
+guide's §5 is titled "what your broker must implement". A broker deploying the
+engine needs the venue to do it: a contract opened against a published
+sequence, settled reproducibly against the record (INV-009), refunded at the
+money (ADR-0007), with the payout a venue parameter and money an integer in a
+named minor unit (Issue #11). INV-001 is the constraint that makes this a
+phase rather than a controller: the trading layer must be unable to reach the
+price path, and the architecture tests must be the thing that says so.
+
+| Subphase | Title                                                                                    | State   |
+| -------- | ---------------------------------------------------------------------------------------- | ------- |
+| PH-29.1  | Money: integer minor units, payout as a venue parameter, the contract as a record (#11)  | PLANNED |
+| PH-29.2  | The contract route: idempotent intake pinned to a sequence, expiry, persisted settlement | PLANNED |
+| PH-29.3  | Reproducible settlement: entry and expiry proven from the commitments (INV-009)          | PLANNED |
+| PH-29.4  | The boundary held: the trading layer cannot reach the price path, as a guard (INV-001)   | PLANNED |
+| PH-29.5  | The standing verdict's figure decided (#10); the guide's §5 rewritten; the screen        | PLANNED |
+
+**PH-30 — release 1.0.** What a broker's operator needs and the repository does
+not yet give them: readiness and liveness, metrics, an admin credential rather
+than a proxy rule, rate limits, the backup schedule in the runbook and the unit
+files in the tree; the trader's screen at scale (Issue #16, the grouped list,
+`resumesAt` holes, a retired market — a8-12 carried); ten thousand observers
+held from several harness processes with memory measured; the whole catalogue
+measured by the standing job on the release build; every open Issue closed or
+decided; the integration package regenerated from the tag.
+
+| Subphase | Title                                                                                        | State   |
+| -------- | -------------------------------------------------------------------------------------------- | ------- |
+| PH-30.1  | Operations: readiness, liveness, metrics, admin credential, rate limits, unit files          | PLANNED |
+| PH-30.2  | The screen at scale: one multiplexed stream (#16), the grouped list, holes, a retired market | PLANNED |
+| PH-30.3  | Ten thousand observers held, from several processes, memory measured at the target           | PLANNED |
+| PH-30.4  | The whole catalogue measured on the release build; the per-asset evidence complete           | PLANNED |
+| PH-30.5  | Every open Issue closed or decided; the package regenerated; `v1.0.0` tagged and recorded    | PLANNED |
+
 ## Known uncertainties
 
 **This table is Cycle 1's, and it is kept as Cycle 1 wrote it.** Every phase in
