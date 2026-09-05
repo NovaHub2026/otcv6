@@ -211,6 +211,27 @@ describe('the seams the battery is given are the record’s own', () => {
       },
     });
     expect(told.gaps[0]!.afterSequence).toBeNull();
+    // Alone, a told gap before the first tick is not a seam inside the record
+    // (CA9 a8-07): there is nothing before it, and the seam family is
+    // unavailable rather than built on nothing.
+    expect(seamIndicesOf(told)).toEqual([]);
+    const toldAlone = await servedAssurance(told, { at: GENESIS, battery: SMALL });
+    expect(toldAlone.withheldUnavailable).toContain('wh-seam-proximity');
+    // An earlier read that held no tick — closed before its first frame —
+    // still contributes what it was told (CA9 a8-08).
+    const empty: ServedRecord = {
+      ...before,
+      ticks: [],
+      gaps: [{ requested: 11, reason: 'r', resumesAt: null, afterSequence: null }],
+      closes: [{ reason: 'server shutting down', afterSequence: null }],
+      bytes: 7,
+      requestedFrom: 11,
+    };
+    const fromEmpty = joinServedRecords(empty, told);
+    expect(fromEmpty.gaps).toHaveLength(2);
+    expect(fromEmpty.closes).toHaveLength(1);
+    expect(fromEmpty.bytes).toBe(7 + told.bytes);
+    expect(() => joinServedRecords({ ...empty, requestedFrom: 3 }, told)).toThrow(/held no tick/);
     const joinedByGap = joinServedRecords(before, told);
     expect(joinedByGap.gaps[0]!.afterSequence).toBe(10);
     expect(joinedByGap.discontinuities).toEqual([]);

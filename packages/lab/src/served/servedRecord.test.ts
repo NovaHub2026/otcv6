@@ -201,6 +201,19 @@ describe('the record holds what the wire carried', () => {
   it('is an error when a tick goes backwards or a frame holds no tick', async () => {
     await expect(read([tickFrame(tick(3)), tickFrame(tick(2))])).rejects.toThrow(/strictly/);
     await expect(read(['data: {"sequence":"1"}\n\n'])).rejects.toThrow(/without a tick/);
+    // Each field missing in turn (CA9 a4-07): a tick has all three.
+    for (const partial of [
+      { sequence: 1, price: 2 },
+      { sequence: 1, instant: 3 },
+      { price: 2, instant: 3 },
+      { sequence: 1, price: 2, instant: null },
+      { sequence: 1, price: 2, instant: 'soon' },
+    ]) {
+      await expect(
+        read([`data: ${JSON.stringify(partial)}\n\n`]),
+        JSON.stringify(partial),
+      ).rejects.toThrow(/without a tick/);
+    }
     await expect(read(['data: not json\n\n'])).rejects.toThrow(/unparseable/);
   });
 
@@ -275,8 +288,11 @@ describe('the client is an observer and nothing more', () => {
           `${file} imports ${specifier}`,
         ).toBe(true);
       }
-      // No ambient time, no ambient randomness, no private vocabulary.
-      expect(text, file).not.toMatch(/Date\.now|Math\.random|keyring|cursor|secret/i);
+      // No ambient time, no ambient randomness, no private vocabulary — every
+      // spelling of ambient time (CA9 a4-06: `performance.now()` passed).
+      expect(text, file).not.toMatch(
+        /Date\.now|new Date\(|performance\.now|hrtime|Math\.random|keyring|cursor|secret/i,
+      );
     }
   });
 });
