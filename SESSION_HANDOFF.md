@@ -12,7 +12,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Branch             | `feature/ph-25-production-record-battery`, off `main` at `c4757c5` |
 | Remote             | `origin` → NovaHub2026/otcv6, public                               |
 | Active cycle       | Cycle 9, **2 of 3** phases approved — PH-26, PH-25                 |
-| Active phase       | none — PH-25 approved, merge and PH-27 next                        |
+| Active phase       | none                                                               |
 | Active subphase    | none                                                               |
 | Cycle Audit        | **008 closed** — 60 confirmed, all 60 resolved, none tracked       |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                 |
