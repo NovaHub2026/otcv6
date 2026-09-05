@@ -118,7 +118,7 @@ export function footprintOf(
     },
     detectability: {
       divergentIncrements: divergent,
-      share: length === 0 ? 0 : divergent / length,
+      share: divergent / length,
       instantsIdentical,
     },
     decay: {

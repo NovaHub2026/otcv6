@@ -42,6 +42,13 @@ describe('footprintOf', () => {
     expect(footprintOf(never, natural, 3, 0, null).decay.ticksUntilIdentical).toBeNull();
   });
 
+  it('sees an instant that moved (CA9 a8-02)', () => {
+    const natural = [1, 2, 1, 2].map((p, i) => at(i, p));
+    const shifted = natural.map((t, i) => (i === 2 ? { ...t, instant: epochMillis(t.instant + 1) } : t));
+    expect(footprintOf(shifted, natural, 1, 0, null).detectability.instantsIdentical).toBe(false);
+    expect(footprintOf(natural, natural, 1, 0, null).detectability.instantsIdentical).toBe(true);
+  });
+
   it('refuses paths that do not reach the release', () => {
     const short = [1, 2].map((p, i) => at(i, p));
     expect(() => footprintOf(short, short, 3, 0, null)).toThrow(/reach the release/);
