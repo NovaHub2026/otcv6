@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, MasterKeyring } from '@otc/core';
 import { yieldToLoop } from '@otc/core';
 import { calibrateAssetAsync } from './asset.js';
-import { assetById, configFor, registrationKeyLabel } from './catalogue.js';
+import { ASSET_CATALOGUE, assetById, configFor, registrationKeyLabel } from './catalogue.js';
 import { createMarketEngine } from './factory.js';
 import {
   dispersionLogSigma,
@@ -56,7 +56,17 @@ const START = 1_776_000_000_000;
  * here, since every asset runs identical code and the claim under test belongs
  * to the calibration rather than to any personality.
  */
-const MEASURED = ['eurusd', 'spx', 'xauusd'] as const;
+/**
+ * PH-26.3: derived, not named. The three slowest tapes in the catalogue — the
+ * fewest ticks per simulated day, so the cheapest to run — because every asset
+ * runs identical code and the claim belongs to the calibration, not to any
+ * personality. Naming three ids here was what tied this file to a catalogue
+ * that has since been replaced.
+ */
+const MEASURED = [...ASSET_CATALOGUE]
+  .sort((a, b) => b.evidence.meanIntervalMs - a.evidence.meanIntervalMs)
+  .slice(0, 3)
+  .map((a) => a.definition.id);
 
 async function terminalSpread(id: string): Promise<number> {
   const asset = assetById(id);
@@ -171,8 +181,9 @@ describe('the diffusion rate predicts where the price actually goes', () => {
       return `${id}: ${(100 * dispersionPercent(sigma)).toFixed(1)}%`;
     });
     console.info(`quarterly dispersion — ${table.join(', ')}`);
-    expect(dispersionPercent(dispersionLogSigma(assetById('spx').evidence))).toBeLessThan(
-      dispersionPercent(dispersionLogSigma(assetById('btcusd').evidence)),
-    );
+    // The catalogue spans a wide dispersion range by design (INV-007): its
+    // calmest asset diffuses at well under half the rate of its wildest.
+    const sigmas = ASSET_CATALOGUE.map((a) => dispersionPercent(dispersionLogSigma(a.evidence)));
+    expect(Math.min(...sigmas)).toBeLessThan(0.5 * Math.max(...sigmas));
   });
 });

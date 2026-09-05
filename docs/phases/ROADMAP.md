@@ -749,8 +749,8 @@ they throw.
 | -------- | ------------------------------------------------------------------------- | ---------- |
 | PH-26.1  | The suites scale: stratified sampling, id-keyed tables, N-free thresholds | APPROVED   |
 | PH-26.2  | The thirty personalities: drawn under seed, filtered by profile           | APPROVED   |
-| PH-26.3  | The catalogue compiled and calibrated, with its evidence recorded         | **ACTIVE** |
-| PH-26.4  | The integration library: the thirty as something a broker can consume     | PLANNED    |
+| PH-26.3  | The catalogue compiled and calibrated, with its evidence recorded         | APPROVED   |
+| PH-26.4  | The integration library: the thirty as something a broker can consume     | **ACTIVE** |
 
 **PH-25 — the battery against a production venue's own record.** Every
 adversarial run in this repository builds its own engine, or runs against the

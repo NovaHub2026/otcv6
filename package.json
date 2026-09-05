@@ -27,6 +27,7 @@
     "test:stat": "NODE_OPTIONS=--max-old-space-size=6144 vitest run --project statistical --no-file-parallelism",
     "evidence:horizons": "npm run build && node tools/sim/dist/horizonEvidence.js",
     "catalogue:build": "npm run build && node tools/sim/dist/buildCatalogue.js",
+    "evidence:ties": "npm run build && node tools/sim/dist/tieRateEvidence.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

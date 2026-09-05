@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import { ASSET_CATALOGUE } from '@otc/engine';
 
 /**
  * Creating an asset, end to end, against a service in its own process.
@@ -134,6 +135,19 @@ async function register(port: number, brief: unknown): Promise<JobView> {
   }
 }
 
+/**
+ * Two compiled assets to rename and retire, derived rather than named
+ * (PH-26.3): the first in the catalogue, and the slowest tape — which ticks
+ * slowly enough that sampling immediately finds no sequence, the property the
+ * retire flow waits on.
+ */
+const RENAMED = ASSET_CATALOGUE[0]!.definition.id;
+/** A third compiled asset nothing in this file may change: the write-surface test's subject. */
+const UNTOUCHED = ASSET_CATALOGUE[2]!.definition.id;
+const RETIRED = [...ASSET_CATALOGUE].sort(
+  (a, b) => b.evidence.meanIntervalMs - a.evidence.meanIntervalMs,
+)[0]!.definition.id;
+
 async function catalogue(
   port: number,
 ): Promise<{ id: string; live: boolean; logQuantum: number }[]> {
@@ -207,18 +221,18 @@ describe('an asset created from the panel', () => {
     await boot(stateDir, port);
 
     // Renaming a *compiled* asset, which is the case an overlay exists for:
-    // `eurusd` was never registered here and is administered all the same.
-    const renamed = await fetch(`http://127.0.0.1:${port}/assets/eurusd`, {
+    // The first compiled asset was never registered here and is administered all the same.
+    const renamed = await fetch(`http://127.0.0.1:${port}/assets/${RENAMED}`, {
       method: 'PATCH',
       headers: WRITE_HEADERS,
       body: JSON.stringify({ displayName: 'Euro / Dollar' }),
     });
     expect(renamed.status).toBe(200);
-    expect((await catalogue(port)).find((e) => e.id === 'eurusd')).toBeDefined();
+    expect((await catalogue(port)).find((e) => e.id === RENAMED)).toBeDefined();
 
     // Everything that decided what already happened is refused by name.
     for (const field of ['id', 'logQuantum', 'referencePrice', 'traits']) {
-      const response = await fetch(`http://127.0.0.1:${port}/assets/eurusd`, {
+      const response = await fetch(`http://127.0.0.1:${port}/assets/${RENAMED}`, {
         method: 'PATCH',
         headers: WRITE_HEADERS,
         body: JSON.stringify({ [field]: 1 }),
@@ -228,16 +242,16 @@ describe('an asset created from the panel', () => {
     }
 
     // Retire a market that is actually publishing, not one that has not started.
-    // `spx` ticks slowly enough that sampling immediately finds no sequence.
+    // The slowest tape ticks slowly enough that sampling immediately finds no sequence.
     const deadline = Date.now() + 120_000;
     let before: { sequence: number | null } = { sequence: null };
     while (Date.now() < deadline && before.sequence === null) {
-      before = (await (await fetch(`http://127.0.0.1:${port}/markets/spx`)).json()) as {
+      before = (await (await fetch(`http://127.0.0.1:${port}/markets/${RETIRED}`)).json()) as {
         sequence: number | null;
       };
       if (before.sequence === null) await new Promise((resolve) => setTimeout(resolve, 500));
     }
-    const retired = await fetch(`http://127.0.0.1:${port}/assets/spx/retire`, {
+    const retired = await fetch(`http://127.0.0.1:${port}/assets/${RETIRED}/retire`, {
       method: 'POST',
       headers: WRITE_HEADERS,
       body: '{}',
@@ -248,10 +262,10 @@ describe('an asset created from the panel', () => {
     // endpoint still answers, because retiring stops generation and says nothing
     // about the past (INV-009).
     const after = await catalogue(port);
-    expect(after.find((e) => e.id === 'spx')?.live).toBe(false);
+    expect(after.find((e) => e.id === RETIRED)?.live).toBe(false);
     const to = Date.now();
     const history = await fetch(
-      `http://127.0.0.1:${port}/markets/spx/history?timeframe=1h&from=${to - 86_400_000}&to=${to}`,
+      `http://127.0.0.1:${port}/markets/${RETIRED}/history?timeframe=1h&from=${to - 86_400_000}&to=${to}`,
     );
     expect(history.status, 'a retired market keeps its record').toBe(200);
 
@@ -259,7 +273,7 @@ describe('an asset created from the panel', () => {
     // either invent the interval or seam the record.
     expect(
       (
-        await fetch(`http://127.0.0.1:${port}/assets/spx/retire`, {
+        await fetch(`http://127.0.0.1:${port}/assets/${RETIRED}/retire`, {
           method: 'POST',
           headers: WRITE_HEADERS,
           body: '{}',
@@ -270,7 +284,7 @@ describe('an asset created from the panel', () => {
     await new Promise((resolve) => setTimeout(resolve, 500));
     const second = await freePort();
     await boot(stateDir, second);
-    const survived = (await catalogue(second)).find((e) => e.id === 'spx');
+    const survived = (await catalogue(second)).find((e) => e.id === RETIRED);
     expect(survived?.live, 'a retired market is not resumed').toBe(false);
     expect(before.sequence, 'it had been publishing before').not.toBeNull();
   }, 300_000);
@@ -283,7 +297,7 @@ describe('an asset created from the panel', () => {
 
     const started_ = Date.now();
     const response = await post(port, {
-      id: 'eurusd',
+      id: RENAMED,
       archetypeId: 'major-fx',
       displayName: 'Duplicate',
       referencePrice: 1.1,
@@ -324,7 +338,7 @@ describe('an asset created from the panel', () => {
   }, 180_000);
 
   it('closes the write surface to anything but the operator, whatever the origin (a6-01)', async () => {
-    // Measured before this existed: `curl -X POST /assets/gbpjpy/retire -H
+    // Measured before this existed: `curl -X POST /assets/<id>/retire -H
     // 'Origin: http://evil.example'` answered 201 and the market was retired
     // for good. A request with no body and no custom header is one a browser
     // sends without a preflight, so CORS never saw it; and CORS only ever
@@ -333,7 +347,7 @@ describe('an asset created from the panel', () => {
     directories.push(stateDir);
     const port = await freePort();
     await boot(stateDir, port);
-    const retire = `http://127.0.0.1:${port}/assets/gbpjpy/retire`;
+    const retire = `http://127.0.0.1:${port}/assets/${UNTOUCHED}/retire`;
     const evil = { Origin: 'http://evil.example' };
 
     const simple = await fetch(retire, { method: 'POST', headers: evil });
@@ -353,7 +367,7 @@ describe('an asset created from the panel', () => {
     });
     expect(text.status, 'the right token with a body a browser would not preflight').toBe(415);
 
-    const still = (await catalogue(port)).find((entry) => entry.id === 'gbpjpy');
+    const still = (await catalogue(port)).find((entry) => entry.id === UNTOUCHED);
     expect(still?.live, 'nothing above retired anything').toBe(true);
 
     const genuine = await fetch(retire, {
@@ -372,7 +386,7 @@ describe('an asset created from the panel', () => {
     directories.push(stateDir);
     const port = await freePort();
     await boot(stateDir, port, {});
-    const refused = await fetch(`http://127.0.0.1:${port}/assets/eurusd`, {
+    const refused = await fetch(`http://127.0.0.1:${port}/assets/${RENAMED}`, {
       method: 'PATCH',
       headers: WRITE_HEADERS,
       body: JSON.stringify({ displayName: 'Nope' }),

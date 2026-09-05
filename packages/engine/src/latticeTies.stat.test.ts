@@ -6,6 +6,7 @@ import { yieldToLoop } from '@otc/core';
 import { CALIBRATION_CHUNK_TICKS, MEASURED_LATTICE_TIE_RATES, TARGET_TIE_RATE } from './asset.js';
 import { ASSET_CATALOGUE, configFor } from './catalogue.js';
 import { HEAVY_SUITE_SAMPLE, sampleCatalogue } from './catalogueSample.js';
+import { seatById } from './seats.js';
 import { createMarketEngine } from './factory.js';
 
 /**
@@ -132,7 +133,18 @@ const SAMPLE = sampleCatalogue(
     purpose: 'lattice-ties',
     keyEpoch: 0,
   }),
-  { size: HEAVY_SUITE_SAMPLE },
+  {
+    size: HEAVY_SUITE_SAMPLE,
+    // One stratum per archetype (eight), read from the seat each compiled asset
+    // was drawn from; family (four) for anything without a seat.
+    stratumOf: (a) => {
+      try {
+        return seatById(a.definition.id).archetype;
+      } catch {
+        return a.definition.family;
+      }
+    },
+  },
 );
 
 describe('the recorded lattice tie rates reproduce', () => {

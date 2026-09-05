@@ -25,10 +25,10 @@ Last synchronized: 2026-09-04
 | ---------------------- | ------------------------------------------------ |
 | Active phase           | **PH-26 — The catalogue of thirty**              |
 | Phase lifecycle        | ACTIVE                                           |
-| Active subphase        | PH-26.3 — the catalogue compiled and calibrated  |
+| Active subphase        | PH-26.4 — the integration library                |
 | Subphase lifecycle     | ACTIVE                                           |
 | Last approved phase    | PH-24 — The Lab's controls: applying a selection |
-| Last approved subphase | PH-26.2 — The thirty personalities               |
+| Last approved subphase | PH-26.3 — The catalogue compiled and calibrated  |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
@@ -195,22 +195,22 @@ the wrong thing.
 
 ## EXACT NEXT LEGAL ACTION
 
-**PH-26.3 — build the catalogue of thirty, record its evidence, retire the five.**
+**PH-26.4 — the integration library: the thirty as something a broker can
+consume.**
 
-PH-26.1 and PH-26.2 are approved. The heavy statistical suites sample; the
-thirty seats exist and are checked as archetypes are, with the closest
-cross-seat draw at 0.0298 against a 0.01 floor; the builder that draws,
-authors, calibrates and differentiates every seat is written, declared, and
-smoke-run (`npm run catalogue:build`).
+PH-26.3 is approved. `ASSET_CATALOGUE` is the thirty, every number produced by
+`npm run catalogue:build` from recorded seeds; the five incumbents and the tests
+that were about them are retired by name; thirty lattice tie rates and 240
+horizon-coverage cells are measured and recorded; a checkpoint now carries the
+fingerprint of the personality that wrote it and a resume refuses another's;
+and the statistical suite ran whole at thirty in **3,843 s** — shorter than at
+five, because the heavy suites sample — with the three test-file defects it
+found corrected and re-run green.
 
-PH-26.3 runs it. The run is a deliberate act with a recorded keyring label:
-thirty entries compiled into `ASSET_CATALOGUE`, the five incumbents removed,
-their per-asset records retired with them, every recorded constant keyed by
-asset id re-measured — lattice tie rates on a fresh stream family, horizon
-coverage at all eight expirations for every asset — and the twenty-six test
-files that named an incumbent by literal made to name the catalogue instead.
-Then the statistical suite is run whole, and its wall clock at thirty is the
-number PH-26.1 promised to measure rather than estimate.
+PH-26.4 makes the catalogue consumable: `GET /catalogue` carries each asset's
+seat (archetype, character, price source), `docs/integration/CATALOGUE.md` is
+generated from the compiled catalogue and guarded against drift, and the
+integration package the Human Owner asked for is refreshed with the thirty.
 
 This section named **PH-22.1** — a subphase approved and merged two phases ago —
 until Cycle Audit 8 (a7) found it. A fresh session following `CLAUDE.md` §1 read

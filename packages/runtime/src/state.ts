@@ -36,6 +36,13 @@ export interface PublishedCheckpoint {
 export interface MarketStateRecord {
   readonly version: number;
   readonly assetId: string;
+  /**
+   * Fingerprint of the personality that wrote this record (PH-26.3). A resume
+   * under the same id by a different personality is a seam, not a
+   * continuation; a record with no fingerprint predates the field and is
+   * seamed too, because nothing can say what wrote it. See `personality.ts`.
+   */
+  readonly personality?: string;
   readonly savedAt: EpochMillis;
   readonly snapshot: EngineSnapshot;
   readonly pending: Tick | null;
@@ -143,7 +150,11 @@ export class UnusableRecordError extends Error {
 }
 
 /** Shape and range validation for a record read back from a store. */
-export function assertUsableRecord(record: MarketStateRecord, expectedAssetId: string): void {
+export function assertUsableRecord(
+  record: MarketStateRecord,
+  expectedAssetId: string,
+  expectedPersonality?: string,
+): void {
   const reject = (detail: string): never => {
     throw new UnusableRecordError(expectedAssetId, detail);
   };
@@ -174,6 +185,18 @@ export function assertUsableRecord(record: MarketStateRecord, expectedAssetId: s
   }
   if (typeof record.snapshot !== 'object' || record.snapshot === null) {
     reject('no snapshot');
+  }
+  if (expectedPersonality !== undefined) {
+    if (record.personality === undefined) {
+      reject(
+        'no personality fingerprint — the record predates the field, and nothing can say what wrote it',
+      );
+    } else if (record.personality !== expectedPersonality) {
+      reject(
+        `written by another personality under this id (${record.personality.slice(0, 19)}…, ` +
+          `expected ${expectedPersonality.slice(0, 19)}…) — the same name is not the same market`,
+      );
+    }
   }
   if (Object.keys(record.leasedBlocks).length === 0) {
     reject('no leased cursors');

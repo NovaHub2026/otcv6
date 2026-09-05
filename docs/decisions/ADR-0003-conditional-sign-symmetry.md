@@ -189,10 +189,12 @@ is cheap, exact, and it is the gate that a statistical battery cannot replace.
 10,000 ticks in `productionComposition.test.ts` — the only one that drives the
 shipped factory under `environment: 'production'` — 45,000 in
 `phaseAcceptance`, 50,000 in `multiAsset`, 60,300 in `mirror.test.ts`, and
-120,000 in `sampledCatalogue`, the highest anywhere. Against btcusd's recorded
-`meanIntervalMs` of 111, 120,000 ticks is **3.7 hours** of market life and the
-10,000 of `productionComposition.test.ts` is **18.5 minutes**; a hosted market
-runs for months, and `#sequence` is monotonic across restarts by design.
+120,000 in `sampledCatalogue`, the highest anywhere. Against dogeusdt-otc's recorded
+`meanIntervalMs` of 93 — the fastest tape in the catalogue of thirty (PH-26.3),
+so the least market time a fixed window buys — 120,000 ticks is **3.1 hours** of
+market life and the 10,000 of `productionComposition.test.ts` is **15.5
+minutes**; a hosted market runs for months, and `#sequence` is monotonic across
+restarts by design.
 
 Those figures are a tempo away from being wrong, and were: they read eleven
 hours and under an hour until PH-24.17 divided the catalogue's tempo by three

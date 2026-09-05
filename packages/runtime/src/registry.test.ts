@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { FixedClock, SteppableClock, durationMillis, epochMillis } from '@otc/core';
-import { assetById } from '@otc/engine';
+import { ASSET_CATALOGUE } from '@otc/engine';
+
+/** The first compiled asset, derived rather than named (PH-26.3). */
+const FIRST = ASSET_CATALOGUE[0]!.definition.id;
 import {
   AlreadyRegisteredError,
   assertOverlay,
@@ -31,7 +34,7 @@ async function registry(at = 1_000): Promise<FileAssetRegistry> {
 describe('the registry stores what was solved', () => {
   it('reads back an asset exactly as it was written', async () => {
     const store = await registry();
-    const asset = assetById('eurusd');
+    const asset = ASSET_CATALOGUE[0]!;
     await store.add(asset);
     const [read] = await store.list();
     // Deep equality, not "close enough". A quantum that survived a round trip
@@ -42,7 +45,7 @@ describe('the registry stores what was solved', () => {
 
   it('never re-derives: a stored asset is returned even when nothing could solve it', async () => {
     const store = await registry();
-    const asset = assetById('btcusd');
+    const asset = ASSET_CATALOGUE[1]!;
     await store.add(asset);
     const [read] = await store.list();
     expect(read!.evidence.logQuantum).toBe(asset.evidence.logQuantum);
@@ -52,8 +55,8 @@ describe('the registry stores what was solved', () => {
 
   it('refuses to overwrite a registration', async () => {
     const store = await registry();
-    await store.add(assetById('spx'));
-    await expect(store.add(assetById('spx'))).rejects.toBeInstanceOf(AlreadyRegisteredError);
+    await store.add(ASSET_CATALOGUE[2]!);
+    await expect(store.add(ASSET_CATALOGUE[2]!)).rejects.toBeInstanceOf(AlreadyRegisteredError);
   });
 
   it('returns assets in registration order rather than filename order', async () => {
@@ -75,7 +78,7 @@ describe('the registry stores what was solved', () => {
   it('refuses a stored file whose instrument the core rejects', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'otc-registry-'));
     directories.push(directory);
-    const asset = assetById('eurusd');
+    const asset = ASSET_CATALOGUE[0]!;
     await writeFile(
       path.join(directory, 'eurusd.json'),
       JSON.stringify({
@@ -91,7 +94,7 @@ describe('the registry stores what was solved', () => {
   it('refuses a file whose instrument and definition disagree about the id', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'otc-registry-'));
     directories.push(directory);
-    const asset = assetById('eurusd');
+    const asset = ASSET_CATALOGUE[0]!;
     await writeFile(
       path.join(directory, 'eurusd.json'),
       JSON.stringify({
@@ -126,14 +129,14 @@ describe('the registry stores what was solved', () => {
 
 describe('the in-memory registry answers the same way', () => {
   it('refuses a duplicate', async () => {
-    const store = new MemoryAssetRegistry([assetById('eurusd')]);
-    await expect(store.add(assetById('eurusd'))).rejects.toBeInstanceOf(AlreadyRegisteredError);
+    const store = new MemoryAssetRegistry([ASSET_CATALOGUE[0]!]);
+    await expect(store.add(ASSET_CATALOGUE[0]!)).rejects.toBeInstanceOf(AlreadyRegisteredError);
     expect((await store.list()).length).toBe(1);
   });
 });
 
 function renamed(id: string) {
-  const asset = assetById('eurusd');
+  const asset = ASSET_CATALOGUE[0]!;
   return {
     ...asset,
     definition: { ...asset.definition, id },
@@ -254,15 +257,18 @@ describe('the registry survives what a running venue does to it (a5-07)', () => 
     const directory = await mkdtemp(path.join(tmpdir(), 'otc-registry-'));
     directories.push(directory);
     const clock = new FixedClock(epochMillis(1));
-    await new FileAssetRegistry(directory, clock).add(assetById('eurusd'));
-    await copyFile(path.join(directory, 'eurusd.json'), path.join(directory, 'eurusd.bak.json'));
+    await new FileAssetRegistry(directory, clock).add(ASSET_CATALOGUE[0]!);
+    await copyFile(
+      path.join(directory, `${FIRST}.json`),
+      path.join(directory, `${FIRST}.bak.json`),
+    );
     const error = await new FileAssetRegistry(directory, clock).list().then(
       () => null,
       (e: unknown) => e as Error,
     );
     expect(error).toBeInstanceOf(CorruptRegistrationError);
-    expect(error?.message).toContain('eurusd.bak.json');
-    expect(error?.message).toContain('eurusd');
+    expect(error?.message).toContain(`${FIRST}.bak.json`);
+    expect(error?.message).toContain(FIRST);
   });
 
   it('reports a truncated file as a corrupt registration naming the file, not a bare SyntaxError', async () => {
@@ -270,11 +276,11 @@ describe('the registry survives what a running venue does to it (a5-07)', () => 
     directories.push(directory);
     const clock = new FixedClock(epochMillis(1));
     const store = new FileAssetRegistry(directory, clock);
-    await store.add(assetById('eurusd'));
-    await store.putOverlay('eurusd', { displayName: 'Euro' });
-    const registration = await readFile(path.join(directory, 'eurusd.json'), 'utf8');
+    await store.add(ASSET_CATALOGUE[0]!);
+    await store.putOverlay(FIRST, { displayName: 'Euro' });
+    const registration = await readFile(path.join(directory, `${FIRST}.json`), 'utf8');
     await writeFile(
-      path.join(directory, 'eurusd.json'),
+      path.join(directory, `${FIRST}.json`),
       registration.slice(0, registration.length >> 1),
     );
     const overlays = await readFile(path.join(directory, '_overlays.json'), 'utf8');
@@ -285,7 +291,7 @@ describe('the registry survives what a running venue does to it (a5-07)', () => 
       (e: unknown) => e as Error,
     );
     expect(listed).toBeInstanceOf(CorruptRegistrationError);
-    expect(listed?.message).toContain('eurusd.json');
+    expect(listed?.message).toContain(`${FIRST}.json`);
     await expect(store.overlays()).rejects.toBeInstanceOf(CorruptRegistrationError);
   });
 
@@ -296,13 +302,15 @@ describe('the registry survives what a running venue does to it (a5-07)', () => 
     // published exclusively as well as atomically.
     const store = await registry();
     const results = await Promise.allSettled(
-      Array.from({ length: 10 }, () => store.add(assetById('spx'))),
+      Array.from({ length: 10 }, () => store.add(ASSET_CATALOGUE[2]!)),
     );
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     for (const result of results) {
       if (result.status === 'rejected')
         expect(result.reason).toBeInstanceOf(AlreadyRegisteredError);
     }
-    expect((await store.list()).map((a) => a.definition.id)).toEqual(['spx']);
+    expect((await store.list()).map((a) => a.definition.id)).toEqual([
+      ASSET_CATALOGUE[2]!.definition.id,
+    ]);
   });
 });

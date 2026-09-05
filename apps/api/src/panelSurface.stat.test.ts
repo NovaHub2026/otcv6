@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { foldCandles, timeframe as timeframeById, type Candle } from '@otc/core';
 import { LiveBarBuilder, toBars, type HistoryCandle } from '@otc/chart';
+import { ASSET_CATALOGUE } from '@otc/engine';
 
 /**
  * PH-18 verified where it will actually be wrong: across the process boundary.
@@ -30,7 +31,11 @@ const repoRoot = path.resolve(here, '../../..');
 const entry = path.join(repoRoot, 'apps/api/dist/main.js');
 const SECRET = 'd'.repeat(64);
 /** The slowest asset: provisioning it is 2.3M ticks rather than 22.8M. */
-const ASSET = 'spx';
+/** The slowest tape in the catalogue, derived rather than named (PH-26.3). */
+const SLOWEST = [...ASSET_CATALOGUE].sort(
+  (a, b) => b.evidence.meanIntervalMs - a.evidence.meanIntervalMs,
+)[0]!.definition.id;
+const ASSET = SLOWEST; // the slowest tape, so a two-day backfill is cheap
 const BACKFILL_DAYS = 2;
 
 const started: ChildProcess[] = [];

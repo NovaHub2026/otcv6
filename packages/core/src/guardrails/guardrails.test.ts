@@ -144,6 +144,8 @@ const AMBIENT_STATE_ALLOWLIST = [
    * recorded file a human commits.
    */
   'tools/sim/src/buildCatalogue.ts',
+  // The tie-rate evidence run (PH-26.3): the same shape as the two above.
+  'tools/sim/src/tieRateEvidence.ts',
   'tools/sim/src/observerLoadRun.ts',
   'tools/sim/src/venueScale.ts',
 ];
@@ -167,6 +169,7 @@ const AMBIENT_TIME_ALLOWLIST = [
   // The catalogue builder times its own run, as horizonEvidence does, and
   // records the time beside the numbers; the wall clock never reaches a draw.
   'tools/sim/src/buildCatalogue.ts',
+  'tools/sim/src/tieRateEvidence.ts',
   'tools/sim/src/runner.ts',
   'tools/sim/src/venueScale.ts',
   /**

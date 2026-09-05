@@ -44,7 +44,7 @@ describe('the default sample supports a verdict', () => {
     await venue.start();
     await yieldToLoop();
     const body = (await new LabController(venue, new SignSelector(), new LabSession()).quality(
-      'eurusd',
+      ASSET_CATALOGUE[0]!.definition.id,
     )) as QualityBody;
     // PH-24.17: the default is a span — sixteen days, what a million ticks were on
     // EUR/USD before the grain changed — in the asset's own ticks.

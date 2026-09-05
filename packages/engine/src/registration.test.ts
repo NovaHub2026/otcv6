@@ -35,7 +35,13 @@ function request(over: Partial<RegistrationRequest> = {}): RegistrationRequest {
     displayName: 'USD Index',
     referencePrice: 100,
     traits: { ...ASSET_CATALOGUE[0]!.definition.traits },
-    targets: { ...ASSET_CATALOGUE[0]!.authored },
+    // The two targets a hand-authored request carries, and nothing else: the
+    // catalogue's own entries record what they were drawn from (PH-26.3), and
+    // that provenance is the pipeline's to add, not a request's to carry.
+    targets: {
+      excessKurtosis: ASSET_CATALOGUE[0]!.authored.excessKurtosis,
+      tickRms: ASSET_CATALOGUE[0]!.authored.tickRms,
+    },
     ...over,
   };
 }
@@ -154,7 +160,10 @@ describe('an identity has to survive being a filename and a key label', () => {
   it('refuses an id already in the catalogue', () => {
     // Two assets with one id derive the same streams: one market published
     // under two names, which is INV-003 broken at registration time.
-    const clash = checkIdentity(request({ id: 'eurusd' }), ASSET_CATALOGUE);
+    const clash = checkIdentity(
+      request({ id: ASSET_CATALOGUE[0]!.definition.id }),
+      ASSET_CATALOGUE,
+    );
     expect(clash).toMatch(/already registered/);
   });
 

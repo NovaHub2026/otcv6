@@ -563,7 +563,13 @@ describe('Candle Close Control, from the panel', () => {
     try {
       await page.goto(`http://127.0.0.1:${webPort}/lab/avanzado`, { waitUntil: 'networkidle' });
       await page.waitForSelector('[data-testid="lab-control"]', { timeout: 30_000 });
-      for (const asset of ['eurusd', 'gbpjpy']) {
+      // The two markets: the first two the Lab hosts, read from the Lab itself
+      // rather than typed here (PH-26.3).
+      const hosted = (await (await fetch(`http://127.0.0.1:${labPort}/catalogue`)).json()) as {
+        id: string;
+      }[];
+      const [firstId, secondId] = [hosted[0]!.id, hosted[1]!.id];
+      for (const asset of [firstId, secondId]) {
         await page.click(`[data-testid="lab-asset-${asset}"]`);
         await page.waitForTimeout(1_500);
         await page.selectOption('[data-testid="lab-close-bucket"]', 'next');
@@ -583,18 +589,18 @@ describe('Candle Close Control, from the panel', () => {
       }
       await page.click('[data-testid="tab-board"]');
       await page.waitForSelector('[data-testid="lab-board"]', { timeout: 30_000 });
-      expect(await text(page, 'lab-board-state-eurusd')).toMatch(/ARMADO/);
-      expect(await text(page, 'lab-board-state-gbpjpy')).toMatch(/ARMADO/);
+      expect(await text(page, `lab-board-state-${firstId}`)).toMatch(/ARMADO/);
+      expect(await text(page, `lab-board-state-${secondId}`)).toMatch(/ARMADO/);
       await page.click('[data-testid="lab-release-all"]');
       await page.waitForFunction(
-        () =>
+        ([a, b]) =>
           /keystream/.test(
-            document.querySelector('[data-testid="lab-board-state-eurusd"]')?.textContent ?? '',
+            document.querySelector(`[data-testid="lab-board-state-${a}"]`)?.textContent ?? '',
           ) &&
           /keystream/.test(
-            document.querySelector('[data-testid="lab-board-state-gbpjpy"]')?.textContent ?? '',
+            document.querySelector(`[data-testid="lab-board-state-${b}"]`)?.textContent ?? '',
           ),
-        null,
+        [firstId, secondId] as [string, string],
         { timeout: 30_000 },
       );
       await page.click('[data-testid="tab-session"]');

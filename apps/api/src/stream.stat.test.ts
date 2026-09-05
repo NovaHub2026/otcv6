@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
+import { ASSET_CATALOGUE } from '@otc/engine';
 
 /**
  * INV-002 over a real socket.
@@ -110,11 +111,16 @@ async function readTicks(
   return ticks.slice(0, count);
 }
 
+/** The fastest tape in the catalogue, derived rather than named (PH-26.3). */
+const FASTEST = [...ASSET_CATALOGUE].sort(
+  (a, b) => a.evidence.meanIntervalMs - b.evidence.meanIntervalMs,
+)[0]!.definition.id;
+
 describe('the stream gives every client the same market', () => {
   it('delivers identical ticks to concurrent clients, and resumes exactly', async () => {
     const port = 34_201;
     await boot(port);
-    const asset = 'btcusd'; // the fastest asset, so the test does not wait
+    const asset = FASTEST; // the fastest asset, so the test does not wait
 
     // Two clients connected at the same time must see the same thing.
     const [a, b] = await Promise.all([readTicks(port, asset, 40), readTicks(port, asset, 40)]);
@@ -154,13 +160,15 @@ describe('the stream gives every client the same market', () => {
     await boot(port);
     // Sequence 1 is inside the window on a fresh boot, so ask for something that
     // cannot exist yet: the contract is that the server never invents.
-    const response = await fetch(`http://127.0.0.1:${port}/markets/btcusd/stream?from=-5`);
+    const response = await fetch(`http://127.0.0.1:${port}/markets/${FASTEST}/stream?from=-5`);
     expect(response.status).toBe(400);
     await response.body?.cancel();
 
     // A sequence in the future is a refusal too, in the feed's own words — it
     // was a 500 (a6-04), which a browser's `EventSource` treats as final.
-    const future = await fetch(`http://127.0.0.1:${port}/markets/btcusd/stream?from=99999999999`);
+    const future = await fetch(
+      `http://127.0.0.1:${port}/markets/${FASTEST}/stream?from=99999999999`,
+    );
     expect(future.status).toBe(400);
     expect(await future.text()).toMatch(/never been published/);
 

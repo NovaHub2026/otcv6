@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, type Tick } from '@otc/core';
 import { reduceToColumns, TickWindow, windowExtremes } from '@otc/chart';
+import { ASSET_CATALOGUE } from '@otc/engine';
 
 /**
  * The join.
@@ -27,7 +28,11 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
 const entry = path.join(repoRoot, 'apps/api/dist/main.js');
 const SECRET = 'c'.repeat(64);
-const ASSET = 'btcusd'; // fastest asset, so the test does not spend its life waiting
+/** The fastest tape in the catalogue, derived rather than named (PH-26.3). */
+const FASTEST = [...ASSET_CATALOGUE].sort(
+  (a, b) => a.evidence.meanIntervalMs - b.evidence.meanIntervalMs,
+)[0]!.definition.id;
+const ASSET = FASTEST; // the fastest asset, so the test does not spend its life waiting
 
 const started: ChildProcess[] = [];
 const directories: string[] = [];
