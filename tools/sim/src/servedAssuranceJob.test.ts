@@ -180,7 +180,8 @@ describe('the job as a scheduler runs it', () => {
     expect(text).toContain(`Venue: \`${base}\``);
     // What the venue said it was, and what the job was built from (CA9 a4-02).
     expect(text).toContain('boot nonce fake-venue, 1 assets, production composition');
-    expect(text).toMatch(/Job built from commit `[0-9a-f]{7,}`/);
+    // `unknown` outside a git checkout — the integration package, for one (found building it, 2026-09-05).
+    expect(text).toMatch(/Job built from commit `(?:[0-9a-f]{7,}|unknown)`/);
     expect(text).toMatch(/\| wire-otc \| 36000 \|.*\| 1–36000 [0-9a-f]{12} \|/);
     expect(text).toContain('Assets: 1 — 1 exploitable, 0 failed');
     expect(stderr).toMatch(/wire-otc: 36000 ticks, exploitable/);

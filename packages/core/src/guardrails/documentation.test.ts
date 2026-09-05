@@ -608,18 +608,26 @@ describe('a document that names a test names one that exists', () => {
    * name that never existed anywhere is a lie in any document. Canonical
    * documents — the ones a fresh session reads first — are held to the disk.
    */
-  const everTracked = (): Set<string> => {
-    const out = execFileSync(
-      'git',
-      ['log', '--all', '--diff-filter=A', '--name-only', '--pretty=format:', '--', '*.test.ts'],
-      { cwd: repoRoot, encoding: 'utf8' },
-    );
-    return new Set(
-      out
-        .split('\n')
-        .filter((line) => line.endsWith('.test.ts'))
-        .map((line) => path.basename(line)),
-    );
+  const everTracked = (): Set<string> | null => {
+    // Null when there is no history to ask — a tree copied without `.git`,
+    // as the meta-audit's clean copy is (`guardrailMetaAudit.stat.test.ts`).
+    // Without history a historical document cannot be held to it, and is not
+    // held to the disk either: that would call every retired test a lie.
+    try {
+      const out = execFileSync(
+        'git',
+        ['log', '--all', '--diff-filter=A', '--name-only', '--pretty=format:', '--', '*.test.ts'],
+        { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+      );
+      return new Set(
+        out
+          .split('\n')
+          .filter((line) => line.endsWith('.test.ts'))
+          .map((line) => path.basename(line)),
+      );
+    } catch {
+      return null;
+    }
   };
   const HISTORICAL = /^docs\/(phases|evidence|reports)\//;
 
@@ -634,7 +642,7 @@ describe('a document that names a test names one that exists', () => {
       for (const match of read(document).matchAll(/`([A-Za-z0-9_.\-/]+\.test\.ts)`/g)) {
         named += 1;
         const base = path.basename(match[1]!);
-        const known = files.has(base) || (historical && tracked.has(base));
+        const known = files.has(base) || (historical && (tracked === null || tracked.has(base)));
         if (!known) missing.push(`${document} names ${match[1]!}`);
       }
     }
