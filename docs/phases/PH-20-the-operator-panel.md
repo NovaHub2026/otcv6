@@ -92,3 +92,11 @@ reproduced.
 > suite then reported its six tests as _passed_ while running nothing. The lines
 > above were produced on a host that could launch a browser, or by that silent
 > path; the record cannot tell which. The suite reports _skipped_ now.
+
+> **Re-checked against the tree, 2026-09-05 (PH-27.2).** Scale — **closed by**
+> PH-21 (a hundred registered) and PH-26 (thirty shipped;
+> `catalogueScale.stat.test.ts`, `multiAsset.stat.test.ts`). Retirement
+> one-way — **still open by decision**; a retired market's screen is proposed
+> in `docs/reports/IMPROVEMENT-REPORT-001.md` §2. B-030 — **closed**: Issue #5,
+> no recurrence across Cycles 7–9 with `artifacts/unit-results.json` naming
+> every run's tests; closed on the issue's own rule.

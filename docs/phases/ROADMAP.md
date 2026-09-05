@@ -724,6 +724,7 @@ recorded here so it is not rediscovered:
 | ----- | --------------------------------------------------- | ------------ |
 | PH-26 | The catalogue of thirty                             | **APPROVED** |
 | PH-25 | The battery against a production venue's own record | **APPROVED** |
+| PH-27 | Review and improvement of the whole project         | **APPROVED** |
 
 **PH-26 runs first, and the numbering says so rather than hiding it.** PH-25 was
 recorded when the audit closed and PH-26 was asked for afterwards; renumbering a
@@ -768,6 +769,25 @@ half, and it has never been run where the product lives.
 | PH-25.1  | An observer that builds a dataset from the served record alone   | APPROVED |
 | PH-25.2  | The battery on the served record, across a restart and a resume  | APPROVED |
 | PH-25.3  | The recorded verdict, and the standing job that keeps it current | APPROVED |
+
+**PH-27 — review and improvement of the whole project.** _"La PH-27 debe ser
+una fase de revisión y mejora de todo el proyecto."_ Not an audit — the Cycle
+Audit that follows is adversarial by construction and this phase must not
+pre-empt it — but the phase that acts on what the project already knows about
+itself: the guards its records name as unable to fail, re-planted; every
+"leaves open" section and open Issue re-checked against the tree; the small
+improvements with no owner, closed; the footprint of a Lab intervention,
+measured on the record it wrote (the Human Owner's question); and, last, the
+improvement report — the engine's realism classed against the mirror test,
+the trader's screen, the Lab, and a ranked Cycle 10.
+
+| Subphase | Title                                                                      | State    |
+| -------- | -------------------------------------------------------------------------- | -------- |
+| PH-27.1  | The guards that cannot fail: found by planting, fixed by anchoring         | APPROVED |
+| PH-27.2  | The records that are stale: every "leaves open" checked against the tree   | APPROVED |
+| PH-27.3  | The small improvements with no owner, closed                               | APPROVED |
+| PH-27.4  | The footprint of a Lab intervention, measured on the record it wrote       | APPROVED |
+| PH-27.5  | The improvement report: the engine's realism, the trader's screen, the Lab | APPROVED |
 
 ## Known uncertainties
 

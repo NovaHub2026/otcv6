@@ -1,4 +1,4 @@
-import type { TimeframeId } from '@otc/core';
+import { yieldToLoop, type TimeframeId } from '@otc/core';
 import type { ObserverDataset } from './observer.js';
 
 /**
@@ -236,10 +236,21 @@ function quantile(sorted: Float64Array, q: number): number {
   return sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]!;
 }
 
-export function assessRealism(
+/**
+ * The fifteen metrics, one per step.
+ *
+ * A generator so that the same code serves two callers: `assessRealism`
+ * drains it synchronously, as every statistical test and the sim always have;
+ * `assessRealismAsync` turns the event loop between steps. **PH-24 §9, closed
+ * in PH-27.3:** on a million-tick quality run the synchronous form blocked the
+ * Lab's process for seconds, long enough to drop an idle keep-alive socket
+ * and cost a gate a 502 (PH-24.19). The metrics are the same objects either
+ * way; only `elapsedSeconds` includes the turns.
+ */
+function* realismSteps(
   dataset: ObserverDataset,
-  options: RealismOptions = {},
-): RealismReport {
+  options: RealismOptions,
+): Generator<void, RealismReport, void> {
   const started = process.hrtime.bigint();
   const candleTimeframe = options.candleTimeframe ?? '1m';
   const windowTicks = options.windowTicks ?? DEFAULT_REGIME_WINDOW_TICKS;
@@ -265,6 +276,7 @@ export function assessRealism(
   const metrics: RealismMetric[] = [];
 
   // --- First moment: no linear predictability ---------------------------------
+  yield;
   metrics.push(
     metric(
       'return-autocorrelation-lag1',
@@ -278,6 +290,7 @@ export function assessRealism(
       over(1),
     ),
   );
+  yield;
   metrics.push(
     metric(
       'return-autocorrelation-lag10',
@@ -295,6 +308,7 @@ export function assessRealism(
   const absAcf50 = autocorrelation(absolute, CLUSTERING_DECAY_LAG_TICKS);
   const absAcf500 = autocorrelation(absolute, LONG_MEMORY_LAG_TICKS);
 
+  yield;
   metrics.push(
     metric(
       'absolute-return-autocorrelation-lag1',
@@ -307,6 +321,7 @@ export function assessRealism(
       over(1),
     ),
   );
+  yield;
   metrics.push(
     metric(
       'absolute-return-long-memory',
@@ -326,6 +341,7 @@ export function assessRealism(
     value: absAcf1,
     floor: 0.05,
   };
+  yield;
   metrics.push(
     ratioMetric(
       'volatility-clustering-dominance',
@@ -340,6 +356,7 @@ export function assessRealism(
       over(1),
     ),
   );
+  yield;
   metrics.push(
     ratioMetric(
       'absolute-return-decay-is-slow',
@@ -357,6 +374,7 @@ export function assessRealism(
 
   // --- Tails ------------------------------------------------------------------
   const tickKurtosis = excessKurtosis(returns);
+  yield;
   metrics.push(
     metric(
       'excess-kurtosis',
@@ -380,6 +398,7 @@ export function assessRealism(
     for (let i = b * aggregate; i < (b + 1) * aggregate; i += 1) sum += returns[i]!;
     aggregated[b] = sum;
   }
+  yield;
   metrics.push(
     ratioMetric(
       'aggregational-gaussianity',
@@ -412,6 +431,7 @@ export function assessRealism(
   const sortedDisplacement = Float64Array.from(displacement).sort();
   const sortedVolatility = Float64Array.from(windowVolatility).sort();
 
+  yield;
   metrics.push(
     metric(
       'displacement-heterogeneity',
@@ -424,6 +444,7 @@ export function assessRealism(
       over(windowTicks),
     ),
   );
+  yield;
   metrics.push(
     metric(
       'volatility-regime-range',
@@ -450,6 +471,7 @@ export function assessRealism(
       currentDirection = direction;
     }
   }
+  yield;
   metrics.push(
     metric(
       'mean-run-length',
@@ -482,6 +504,7 @@ export function assessRealism(
     if (upper > 0 && lower > 0) twoSidedWicks += 1;
   }
   const usableCandles = Math.max(1, usable);
+  yield;
   metrics.push(
     metric(
       'candle-shape-diversity',
@@ -493,6 +516,7 @@ export function assessRealism(
       0.95,
     ),
   );
+  yield;
   metrics.push(
     metric(
       'two-sided-wick-fraction',
@@ -511,6 +535,7 @@ export function assessRealism(
   magnitudes.set(absolute);
   for (let i = 0; i < absolute.length; i += 1) if (absolute[i]! === 0) zeroTicks += 1;
   const sortedMagnitudes = magnitudes.sort();
+  yield;
   metrics.push(
     metric(
       'tick-size-dispersion',
@@ -522,6 +547,7 @@ export function assessRealism(
       50,
     ),
   );
+  yield;
   metrics.push(
     metric(
       'unchanged-tick-fraction',
@@ -542,6 +568,30 @@ export function assessRealism(
     plausible: failed.length === 0,
     elapsedSeconds: Number(process.hrtime.bigint() - started) / 1e9,
   };
+}
+
+export function assessRealism(
+  dataset: ObserverDataset,
+  options: RealismOptions = {},
+): RealismReport {
+  const steps = realismSteps(dataset, options);
+  for (;;) {
+    const step = steps.next();
+    if (step.done) return step.value;
+  }
+}
+
+/** The same report, with a full event-loop turn before each metric. */
+export async function assessRealismAsync(
+  dataset: ObserverDataset,
+  options: RealismOptions = {},
+): Promise<RealismReport> {
+  const steps = realismSteps(dataset, options);
+  for (;;) {
+    await yieldToLoop();
+    const step = steps.next();
+    if (step.done) return step.value;
+  }
 }
 
 export function formatRealismReport(report: RealismReport): string {

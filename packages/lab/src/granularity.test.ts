@@ -37,6 +37,39 @@ describe('tickGranularity', () => {
     expect(report.intervalMs.median).toBe(1_000);
   });
 
+  it('counts a minute with no ticks as a minute, and never reads across it as adjacent (PH-27.1)', () => {
+    // **Cycle Audit 8 (a8), re-planted in PH-27.1.** Buckets were built from
+    // ticks alone, so a complete minute with no ticks vanished: it was not a
+    // minute, its zero did not reach `ticksPerMinute`, and the minute after it
+    // had its opening gap measured against the close of the minute *before*
+    // the hole as though the two were adjacent — on a quiet market that read
+    // as a gappy chart, which is the opposite of what happened.
+    const base = 1_776_000_000_000;
+    const ticks: Tick[] = [
+      tick(1, base - 1_000, 0),
+      // Minute 0: 3 ticks, close 10.
+      tick(2, base + 1_000, 0),
+      tick(3, base + 2_000, 10),
+      tick(4, base + 3_000, 10),
+      // Minute 1: nothing.
+      // Minute 2: opens at 50 — a gap of 40 from minute 0's close, but not from an adjacent minute.
+      tick(5, base + 121_000, 50),
+      tick(6, base + 122_000, 52),
+      // Minute 3: adjacent to minute 2, opens 53 against close 52 → gap 1 over range 1.
+      tick(7, base + 181_000, 53),
+      tick(8, base + 182_000, 54),
+      // Minute 4: partial, dropped.
+      tick(9, base + 241_000, 54),
+    ];
+    const report = tickGranularity(ticks);
+    expect(report.minutes).toBe(4);
+    expect(report.quietMinutes).toBe(1);
+    expect(report.ticksPerMinute.p10).toBe(0);
+    // Only the adjacent pair (minutes 3 → 4) yields a boundary ratio.
+    expect(report.gapOverRange.median).toBe(1);
+    expect(report.gapOverRange.shareAboveQuarter).toBe(1);
+  });
+
   it('is honest about an empty or tiny sample', () => {
     const report = tickGranularity([]);
     expect(report.minutes).toBe(0);

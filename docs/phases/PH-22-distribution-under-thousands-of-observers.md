@@ -183,3 +183,10 @@ will need it, and it is next.
 **Socket memory at eighty thousand connections is unmeasured.** Feed retention
 was measured by Cycle Audit 7 at 5.01 MB per asset; per-connection buffers at
 the full target were not.
+
+> **Re-checked against the tree, 2026-09-05 (PH-27.2).** Whether the replay
+> ceiling engaged — **still open**: the harness has counted told gaps since
+> Cycle Audit 8 and the table has not been re-run; `IMPROVEMENT-REPORT-001.md`
+> §2. Ten thousand — **still open**, report §4. The panel not multiplexed —
+> **still open** (Issue #16), report §2. Socket memory at eighty thousand —
+> **still open**, report §4.

@@ -75,6 +75,28 @@ import {
  * reason this layer is being covered at all is that nothing else could see it.
  */
 
+/**
+ * The bounds of a told gap, from the frame's own fields (`requested`, and
+ * `resumesAt` since PH-25.1); null when the frame does not bound it.
+ */
+export function holeOf(event: Event): { from: number; to: number } | null {
+  const data = (event as MessageEvent<string>).data;
+  if (typeof data !== 'string') return null;
+  try {
+    const frame = JSON.parse(data) as { requested?: unknown; resumesAt?: unknown };
+    if (
+      typeof frame.requested === 'number' &&
+      typeof frame.resumesAt === 'number' &&
+      frame.resumesAt > frame.requested
+    ) {
+      return { from: frame.requested, to: frame.resumesAt - 1 };
+    }
+  } catch {
+    /* not a bounded gap */
+  }
+  return null;
+}
+
 /** Quiet for this many mean intervals and the status stops saying `live`. */
 export const STALL_MULTIPLE = 3;
 /** Delay before the first reconnect; doubles per consecutive failure. */
@@ -268,9 +290,18 @@ export function PreviewChart({
       reseedTimer = null;
     };
 
+    /**
+     * The hole the engine named, when it named one (PH-27.3, from PH-25.1's
+     * `resumesAt`): the sequences this client asked for and will not receive.
+     * Bounded exactly rather than described as "a gap", so the viewer knows how
+     * much of the record the live bar's re-reading stands in for.
+     */
+    let hole: { from: number; to: number } | null = null;
     const liveStatus = (): string => {
       if (!connection.joinExact) {
-        return `${es.preview.status.live} — la vela en curso es el registro, releído cada minuto`;
+        const bounded =
+          hole === null ? '' : ` — ${es.preview.status.holeBounded(hole.from, hole.to)}`;
+        return `${es.preview.status.live} — la vela en curso es el registro, releído cada minuto${bounded}`;
       }
       return afterGap ? es.preview.status.liveAfterGap : es.preview.status.live;
     };
@@ -459,9 +490,12 @@ export function PreviewChart({
       // still refused. This handler is the earlier of the two signals — it
       // arrives before any tick — and it drives what the viewer is told and
       // when the record starts being re-read.
-      const recordOnly = (): void => {
+      const recordOnly = (event?: Event): void => {
         if (cancelled || !self.joinExact) return;
         self.joinExact = false;
+        // Bounded only when the engine said so; a join the builder found
+        // broken on its own names no bounds.
+        hole = event === undefined ? null : holeOf(event);
         setStatus(liveStatus());
         applySeed();
         // One interval per connection. A reconnect that gapped again used to

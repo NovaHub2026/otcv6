@@ -1,6 +1,7 @@
 export * from './attacks/index.js';
 export {
   assessRealism,
+  assessRealismAsync,
   formatRealismReport,
   type RealismMetric,
   type RealismOptions,

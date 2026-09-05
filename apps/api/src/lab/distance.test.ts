@@ -16,6 +16,28 @@ const tick = (sequence: number, instant: number, price: number): Tick => ({
 });
 
 describe('the distance unit', () => {
+  it('counts a minute with no ticks as a complete minute of range zero (PH-27.1)', () => {
+    // A quiet minute is a candle with no range, not a minute that did not
+    // happen: dropping it from the median biased the distance unit upward on
+    // every quiet market, and undercounted how much record the unit rests on.
+    const base = 1_776_000_000_000;
+    const t = (instant: number, price: number): Tick => ({
+      sequence: instant,
+      instant: epochMillis(base + instant),
+      price: logPrice(price),
+    });
+    const ticks = [
+      t(-1_000, 0),
+      t(1_000, 0),
+      t(2_000, 80), // minute 0: range 80
+      // minute 1: nothing
+      t(121_000, 80),
+      t(122_000, 100), // minute 2: range 20
+      t(181_000, 100), // minute 3 (partial, dropped)
+    ];
+    expect(medianCandleRange(ticks)).toEqual({ range: 20, minutes: 3 });
+  });
+
   it('is a quarter of the median complete-minute range, at least one step, priced at the level', () => {
     const base = 1_776_000_000_000;
     const ticks: Tick[] = [

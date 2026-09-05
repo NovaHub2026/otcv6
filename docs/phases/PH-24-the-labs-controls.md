@@ -189,6 +189,13 @@ rates re-measured, and every sample defined in time rather than in ticks.
   record closes it — the `bias` action's diagnostics say when it could not have
   outlived, and that is all (PH-24.24).
 
+> **Re-checked against the tree, 2026-09-05 (PH-27.2).** `assessRealism`
+> blocking — PH-27.3's first candidate. `aggregational-gaussianity` in ticks —
+> **still open**, `IMPROVEMENT-REPORT-001.md` §1.2. Replay and the mirror
+> screen — **still open**: `Reproducir.tsx` is on `main` and no route feeds it;
+> report §3. A bias not surviving a restart — **still open by design**; report
+> §3 proposes recording the cut on the session record.
+
 ## 10. Integration verification (2026-09-04)
 
 Beyond the subphase gates, run on the phase as a whole:

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, MasterKeyring, type InstrumentSpec, type Tick } from '@otc/core';
 import { datasetFromTicks } from './observer.js';
-import { assessRealism, formatRealismReport } from './realism.js';
+import { assessRealism, assessRealismAsync, formatRealismReport } from './realism.js';
 
 const instrument: InstrumentSpec = {
   id: 'realism-otc',
@@ -267,4 +267,49 @@ describe('reporting', () => {
     expect(report.passed + report.failed.length).toBe(report.metrics.length);
     expect(report.plausible).toBe(report.failed.length === 0);
   });
+});
+
+describe('assessRealismAsync (PH-27.3)', () => {
+  it('reports the same metrics as the synchronous form, and turns the loop between them', async () => {
+    const ticks: Tick[] = [];
+    let price = 0;
+    const source = MasterKeyring.forTesting('realism-async').derive({
+      env: 'test',
+      asset: 'realism',
+      purpose: 'walk',
+      keyEpoch: 0,
+    });
+    for (let i = 0; i < 20_000; i += 1) {
+      price += source.nextFloat64() < 0.5 ? 1 : -1;
+      ticks.push({
+        sequence: i + 1,
+        instant: epochMillis(1_776_000_000_000 + i * 500),
+        price: logPrice(price),
+      });
+    }
+    const dataset = datasetFromTicks(
+      { id: 'realism', family: 'forex', logQuantum: 1e-5, displayPrecision: 5, referencePrice: 1 },
+      ticks,
+    );
+    // A self-rescheduling immediate runs once per loop turn, and only if the
+    // assessment lets the loop turn at all: the synchronous form gives it
+    // none, the asynchronous form one before each of the fifteen metrics.
+    let turns = 0;
+    let running = true;
+    const turn = (): void => {
+      turns += 1;
+      if (running) setImmediate(turn);
+    };
+    setImmediate(turn);
+    const sync = assessRealism(dataset);
+    const turnsDuringSync = turns;
+    const async = await assessRealismAsync(dataset);
+    running = false;
+    expect(turnsDuringSync).toBe(0);
+    expect(async.metrics).toEqual(sync.metrics);
+    expect(async.passed).toBe(sync.passed);
+    expect(async.failed).toEqual(sync.failed);
+    // Fifteen metrics, a full turn (two immediates) before each.
+    expect(turns).toBeGreaterThanOrEqual(15);
+  }, 60_000);
 });

@@ -42,6 +42,8 @@ export const es = {
       reloadingHistory: 'recargando historial tras un hueco',
       live: 'en vivo',
       liveAfterGap: 'en vivo — reconectado tras un hueco',
+      holeBounded: (from: number, to: number) =>
+        `hueco avisado por el motor: secuencias ${String(from)}–${String(to)} no servidas`,
       interrupted: 'stream interrumpido',
       notHosted: 'sin hospedar',
       reconnecting: 'reconectando',
@@ -216,6 +218,9 @@ export const es = {
         `empujando ${dir === 'up' ? '↑' : '↓'} · ${String(n)} ticks por jugar`,
       idle: 'sin empuje — el mercado sigue su camino',
       landing: (price: string, n: number) => `llegará a ${price} tras ${String(n)} ticks`,
+      footprint: (steps: number) =>
+        `huella: ${steps > 0 ? '+' : ''}${String(steps)} pasos respecto al mercado sin intervenir`,
+      footprintShort: (steps: number) => `huella ${steps > 0 ? '+' : ''}${String(steps)} pasos`,
       landingUnits: (price: string, units: number, n: number) =>
         `llegará a ${price} — ${String(units)} unidades en ${String(n)} ticks`,
       extended: 'alargado',
@@ -449,6 +454,9 @@ export const es = {
       granularity: {
         title: 'Granularidad del tick — lo que el gráfico enseña de la estructura',
         info: 'Una vela abre en el primer tick que cae dentro y la anterior cerró en el último tick antes: el hueco entre ambas es un paso del mercado. Se ve cuando hay pocos ticks por vela y pasos grandes respecto al rango. Medido sobre la muestra de la medición, en velas de 1 minuto completas.',
+        minutes: 'velas de 1m completas medidas',
+        minutesValue: (minutes: number, quiet: number) =>
+          `${String(minutes)} · ${String(quiet)} sin ningún tick`,
         ticksPerMinute: 'ticks por vela de 1m',
         ticksValue: (m: number, p10: number, p90: number) =>
           `${String(m)} (p10 ${String(p10)} · p90 ${String(p90)})`,

@@ -102,7 +102,20 @@ export function medianCandleRange(ticks: readonly Tick[]): { range: number; minu
       last.low = Math.min(last.low, tick.price);
     }
   }
-  const complete = buckets.slice(1, -1);
+  // A minute no tick fell in is a candle of range zero, and it counts (PH-27.1,
+  // Cycle Audit 8 a8): dropping it biased the unit upward on every quiet
+  // market and undercounted the record the unit rests on.
+  const filled: typeof buckets = [];
+  for (const bucket of buckets) {
+    const last = filled[filled.length - 1];
+    if (last !== undefined) {
+      for (let start = last.start + MINUTE_MS; start < bucket.start; start += MINUTE_MS) {
+        filled.push({ start, high: 0, low: 0 });
+      }
+    }
+    filled.push(bucket);
+  }
+  const complete = filled.slice(1, -1);
   if (complete.length === 0) return { range: 0, minutes: 0 };
   const ranges = complete.map((b) => b.high - b.low).sort((a, b) => a - b);
   return { range: ranges[Math.floor(ranges.length / 2)]!, minutes: complete.length };
