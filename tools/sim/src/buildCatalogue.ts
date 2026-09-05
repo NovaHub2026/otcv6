@@ -84,7 +84,7 @@ async function main(): Promise<void> {
         asset,
         sample,
         retreats,
-        spanMs: span,
+        simulatedMs: asset.evidence.simulatedMs,
         replicates: options.replicates,
         seconds: Number(seconds),
       }),

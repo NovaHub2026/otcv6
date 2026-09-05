@@ -223,6 +223,11 @@ describe('the recorded personalities reproduce from their targets', () => {
  * grain — six tables of frozen numbers keyed by `eurusd`, `gbpjpy`, `btcusd`,
  * `spx` and `xauusd`. The catalogue of thirty has no PH-4 predecessor to hold
  * to; what it holds to instead is its own recorded run, which
+ * **Cycle Audit 9 (a3-02):** this re-derives `clustering` and `volatility` — the
+ * two traits the authoring solves — and passes the other ten through; the
+ * guard for those is `tools/sim/src/catalogueBuild.stat.test.ts`, which
+ * compares every entry with its seat's own draw.
+ *
  * `the recorded personalities reproduce from their targets` above re-derives
  * entry by entry, and `catalogue.stat.test.ts` recalibrates. The tables went
  * with the assets rather than being emptied, because an empty table under an

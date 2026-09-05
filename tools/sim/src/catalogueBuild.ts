@@ -218,18 +218,25 @@ export function evidenceRow(options: {
   readonly asset: RegisteredAsset;
   readonly sample: ArchetypeSample;
   readonly retreats: number;
-  readonly spanMs: number;
+  /**
+   * Days simulated per replicate, as the compiled entry records them
+   * (`evidence.simulatedMs`). **Cycle Audit 9 (a3-01):** this column printed
+   * the dispersion fit's *need* (`minimumDispersionSpanMs`), not the span the
+   * calibration ran — false for the six assets whose need fell under the
+   * ten-day floor (DOGE read "1.2 d × 3" for a 3.3-day replicate).
+   */
+  readonly simulatedMs: number;
   readonly replicates: number;
   readonly seconds: number;
 }): string {
-  const { seat, asset, sample, retreats, spanMs, replicates, seconds } = options;
+  const { seat, asset, sample, retreats, simulatedMs, replicates, seconds } = options;
   const clamped = sample.clampedFrom === undefined ? '' : `, clamped from ${sample.clampedFrom}`;
   return (
     `| ${seat.id} | ${seat.archetype} | ${sample.excessKurtosis.toFixed(1)} → ` +
     `${asset.authored.excessKurtosis.toFixed(1)} (${String(retreats)} retreats${clamped}) ` +
     `| ${asset.evidence.logQuantum.toExponential(4)} | ${String(asset.instrument.displayPrecision)} ` +
     `| ${(asset.evidence.tieRate * 100).toFixed(3)}% | ${asset.evidence.medianSteps.toFixed(0)} ` +
-    `| ${asset.evidence.meanIntervalMs.toFixed(1)} | ${(spanMs / 86_400_000).toFixed(1)} d × ` +
+    `| ${asset.evidence.meanIntervalMs.toFixed(1)} | ${(simulatedMs / 86_400_000).toFixed(1)} d × ` +
     `${String(replicates)} | ${String(seconds)}s |`
   );
 }

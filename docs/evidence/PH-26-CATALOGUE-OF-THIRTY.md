@@ -2,7 +2,7 @@
 
 Type: RECORDED EVIDENCE
 Date: 2026-09-04
-Verified by: `packages/engine/src/catalogue.test.ts` (every entry re-derives from its record), `packages/engine/src/seats.test.ts` (every seat inside its archetype, feasible, and separable), `packages/engine/src/catalogue.stat.test.ts` (a stratified sample recalibrated at every gate)
+Verified by: `packages/engine/src/catalogue.test.ts` (clustering and volatility re-derive from each entry's record — the two traits the authoring solves), `tools/sim/src/catalogueBuild.stat.test.ts` (the ten sampled traits, the drawn tail weight and the retreats of every entry equal the seat's own draw; Cycle Audit 9 a3-02 found the first guard blind to those ten), `packages/engine/src/seats.test.ts` (every seat inside its archetype, feasible, and separable), `packages/engine/src/catalogue.stat.test.ts` (a stratified sample recalibrated at every gate)
 
 ---
 
@@ -54,42 +54,49 @@ from its recorded targets and get its recorded traits back.
 - **tie rate** — the fraction of calibration horizons that settled at the
   money, against the 1% target. The realised rate on the published lattice is
   about half this (`MEASURED_LATTICE_TIE_RATES`).
-- **calibration** — simulated days per replicate × replicates.
+- **calibration** — days simulated per replicate × replicates, as each
+  compiled entry records them (`evidence.simulatedMs`). **Corrected by Cycle
+  Audit 9 (a3-01):** the run printed the dispersion fit's _total_ need under
+  this header — three times the per-replicate figure for most assets, and for
+  gbpjpy, eurjpy, solusdt, xrpusdt, dogeusdt and mmx-idx a figure below the
+  ten-day floor the calibration actually ran at. All thirty cells are
+  re-derived from the compiled entries, not re-run; the emitter prints the
+  recorded span now (`catalogueBuild.test.ts`).
 
 ## The table
 
 | asset        | archetype       | tail weight drawn → authored | quantum   | precision | tie rate | median steps | mean interval ms | calibration | time |
 | ------------ | --------------- | ---------------------------- | --------- | --------- | -------- | ------------ | ---------------- | ----------- | ---- |
-| eurusd-otc   | major-fx        | 51.7 → 51.7 (0 retreats)     | 3.1314e-7 | 7         | 0.950%   | 72           | 348.0            | 27.3 d × 3  | 10s  |
-| gbpusd-otc   | major-fx        | 72.7 → 72.7 (0 retreats)     | 2.8963e-7 | 7         | 0.991%   | 74           | 273.7            | 16.7 d × 3  | 7s   |
-| usdjpy-otc   | major-fx        | 63.4 → 63.4 (0 retreats)     | 4.1322e-7 | 5         | 1.014%   | 63           | 255.7            | 23.1 d × 3  | 12s  |
-| audusd-otc   | major-fx        | 70.9 → 70.9 (0 retreats)     | 3.6734e-7 | 7         | 1.066%   | 69           | 327.1            | 19.1 d × 3  | 7s   |
-| usdchf-otc   | major-fx        | 46.7 → 46.7 (0 retreats)     | 3.2281e-7 | 7         | 1.236%   | 60           | 514.4            | 27.0 d × 3  | 6s   |
-| eurgbp-otc   | major-fx        | 60.3 → 60.3 (0 retreats)     | 2.7287e-7 | 7         | 1.133%   | 62           | 537.6            | 20.4 d × 3  | 5s   |
-| gbpjpy-otc   | cross-fx        | 123.2 → 123.2 (0 retreats)   | 7.2245e-7 | 4         | 1.010%   | 87           | 131.7            | 7.9 d × 3   | 7s   |
-| eurjpy-otc   | cross-fx        | 85.2 → 85.2 (0 retreats)     | 6.3190e-7 | 4         | 0.948%   | 91           | 255.8            | 4.3 d × 3   | 4s   |
-| aapl-otc     | sector-etf      | 52.6 → 52.6 (0 retreats)     | 1.0383e-6 | 4         | 1.029%   | 64           | 657.6            | 26.2 d × 3  | 4s   |
-| msft-otc     | sector-etf      | 47.1 → 47.1 (0 retreats)     | 8.7723e-7 | 4         | 0.943%   | 71           | 761.0            | 25.6 d × 3  | 3s   |
-| nvda-otc     | sector-etf      | 64.9 → 64.9 (0 retreats)     | 1.7995e-6 | 4         | 0.965%   | 77           | 420.0            | 16.8 d × 3  | 4s   |
-| tsla-otc     | sector-etf      | 62.6 → 62.6 (0 retreats)     | 2.5480e-6 | 4         | 1.083%   | 71           | 545.8            | 13.6 d × 3  | 3s   |
-| meta-otc     | sector-etf      | 59.0 → 59.0 (0 retreats)     | 1.6350e-6 | 4         | 0.984%   | 71           | 556.2            | 21.7 d × 3  | 5s   |
-| amzn-otc     | sector-etf      | 53.7 → 53.7 (0 retreats)     | 1.1107e-6 | 4         | 0.894%   | 77           | 518.3            | 17.9 d × 3  | 4s   |
-| pbr-otc      | sector-etf      | 57.9 → 57.9 (0 retreats)     | 1.5279e-6 | 5         | 1.008%   | 71           | 475.1            | 13.7 d × 3  | 3s   |
-| nu-otc       | sector-etf      | 56.5 → 56.5 (0 retreats)     | 2.1677e-6 | 5         | 1.005%   | 73           | 475.7            | 21.8 d × 3  | 4s   |
-| btcusdt-otc  | major-crypto    | 116.9 → 116.9 (0 retreats)   | 1.7544e-6 | 1         | 1.048%   | 75           | 97.0             | 23.8 d × 3  | 29s  |
-| ethusdt-otc  | major-crypto    | 152.6 → 152.6 (0 retreats)   | 1.6192e-6 | 3         | 0.965%   | 89           | 115.0            | 19.2 d × 3  | 21s  |
-| bnbusdt-otc  | major-crypto    | 137.0 → 137.0 (0 retreats)   | 1.9399e-6 | 3         | 1.131%   | 72           | 157.7            | 16.3 d × 3  | 12s  |
-| solusdt-otc  | alt-crypto      | 144.5 → 144.5 (0 retreats)   | 3.4473e-6 | 4         | 1.035%   | 76           | 112.8            | 2.6 d × 3   | 7s   |
-| xrpusdt-otc  | alt-crypto      | 136.3 → 136.3 (0 retreats)   | 2.0346e-6 | 6         | 0.938%   | 93           | 129.6            | 3.1 d × 3   | 7s   |
-| dogeusdt-otc | alt-crypto      | 153.4 → 153.4 (0 retreats)   | 3.5283e-6 | 7         | 0.962%   | 83           | 93.0             | 1.2 d × 3   | 9s   |
-| mmx-idx-otc  | alt-crypto      | 149.9 → 149.9 (0 retreats)   | 4.1084e-6 | 3         | 1.163%   | 68           | 99.9             | 3.0 d × 3   | 9s   |
-| cgx-idx-otc  | major-crypto    | 120.4 → 120.4 (0 retreats)   | 1.2807e-6 | 3         | 0.943%   | 97           | 141.1            | 23.6 d × 3  | 19s  |
-| aix-idx-otc  | blue-chip-index | 48.6 → 48.6 (0 retreats)     | 1.8832e-6 | 3         | 0.919%   | 66           | 626.7            | 30.1 d × 3  | 5s   |
-| tcx-idx-otc  | blue-chip-index | 38.8 → 38.8 (0 retreats)     | 1.2267e-6 | 3         | 0.993%   | 69           | 827.1            | 25.8 d × 3  | 3s   |
-| scx-idx-otc  | blue-chip-index | 39.6 → 39.6 (0 retreats)     | 2.3276e-6 | 3         | 1.010%   | 64           | 667.8            | 25.5 d × 3  | 3s   |
-| gmx-idx-otc  | sector-etf      | 65.5 → 65.5 (0 retreats)     | 1.5098e-6 | 3         | 0.960%   | 65           | 362.8            | 14.7 d × 3  | 3s   |
-| evx-idx-otc  | sector-etf      | 65.8 → 65.8 (0 retreats)     | 2.8595e-6 | 3         | 1.058%   | 59           | 641.3            | 25.4 d × 3  | 4s   |
-| brx-idx-otc  | sector-etf      | 42.6 → 42.6 (0 retreats)     | 1.4897e-6 | 3         | 0.942%   | 70           | 699.5            | 16.1 d × 3  | 2s   |
+| eurusd-otc   | major-fx        | 51.7 → 51.7 (0 retreats)     | 3.1314e-7 | 7         | 0.950%   | 72           | 348.0            | 9.2 d × 3   | 10s  |
+| gbpusd-otc   | major-fx        | 72.7 → 72.7 (0 retreats)     | 2.8963e-7 | 7         | 0.991%   | 74           | 273.7            | 5.6 d × 3   | 7s   |
+| usdjpy-otc   | major-fx        | 63.4 → 63.4 (0 retreats)     | 4.1322e-7 | 5         | 1.014%   | 63           | 255.7            | 7.8 d × 3   | 12s  |
+| audusd-otc   | major-fx        | 70.9 → 70.9 (0 retreats)     | 3.6734e-7 | 7         | 1.066%   | 69           | 327.1            | 6.4 d × 3   | 7s   |
+| usdchf-otc   | major-fx        | 46.7 → 46.7 (0 retreats)     | 3.2281e-7 | 7         | 1.236%   | 60           | 514.4            | 9.1 d × 3   | 6s   |
+| eurgbp-otc   | major-fx        | 60.3 → 60.3 (0 retreats)     | 2.7287e-7 | 7         | 1.133%   | 62           | 537.6            | 6.9 d × 3   | 5s   |
+| gbpjpy-otc   | cross-fx        | 123.2 → 123.2 (0 retreats)   | 7.2245e-7 | 4         | 1.010%   | 87           | 131.7            | 3.3 d × 3   | 7s   |
+| eurjpy-otc   | cross-fx        | 85.2 → 85.2 (0 retreats)     | 6.3190e-7 | 4         | 0.948%   | 91           | 255.8            | 3.3 d × 3   | 4s   |
+| aapl-otc     | sector-etf      | 52.6 → 52.6 (0 retreats)     | 1.0383e-6 | 4         | 1.029%   | 64           | 657.6            | 8.8 d × 3   | 4s   |
+| msft-otc     | sector-etf      | 47.1 → 47.1 (0 retreats)     | 8.7723e-7 | 4         | 0.943%   | 71           | 761.0            | 8.6 d × 3   | 3s   |
+| nvda-otc     | sector-etf      | 64.9 → 64.9 (0 retreats)     | 1.7995e-6 | 4         | 0.965%   | 77           | 420.0            | 5.7 d × 3   | 4s   |
+| tsla-otc     | sector-etf      | 62.6 → 62.6 (0 retreats)     | 2.5480e-6 | 4         | 1.083%   | 71           | 545.8            | 4.6 d × 3   | 3s   |
+| meta-otc     | sector-etf      | 59.0 → 59.0 (0 retreats)     | 1.6350e-6 | 4         | 0.984%   | 71           | 556.2            | 7.3 d × 3   | 5s   |
+| amzn-otc     | sector-etf      | 53.7 → 53.7 (0 retreats)     | 1.1107e-6 | 4         | 0.894%   | 77           | 518.3            | 6.0 d × 3   | 4s   |
+| pbr-otc      | sector-etf      | 57.9 → 57.9 (0 retreats)     | 1.5279e-6 | 5         | 1.008%   | 71           | 475.1            | 4.6 d × 3   | 3s   |
+| nu-otc       | sector-etf      | 56.5 → 56.5 (0 retreats)     | 2.1677e-6 | 5         | 1.005%   | 73           | 475.7            | 7.4 d × 3   | 4s   |
+| btcusdt-otc  | major-crypto    | 116.9 → 116.9 (0 retreats)   | 1.7544e-6 | 1         | 1.048%   | 75           | 97.0             | 8.0 d × 3   | 29s  |
+| ethusdt-otc  | major-crypto    | 152.6 → 152.6 (0 retreats)   | 1.6192e-6 | 3         | 0.965%   | 89           | 115.0            | 6.5 d × 3   | 21s  |
+| bnbusdt-otc  | major-crypto    | 137.0 → 137.0 (0 retreats)   | 1.9399e-6 | 3         | 1.131%   | 72           | 157.7            | 5.5 d × 3   | 12s  |
+| solusdt-otc  | alt-crypto      | 144.5 → 144.5 (0 retreats)   | 3.4473e-6 | 4         | 1.035%   | 76           | 112.8            | 3.3 d × 3   | 7s   |
+| xrpusdt-otc  | alt-crypto      | 136.3 → 136.3 (0 retreats)   | 2.0346e-6 | 6         | 0.938%   | 93           | 129.6            | 3.3 d × 3   | 7s   |
+| dogeusdt-otc | alt-crypto      | 153.4 → 153.4 (0 retreats)   | 3.5283e-6 | 7         | 0.962%   | 83           | 93.0             | 3.3 d × 3   | 9s   |
+| mmx-idx-otc  | alt-crypto      | 149.9 → 149.9 (0 retreats)   | 4.1084e-6 | 3         | 1.163%   | 68           | 99.9             | 3.3 d × 3   | 9s   |
+| cgx-idx-otc  | major-crypto    | 120.4 → 120.4 (0 retreats)   | 1.2807e-6 | 3         | 0.943%   | 97           | 141.1            | 7.9 d × 3   | 19s  |
+| aix-idx-otc  | blue-chip-index | 48.6 → 48.6 (0 retreats)     | 1.8832e-6 | 3         | 0.919%   | 66           | 626.7            | 10.1 d × 3  | 5s   |
+| tcx-idx-otc  | blue-chip-index | 38.8 → 38.8 (0 retreats)     | 1.2267e-6 | 3         | 0.993%   | 69           | 827.1            | 8.7 d × 3   | 3s   |
+| scx-idx-otc  | blue-chip-index | 39.6 → 39.6 (0 retreats)     | 2.3276e-6 | 3         | 1.010%   | 64           | 667.8            | 8.6 d × 3   | 3s   |
+| gmx-idx-otc  | sector-etf      | 65.5 → 65.5 (0 retreats)     | 1.5098e-6 | 3         | 0.960%   | 65           | 362.8            | 5.0 d × 3   | 3s   |
+| evx-idx-otc  | sector-etf      | 65.8 → 65.8 (0 retreats)     | 2.8595e-6 | 3         | 1.058%   | 59           | 641.3            | 8.6 d × 3   | 4s   |
+| brx-idx-otc  | sector-etf      | 42.6 → 42.6 (0 retreats)     | 1.4897e-6 | 3         | 0.942%   | 70           | 699.5            | 5.4 d × 3   | 2s   |
 
 Keyring: `MasterKeyring.forTesting(registrationKeyLabel(id))` per asset. Run label: `catalogue-of-thirty`. Replicates: 3. Total run time: 3.7 minutes.
 

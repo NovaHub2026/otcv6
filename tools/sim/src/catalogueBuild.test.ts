@@ -152,7 +152,7 @@ describe('the evidence row says what the run did', () => {
         dispersion: 0.038,
       },
       retreats: 0,
-      spanMs: 786_240_000,
+      simulatedMs: 786_240_000,
       replicates: 3,
       seconds: 10,
     });
@@ -161,7 +161,24 @@ describe('the evidence row says what the run did', () => {
     expect(cells[2]).toBe(seat.archetype);
     expect(cells[3]).toBe('51.7 → 51.7 (0 retreats)');
     expect(cells[6]).toBe('0.950%');
+    // The span each replicate simulated, as the entry records it — not the
+    // fit's need (CA9 a3-01).
     expect(cells[9]).toBe('9.1 d × 3');
+    const floored = evidenceRow({
+      seat,
+      asset: { ...asset, evidence: { ...asset.evidence, simulatedMs: 288_000_000 } },
+      sample: {
+        traits: asset.definition.traits,
+        excessKurtosis: 51.7,
+        tickRms: 7.5e-6,
+        dispersion: 0.038,
+      },
+      retreats: 0,
+      simulatedMs: 288_000_000,
+      replicates: 3,
+      seconds: 10,
+    });
+    expect(floored.split('|').map((c) => c.trim())[9]).toBe('3.3 d × 3');
     expect(cells[10]).toBe('10s');
   });
 
@@ -177,7 +194,7 @@ describe('the evidence row says what the run did', () => {
         clampedFrom: 130,
       },
       retreats: 2,
-      spanMs: 786_240_000,
+      simulatedMs: 786_240_000,
       replicates: 3,
       seconds: 10,
     });
