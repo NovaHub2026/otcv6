@@ -62,4 +62,56 @@ it.
 
 ## 3. Run 2 — an hour with a deploy-length restart (`e0c87cd`)
 
-_Recorded below when the run ends._
+Boot on an empty state directory at 11:32:42Z; 25 minutes hosted; a clean
+stop (`SIGTERM`, exit 0) at 11:57:43Z; **61 s down**; restart at 11:58:44Z,
+ready after 2 s. Every one of the thirty resumed with a **seam** — "the
+checkpoint is 61s old, past the 15s catch-up bound" — and every one
+published: `tick failed` appears **zero** times in the second process's log,
+against thirty times a pass in run 1's restart. Then 35 minutes more, and
+against the seamed venue:
+
+- `servedAssuranceJob`: **thirty of thirty graded, none exploitable, none
+  failed**; each record read from the seam onward — the feed begins there —
+  e.g. eurusd-otc `103552–108971`; the ticks before the seam stay in the
+  record. Stored as [`PH-30-RELEASE-SERVED-VERDICT-RESTART.md`](PH-30-RELEASE-SERVED-VERDICT-RESTART.md).
+- `conformanceTool`: **27 checks, 27 pass** on the seamed venue. Stored as
+  [`PH-30-RELEASE-CONFORMANCE-RESTART.md`](PH-30-RELEASE-CONFORMANCE-RESTART.md).
+- `verifyCommitmentsFile` on every asset's `commitments.ndjson` with the
+  publishing key: **30 of 30 verify, 839 links, one break per asset at its
+  seam** — for eurusd-otc `{ link: 8, afterSequence: 4000, fromSequence: 103552 }`
+  read as: the first chain committed through sequence 4,000; the process
+  stopped with ticks 4,001–4,197 published and uncommitted; the second chain
+  begins where the seam began. The verifier accepted the file and named the
+  break, as `e0c87cd` made it do.
+- `stateTool verify` after the final stop: thirty assets, checkpoint, record
+  and history agreeing per asset; exit 0.
+
+What a client sees across the seam, read from the live venue during the
+second half:
+
+| Request                                                      | Answer                                                                                           |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `GET /markets/eurusd-otc/stream?from=3500` (before the seam) | `400` — "Sequence 3500 for eurusd-otc is older than the retained window, which starts at 103552" |
+| the same with `onGap=live`                                   | `event: gap` with `resumesAt: 103552`, then the live ticks from 103552                           |
+| `GET /markets/eurusd-otc/ticks/3500`                         | `200`, the pre-seam tick from the record                                                         |
+| `GET /markets/eurusd-otc/price?at=<its instant>`             | `200`, rule `last-tick-at-or-before`, sequence 3500                                              |
+| `/health/ready`, `otc_markets_stalled`                       | `ready: true`, `0`                                                                               |
+
+| Figure                                | Value                                                        |
+| ------------------------------------- | ------------------------------------------------------------ |
+| Ticks published by the second process | 252,609 in 2,105 s (`otc_ticks_published_total`)             |
+| Resident memory at the end            | 206 MB                                                       |
+| `record.db`, both sides of the seam   | 26 MB                                                        |
+| Chains                                | 30 verify, 839 links, 30 breaks (one per asset, at the seam) |
+
+## 4. What the two runs establish
+
+The release build hosts the thirty whole under the standing job and the
+conformance suite, on a fresh directory and across the restart every deploy
+is; the record keeps both sides of a seam and serves them by sequence and by
+instant; the commitment chain restarts at the seam and the file verifies
+with the break named. The margin is not decided by an hour and the records
+say so; it accrues with the venue's life. The defect the first restart
+exposed — a durable venue that served nothing after a deploy-length restart
+and died on the boot after — was found by this run and not by any suite,
+which is why the release run includes the restart.

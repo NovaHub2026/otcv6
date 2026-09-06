@@ -25,10 +25,10 @@ Last synchronized: 2026-09-05
 | ---------------------- | ------------------------------------------------------------------ |
 | Active phase           | PH-30 — Release 1.0: the engine as a broker integrates it          |
 | Phase lifecycle        | ACTIVE                                                             |
-| Active subphase        | PH-30.4 — The whole catalogue measured                             |
+| Active subphase        | PH-30.5 — Every open Issue closed or decided; `v1.0.0` tagged      |
 | Subphase lifecycle     | ACTIVE                                                             |
 | Last approved phase    | PH-29 — The integration boundary: what a broker's settlement needs |
-| Last approved subphase | PH-30.3 — Ten thousand observers                                   |
+| Last approved subphase | PH-30.4 — The whole catalogue measured on the release build        |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
@@ -196,7 +196,7 @@ on `audit/ca9-fixes`; that run replaces this block when it passes.
 
 ## EXACT NEXT LEGAL ACTION
 
-**Run PH-30.4 (the whole catalogue on the release build) on `feature/ph-30-release`; hosted CI on the PH-29 merge (`668efa9`) is recorded in the table above when it lands.**
+**Run PH-30.5 on `feature/ph-30-release`: the release record `docs/evidence/RELEASE-1.0.0.md` from the phase gate on the closing tree, PH-30 §8/§9, the approval, the merge to `main`, the `v1.0.0` tag, the regenerated package; then Cycle Audit 10. PH-30.4 is approved on two runs of the release build, the second across a deploy-length restart (`PH-30-RELEASE-RUN.md`); the seam defect that restart found is fixed in `e0c87cd`.**
 
 PH-27 is approved on its integrated phase verification (`GATE_EXIT=0` first
 attempt, 45 statistical files in 4,472 s) and is being merged. Cycle 9 is
