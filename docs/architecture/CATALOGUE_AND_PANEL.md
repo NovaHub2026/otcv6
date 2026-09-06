@@ -312,6 +312,15 @@ runs it and exits 0 or 1 with a report; `conformance.test.ts` proves each check
 fails for the reason it names against a fake venue with one fault at a time,
 and `conformance.stat.test.ts` runs the suite against the shipped service.
 
+**And a client to embed** (PH-29.4): `VenueClient` — every read through the
+contract (a departure is a `ContractViolation` naming the route and the key),
+listed refusals returned as values, a proof verified against the publisher's
+key before it is returned, and `subscribe()`, an async iterator that resumes
+from the last delivered sequence plus one across a dropped connection, yields
+a told gap as an event, never yields a tick twice and refuses a skip the venue
+did not tell. The reference settlement over the ticks it delivers equals the
+prices it asks the venue for.
+
 ## 6. Creating an asset is a job
 
 `POST /assets` returns a **job id**, and the panel polls `/registrations/:id`.

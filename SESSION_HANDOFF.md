@@ -13,7 +13,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Remote             | `origin` → NovaHub2026/otcv6, public                                            |
 | Active cycle       | Cycle 10, **1 of 3** — PH-28 approved; PH-29 and PH-30 next                     |
 | Active phase       | PH-29 — the integration boundary                                                |
-| Active subphase    | PH-29.4 — the reference client                                                  |
+| Active subphase    | PH-29.5 — the verdict's figure and the guide                                    |
 | Cycle Audit        | **009 closed** — 62 confirmed, 61 resolved, one carried (a8-12)                 |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                              |
 
