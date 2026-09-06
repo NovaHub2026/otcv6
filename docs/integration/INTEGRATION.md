@@ -23,8 +23,10 @@ pruebas que solo vigilan esa documentación (`documentation`, `stateConsistency`
 sí viene, porque `mirror.test.ts` lo cita y es la razón de que el motor no sea
 predecible.
 
-Los ejemplos de respuesta de esta guía son respuestas reales de esa ejecución, no
-inventadas.
+Los ejemplos de respuesta de esta guía se copiaron de un motor en marcha, no se
+inventaron; el bloque de arriba lo escribe el generador del paquete a partir de
+lo que ejecutó, para que no vuelva a quedarse desfasado como estuvo hasta el
+Ciclo 10.
 
 ---
 
@@ -118,7 +120,8 @@ Cuatro hechos generales antes de las rutas:
 
 ```
 GET /health
-→ { "status": "ok" | "degraded", "assets": 30, "stalled": [], "bootNonce": null }
+→ { "status": "ok" | "degraded", "assets": 30, "stalled": [], "bootNonce": null,
+    "apiVersion": "2.0.0", "ready": true }
 ```
 
 `degraded` significa que algún mercado dejó de imprimir ticks; `stalled` los nombra.
@@ -470,6 +473,8 @@ decimales y nunca menos.
 | `OTC_CORS_ORIGIN`        | `*` (solo `GET, HEAD`)      | Orígenes permitidos, separados por comas. CORS no es autorización.                                                                                                                                |
 | `OTC_STATE_DIR`          | `./.otc-state`              | Directorio de estado durable.                                                                                                                                                                     |
 | `OTC_HISTORY_DB`         | `$OTC_STATE_DIR/history.db` | Base SQLite del histórico.                                                                                                                                                                        |
+| `OTC_RECORD_DB`          | `$OTC_STATE_DIR/record.db`  | Base SQLite del **registro de ticks**: lo que hace que una reanudación exacta y una liquidación reproducible sobrevivan al proceso (§3.7).                                                        |
+| `OTC_RECORD_TICKS`       | `250000`                    | Ticks retenidos por activo en el registro. Mínimo 50.000. A 61,2 bytes por tick medidos, 250.000 son 15,2 MiB por activo y 456 MiB en los treinta.                                                |
 | `OTC_ASSET_REGISTRY_DIR` | `$OTC_STATE_DIR/assets`     | Activos creados y sus superposiciones.                                                                                                                                                            |
 | `OTC_BOOT_NONCE`         | —                           | Se devuelve en `/health` como `bootNonce`; sirve para saber **qué** proceso contestó en un puerto.                                                                                                |
 | `OTC_BACKFILL_DAYS`      | `0`                         | Días de pasado sintético que se dan a un activo **sin registro previo**. Solo dígitos, tope 365. **Irreversible**: una vez generado, ese pasado es el pasado de ese mercado.                      |
@@ -500,9 +505,14 @@ Todo bajo `OTC_STATE_DIR`:
 
 - puntos de control por mercado, para que un reinicio rápido continúe **sin
   salto** y uno largo cosa desde el último precio publicado (§3.4);
+- `record.db`, el **registro de ticks** — el que hace posible `/ticks/:sequence`,
+  `/price?at=`, `/seams` y la reanudación exacta tras un reinicio;
 - `history.db`, el histórico de velas;
 - `assets/`, los activos creados y sus superposiciones;
 - `venue.lock`, el cerrojo de escritor (abajo);
+- y **fuera** de este directorio, si publicas: `OTC_PUBLICATION_DIR`, con la
+  cadena de compromisos firmada por activo. Cópialo con el estado: sin él no
+  hay pruebas de inclusión de lo ya servido;
 - con el Lab, además el fichero de sesión del Lab.
 
 Arranque en frío sin estado: el motor crea los mercados del catálogo desde el
@@ -933,7 +943,8 @@ Dos avisos que ahorran tiempo:
 
 - [ ] `OTC_MASTER_SECRET` generado, guardado en el gestor de secretos y respaldado
       aparte del estado.
-- [ ] `OTC_ADMIN_TOKEN` puesto; comprobado que sin él una escritura devuelve 401/403.
+- [ ] `OTC_ADMIN_TOKEN` puesto; comprobado que sin él una escritura devuelve `403`
+      (nombrando la variable en el cuerpo — el motor no usa `401`).
 - [ ] `OTC_STATE_DIR` en disco persistente, con copia de seguridad.
 - [ ] Motor en loopback o detrás de proxy; administración inaccesible desde Internet.
 - [ ] `proxy_buffering off` verificado: los ticks llegan uno a uno.

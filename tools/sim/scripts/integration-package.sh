@@ -22,7 +22,59 @@ rm -f "$out"/{CLAUDE.md,CURRENT_STATE.md,DOCS_INDEX.md,GOVERNANCE.md,PROJECT_CON
 rm -rf "$out"/docs/phases "$out"/docs/audits "$out"/docs/reports "$out"/docs/evidence "$out"/.github
 # The guards that hold those documents; every other test ships and passes.
 rm -f "$out"/packages/core/src/guardrails/{documentation,stateConsistency,traceability}.test.ts
-# The broker's guide at the top, the examples beside it.
+# Process material a broker has no use for, and which names this repository's
+# own machinery (Cycle Audit 10, a5-07): the audit worktree script and the
+# Issue tracker's mirror. The script's comment above said the package was the
+# tree "minus the process documents"; these three were process documents that
+# happened to live elsewhere.
+rm -f "$out"/tools/sim/scripts/cycle-audit-worktrees.sh "$out"/tools/sim/scripts/audit-findings-table.py "$out"/docs/BACKLOG.md
+
+# **The guide's verification header, written from a run rather than by hand
+# (Cycle Audit 10, a7-05).** It said "verificado ... desde el commit 4ee4986,
+# 142 ficheros, 2.651 pruebas" — a commit two cycles before the release, with
+# counts that were wrong by a fifth — because it was typed once and never
+# again. A header that claims a verification is either produced by one or it
+# is not written: `--verify` runs the package's own suite in the package and
+# stamps what it saw; without it the block says plainly that it was not run.
+verified_block() {
+  if [ "${OTC_PACKAGE_VERIFY:-0}" = "1" ]; then
+    ( cd "$out" && npm install --no-audit --no-fund > /tmp/pkg-install.log 2>&1 \
+      && npm run build > /tmp/pkg-build.log 2>&1 \
+      && npx vitest run --project unit > /tmp/pkg-unit.log 2>&1 ) || {
+        echo "package verification FAILED; see /tmp/pkg-*.log" >&2; exit 1; }
+    local files tests
+    files="$(grep -oE 'Test Files +[0-9]+ passed \([0-9]+\)' /tmp/pkg-unit.log | tail -1 | grep -oE '\([0-9]+\)' | tr -d '()')"
+    tests="$(grep -oE 'Tests +[0-9]+ passed \([0-9]+\)' /tmp/pkg-unit.log | tail -1 | grep -oE '\([0-9]+\)' | tr -d '()')"
+    printf 'Verificado en este paquete, tal cual se entrega (%s, desde el commit `%s`):\n\n```\nnpm install       → exit 0\nnpm run build     → exit 0\nnpm run test:unit → %s ficheros, %s pruebas, exit 0\n```\n' \
+      "$(date -u +%F)" "$commit" "${files:-?}" "${tests:-?}"
+  else
+    printf 'Este paquete se generó desde el commit `%s` (%s) **sin ejecutar su suite\naquí**. Para comprobarlo tú mismo, que es lo que recomendamos:\n\n```\nnpm install && npm run build && npm run test:unit\n```\n' \
+      "$commit" "$(date -u +%F)"
+  fi
+}
+
+# The broker's guide at the top, the examples beside it, with the stale
+# verification block replaced by what this run can actually say.
+python3 - "$out" <<'PYEOF'
+import re, sys, pathlib
+out = pathlib.Path(sys.argv[1])
+guide = out / 'docs' / 'integration' / 'INTEGRATION.md'
+text = guide.read_text()
+# The block runs from the "Verificado" line to the end of the fence after it.
+start = text.find('Verificado antes de empaquetar')
+if start != -1:
+    fence = text.find('```', start)
+    end = text.find('```', fence + 3)
+    text = text[:start] + '@@VERIFIED@@\n' + text[end + 3:].lstrip('\n')
+    guide.write_text(text)
+PYEOF
+verified_block > /tmp/pkg-verified.md
+python3 - "$out" /tmp/pkg-verified.md <<'PYEOF'
+import sys, pathlib
+out, block = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]).read_text()
+guide = out / 'docs' / 'integration' / 'INTEGRATION.md'
+guide.write_text(guide.read_text().replace('@@VERIFIED@@\n', block))
+PYEOF
 cp "$out/docs/integration/INTEGRATION.md" "$out/INTEGRATION.md"
 mkdir -p "$out/examples" && cp "$out"/docs/integration/examples/* "$out/examples/"
 printf '# OTC Engine — integration package\n\nBuilt from commit `%s` of the engine repository on %s.\nStart with INTEGRATION.md; the API contract is docs/architecture/API_CONTRACT.md; the deployment files are under deploy/.\n' "$commit" "$(date -u +%F)" > "$out/README.md"
