@@ -497,12 +497,22 @@ Todo bajo `OTC_STATE_DIR`:
   salto** y uno largo cosa desde el último precio publicado (§3.4);
 - `history.db`, el histórico de velas;
 - `assets/`, los activos creados y sus superposiciones;
+- `venue.lock`, el cerrojo de escritor (abajo);
 - con el Lab, además el fichero de sesión del Lab.
 
 Arranque en frío sin estado: el motor crea los mercados del catálogo desde el
 secreto. Arranque con estado: reanuda desde el último punto de control. La copia de
 seguridad es copiar el directorio con el proceso parado; moverlo a otra máquina
 funciona si va acompañado del mismo `OTC_MASTER_SECRET`.
+
+**Un solo escritor por directorio.** Al arrancar, el motor toma `venue.lock` en
+exclusiva y lo renueva cada cinco segundos; un segundo proceso apuntado al mismo
+directorio **se niega a arrancar** y dice de quién es el cerrojo. Esto no es
+opcional ni configurable: dos procesos sobre un mismo directorio se pisan el
+registro, cada uno rechaza lo que el otro publicó, y ambos siguen contestando
+`{"status":"ok","ready":true}` sin servir un solo tick a nadie. Un cerrojo cuyo
+proceso ya no existe se adopta solo, con un aviso en el log que lo nombra; si ves
+ese aviso después de un despliegue, tenías dos unidades arrancadas.
 
 Orden de arranque: los mercados se levantan **antes** de que escuche el puerto, así
 que nadie observa un motor a medio recuperar. El apagado es el espejo: deja de
@@ -842,6 +852,16 @@ Desde PH-30.1 el repositorio trae lo que un despliegue arranca:
   propio cubo.
 - La credencial de administración es `OTC_ADMIN_TOKEN` (a6-01): sin ella toda
   escritura se rechaza; el proxy corta las rutas además, no en su lugar.
+- **Si la máquina estuvo suspendida, migrada en vivo o parada más de 15 s**, los
+  mercados vuelven `parados` con `Market is Ns behind the clock, past the 15s
+catch-up bound`: el motor se niega a inventar el intervalo que nadie observó
+  (ADR-0010). **La solución es reiniciar el proceso**, y solo eso: mientras un
+  mercado está parado su punto de control ya no se refresca, así que el
+  siguiente arranque lo ve viejo, cose una discontinuidad (`seam`), la deja
+  anotada en el registro y sigue publicando. No hace falta —ni conviene— mover
+  el directorio de estado: eso tira el registro. Lo que queda al otro lado de la
+  costura sigue ahí, legible por secuencia y por instante; lo que no existe es
+  el rato que nadie vio.
 
 ### systemd
 

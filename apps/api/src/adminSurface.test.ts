@@ -64,7 +64,16 @@ const SLOW = SLOW_ASSET.definition.id;
 
 const ORIGIN = 1_776_000_000_000;
 
-/** A venue stub: the controller reads four things from it and nothing else. */
+/**
+ * A venue stub: the health and catalogue surface the controller reads, and
+ * nothing else.
+ *
+ * Cycle Audit 10 (a3-06, a6-05) added two of these. They are `null` here on
+ * purpose — this stub is the *healthy* venue, and a stub that left them
+ * `undefined` made every `/health` in this file read `degraded`, which is the
+ * cast's cost and worth paying once here rather than hiding behind a truthiness
+ * check in the controller.
+ */
 function venueStub(
   liveIds: readonly string[],
   stalled: readonly { assetId: string; reason: string }[] = [],
@@ -85,6 +94,9 @@ function venueStub(
     stalledMarkets: stalled,
     // PH-30.1: ready is the absence of stalls once resumed, as the venue reports it.
     isReady: stalled.length === 0,
+    // Cycle Audit 10 (a3-06, a6-05): a pass that threw, and a lost writer lock.
+    lastFailedPass: null,
+    lostWriterLock: null,
   } as unknown as VenueService;
 }
 

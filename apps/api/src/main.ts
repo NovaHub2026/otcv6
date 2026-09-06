@@ -2,7 +2,14 @@ import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { Express } from 'express';
-import { stateRefusal, verifyStateDirectory, type AssetRegistry } from '@otc/runtime';
+import { SystemClock } from '@otc/core';
+import {
+  DirectoryLockedError,
+  StateDirectoryLock,
+  stateRefusal,
+  verifyStateDirectory,
+  type AssetRegistry,
+} from '@otc/runtime';
 import { ADMIN_TOKEN } from './adminAuth.guard.js';
 import { AppModule } from './app.module.js';
 import { VenueService } from './venue.service.js';
@@ -68,6 +75,41 @@ async function bootstrap(): Promise<void> {
     logger.error(inconsistent);
     process.exit(1);
   }
+  // One writer per state directory (Cycle Audit 10: a3-07, a6-05). Two processes pointed at
+  // one directory both booted, both hosted the catalogue, and both fell
+  // permanently into a3-06 while reporting `ok`, `stalled: []`, `ready: true`
+  // and a climbing tick counter. The lock is taken before anything is opened
+  // for writing, and after the consistency check, so a refused start has read
+  // the directory and changed nothing in it.
+  const clock = new SystemClock();
+  let lock: StateDirectoryLock;
+  try {
+    lock = await StateDirectoryLock.acquire(stateDir, { now: () => clock.now() });
+  } catch (error) {
+    if (error instanceof DirectoryLockedError) {
+      logger.error(error.message);
+      process.exit(1);
+    }
+    throw error;
+  }
+  if (lock.tookOverFrom !== null) {
+    // Loud, because it is the difference between a clean restart and a
+    // process that was killed: an operator who sees this after a deploy that
+    // did not stop the old unit is looking at the cause of their next outage.
+    logger.warn(
+      `took the state directory over from ${lock.tookOverFrom.holder} ` +
+        `(pid ${String(lock.tookOverFrom.pid)} on ${lock.tookOverFrom.host}): its lock was ` +
+        `abandoned. If that process is still running, stop it now — two writers on one ` +
+        `directory serve nothing and report healthy.`,
+    );
+  }
+  // `process.exit` runs `'exit'` listeners and stops; a promise scheduled there
+  // never resolves, so the release is the synchronous one. Not releasing would
+  // still be safe — the next boot adopts an abandoned lock — but a clean
+  // shutdown should not look like a crash to the boot that follows it.
+  process.on('exit', () => {
+    lock.releaseSync();
+  });
   // Bare: production registers no sign source (PH-24.1, `composition.test.ts`).
   const app = await NestFactory.create(AppModule.register(), {
     bufferLogs: false,
@@ -99,6 +141,11 @@ async function bootstrap(): Promise<void> {
   // `X-Forwarded-For` when it is told how many hops to trust, and trusting
   // that header from a direct client would be the same defect pointing the
   // other way — so this is 0 unless the deployment says otherwise.
+  //
+  // Typed, because `getInstance()` is `any` and `eslint .` refuses an unsafe
+  // call on one: this line shipped in `ef32e12` and has been failing the lint
+  // step of the gate ever since, which is a check nobody ran between the fix
+  // and this audit. Not this fix's subject, and two lines away from it.
   const trustedProxies = trustedProxiesFromEnvironment(process.env);
   if (trustedProxies > 0) {
     // Typed, because `getInstance()` is `any` by default and the type-aware
@@ -116,6 +163,11 @@ async function bootstrap(): Promise<void> {
   });
 
   const venue = app.get(VenueService);
+  // The venue renews the lock on its checkpoint cadence and stops publishing
+  // the moment a renewal is refused, so the guarantee is two-sided: a second
+  // process is refused at boot, and a first process that has been superseded
+  // loses leadership rather than both carrying on.
+  venue.holdWriterLock(lock);
   // Overlays before start: a retirement decides whether a market is resumed at
   // all, so it has to be known before the resume loop runs.
   venue.applyOverlays(await app.get<AssetRegistry>('ASSET_REGISTRY').overlays());

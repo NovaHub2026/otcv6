@@ -105,6 +105,10 @@ const METRIC_NAMES = new Set([
   'otc_process_resident_bytes',
   'otc_stream_connections',
   'otc_record_head_sequence',
+  // Cycle Audit 10 (a3-06): passes that threw, so a venue that has stopped
+  // serving cannot look identical to one that is idle. A count of failures is
+  // the operator's business and carries no engine state.
+  'otc_tick_pass_failures_total',
 ]);
 /** The only label a sample may carry, and its value is an asset id. */
 const METRIC_LABELS = new Set(['asset']);

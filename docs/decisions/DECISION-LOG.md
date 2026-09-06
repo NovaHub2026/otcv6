@@ -801,3 +801,115 @@ across the recorded seam) and verifies the file with its one break;
 and refuses a restart by an unauthorised key or for another asset. Both were
 watched failing on the unfixed code: the seam test dies exactly as the release
 run's venue did, `Feed ... received sequence 100984 after 982`.
+
+## 2026-09-06 — A failed publish is a fact the process carries; one writer per state directory (Cycle Audit 10: a3-06, a6-05, a3-07)
+
+**Context.** Two auditors reached the same critical state independently, and a
+refuter reproduced both halves from scratch. `VenueService.tick()` recorded a
+pass and then published it, and the publish loop had no per-asset isolation —
+unlike `advanceDetailed` directly above it, whose docstring explains at length
+why isolation is required there (CA6-33). A throw from `feed.publish` rejected
+the whole pass; `schedule()` caught it, wrote `tick failed: ...` and dropped it.
+Nothing reached `stalled`, so `/health` answered `{"status":"ok","stalled":[]}`,
+`otc_markets_stalled` stayed 0, `/health/ready` stayed 200, and
+`otc_ticks_published_total` kept climbing because it was incremented on the line
+**before** the publish that threw. Measured on the release build: 900+ ticks
+recorded, **zero bytes served in eight seconds**, 6,795 failed passes, green
+throughout, and no recovery for the life of the process.
+
+The trigger was two venue processes on one state directory — `grep` for a lock
+over `packages/`, `apps/`, `tools/` and `deploy/` found nothing, and this
+repository's own architecture note said so: "a second writer with no fence"
+(a3-07). Each process primed its feed from the shared record at boot and
+afterwards offered it only the ticks _its own_ `append` returned as fresh, so
+each feed was handed a sequence it could not follow. But the trigger is
+incidental. The swallow, the green health surface and the permanence are
+trigger-independent, and PH-30.4 had already met this failure in production once
+with a different trigger.
+
+**Decision.**
+
+- **The publish loop is isolated per asset, and a refusal is unserving, not
+  silent.** The market is stalled by name with `refused by the publish path — …`,
+  unhosted, and counted in `otc_markets_stalled`, exactly as a record refusal is.
+  The rest of the pass and the checkpoint proceed.
+- **There is no automatic retry, and that is the decision, not an omission.**
+  `append` compares: a sequence the record already holds is never returned as
+  fresh again, so re-offering the batch yields nothing. The machinery to repair
+  it in place does exist — `feed.forget` then `#primeFromRecord`, which is what a
+  boot does — and it is deliberately not wired. It would evict every subscriber
+  of that market on every occurrence; the refusal is _evidence_ that the record
+  moved without this process's feed seeing it, so healing it silently hides the
+  second writer and leaves two engines interleaving one asset id, which is
+  INV-002 broken where nobody can see it; and since the other writer keeps
+  appending, the heal would repeat every pass. A market that drops its
+  subscribers four times a second while `/health` says `ok` is worse than one
+  that stops and says so. The recovery is a restart.
+- **A pass that throws whole is degraded immediately and unready after three.**
+  `/health` says `degraded` on the first, `otc_tick_pass_failures_total` counts
+  every one, the log line is deduped on the error's _kind_ (an auditor counted
+  6,795 identical lines in 45 s), and `/health/ready` refuses with the message
+  after three consecutive failures — not one, because a single `EIO` should not
+  pull a healthy single-node venue out of rotation, and not never, because a
+  process that has not completed a pass three times running is not publishing.
+  `otc_ticks_published_total` is incremented **after** the publish.
+- **`/health`'s response shape is unchanged.** The conformance suite checks that
+  body key-for-key against `packages/client/src/contract.ts`, so the _reason_
+  goes where there is already room for it — the `/health/ready` refusal, the log,
+  and the new counter — rather than costing a contract version to carry a string.
+- **One writer per state directory, as a lock file and not a lease.** Both entry
+  points take an exclusive `venue.lock` before any market starts, and the venue
+  renews it on its checkpoint cadence (5 s against a 15 s term) and stops
+  publishing, checkpointing and recording the moment a renewal is refused.
+
+  It is a lock file **because a lease here would be a lie**. `lease.ts` says it
+  in its own words: a lease is worth nothing without the fence, and fencing means
+  every write presents a token to a store that checks it in the same critical
+  section. Nothing in `apps/api` writes through a `CoordinatedStore` — the
+  checkpoints go through `FileStateStore.save`, the record through
+  `SqliteTickRecord.append`, the bars through `SqliteCandleHistory`, the chain
+  through the publication writer. Acquiring an `AssetLease` and then writing
+  through four unfenced paths would be "a race with a comment", and worse than a
+  lock file because it would _look_ like fencing. So this claims exactly what it
+  delivers: mutual exclusion at boot between processes on one filesystem, which
+  is the deployment `deploy/` ships. It borrows the lease's vocabulary where the
+  vocabulary is honest — the holder grammar, and a term equal to
+  `DEFAULT_LEASE_TERM_MS`, so a heartbeat older than one catch-up bound is a
+  holder that could not have published anyway.
+
+  What it does not claim: the takeover of an _abandoned_ lock is not atomic
+  (read, write, confirming re-read), so two starters racing to adopt one dead
+  lock have a window. Closing it needs a compare-and-set the filesystem does not
+  offer, which is the same thing as saying it needs the coordinated store. The
+  common case — a live holder and a second `npm start` — is refused by `link`
+  with `EEXIST` and no race at all. The file is named `venue.lock`, not
+  `*.json`, so `FileStateStore.list` cannot read it as a checkpoint the way it
+  read `backup.json` (a3-01, a6-11) and `backupStateDirectory` does not copy it.
+
+- **A stalled market's checkpoint is no longer refreshed** (the operator's own
+  panel, recorded as `ops-observed`). `resumeMarket` chooses between continuing
+  and seaming on `clock.now() - record.savedAt`, and `checkpoint()` was writing
+  `savedAt = now` for every hosted market on every cadence — including markets
+  that had refused every advance for hours after the host was suspended. The
+  checkpoint stayed fresh while the market stayed stale, so every restart chose
+  `resumed` and stalled again, and the only remedy anyone had was to move the
+  state directory aside, which throws the record away. A checkpoint is a claim
+  that this market was here at this instant; a market past its catch-up bound was
+  not. Leaving its last true checkpoint alone makes the next boot take the seam
+  ADR-0010 already decided on, and a restart becomes the remedy it always looked
+  like.
+
+**Guards.** `apps/api/src/publishFailure.test.ts` (a refusing feed: the asset
+named in `stalledMarkets`, `isReady` false, `otc_markets_stalled` 1, the counter
+not moving, the other market in the pass surviving; a store that refuses:
+degraded on the first pass, unready on the third, counted on every one, and
+clearing; a lost lock: degraded, unready, nothing further published; and the
+entry-point wiring and renewal cadence as source);
+`packages/runtime/src/directoryLock.test.ts` (a second process refused by name, a
+holder on another host refused inside its term, an unreadable lock refused, an
+abandoned lock adopted with its previous holder named, a superseded holder losing
+and staying lost, release touching only its own grant, and the lock invisible to
+`verifyStateDirectory` and to `backupStateDirectory`);
+`apps/api/src/venueStall.test.ts` (a stalled market's checkpoint frozen, and the
+restart seaming and publishing again). Every one was watched failing on the
+unfixed code, with the failures recorded in the audit's fix rationale.

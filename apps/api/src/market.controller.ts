@@ -142,8 +142,24 @@ export class MarketController implements BeforeApplicationShutdown {
   @Get('health')
   health(): unknown {
     const stalled = this.venue.stalledMarkets;
+    // **Three reasons, one word (Cycle Audit 10: a3-06, a6-05).** A market that
+    // failed its last advance was the only thing that could make this
+    // `degraded`, so a process whose every publish pass threw — and a process
+    // that had lost the state directory to a second writer — both answered `ok`
+    // with an empty `stalled` list while serving nothing.
+    //
+    // `status` is the key an operator's monitor reads, and it is the only field
+    // that changes here: the response shape is the contract's
+    // (`packages/client/src/contract.ts`, checked key-for-key by the conformance
+    // suite), so the *reason* goes where there is already room for it — the
+    // `/health/ready` refusal, the log line each writes once, and
+    // `otc_tick_pass_failures_total`.
+    const degraded =
+      stalled.length > 0 ||
+      this.venue.lastFailedPass !== null ||
+      this.venue.lostWriterLock !== null;
     return {
-      status: stalled.length === 0 ? 'ok' : 'degraded',
+      status: degraded ? 'degraded' : 'ok',
       assets: this.venue.assetIds.length,
       stalled,
       bootNonce: this.bootNonce,
@@ -199,6 +215,11 @@ export class MarketController implements BeforeApplicationShutdown {
       '# HELP otc_ticks_published_total Ticks published by this process, every market.',
       '# TYPE otc_ticks_published_total counter',
       `otc_ticks_published_total ${String(counters.ticksPublished)}`,
+      // Cycle Audit 10 (a3-06): the count that used to exist only as `tick
+      // failed` log lines — 6,795 of them in 45 seconds on a venue reporting `ok`.
+      '# HELP otc_tick_pass_failures_total Publish passes that threw, since boot.',
+      '# TYPE otc_tick_pass_failures_total counter',
+      `otc_tick_pass_failures_total ${String(counters.failedPasses)}`,
       '# HELP otc_stream_subscribers Open stream subscriptions, every market.',
       '# TYPE otc_stream_subscribers gauge',
       `otc_stream_subscribers ${String(counters.subscribers)}`,

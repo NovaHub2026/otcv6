@@ -415,8 +415,24 @@ through the **unfenced** `save` every 5 000 ms, and nothing in `apps/api`
 references `LeaderSession`, `FollowerMarket`, `AssetLease` or
 `SqliteCoordinatedStore`. PH-14.3 §9 deferred the holder id, the follower's
 polling and the topology to PH-15, and PH-15 built the store, not the wiring. A
-second process against the same state directory today is not a follower; it is
-a second writer with no fence.
+second process against the same state directory today is not a follower; it
+would be a second writer with no fence.
+
+**It is refused at boot instead (Cycle Audit 10: a3-07, a6-05).** Both entry
+points take an exclusive `venue.lock` in the state directory before any market
+starts (`packages/runtime/src/directoryLock.ts`), and the venue renews it on its
+checkpoint cadence — five seconds against a fifteen-second term — and stops
+publishing, checkpointing and recording the moment a renewal is refused. This is
+**mutual exclusion, not fencing**: nothing in `apps/api` writes through a
+`CoordinatedStore`, so a lease here would be, in `lease.ts`'s own words, a race
+with a comment. What it buys is that the two-writer state the audit measured —
+both processes appending to one `record.db`, each feed refusing what the other
+appended, both answering `{"status":"ok","stalled":[],"ready":true}` while every
+subscriber received nothing — cannot be reached by starting a second process.
+A holder whose heartbeat has expired, or whose pid is gone on this host, is
+adopted with a warning naming it, so a `SIGKILL` under `Restart=always` does not
+leave a directory nothing can open. See `docs/decisions/DECISION-LOG.md`,
+2026-09-06.
 
 **Rotation, retention, the anchor and the standing run are library
 capabilities.** `PublicationService` signs with the one key in
