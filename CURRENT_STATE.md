@@ -25,10 +25,10 @@ Last synchronized: 2026-09-05
 | ---------------------- | ------------------------------------------------------------------ |
 | Active phase           | PH-29 — The integration boundary: what a broker's settlement needs |
 | Phase lifecycle        | ACTIVE                                                             |
-| Active subphase        | PH-29.5 — The standing verdict's figure and the guide              |
-| Subphase lifecycle     | ACTIVE                                                             |
+| Active subphase        | none — all five approved; the phase gate runs                      |
+| Subphase lifecycle     | none                                                               |
 | Last approved phase    | PH-28 — The durable venue: the record outlives the process         |
-| Last approved subphase | PH-29.4 — The reference client and settlement library              |
+| Last approved subphase | PH-29.5 — The standing verdict's figure and the guide              |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
@@ -194,7 +194,7 @@ on `audit/ca9-fixes`; that run replaces this block when it passes.
 
 ## EXACT NEXT LEGAL ACTION
 
-**Implement PH-29.5 (Issue #10 decided in the standing verdict; the integration guide in the repository) on `feature/ph-29-integration-boundary`; hosted CI on the PH-28 merge (`fd17ec0`) is recorded in the table above when it lands.**
+**Run the PH-29 phase gate (`npm run gate`), approve PH-29 from it, merge to `main`, close Issues #10 and #11, then open PH-30 (release 1.0); hosted CI on the PH-28 merge (`fd17ec0`) is recorded in the table above when it lands.**
 
 PH-27 is approved on its integrated phase verification (`GATE_EXIT=0` first
 attempt, 45 statistical files in 4,472 s) and is being merged. Cycle 9 is

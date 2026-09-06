@@ -870,7 +870,7 @@ Issue #11 decided as the library's concern only.
 | PH-29.2  | The API contract frozen: versioned, schema-described, breaking changes guarded         | APPROVED |
 | PH-29.3  | The conformance suite: the integration checklist made executable against a live venue  | APPROVED |
 | PH-29.4  | The reference client and settlement library: exercised by the release, #11 decided     | APPROVED |
-| PH-29.5  | The standing verdict's figure decided (#10); the guide's §5 rewritten around the query | ACTIVE   |
+| PH-29.5  | The standing verdict's figure decided (#10); the guide's §5 rewritten around the query | APPROVED |
 
 **PH-30 — release 1.0.** What a broker's operator needs and the repository does
 not yet give them: readiness and liveness, metrics, an admin credential rather

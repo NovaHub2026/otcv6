@@ -88,3 +88,38 @@ money as integers in a named minor unit with an exact payout rational (#11).
 
 Key rotation over HTTP, a proof for a range of sequences rather than one, and
 anything the broker's side needs beyond a price and its proof.
+
+## 8. What the phase found
+
+1. **The production-responses guard was skipping routes that refused**
+   (PH-29.1): its venue kept no record and published nothing, so a new route
+   that threw was "not JSON or refused" and unseen. It answers now.
+2. **The archetype's excess kurtosis is a band**, and the first draft of the
+   contract said `number` (PH-29.2): the contract guard found it before a
+   reader did.
+3. **A publishing asset with no closed window answered `404 does not
+publish`** where the contract says `409 not yet committed` (PH-29.3); the
+   spawned-venue conformance run found it, and passed anyway because both are
+   listed refusals — which is why the report carries the detail column.
+4. **The floating-point settlement returned a fraction of a minor unit for
+   95 000 of 100 000 cent stakes** (PH-29.4, Issue #11), a number no ledger
+   can hold; money is an integer now and the fields kept their names.
+5. **A live subscription cannot be built on a collecting read** (PH-29.4);
+   the SSE reader became a generator.
+6. **The sufficiency grading needed a guard that separates the two floors**
+   (PH-29.5, Issue #10).
+
+## 9. Integrated phase verification
+
+| Check                                                                               | Result                                                                                                      |
+| ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Every subphase document APPROVED and the roadmap agrees                             | `documentation.test.ts`, `stateConsistency.test.ts` green                                                   |
+| The query reads the record and the archive, never an engine (INV-001, INV-010)      | `productionResponses.test.ts` by value over 9 routes; `labSurface.test.ts`; no diff under `packages/engine` |
+| The price rule is `settle()`'s, and a served proof verifies (INV-009)               | `settlementQuery.test.ts` (a thousand instants, `settle()`'s own prices); `journalFile.test.ts`             |
+| The contract holds the controller; a breaking change is a version                   | `contract.test.ts`, four plants                                                                             |
+| The conformance suite passes the shipped venue and fails each fault by name         | `conformance.stat.test.ts`; `conformance.test.ts` five faults                                               |
+| The client resumes exactly, never repeats, refuses an untold skip, verifies a proof | `venueClient.test.ts`                                                                                       |
+| Money is exact in the minor unit; the verdict grades on the gate's floor            | `settle.test.ts` (100 000 stakes), `standing.test.ts`                                                       |
+| Every guard watched failing                                                         | PH-29.1 three plants, PH-29.2 four, PH-29.3 one, PH-29.4 three, PH-29.5 one                                 |
+| Phase quality gate `npm run gate` with the browser prefix                           | _pending: recorded at approval_                                                                             |
+| Hosted CI on the merge commit                                                       | _recorded in `CURRENT_STATE.md` § "Hosted CI, honestly" when it lands_                                      |
