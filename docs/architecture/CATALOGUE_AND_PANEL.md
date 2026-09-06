@@ -321,6 +321,23 @@ a told gap as an event, never yields a tick twice and refuses a skip the venue
 did not tell. The reference settlement over the ticks it delivers equals the
 prices it asks the venue for.
 
+## 5.4 The operator's surface (PH-30.1)
+
+`GET /health/live` says the process serves HTTP and nothing else; `GET
+/health/ready` says every market resumed and primed and none is stalled, or
+`503` with the reason — an orchestrator restarts on the first and routes on
+the second, and `/health` keeps `status` for a human with `ready` beside it.
+`GET /metrics` is the Prometheus text format from the counters the venue
+already holds (markets, stalls, readiness, ticks published, subscribers, the
+replay budget, uptime, resident memory, the record head per asset), so a
+graph and `/health` cannot disagree. A per-client token bucket
+(`OTC_RATE_LIMIT_PER_MINUTE`, 600 by default, zero disables) refuses a flood
+with `429` and `Retry-After` before any handler, by the venue's clock. The
+deployment starts from `deploy/`: the systemd unit, the image and the compose
+file (readiness as the health check, `SIGTERM` as the stop), the proxy with
+the stream unbuffered and the write surface cut, and the backup loop over
+`state:backup`; `deploy.test.ts` holds those files to the engine.
+
 ## 6. Creating an asset is a job
 
 `POST /assets` returns a **job id**, and the panel polls `/registrations/:id`.
