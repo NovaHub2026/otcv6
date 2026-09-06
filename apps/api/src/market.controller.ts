@@ -25,6 +25,7 @@ import {
   dispersionPercent,
   seatById,
   type AssetBrief,
+  type RegisteredAsset,
 } from '@otc/engine';
 import { epochMillis, isTimeframeId, timeframe as timeframeById, type Tick } from '@otc/core';
 import {
@@ -598,6 +599,129 @@ export class MarketController implements BeforeApplicationShutdown {
    * under the requested name — the displayed timeframe never changes the market
    * (INV-004), and it must not change what the market appears to have been.
    */
+  /**
+   * The published tick at a sequence, from the record (PH-29.1).
+   *
+   * The first of the three reads a broker's settlement needs. `404` names the
+   * record's bounds when the sequence is outside them, and says so when this
+   * deployment keeps no record at all — a client cannot tell "evicted" from
+   * "never" otherwise, and the difference is whether to ask again.
+   */
+  @Get('markets/:id/ticks/:sequence')
+  async recordedTick(
+    @Param('id') id: string,
+    @Param('sequence') sequence: string,
+  ): Promise<unknown> {
+    const asset = this.knownAsset(id);
+    const wanted = sequenceParam(sequence);
+    if (!this.venue.keepsRecord) {
+      throw new NotFoundException(
+        'This deployment keeps no tick record; only the live stream is served.',
+      );
+    }
+    const tick = await this.venue.recordedTick(id, wanted);
+    if (tick === null) {
+      const bounds = await this.venue.recordBounds(id);
+      throw new NotFoundException(
+        bounds === null
+          ? `The record holds nothing for ${id} yet.`
+          : `Sequence ${wanted} of ${id} is not in the record, which holds ${bounds.oldest}–${bounds.newest}.`,
+      );
+    }
+    return { assetId: id, ...this.published(asset, tick) };
+  }
+
+  /**
+   * The price in force at an instant: the last published tick at or before it
+   * (PH-29.1). The rule `settle()` uses and the charts use, named in the
+   * response so a broker's own settlement can cite it. Refused before the
+   * record's oldest tick — the record cannot say what was in force — and after
+   * the newest published instant, because a price for an instant nothing has
+   * been published for is a prediction and not a record (INV-005: an expiry a
+   * client chooses never changes what is published).
+   */
+  @Get('markets/:id/price')
+  async priceAt(@Param('id') id: string, @Query('at') at?: string): Promise<unknown> {
+    const asset = this.knownAsset(id);
+    const instant = instantParam('at', at);
+    if (!this.venue.keepsRecord) {
+      throw new NotFoundException(
+        'This deployment keeps no tick record; only the live stream is served.',
+      );
+    }
+    const newest = this.venue.lastTick(id);
+    if (newest === null || instant > newest.instant) {
+      throw new BadRequestException(
+        `No price has been published for ${id} at ${instant}` +
+          (newest === null ? '.' : `; the newest published instant is ${newest.instant}.`),
+      );
+    }
+    const tick = await this.venue.priceAt(id, instant);
+    if (tick === null) {
+      const bounds = await this.venue.recordBounds(id);
+      throw new NotFoundException(
+        `The record for ${id} starts after ${instant}` +
+          (bounds === null ? '.' : ` (its oldest sequence is ${bounds.oldest}).`),
+      );
+    }
+    return {
+      assetId: id,
+      at: instant,
+      rule: 'last-tick-at-or-before',
+      ...this.published(asset, tick),
+    };
+  }
+
+  /**
+   * The inclusion proof of a published sequence (PH-29.1, INV-009).
+   *
+   * The signed commitment of the window holding the sequence, the Merkle path,
+   * and the publisher's key: everything `verifyInclusion` and
+   * `verifyCommitment` need, and nothing an observer could not have archived
+   * for themselves (INV-010). `409` while the window is open — published,
+   * not yet archived, a real third state — with the newest committed sequence
+   * so a client knows how far the chain reaches; `404` when the deployment
+   * does not publish. The tick is compared with the record's on the way out:
+   * a proof of a tick the record disagrees with is not served.
+   */
+  @Get('markets/:id/proof/:sequence')
+  async proofFor(@Param('id') id: string, @Param('sequence') sequence: string): Promise<unknown> {
+    this.knownAsset(id);
+    const wanted = sequenceParam(sequence);
+    const proof = await this.venue.proofFor(id, wanted);
+    if (proof.kind === 'not-published') {
+      throw new NotFoundException(
+        `This deployment does not publish commitments for ${id} (OTC_PUBLICATION_DIR is not set, ` +
+          `or the asset has published nothing yet).`,
+      );
+    }
+    if (proof.kind === 'uncommitted') {
+      throw new ConflictException(
+        proof.committedThrough === null
+          ? `Sequence ${wanted} of ${id} is not in any committed window.`
+          : `Sequence ${wanted} of ${id} is published but not yet committed; the chain reaches ` +
+              `${proof.committedThrough}. Ask again when the window closes.`,
+      );
+    }
+    const recorded = await this.venue.recordedTick(id, wanted);
+    if (
+      recorded !== null &&
+      (recorded.instant !== proof.proof.instant || recorded.price !== proof.proof.price)
+    ) {
+      throw new ConflictException(
+        `The archived tick ${wanted} of ${id} disagrees with the record; no proof is served for it.`,
+      );
+    }
+    return {
+      assetId: id,
+      sequence: wanted,
+      publisherPublicKey: this.venue.publishingKey,
+      commitment: proof.signed,
+      proof: proof.proof,
+      linksRead: proof.linksRead,
+    };
+  }
+
   @Get('markets/:id/history')
   async history_(
     @Param('id') id: string,
@@ -890,6 +1014,28 @@ export class MarketController implements BeforeApplicationShutdown {
     await new Promise<void>((resolve) => setImmediate(resolve));
   }
 
+  /** The asset, or a `404` naming it. */
+  private knownAsset(id: string): RegisteredAsset {
+    const asset = this.venue.assetFor(id);
+    if (asset === null) throw new NotFoundException(`Unknown asset ${id}.`);
+    return asset;
+  }
+
+  /** A published tick as the read routes render it: the canonical integer and its display price. */
+  private published(asset: RegisteredAsset, tick: Tick): Record<string, unknown> {
+    return {
+      sequence: tick.sequence,
+      instant: tick.instant,
+      price: tick.price,
+      displayPrice: renderPrice(
+        tick.price,
+        asset.instrument.logQuantum,
+        asset.instrument.referencePrice,
+        asset.instrument.displayPrecision,
+      ),
+    };
+  }
+
   private describe(id: string): unknown {
     const asset = this.venue.assetFor(id) ?? undefined;
     const tick = this.venue.lastTick(id);
@@ -1083,6 +1229,16 @@ function timeframeMs(id: Parameters<typeof timeframeById>[0]): number {
  * `1788349926509abc` was accepted as the instant, `1.9` as 1 and `0x10` as 0 —
  * the same defect Cycle Audit 6 corrected on the stream's `from` and left here.
  */
+/** A sequence off the path: a positive safe integer written as digits (PH-29.1). */
+function sequenceParam(raw: string): number {
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw)) || Number(raw) < 1) {
+    throw new BadRequestException(
+      `sequence must be a positive integer written as digits, got ${raw}.`,
+    );
+  }
+  return Number(raw);
+}
+
 function instantParam(name: string, raw: string | undefined): ReturnType<typeof epochMillis> {
   if (raw === undefined) throw new BadRequestException(`${name} is required.`);
   if (!/^\d+$/.test(raw)) {

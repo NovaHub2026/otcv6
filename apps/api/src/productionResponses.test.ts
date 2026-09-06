@@ -3,10 +3,13 @@ import 'reflect-metadata';
 import { METHOD_METADATA, PATH_METADATA, ROUTE_ARGS_METADATA } from '@nestjs/common/constants.js';
 import { RouteParamtypes } from '@nestjs/common/enums/route-paramtypes.enum.js';
 import { RequestMethod } from '@nestjs/common';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { durationMillis, epochMillis, MasterKeyring, SteppableClock } from '@otc/core';
 import { ASSET_CATALOGUE } from '@otc/engine';
-import { MemoryStateStore } from '@otc/runtime';
+import { MemoryStateStore, MemoryTickRecord } from '@otc/runtime';
 import { MarketController } from './market.controller.js';
 import { PublicationService } from './publication.service.js';
 import { VenueService } from './venue.service.js';
@@ -84,12 +87,16 @@ function leaksIn(value: unknown, path = '$', found: string[] = []): string[] {
 }
 
 const started: VenueService[] = [];
+const scratch: string[] = [];
 afterAll(async () => {
+  for (const d of scratch) rmSync(d, { recursive: true, force: true });
   for (const venue of started) await venue.stop();
 });
 
 describe('no production response carries an engine snapshot, by value (INV-010)', () => {
   it('every GET route of the production controller answers without a cursor or a snapshot-only key', async () => {
+    const publicationDir = mkdtempSync(path.join(tmpdir(), 'otc-prod-responses-'));
+    scratch.push(publicationDir);
     const clock = new SteppableClock(GENESIS);
     // The production composition: no sign source, no arrival source (main.ts).
     const venue = new VenueService(
@@ -98,7 +105,20 @@ describe('no production response carries an engine snapshot, by value (INV-010)'
       clock,
       [asset],
       5_000,
-      new PublicationService([asset]),
+      // Publishing into a scratch directory with short windows, and keeping a
+      // record, so the settlement-query routes (PH-29.1) answer rather than
+      // refuse — a refused route is a route this guard has not seen.
+      new PublicationService([asset], 20, {
+        OTC_PUBLICATION_DIR: publicationDir,
+        OTC_PUBLISHING_KEY: '77'.repeat(32),
+      }),
+      null,
+      GENESIS,
+      0,
+      null,
+      null,
+      null,
+      new MemoryTickRecord(),
     );
     started.push(venue);
     await venue.start();
@@ -154,7 +174,9 @@ describe('no production response carries an engine snapshot, by value (INV-010)'
                 ? String(GENESIS)
                 : q === 'to'
                   ? String(last.instant + 60_000)
-                  : undefined,
+                  : q === 'at'
+                    ? String(last.instant)
+                    : undefined,
           );
         } else {
           positional.push(undefined);

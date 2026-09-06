@@ -26,7 +26,7 @@ import {
   type AssetOverlay,
   type TickRecord,
 } from '@otc/runtime';
-import { DEFAULT_RETAIN_TICKS, TickFeed } from '@otc/distribution';
+import { DEFAULT_RETAIN_TICKS, TickFeed, type PublicationProof } from '@otc/distribution';
 import { EngineAccess } from './engineAccess.js';
 import { HistoryService } from './history.service.js';
 import { PublicationService } from './publication.service.js';
@@ -525,6 +525,47 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     const published = this.latest.get(assetId);
     if (published !== undefined) return published;
     return this.venue?.marketFor(assetId).lastPublishedState ?? null;
+  }
+
+  /** Whether this deployment keeps the published record (PH-28.1). */
+  get keepsRecord(): boolean {
+    return this.record !== null;
+  }
+
+  /**
+   * The published tick at a sequence, from the record, or null when the record
+   * does not hold it (PH-29.1). The record, not the feed: the feed's window is
+   * the record's newest run, primed from it, and a sequence the feed no longer
+   * retains may still be recorded.
+   */
+  async recordedTick(assetId: string, sequence: number): Promise<Tick | null> {
+    if (this.record === null) return null;
+    const [tick] = await this.record.since(assetId, sequence, 1);
+    return tick !== undefined && tick.sequence === sequence ? tick : null;
+  }
+
+  /** The record's oldest and newest sequence, or null when it holds nothing. */
+  async recordBounds(assetId: string): Promise<{ oldest: number; newest: number } | null> {
+    if (this.record === null) return null;
+    const oldest = await this.record.oldest(assetId);
+    const newest = await this.record.head(assetId);
+    return oldest === null || newest === null ? null : { oldest, newest };
+  }
+
+  /** The last published tick at or before an instant, from the record (PH-29.1). */
+  priceAt(assetId: string, instant: number): Promise<Tick | null> {
+    if (this.record === null) return Promise.resolve(null);
+    return this.record.atOrBefore(assetId, instant);
+  }
+
+  /** The proof of a published sequence from the publication archive (PH-29.1). */
+  proofFor(assetId: string, sequence: number): Promise<PublicationProof> {
+    return this.publication.proofFor(assetId, sequence);
+  }
+
+  /** The publisher's public key, or null when this deployment does not publish. */
+  get publishingKey(): string | null {
+    return this.publication.publicKey;
   }
 
   recoveryFor(assetId: string): RecoveryOutcome | null {
