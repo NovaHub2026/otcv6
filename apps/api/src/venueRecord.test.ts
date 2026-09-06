@@ -1,5 +1,15 @@
 // Invariant evidence: INV-002 (shared market), INV-008 (continuous market state), INV-009 (reproducible settlement).
-import { describe, expect, it } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { Logger } from '@nestjs/common';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  publicKeyHex,
+  publishingKeyFromSeed,
+  readCommitmentsStream,
+  verifyCommitmentsFile,
+} from '@otc/distribution';
 import {
   durationMillis,
   epochMillis,
@@ -10,9 +20,15 @@ import {
 } from '@otc/core';
 import { ASSET_CATALOGUE, type RegisteredAsset } from '@otc/engine';
 import {
+  backupStateDirectory,
+  FileStateStore,
+  HISTORY_DB,
   InMemoryCandleHistory,
   MemoryStateStore,
   MemoryTickRecord,
+  RECORD_DB,
+  SqliteCandleHistory,
+  SqliteTickRecord,
   type CandleHistory,
   type StateStore,
   type TickRecord,
@@ -48,6 +64,7 @@ function venue(
   clock: SteppableClock,
   history: CandleHistory,
   record: TickRecord | null,
+  publication: PublicationService = new PublicationService([asset], 500, {}),
 ): VenueService {
   return new VenueService(
     store,
@@ -55,7 +72,7 @@ function venue(
     clock,
     [asset],
     5_000,
-    new PublicationService([asset], 500, {}),
+    publication,
     new HistoryService(history, [asset]),
     GENESIS,
     0,
@@ -241,6 +258,146 @@ describe('the record outlives the process (PH-28.1)', () => {
     expect(await record.head(ID), 'the record was not modified').toBe(head);
     await first.stop();
     await second.stop();
+  });
+
+  it('the commitment chain continues across the kill, one chain per market (PH-28.3)', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'otc-publication-'));
+    const env = { OTC_PUBLICATION_DIR: directory, OTC_PUBLISHING_KEY: '44'.repeat(32) };
+    const publishing = (): PublicationService => new PublicationService([asset], 20, env);
+    const record = new MemoryTickRecord();
+    const clock = new SteppableClock(GENESIS);
+    const store = new MemoryStateStore();
+    const history = new InMemoryCandleHistory();
+    const first = venue(store, clock, history, record, publishing());
+    await first.start();
+    await run(first, clock, 115);
+    await first.checkpoint();
+    const storeAtCheckpoint = await copyStore(store);
+    const historyAtCheckpoint = await copyHistory(history);
+    await run(first, clock, 8);
+    const file = path.join(directory, ID, 'commitments.ndjson');
+    const beforeKill = await verifyCommitmentsFile(
+      file,
+      publicKeyHex(publishingKeyFromSeed(env.OTC_PUBLISHING_KEY)),
+    );
+    expect(beforeKill.ok).toBe(true);
+    expect(beforeKill.count).toBeGreaterThan(3);
+
+    const clock2 = new SteppableClock(clock.now());
+    const second = venue(storeAtCheckpoint, clock2, historyAtCheckpoint, record, publishing());
+    await second.start();
+    await run(second, clock2, 60);
+    const after = await verifyCommitmentsFile(
+      file,
+      publicKeyHex(publishingKeyFromSeed(env.OTC_PUBLISHING_KEY)),
+    );
+    expect(after.ok, JSON.stringify(after.error)).toBe(true);
+    expect(after.count).toBeGreaterThan(beforeKill.count + 3);
+    // One chain: every window follows the one before it in sequence, across
+    // the kill, because the ticks the first process committed nothing for
+    // were read back from the record.
+    let expected = 1;
+    for await (const { signed } of readCommitmentsStream(file)) {
+      expect(signed.commitment.fromSequence).toBe(expected);
+      expected = signed.commitment.toSequence + 1;
+    }
+    await first.stop();
+    await second.stop();
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  it('a chain the record cannot reach is restarted at an empty root, not bridged (PH-28.3)', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'otc-publication-'));
+    const env = { OTC_PUBLICATION_DIR: directory, OTC_PUBLISHING_KEY: '45'.repeat(32) };
+    const record = new MemoryTickRecord();
+    const clock = new SteppableClock(GENESIS);
+    const store = new MemoryStateStore();
+    const first = venue(
+      store,
+      clock,
+      new InMemoryCandleHistory(),
+      record,
+      new PublicationService([asset], 20, env),
+    );
+    await first.start();
+    await run(first, clock, 60);
+    await first.checkpoint();
+    const storeAtCheckpoint = await copyStore(store);
+    const resumedFrom = (await storeAtCheckpoint.load(ID))!.lastPublished!.sequence + 1;
+    await run(first, clock, 5);
+    await first.stop();
+    // The record is gone — a fresh record.db beside a surviving chain file —
+    // so the ticks the chain's tip needs cannot be read back.
+    const lost = new MemoryTickRecord();
+    const clock2 = new SteppableClock(clock.now());
+    const publication = new PublicationService([asset], 20, env);
+    const second = venue(storeAtCheckpoint, clock2, new InMemoryCandleHistory(), lost, publication);
+    const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    await second.start();
+    expect(errors.mock.calls.map((c) => String(c[0])).join('\n')).toMatch(
+      /restarted at an empty root/,
+    );
+    errors.mockRestore();
+    expect(second.stalledMarkets).toEqual([]);
+    await run(second, clock2, 40);
+    await second.stop();
+    // Two chains in the file, and the break is visible: the second genesis
+    // link carries an empty previousRoot. With the record lost, the resumed
+    // market's republication of the ticks after its checkpoint could not be
+    // deduplicated, so the second chain begins at the resume point and
+    // overlaps the first — which is what happened, and what a verifier must
+    // be able to see rather than a window that binds a tip it does not follow.
+    const links: { previousRoot: string; fromSequence: number; toSequence: number }[] = [];
+    const file = path.join(directory, ID, 'commitments.ndjson');
+    for await (const { signed } of readCommitmentsStream(file)) links.push(signed.commitment);
+    const genesis = links.map((l, i) => (l.previousRoot === '' ? i : -1)).filter((i) => i >= 0);
+    expect(genesis).toHaveLength(2);
+    const restart = genesis[1]!;
+    expect(links[restart]!.fromSequence).toBe(resumedFrom);
+    expect(links[restart]!.fromSequence).toBeLessThanOrEqual(links[restart - 1]!.toSequence);
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  it('a backup taken while the venue ticks restores to a venue that resumes and honours a pre-backup resume (PH-28.3)', async () => {
+    const live = await mkdtemp(path.join(tmpdir(), 'otc-live-'));
+    const target = path.join(await mkdtemp(path.join(tmpdir(), 'otc-backup-')), 'copy');
+    const fileVenue = (directory: string, clock: SteppableClock): VenueService =>
+      venue(
+        new FileStateStore(directory),
+        clock,
+        new SqliteCandleHistory(path.join(directory, HISTORY_DB)),
+        new SqliteTickRecord(path.join(directory, RECORD_DB)),
+      );
+    const clock = new SteppableClock(GENESIS);
+    const first = fileVenue(live, clock);
+    await first.start();
+    await run(first, clock, 130);
+    // Between checkpoints, with the venue mid-run: the copy is per-file
+    // consistent and verified on the way out.
+    const { manifest, report } = await backupStateDirectory(live, target, clock.now());
+    expect(report.problems).toEqual([]);
+    const servedAtBackup = first.feed.since(ID, 1);
+    expect(manifest.heads[ID]!.record).toBe(servedAtBackup[servedAtBackup.length - 1]!.sequence);
+    await run(first, clock, 20);
+    await first.stop();
+
+    // Restore is a directory swap with the service stopped; here the swap is
+    // pointing a venue at the copy, with the clock where the backup was taken.
+    const restoredClock = new SteppableClock(epochMillis(manifest.takenAt));
+    const restored = fileVenue(target, restoredClock);
+    await restored.start();
+    expect(restored.recoveryFor(ID)?.kind).toBe('resumed');
+    expect(restored.feed.since(ID, 1), 'the record the backup held is served').toEqual(
+      servedAtBackup,
+    );
+    await run(restored, restoredClock, 10);
+    sequencesContiguous(restored.feed.since(ID, 1));
+    expect(restored.stalledMarkets).toEqual([]);
+    await restored.stop();
+    restored.onApplicationShutdown();
+    first.onApplicationShutdown();
+    await rm(live, { recursive: true, force: true });
+    await rm(path.dirname(target), { recursive: true, force: true });
   });
 
   it('without a record the venue publishes as it always did', async () => {

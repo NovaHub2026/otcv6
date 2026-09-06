@@ -303,6 +303,9 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       if (known === undefined || newest.sequence > known.sequence) this.latest.set(assetId, newest);
     }
     const folded = await this.history?.prime(assetId, this.record);
+    // And the commitment chain, which the record lets continue across the
+    // boundary rather than restart at every boot (PH-28.3).
+    await this.publication.prime(assetId, this.record);
     const head = tail.length > 0 ? tail[tail.length - 1]!.sequence : null;
     this.logger.log(
       head === null
