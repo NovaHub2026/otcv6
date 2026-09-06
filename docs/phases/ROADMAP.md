@@ -810,7 +810,7 @@ departure is recorded ([decision](../decisions/DECISION-LOG.md), 2026-09-05).
 | Phase | Title                                                       | State        |
 | ----- | ----------------------------------------------------------- | ------------ |
 | PH-28 | The durable venue: the record outlives the process          | **APPROVED** |
-| PH-29 | The integration boundary: what a broker's settlement needs  | PLANNED      |
+| PH-29 | The integration boundary: what a broker's settlement needs  | ACTIVE       |
 | PH-30 | Release 1.0: the engine as a broker integrates it           | PLANNED      |
 | —     | **Cycle Audit 10** — the closing audit, adversarial as ever | PLANNED      |
 
@@ -866,7 +866,7 @@ Issue #11 decided as the library's concern only.
 
 | Subphase | Title                                                                                  | State   |
 | -------- | -------------------------------------------------------------------------------------- | ------- |
-| PH-29.1  | The settlement query: price at a sequence and at an instant, with its inclusion proof  | PLANNED |
+| PH-29.1  | The settlement query: price at a sequence and at an instant, with its inclusion proof  | ACTIVE  |
 | PH-29.2  | The API contract frozen: versioned, schema-described, breaking changes guarded         | PLANNED |
 | PH-29.3  | The conformance suite: the integration checklist made executable against a live venue  | PLANNED |
 | PH-29.4  | The reference client and settlement library: exercised by the release, #11 decided     | PLANNED |

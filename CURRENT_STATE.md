@@ -21,14 +21,14 @@ Last synchronized: 2026-09-05
 
 ## Phase and subphase
 
-| Field                  | Value                                                      |
-| ---------------------- | ---------------------------------------------------------- |
-| Active phase           | none                                                       |
-| Phase lifecycle        | none                                                       |
-| Active subphase        | none                                                       |
-| Subphase lifecycle     | none                                                       |
-| Last approved phase    | PH-28 — The durable venue: the record outlives the process |
-| Last approved subphase | PH-28.4 — The served verdict across a kill and a restart   |
+| Field                  | Value                                                              |
+| ---------------------- | ------------------------------------------------------------------ |
+| Active phase           | PH-29 — The integration boundary: what a broker's settlement needs |
+| Phase lifecycle        | ACTIVE                                                             |
+| Active subphase        | PH-29.1 — The settlement query                                     |
+| Subphase lifecycle     | ACTIVE                                                             |
+| Last approved phase    | PH-28 — The durable venue: the record outlives the process         |
+| Last approved subphase | PH-28.4 — The served verdict across a kill and a restart           |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
@@ -194,7 +194,7 @@ on `audit/ca9-fixes`; that run replaces this block when it passes.
 
 ## EXACT NEXT LEGAL ACTION
 
-**Merge PH-28 to `main`, then create the PH-29 Phase Context Document (the integration boundary) and activate PH-29.1, per the Cycle 10 plan in `docs/phases/ROADMAP.md`; hosted CI on the PH-28 merge is recorded in the table above when it lands.**
+**Implement PH-29.1 (the settlement query) on `feature/ph-29-integration-boundary`; PH-28 is merged (`fd17ec0`), and hosted CI on it is recorded in the table above when it lands.**
 
 PH-27 is approved on its integrated phase verification (`GATE_EXIT=0` first
 attempt, 45 statistical files in 4,472 s) and is being merged. Cycle 9 is
