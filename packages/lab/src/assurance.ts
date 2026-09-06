@@ -1,4 +1,4 @@
-import { logPrice, type EpochMillis, type LogPrice, type Tick } from '@otc/core';
+import { assertInt32Price, logPrice, type EpochMillis, type LogPrice, type Tick } from '@otc/core';
 
 /**
  * A published tick journal, and the verdict anyone can recompute from it.
@@ -110,7 +110,7 @@ export function journalSeries(journal: TickJournal): {
   const prices = new Int32Array(journal.ticks.length);
   for (let i = 0; i < journal.ticks.length; i += 1) {
     instants[i] = journal.ticks[i]!.instant;
-    prices[i] = journal.ticks[i]!.price;
+    prices[i] = assertInt32Price(journal.ticks[i]!.price);
   }
   return { instants, prices };
 }

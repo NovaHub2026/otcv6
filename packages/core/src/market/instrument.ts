@@ -81,6 +81,30 @@ export function logPrice(value: number): LogPrice {
   return value as LogPrice;
 }
 
+/**
+ * The widest canonical price an `Int32Array` holds (PH-30.5, Issue #20).
+ *
+ * `logPrice` guards at 2^53; every consumer that holds a run of prices — the
+ * chart's window, the lab's datasets, the trading record — narrows them to
+ * `Int32Array`, 4 194 304 times tighter, and an integer past that bound wraps
+ * silently where the brand would have thrown. The horizon is absurd (about
+ * 1.6 × 10⁷ years for the fastest asset at its volatility) and the failure
+ * would be silent, which is the combination a guard is for: every narrowing
+ * site asserts through this, so a price a lattice cannot hold is a throw with
+ * a name.
+ */
+export const INT32_PRICE_BOUND = 2_147_483_647;
+
+export function assertInt32Price(value: number): LogPrice {
+  if (!Number.isSafeInteger(value) || value > INT32_PRICE_BOUND || value < -INT32_PRICE_BOUND - 1) {
+    throw new RangeError(
+      `Canonical price ${value} is outside the Int32 lattice every price run is held in ` +
+        `(±${INT32_PRICE_BOUND}); it would wrap silently, so it is refused by name (Issue #20).`,
+    );
+  }
+  return value as LogPrice;
+}
+
 export function shift(price: LogPrice, steps: number): LogPrice {
   if (!Number.isSafeInteger(steps)) {
     throw new RangeError(`Lattice step count must be a safe integer, received ${steps}.`);

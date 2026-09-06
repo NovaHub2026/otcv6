@@ -72,6 +72,14 @@ Computed from `authored.tickRms` and `evidence.meanIntervalMs`:
 | spx    | 1.3%       | 1.7%       | 1.31  |
 | xauusd | 5.8%       | 8.4%       | 1.45  |
 
+> **Not reproducible from its stated inputs** (Cycle Audit 6, CA6-39; Issue #8;
+> decided in PH-30.5). The analytic column was computed by hand at the time
+> from `authored.tickRms` and `evidence.meanIntervalMs`, and the runner that
+> produced the measured column was not kept; PH-24.17 has since recalibrated
+> every tempo and PH-26 replaced the five assets named here. The table is kept
+> as the record of what was believed on the day and why the measured column
+> was the one designed against, not as a figure this repository can regenerate.
+
 The analytic figure is low, and correctly so: `tickRms` covers base volatility
 and the cascade, and two further multiplier layers — regime and structure — sit
 above them. The ratio varies per asset because `regimeSpread` and

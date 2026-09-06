@@ -1,4 +1,4 @@
-import { assertTickOrder, type Tick } from '@otc/core';
+import { assertInt32Price, assertTickOrder, type Tick } from '@otc/core';
 import type { BatteryOptions } from '../attacks/battery.js';
 import type { HorizonSpec } from '../horizons.js';
 import { runStandingAssurance, type StandingVerdict } from '../standing.js';
@@ -136,7 +136,7 @@ export function servedAssurance(
         : {
             reference: {
               instants: Float64Array.from(reference.ticks, (tick) => tick.instant),
-              prices: Int32Array.from(reference.ticks, (tick) => tick.price),
+              prices: Int32Array.from(reference.ticks, (tick) => assertInt32Price(tick.price)),
             },
           }),
     },

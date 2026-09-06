@@ -723,3 +723,40 @@ across the change should not lose it.
 per horizon; `PH-25-SERVED-VERDICT.md` and `PH-28-DURABLE-VENUE.md` were
 graded before this and say so in their tables' provenance. The tripwire
 `gateSensitivity.stat.test.ts` stays as it is.
+
+## 2026-09-06 — The release closes or decides every open Issue (PH-30.5)
+
+Cycle 10 is the closing cycle, and a release carries no Issue nobody decided.
+Each open Issue on the day, and what was decided:
+
+- **#4 (B-029, `xauusd`'s realised spread against its calibrated one)** —
+  closed as superseded: `xauusd` is not in the catalogue of thirty that ships
+  (PH-26), so the question has no subject in the release. The method note —
+  size the standard error of σ from the empirical kurtosis, not the Gaussian
+  formula — stays in `docs/BACKLOG.md` under B-029 for whoever calibrates an
+  asset with a tail like it.
+- **#7 (CA6-37, PH-17's headline numbers printed, not asserted)** — closed:
+  the phase document already says the figure is `console.info` and that what
+  the test enforces is the band, two to three times wider than the number
+  quoted (`PH-17-assets-become-data.md` §7). Marked informational there; the
+  band is what is asserted, and that is the honest claim.
+- **#8 (CA6-39, the drift reconciliation table does not reproduce)** — closed
+  by annotation: the table is marked not reproducible from its inputs, with
+  the reason, in `CYCLE-6-DRIFT.md`. Regenerating it would measure a
+  catalogue that no longer exists.
+- **#12 (a2 residue, guardrail evasions no textual scan can see)** — closed as
+  accepted residue, recorded: a name split across literals, an economic word
+  outside the vocabulary, `Symbol.for` as a channel — no source scan sees
+  these and none will. The defence is behavioural and stays: tick identity,
+  the settlement mirror, economic blindness by value, the production-responses
+  walk by value (a1-01), and the meta-audit that plants against every guard.
+- **#20 (Int32 narrowing where `logPrice` guards at 2^53)** — fixed: every
+  site that narrows a run of prices to an `Int32Array` — the chart's window,
+  the lab's datasets and journal reader, the served-record reference — asserts
+  through `assertInt32Price`, which refuses a price outside ±2^31 by name where
+  the array would have wrapped silently. The bound is 1.6 × 10⁷ years away for
+  the fastest asset; the guard exists because the failure would be silent.
+- **#16 (six connections per origin)** — closed by PH-30.2 at the merge.
+- **#9 (the multi-node composition), #3 and #14 (Governance amendments)** —
+  stay open by name: the first is deferred by the Cycle 10 plan and is the
+  next cycle's if the Human Owner wants it; the two amendments are theirs.
