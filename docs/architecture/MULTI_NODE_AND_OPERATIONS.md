@@ -261,6 +261,23 @@ database through `VACUUM INTO`), verifies the copy and writes `backup.json`
 with every asset's heads. Restore is a directory swap with the service
 stopped; the boot check is the acceptance test.
 
+**Two things about that make it work, and neither did until Cycle Audit 10.**
+The copy is ordered **checkpoints, then `history.db`, then `record.db`**
+(a3-05): each `VACUUM INTO` snapshots at its own instant, so a source that is
+still advancing is caught at three different moments, and each file must be
+copied before the file it may not overtake — the record may not fall behind its
+checkpoint, the history may not run ahead of its record. Copied the other way
+round, a bar folded during the record's VACUUM landed in a copy whose record
+did not hold its ticks, so a backup of a healthy running venue failed its own
+verification and exited 1. And the manifest **stays in the restored directory**
+(a7-01): `backup.json` is recognised by its `kind` (`otc-state-backup`) rather
+than by its name, so `FileStateStore.list` does not offer it as a thirty-first
+asset called `backup` — which is how every backup the tool wrote used to be
+refused at boot with `record belongs to asset undefined` until the operator
+deleted the one file that recorded what the backup held. `backup` verifies the
+copy _after_ writing the manifest, so its exit code is a statement about the
+directory an operator will actually swap in.
+
 **Key rotation** (`packages/distribution/src/rotation.ts`). `verifySignedChain`
 took one key, so a rotated key failed verification exactly as a forgery does.
 Now a rotation is a record **signed by the outgoing key** naming its successor;

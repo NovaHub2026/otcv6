@@ -113,6 +113,34 @@ describe('the report says what the run did', () => {
     ).toContain('**exploitable**');
   });
 
+  /**
+   * **Cycle Audit 10 (a5-11, a7-06).** `gateDetectionFloorPp` is `Infinity`
+   * when no bucket reached the corrected and confirmation thresholds at this
+   * sample size — the ordinary case for an hour of an hour-long horizon — and
+   * `toFixed(3)` renders that as `Infinity`. Both release served-verdict
+   * records carry `gate Infinitypp` — 237 times in one, 203 in the other.
+   * The battery this job
+   * reports has always written the same value as `unconfirmable`, behind a
+   * `Number.isFinite` guard (`packages/lab/src/attacks/battery.ts`); the job
+   * now uses the battery's word.
+   */
+  it('says unconfirmable where the battery says unconfirmable, not Infinitypp', () => {
+    const base = verdict('undecided');
+    const row = verdictRow({
+      assetId: 'eurusd-otc',
+      record: { ticks: [], gaps: [], discontinuities: [], bytes: 0 },
+      range: null,
+      verdict: {
+        ...base,
+        horizons: [{ ...base.horizons[0]!, gateDetectionFloorPp: Number.POSITIVE_INFINITY }],
+      },
+      failure: null,
+      seconds: 1,
+    });
+    expect(row).not.toContain('Infinity');
+    expect(row).toContain('30s 4.321pp / gate unconfirmable (400)');
+  });
+
   it('names the venue, the stamp, the counts and the holes', () => {
     const text = report(
       {

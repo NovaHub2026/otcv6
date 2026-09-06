@@ -49,3 +49,34 @@ describe('FileStateStore.load', () => {
     await expect(empty.load('eurusd-otc')).rejects.toBeInstanceOf(CorruptRecordError);
   });
 });
+
+/**
+ * **Cycle Audit 10 (a7-01).** `list()` answered "which assets does this
+ * directory hold a checkpoint for" with "every `*.json` in it", and
+ * `backupStateDirectory` writes `backup.json` — its manifest — into the copy.
+ * So a directory the backup tool had just written named a thirty-first asset
+ * called `backup`, whose "checkpoint" belonged to asset `undefined`, and both
+ * `state:verify` and the boot check refused the restore.
+ */
+describe('FileStateStore.list', () => {
+  it('names the assets with a checkpoint and not the backup manifest beside them', async () => {
+    const store = await storeWith({
+      'eurusd-otc.json': '{"assetId":"eurusd-otc"}',
+      'backup.json': JSON.stringify({ kind: 'otc-state-backup', version: 1, assets: [] }),
+      'notes.txt': 'not json',
+    });
+    await expect(store.list()).resolves.toEqual(['eurusd-otc']);
+  });
+
+  it('does not hide a checkpoint that happens to be called backup', async () => {
+    // The manifest is recognised by what it says it is, not by its filename: a
+    // real checkpoint under this name must still be resumed, never skipped.
+    const store = await storeWith({ 'backup.json': '{"assetId":"backup"}' });
+    await expect(store.list()).resolves.toEqual(['backup']);
+  });
+
+  it('still names a file it cannot parse, so `load` refuses it rather than nothing seeing it', async () => {
+    const store = await storeWith({ 'eurusd-otc.json': '{ oops' });
+    await expect(store.list()).resolves.toEqual(['eurusd-otc']);
+  });
+});

@@ -7,6 +7,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, type Tick } from '@otc/core';
 import { RecordForkError } from './replication.js';
 import {
+  MEASURED_RECORD_BYTES_PER_TICK,
   MemoryTickRecord,
   RECORD_SCHEMA_VERSION,
   SqliteTickRecord,
@@ -287,7 +288,20 @@ describe('the SQLite record, as a file', () => {
     expect(() => new SqliteTickRecord(file)).toThrow(/newer than/);
   });
 
-  it('costs a bounded number of bytes per tick on disk, so the default bound can be sized', async () => {
+  /**
+   * **Cycle Audit 10 (a7-03).** This asserted a bound and printed a figure for
+   * a docstring nothing related it to. PH-29.1 added the `tick_by_instant`
+   * index, the cost went from 32.6 to 61.2 bytes a tick — a factor of 1.9 —
+   * the bound of 80 held, the suite stayed green, and the docstring that sizes
+   * `DEFAULT_RECORD_TICKS`, plus the PH-28 records, went on telling an
+   * operator to size disk at eight megabytes an asset for two phases.
+   *
+   * So the number in the prose is now read out of the prose and held to the
+   * measurement. Twenty per cent of slack: a page-size or SQLite change may
+   * move it a little without failing the suite, but nothing may add a second
+   * index and leave the sizing where it was.
+   */
+  it('costs the number of bytes per tick its own docstring says it does', async () => {
     const file = path.join(await scratch(), 'record.db');
     const record = new SqliteTickRecord(file);
     const n = 20_000;
@@ -295,11 +309,18 @@ describe('the SQLite record, as a file', () => {
     record.close();
     const bytes = (await stat(file)).size;
     const perTick = bytes / n;
-    // WITHOUT ROWID with a (text, integer) primary key and two integers: tens
-    // of bytes, not hundreds. The bound is generous so a page-size change does
-    // not fail the suite; the figure is printed for the docstring that sizes
-    // `DEFAULT_RECORD_TICKS` from it.
+    // WITHOUT ROWID with a (text, integer) primary key and two integers, plus
+    // the PH-29.1 index over (asset_id, instant, sequence): tens of bytes, not
+    // hundreds.
     console.info(`[tickRecord] ${perTick.toFixed(1)} bytes per tick on disk over ${n} ticks`);
     expect(perTick).toBeLessThan(80);
+
+    expect(
+      Math.abs(perTick - MEASURED_RECORD_BYTES_PER_TICK) / MEASURED_RECORD_BYTES_PER_TICK,
+      `the record costs ${perTick.toFixed(1)} bytes a tick, not ` +
+        `${String(MEASURED_RECORD_BYTES_PER_TICK)} — re-measure and update the sizing on ` +
+        `DEFAULT_RECORD_TICKS in tickRecord.ts, and the PH-28 and PH-28.1 records that ` +
+        `restate it; that is what an operator sizes disk from`,
+    ).toBeLessThan(0.2);
   });
 });

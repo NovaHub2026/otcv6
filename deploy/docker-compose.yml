@@ -1,14 +1,21 @@
-# The engine and the panel, one state volume (PH-30.1).
+# The engine and its backup timer, one state volume (PH-30.1).
 #
 #   OTC_MASTER_SECRET=... OTC_ADMIN_TOKEN=... docker compose -f deploy/docker-compose.yml up -d
 #
 # The engine listens on every interface inside its container and is published
 # on loopback only; put deploy/nginx.conf in front of it for the world.
+#
+# The administration UI is a separate Next.js process and is not composed here —
+# deploy/Dockerfile copies no apps/web. INTEGRATION.md §6 describes it: its
+# screens, its proxies, its variables and the `npm start` inside apps/web. This
+# header claimed a panel service for two phases and PH-30.1 §2 repeated the
+# claim (Cycle Audit 10, a5-04).
 services:
   engine:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
+    image: otc-engine:local
     environment:
       OTC_MASTER_SECRET: ${OTC_MASTER_SECRET:?set OTC_MASTER_SECRET}
       OTC_ADMIN_TOKEN: ${OTC_ADMIN_TOKEN:-}
@@ -39,16 +46,23 @@ services:
       timeout: 3s
       start_period: 60s
       retries: 3
+  # The same image as the engine, not a stock node with the host's checkout
+  # mounted in (Cycle Audit 10, a5-04). What it runs is
+  # `tools/sim/dist/stateTool.js`, which exists only after `npm run build` and
+  # is excluded by .gitignore, so mounting a fresh clone gave the service
+  # nothing to execute — and the image is where the build happens. Compose
+  # builds `otc-engine:local` once and both services use it.
   backup:
-    image: node:24-slim
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: otc-engine:local
     depends_on:
       engine:
         condition: service_healthy
     volumes:
       - otc-state:/var/lib/otc
       - otc-backups:/backups
-      - ..:/opt/otc:ro
-    working_dir: /opt/otc
     # Every six hours, a verified copy; the last eight are kept (deploy/backup.sh).
     command: ['bash', 'deploy/backup.sh', '/var/lib/otc', '/backups', '8', '21600']
     restart: unless-stopped

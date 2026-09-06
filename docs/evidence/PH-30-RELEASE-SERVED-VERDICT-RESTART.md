@@ -13,6 +13,20 @@ above; nothing was generated in this process. `undecided` means the battery
 could not see a product-margin edge at this size, and the floors say how
 far from seeing one it was (samples in parentheses).
 
+> **Note added by hand 2026-09-06 (Cycle Audit 10, a5-11 / a7-06); no row was
+> touched.** `gate Infinitypp` below is not a number. It is
+> `gateMinimumDetectableEffectPoints` — the edge at which the largest tested
+> bucket would reach the corrected and confirmation thresholds — rendered by
+> `toFixed(3)` when the value is `Infinity`, which is what the battery returns
+> when no bucket reached those thresholds at this sample size. An hour of ticks
+> gives one 15m sample, so there is no gate floor to state; that is the honest
+> reading, and it is the ordinary answer at this size rather than a defect in
+> the run. The renderer said `Infinity` here 203 times while
+> `packages/lab/src/attacks/battery.ts` had always written the same value as
+> `unconfirmable`; `tools/sim/src/servedAssuranceRun.ts` now writes the
+> battery's word too, so a regeneration of this record prints
+> `gate unconfirmable` in each of those places and nothing else changes.
+
 | Asset        | Ticks | Covered | Outcome   | Hypotheses / families / withheld-unavailable | Detection floor per horizon                                                                                                                                                                                                                              | Worst z | Time | Sequences read · sha256 of the ticks |
 | ------------ | ----- | ------- | --------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ---- | ------------------------------------ |
 | eurusd-otc   | 5420  | 0.58 h  | undecided | 0 / 26 / 2                                   | 30s 32.136pp / gate Infinitypp (19), 1m 46.693pp / gate Infinitypp (9), 2m 70.040pp / gate Infinitypp (4), 3m 80.875pp / gate Infinitypp (3), 4m 99.051pp / gate Infinitypp (2), 5m 140.079pp / gate Infinitypp (1)                                      | —       | 0s   | 103552–108971 0283ad18ebc8           |

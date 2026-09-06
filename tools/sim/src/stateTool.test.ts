@@ -89,4 +89,30 @@ describe('the operator’s state tool', () => {
     writeFileSync(path.join(out, 'keep'), '');
     expect((await runStateTool(['backup', '--dir', source, '--out', out], clock)).code).toBe(1);
   });
+
+  /**
+   * **Cycle Audit 10 (a7-01).** The documented restore is a directory swap
+   * with the service stopped, and the boot check is what decides. So the check
+   * this test makes is the operator's: `verify` on the directory `backup` just
+   * wrote, unmodified, manifest and all. It refused — `backup.json (backup):
+   * record belongs to asset undefined` — because the manifest the tool writes
+   * into its own copy was read back as a checkpoint. The tool exited 0 while
+   * producing a directory that would not boot, because it verified the copy
+   * *before* writing the manifest into it.
+   */
+  it('writes a copy that its own verify — and therefore the boot check — accepts', async () => {
+    const source = await stateDir(100, 120);
+    const out = path.join(scratch(), 'restore');
+    const clock = new SteppableClock(epochMillis(GENESIS + 99));
+    const written = await runStateTool(['backup', '--dir', source, '--out', out], clock);
+    expect(written.code).toBe(0);
+    const restored = await runStateTool(['verify', '--dir', out]);
+    expect(restored.output).toMatch(/Consistent: every file agrees/);
+    expect(restored.code).toBe(0);
+    expect(restored.output).toMatch(/Assets: 1 — eurusd/);
+    // And a backup of a restored directory does not carry the old manifest in.
+    const second = path.join(scratch(), 'restore-2');
+    expect((await runStateTool(['backup', '--dir', out, '--out', second], clock)).code).toBe(0);
+    expect((await runStateTool(['verify', '--dir', second])).code).toBe(0);
+  });
 });

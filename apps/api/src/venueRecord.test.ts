@@ -23,6 +23,8 @@ import { ASSET_CATALOGUE, type RegisteredAsset } from '@otc/engine';
 import {
   backupStateDirectory,
   FileStateStore,
+  stateRefusal,
+  verifyStateDirectory,
   HISTORY_DB,
   InMemoryCandleHistory,
   MemoryStateStore,
@@ -392,8 +394,16 @@ describe('the record outlives the process (PH-28.1)', () => {
     await run(first, clock, 20);
     await first.stop();
 
-    // Restore is a directory swap with the service stopped; here the swap is
-    // pointing a venue at the copy, with the clock where the backup was taken.
+    // Restore is a directory swap with the service stopped, and `main.ts` runs
+    // this check before any market resumes — so the copy must pass it exactly
+    // as the tool wrote it, manifest and all. Until Cycle Audit 10 (a7-01) it
+    // did not: `backup.json` was read as a thirty-first asset and the boot was
+    // refused with `record belongs to asset undefined`. This test restored by
+    // constructing the venue directly, which is the reason nothing saw it.
+    expect(stateRefusal(await verifyStateDirectory(target))).toBeNull();
+
+    // Here the swap is pointing a venue at the copy, with the clock where the
+    // backup was taken.
     const restoredClock = new SteppableClock(epochMillis(manifest.takenAt));
     const restored = fileVenue(target, restoredClock);
     await restored.start();

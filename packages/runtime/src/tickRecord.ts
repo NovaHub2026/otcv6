@@ -166,11 +166,43 @@ export interface AssetBatch {
  * keeps five times that so a client's resume across a restart is honoured for
  * the same span the feed would have honoured it in a process that never
  * stopped, with room for PH-29's settlement query behind it. At the measured row
- * cost — 32.6 bytes a tick on disk, `tickRecord.test.ts` prints it on every
- * run — that is about eight megabytes per asset, on disk and not in memory;
- * the catalogue of thirty is a quarter of a gigabyte.
+ * cost — `MEASURED_RECORD_BYTES_PER_TICK` below, which `tickRecord.test.ts`
+ * prints and holds itself to on every run — 250,000 ticks is **15.2 MiB per
+ * asset**, on disk and not in memory, and the catalogue of thirty is
+ * **456 MiB**.
  */
 export const DEFAULT_RECORD_TICKS = 250_000;
+
+/**
+ * Bytes a tick costs on disk, and the figure every sizing claim above rests on.
+ *
+ * **Re-measured 2026-09-06 (Cycle Audit 10, a7-03).** This docstring said 32.6
+ * bytes a tick, "about eight megabytes per asset" and "a quarter of a gigabyte
+ * for the thirty" from PH-28.1 (2026-09-04) until now. PH-29.1 added the
+ * `tick_by_instant` index over `(asset_id, instant, sequence)` — additive, so
+ * every existing file gained it on open — and the cost doubled. Nothing said
+ * so: the test asserted a bound of 80 and printed the figure, so 61.2 passed
+ * the same assertion 32.6 had, and two phases of documents went on sizing an
+ * operator's disk at half of what the release writes. That is why this is a
+ * constant the test reads rather than a number in prose.
+ *
+ * **The method, and it is cheap to re-run.** One `SqliteTickRecord` on a real
+ * file, 20,000 consecutive ticks of one asset appended in one call, closed,
+ * `stat().size / 20000` — exactly what `tickRecord.test.ts` does, so the suite
+ * re-measures it on every run. On this machine (2026-09-06, Node 24, WSL2):
+ * **61.2**. Built by hand twice over the same table and the same ticks to
+ * attribute it: 32.6 without `tick_by_instant`, 61.2 with it, so the index is
+ * the whole of the doubling — an index on a `WITHOUT ROWID` table repeats the
+ * primary key in every entry.
+ *
+ * The per-row cost rises slightly with the b-tree's depth, so the *sizing*
+ * above is measured at the shipped default rather than extrapolated from this
+ * figure: 250,000 ticks of one asset is 15,941,632 bytes on disk (63.8 bytes a
+ * tick), which is the 15.2 MiB and 456 MiB stated on `DEFAULT_RECORD_TICKS`.
+ * The 20% band the test allows is for a page-size or SQLite change; it fails
+ * outright on another index.
+ */
+export const MEASURED_RECORD_BYTES_PER_TICK = 61.2;
 
 /**
  * The record's schema version.

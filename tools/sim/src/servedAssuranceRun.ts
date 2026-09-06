@@ -86,8 +86,23 @@ export interface AssetRun {
   readonly seconds: number;
 }
 
+/**
+ * A floor in percentage points, or the battery's own word for one it never
+ * reached.
+ *
+ * **Cycle Audit 10 (a5-11, a7-06).** `gateMinimumDetectableEffectPoints` is
+ * `Infinity` when no bucket reached the corrected and confirmation thresholds
+ * at this sample size — the ordinary answer for an hour-long horizon after an
+ * hour — and `toFixed(3)` renders that as the string `Infinity`. Both release
+ * served-verdict records carry `gate Infinitypp` — 237 times in the release's
+ * record and 203 in the restart's, counted on 2026-09-06. It was honest and
+ * unreadable, and a reader who does not know the renderer takes it for a
+ * number. `packages/lab/src/attacks/battery.ts` has always written the same
+ * value as `unconfirmable`; a record and the battery it reports should not use
+ * two words for one thing.
+ */
 function pct(value: number): string {
-  return `${value.toFixed(3)}pp`;
+  return Number.isFinite(value) ? `${value.toFixed(3)}pp` : 'unconfirmable';
 }
 
 export function verdictRow(run: AssetRun): string {
@@ -149,7 +164,10 @@ export function report(meta: ReportMeta, runs: readonly AssetRun[]): string {
     'Every number below came over `GET /markets/:id/stream` from the venue named',
     'above; nothing was generated in this process. `undecided` means the battery',
     'could not see a product-margin edge at this size, and the floors say how',
-    'far from seeing one it was (samples in parentheses).',
+    'far from seeing one it was (samples in parentheses). A gate floor of',
+    '`unconfirmable` is the battery’s word for a horizon where no bucket reached',
+    'the corrected and confirmation thresholds at this size — there is no floor',
+    'to state, not a floor of zero.',
     '',
     '| Asset | Ticks | Covered | Outcome | Hypotheses / families / withheld-unavailable | Detection floor per horizon | Worst z | Time | Sequences read · sha256 of the ticks |',
     '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',

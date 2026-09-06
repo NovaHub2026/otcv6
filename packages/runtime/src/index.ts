@@ -104,6 +104,7 @@ export {
 } from './stateDirectory.js';
 export {
   DEFAULT_RECORD_TICKS,
+  MEASURED_RECORD_BYTES_PER_TICK,
   MemoryTickRecord,
   RECORD_SCHEMA_VERSION,
   SqliteTickRecord,

@@ -22,6 +22,16 @@ import {
  * Restore is a directory swap with the service stopped: move the live
  * directory aside, put the backup in its place, start; the boot check says
  * whether it agrees with itself, and the manifest says what it holds.
+ *
+ * **The manifest stays in the restored directory.** `backup.json` is left where
+ * the copy put it and is not a checkpoint: the store skips it by its `kind`, so
+ * the boot check and this tool's `verify` read the copy the same way. Until
+ * Cycle Audit 10 (a7-01) they did not — the manifest was read as a
+ * thirty-first asset, `backup`, and every directory this tool produced was
+ * refused at boot with `record belongs to asset undefined` until the operator
+ * deleted it. `backup` now also verifies the copy *after* writing the manifest,
+ * so this tool's exit code is a statement about the directory an operator will
+ * later swap in, not about one file less.
  */
 export interface StateToolOptions {
   readonly command: 'verify' | 'backup';

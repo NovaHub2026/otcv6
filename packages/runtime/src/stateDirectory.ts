@@ -1,8 +1,21 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { epochMillis } from '@otc/core';
-import { FileStateStore } from './fileStore.js';
+import {
+  BACKUP_MANIFEST,
+  BACKUP_MANIFEST_KIND,
+  FileStateStore,
+  isBackupManifestText,
+} from './fileStore.js';
 import { lastStoredSequence } from './history.js';
 import { FileAssetRegistry } from './registry.js';
 import { SqliteCandleHistory } from './sqliteHistory.js';
@@ -63,7 +76,7 @@ export const RECORD_DB = 'record.db';
 export const HISTORY_DB = 'history.db';
 export const REGISTRY_DIR = 'assets';
 export const LAB_MARKER = path.join('lab', 'composed-by-lab.json');
-export const BACKUP_MANIFEST = 'backup.json';
+export { BACKUP_MANIFEST } from './fileStore.js';
 
 /**
  * Check that the directory's files describe one market each, and agree.
@@ -78,6 +91,11 @@ export const BACKUP_MANIFEST = 'backup.json';
  * What warns: a checkpoint `resumeMarket` will seam past (`UnusableRecordError`),
  * and an asset with a checkpoint and no record at all — a deployment from
  * before the record existed, which boots and primes nothing.
+ *
+ * What is not a checkpoint: a backup manifest (`backup.json`, `kind:
+ * 'otc-state-backup'`) left in a directory the backup tool wrote. The store
+ * skips it, so a restore is not refused for holding the file that says what it
+ * holds (Cycle Audit 10, a7-01).
  */
 export async function verifyStateDirectory(directory: string): Promise<StateDirectoryReport> {
   const problems: StateProblem[] = [];
@@ -206,7 +224,7 @@ export function stateRefusal(report: StateDirectoryReport): string | null {
 }
 
 export interface BackupManifest {
-  readonly kind: 'otc-state-backup';
+  readonly kind: typeof BACKUP_MANIFEST_KIND;
   readonly version: 1;
   readonly takenAt: number;
   readonly source: string;
@@ -227,6 +245,14 @@ export interface BackupManifest {
  * `at` is the instant the manifest records; nothing under `packages/` reads
  * ambient time. The target must not exist or must be empty: a backup never
  * writes over another.
+ *
+ * **The manifest stays in the copy, and a restore keeps it.** A restore is a
+ * directory swap with the service stopped, so whatever is in the copy is what
+ * boots; `FileStateStore.list` skips the manifest by its `kind` so the boot
+ * check reads the copy the way the operator's `state:verify` does (Cycle Audit
+ * 10, a7-01). The report returned is of the target **after** the manifest is
+ * written — verified as it will be found, not as it was one file ago, which is
+ * how the tool came to exit 0 on a directory that would not boot.
  */
 export async function backupStateDirectory(
   from: string,
@@ -237,13 +263,43 @@ export async function backupStateDirectory(
   if (existsSync(to) && readdirSync(to).length > 0) {
     throw new RangeError(`${to} exists and is not empty; a backup never writes over another.`);
   }
+  const sourceManifest = path.join(from, BACKUP_MANIFEST);
+  const manifestInSource =
+    existsSync(sourceManifest) && isBackupManifestText(readFileSync(sourceManifest, 'utf8'));
+  if (existsSync(sourceManifest) && !manifestInSource) {
+    // `backup` is a legal asset id and the manifest is written under that name.
+    // Copying the checkpoint and then writing the manifest over it would lose a
+    // market's lease marks silently; refusing costs an operator a rename.
+    throw new RangeError(
+      `${from} holds a checkpoint at ${BACKUP_MANIFEST}, which is the name a backup manifest ` +
+        `takes; a copy would write the manifest over it.`,
+    );
+  }
   mkdirSync(to, { recursive: true });
   for (const name of readdirSync(from)) {
-    if (name.endsWith('.json') && name !== BACKUP_MANIFEST) {
+    // A previous backup's manifest is not copied forward: the copy gets its own.
+    if (name.endsWith('.json') && !(name === BACKUP_MANIFEST && manifestInSource)) {
       copyFileSync(path.join(from, name), path.join(to, name));
     }
   }
-  for (const database of [RECORD_DB, HISTORY_DB]) {
+  // **History before the record, and both after the checkpoints (Cycle Audit
+  // 10, a3-05).** Each `VACUUM INTO` snapshots at its own instant, so a source
+  // that is still advancing is caught at three different moments and the order
+  // decides which way the copy's disagreements point. `verifyStateDirectory`
+  // refuses a record *behind* its checkpoint and a history *ahead* of its
+  // record, so every file must be copied before the file it may not overtake:
+  // checkpoints, then history, then record. Each pair is then monotone in the
+  // benign direction — the record copy is the newest of the three, the
+  // checkpoints the oldest — and the copy verifies.
+  //
+  // Taken the other way round, which is how it was taken until this audit, the
+  // history is the newest file in the copy: a bar folded while the record's
+  // VACUUM ran lands in a copy whose record does not hold the ticks it was
+  // folded from, `backupStateDirectory` fails its own verification, the tool
+  // exits 1, and the unbootable directory is left on disk — for a backup of a
+  // perfectly healthy running venue. The window is the record's VACUUM against
+  // the bar flush on the checkpoint cadence.
+  for (const database of [HISTORY_DB, RECORD_DB]) {
     const source = path.join(from, database);
     if (!existsSync(source)) continue;
     const db = new DatabaseSync(source, { readOnly: true });
@@ -265,15 +321,17 @@ export async function backupStateDirectory(
     mkdirSync(path.dirname(path.join(to, LAB_MARKER)), { recursive: true });
     copyFileSync(marker, path.join(to, LAB_MARKER));
   }
-  const report = await verifyStateDirectory(to);
+  const scanned = await verifyStateDirectory(to);
   const manifest: BackupManifest = {
-    kind: 'otc-state-backup',
+    kind: BACKUP_MANIFEST_KIND,
     version: 1,
     takenAt: at,
     source: path.resolve(from),
-    assets: report.assets,
-    heads: report.heads,
+    assets: scanned.assets,
+    heads: scanned.heads,
   };
   writeFileSync(path.join(to, BACKUP_MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`);
+  // Verified as the operator will find it, manifest included (a7-01).
+  const report = await verifyStateDirectory(to);
   return { manifest, report };
 }
