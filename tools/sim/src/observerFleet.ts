@@ -9,7 +9,7 @@ import type { ObserverLoadReport } from './observerLoad.js';
  * The observer fleet (PH-30.3): ten thousand observers on one venue, from
  * several processes, with the venue's memory measured at every size.
  *
- *   npm run observer:fleet -- [--sizes 1000,2500,5000,10000] [--workers 8] [--hold 20000] [--per-connection 8] [--out report.md]
+ *   npm run observer:fleet -- [--sizes 1000,2500,5000,10000] [--workers 8] [--hold 20000] [--per-connection 8] [--arrival 2] [--out report.md]
  *
  * `CYCLE-8-OBSERVER-LOAD.md` stopped at two thousand from one process because
  * the harness had become what was measured. Here each worker holds its share
@@ -27,6 +27,8 @@ interface Options {
   readonly workers: number;
   readonly holdMs: number;
   readonly perConnection: number;
+  /** Milliseconds between one worker's connection attempts: the fleet's arrival rate is the workers over this. */
+  readonly arrivalMs: number;
   readonly out: string | null;
 }
 
@@ -36,6 +38,7 @@ export function parseFleetArgs(argv: readonly string[]): Options {
     workers: 8,
     holdMs: 20_000,
     perConnection: 8,
+    arrivalMs: 2,
     out: null as string | null,
   };
   for (let i = 0; i < argv.length; i += 2) {
@@ -50,6 +53,7 @@ export function parseFleetArgs(argv: readonly string[]): Options {
     else if (flag === '--workers') options.workers = Number(value);
     else if (flag === '--hold') options.holdMs = Number(value);
     else if (flag === '--per-connection') options.perConnection = Number(value);
+    else if (flag === '--arrival') options.arrivalMs = Number(value);
     else if (flag === '--out') options.out = value;
     else throw new RangeError(`Unknown option ${String(flag)}.`);
   }
@@ -58,6 +62,7 @@ export function parseFleetArgs(argv: readonly string[]): Options {
     ['--workers', options.workers],
     ['--hold', options.holdMs],
     ['--per-connection', options.perConnection],
+    ['--arrival', options.arrivalMs],
   ] as const) {
     if (!Number.isSafeInteger(n) || n < 1)
       throw new RangeError(`${name} must be a positive integer.`);
@@ -104,6 +109,7 @@ function worker(
   observers: number,
   holdMs: number,
   perConnection: number,
+  arrivalMs: number,
 ): Promise<ObserverLoadReport> {
   return new Promise((resolve, reject) => {
     const child = spawn(
@@ -115,6 +121,7 @@ function worker(
         String(observers),
         String(holdMs),
         String(perConnection),
+        String(arrivalMs),
       ],
       {
         stdio: ['ignore', 'pipe', 'inherit'],
@@ -145,6 +152,8 @@ export interface FleetRow {
   readonly during: Sample;
   readonly after: Sample;
   readonly complete: boolean;
+  /** Why observers were not established, added up over the workers. */
+  readonly refused: readonly { readonly reason: string; readonly count: number }[];
 }
 
 export function renderFleet(
@@ -165,6 +174,10 @@ export function renderFleet(
     '| observers | workers | established | connections | subscribers | RSS during (MB) | RSS after (MB) | MB per connection | ticks in window | gaps | duplicates | p50 | p99 | complete |',
     '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
     ...rows.map((r) => {
+      const refused =
+        r.refused.length === 0
+          ? ''
+          : ` — refused: ${r.refused.map((x) => `${String(x.count)} × ${x.reason}`).join('; ')}`;
       const perConnection =
         r.during.residentBytes === null ||
         baseline.residentBytes === null ||
@@ -176,7 +189,7 @@ export function renderFleet(
               1_048_576 /
               r.during.connections
             ).toFixed(3);
-      return `| ${String(r.observers)} | ${String(r.workers)} | ${String(r.established)} | ${String(r.during.connections)} | ${String(r.during.subscribers)} | ${mb(r.during.residentBytes)} | ${mb(r.after.residentBytes)} | ${perConnection} | ${String(r.ticksInWindow)} | ${String(r.gaps)} | ${String(r.duplicates)} | ${r.p50Ms.toFixed(0)}ms | ${r.p99Ms.toFixed(0)}ms | ${r.complete ? 'yes' : '**no**'} |`;
+      return `| ${String(r.observers)} | ${String(r.workers)} | ${String(r.established)} | ${String(r.during.connections)} | ${String(r.during.subscribers)} | ${mb(r.during.residentBytes)} | ${mb(r.after.residentBytes)} | ${perConnection} | ${String(r.ticksInWindow)} | ${String(r.gaps)} | ${String(r.duplicates)} | ${r.p50Ms.toFixed(0)}ms | ${r.p99Ms.toFixed(0)}ms | ${r.complete ? 'yes' : `**no**${refused}`} |`;
     }),
     '',
   ];
@@ -238,9 +251,11 @@ async function main(): Promise<void> {
       console.info(`--- ${String(size)} observers over ${String(workers)} workers ---`);
       // Sampled once every worker has connected and the window is well under
       // way: the connect phase is the share at the worker's arrival cadence.
-      const duringAt = Date.now() + share * 2 + Math.floor(options.holdMs * 0.6);
+      const duringAt = Date.now() + share * options.arrivalMs + Math.floor(options.holdMs * 0.6);
       const reports = Promise.all(
-        shares.map((n) => worker(baseUrl, assets, n, options.holdMs, options.perConnection)),
+        shares.map((n) =>
+          worker(baseUrl, assets, n, options.holdMs, options.perConnection, options.arrivalMs),
+        ),
       );
       let during: Sample = baseline;
       const sampler = (async (): Promise<void> => {
@@ -264,13 +279,23 @@ async function main(): Promise<void> {
         during,
         after,
         complete: done.every((r) => r.complete) && established === size,
+        refused: [
+          ...done
+            .flatMap((r) => r.refused)
+            .reduce(
+              (m, { reason, count }) => m.set(reason, (m.get(reason) ?? 0) + count),
+              new Map<string, number>(),
+            ),
+        ].map(([reason, count]) => ({ reason, count })),
       };
       rows.push(row);
       console.info(
         `established ${String(established)}/${String(size)}, connections ${String(during.connections)}, RSS ${String(during.residentBytes)}, gaps ${String(row.gaps)}, dups ${String(row.duplicates)}, p99 ${row.p99Ms.toFixed(0)}ms`,
       );
       if (!row.complete) {
-        console.info('stopping: the fleet could not be established whole');
+        console.info(
+          `stopping: the fleet could not be established whole — ${row.refused.map((r) => `${String(r.count)} × ${r.reason}`).join('; ') || 'no refusal was recorded'}`,
+        );
         break;
       }
       await new Promise((r) => setTimeout(r, 3_000));

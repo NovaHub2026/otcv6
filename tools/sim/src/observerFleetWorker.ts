@@ -5,10 +5,10 @@ import { runObserverLoad } from './observerLoad.js';
  * observers over the multiplexed stream and prints its report as one JSON
  * line, so the driver can add the fleet up without sharing a process with it.
  *
- *   node tools/sim/dist/observerFleetWorker.js <baseUrl> <assets,comma> <observers> <holdMs> <assetsPerConnection>
+ *   node tools/sim/dist/observerFleetWorker.js <baseUrl> <assets,comma> <observers> <holdMs> <assetsPerConnection> <arrivalMs>
  */
 async function main(): Promise<void> {
-  const [baseUrl, assets, observers, holdMs, perConnection] = process.argv.slice(2);
+  const [baseUrl, assets, observers, holdMs, perConnection, arrival] = process.argv.slice(2);
   if (
     baseUrl === undefined ||
     assets === undefined ||
@@ -25,7 +25,7 @@ async function main(): Promise<void> {
     observers: Number(observers),
     holdMs: Number(holdMs),
     assetsPerConnection: perConnection === undefined ? 1 : Number(perConnection),
-    arrivalMs: 2,
+    arrivalMs: arrival === undefined ? 2 : Number(arrival),
   });
   process.stdout.write(`${JSON.stringify(report)}\n`);
 }

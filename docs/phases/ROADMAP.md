@@ -886,8 +886,8 @@ decided; the integration package regenerated from the tag.
 | -------- | ------------------------------------------------------------------------------------------- | -------- |
 | PH-30.1  | Operations: readiness, liveness, metrics, admin credential, rate limits, unit files         | APPROVED |
 | PH-30.2  | The stream at scale: one multiplexed stream (#16); the operator's panel with holes, retired | APPROVED |
-| PH-30.3  | Ten thousand observers held, from several processes, memory measured at the target          | ACTIVE   |
-| PH-30.4  | The whole catalogue measured on the release build; the per-asset evidence complete          | PLANNED  |
+| PH-30.3  | Ten thousand observers held, from several processes, memory measured at the target          | APPROVED |
+| PH-30.4  | The whole catalogue measured on the release build; the per-asset evidence complete          | ACTIVE   |
 | PH-30.5  | Every open Issue closed or decided; the package regenerated; `v1.0.0` tagged and recorded   | PLANNED  |
 
 ## Known uncertainties

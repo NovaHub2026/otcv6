@@ -25,10 +25,10 @@ Last synchronized: 2026-09-05
 | ---------------------- | ------------------------------------------------------------------ |
 | Active phase           | PH-30 — Release 1.0: the engine as a broker integrates it          |
 | Phase lifecycle        | ACTIVE                                                             |
-| Active subphase        | PH-30.3 — Ten thousand observers                                   |
+| Active subphase        | PH-30.4 — The whole catalogue measured                             |
 | Subphase lifecycle     | ACTIVE                                                             |
 | Last approved phase    | PH-29 — The integration boundary: what a broker's settlement needs |
-| Last approved subphase | PH-30.2 — The stream at scale                                      |
+| Last approved subphase | PH-30.3 — Ten thousand observers                                   |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
@@ -195,7 +195,7 @@ on `audit/ca9-fixes`; that run replaces this block when it passes.
 
 ## EXACT NEXT LEGAL ACTION
 
-**Run PH-30.3 (the observer fleet at the target) on `feature/ph-30-release`; hosted CI on the PH-29 merge (`668efa9`) is recorded in the table above when it lands.**
+**Run PH-30.4 (the whole catalogue on the release build) on `feature/ph-30-release`; hosted CI on the PH-29 merge (`668efa9`) is recorded in the table above when it lands.**
 
 PH-27 is approved on its integrated phase verification (`GATE_EXIT=0` first
 attempt, 45 statistical files in 4,472 s) and is being merged. Cycle 9 is
