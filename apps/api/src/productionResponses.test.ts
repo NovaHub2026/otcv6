@@ -275,8 +275,11 @@ function prometheus(text: string): {
 const started: VenueService[] = [];
 const scratch: string[] = [];
 afterAll(async () => {
-  for (const d of scratch) rmSync(d, { recursive: true, force: true });
+  // Stopped before the directories go: a stop seals every open commitment
+  // window (Cycle Audit 10, a6-03), so the publication directory has to still
+  // be there when it runs.
   for (const venue of started) await venue.stop();
+  for (const d of scratch) rmSync(d, { recursive: true, force: true });
 });
 
 describe('no production response carries an engine snapshot, by value (INV-010)', () => {

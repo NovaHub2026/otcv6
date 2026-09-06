@@ -18,7 +18,13 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { EvictedError, UnknownSequenceError, type FeedSink } from '@otc/distribution';
+import {
+  CommitmentsFileError,
+  EvictedError,
+  UnknownSequenceError,
+  type FeedSink,
+  type PublicationProof,
+} from '@otc/distribution';
 import {
   ASSET_ARCHETYPES,
   archetypeById,
@@ -868,6 +874,31 @@ export class MarketController implements BeforeApplicationShutdown {
   }
 
   /**
+   * The proof, or a refusal that says the chain file itself is damaged.
+   *
+   * **Cycle Audit 10, a8-06.** The chain is streamed from the top for every
+   * proof, so a line cut mid-append — ENOSPC, a power loss — threw a bare
+   * `SyntaxError` out of this route for every sequence at or beyond it, which
+   * Nest served as `500 {"message":"Internal server error"}`: the one answer
+   * that tells a broker nothing about whether to retry, wait or escalate. The
+   * line is named; the path is not, because a public route is not where an
+   * operator learns the server's filesystem layout.
+   */
+  private async proof(id: string, wanted: number): Promise<PublicationProof> {
+    try {
+      return await this.venue.proofFor(id, wanted);
+    } catch (error) {
+      if (!(error instanceof CommitmentsFileError)) throw error;
+      throw new ServiceUnavailableException(
+        `The commitment chain for ${id} cannot be read` +
+          (error.line === null ? '' : ` past line ${error.line}`) +
+          `: the file is damaged, and no proof at or beyond that window is served until an ` +
+          `operator repairs it. Proofs of earlier sequences are unaffected.`,
+      );
+    }
+  }
+
+  /**
    * The inclusion proof of a published sequence (PH-29.1, INV-009).
    *
    * The signed commitment of the window holding the sequence, the Merkle path,
@@ -883,7 +914,7 @@ export class MarketController implements BeforeApplicationShutdown {
   async proofFor(@Param('id') id: string, @Param('sequence') sequence: string): Promise<unknown> {
     this.knownAsset(id);
     const wanted = sequenceParam(sequence);
-    const proof = await this.venue.proofFor(id, wanted);
+    const proof = await this.proof(id, wanted);
     if (proof.kind === 'not-published') {
       throw new NotFoundException(
         `This deployment does not publish commitments for ${id} (OTC_PUBLICATION_DIR is not set, ` +
@@ -891,11 +922,20 @@ export class MarketController implements BeforeApplicationShutdown {
       );
     }
     if (proof.kind === 'uncommitted') {
+      // Three refusals, not one. "Not yet" is a window that has not closed;
+      // "in a seam" is an interval the chain states and names both edges of;
+      // and only what is neither is the bare "no". Before Cycle Audit 10
+      // (a6-04) a seam and a window an operator had deleted answered in the
+      // same words, for ever.
       throw new ConflictException(
-        proof.committedThrough === null
-          ? `Sequence ${wanted} of ${id} is not in any committed window.`
-          : `Sequence ${wanted} of ${id} is published but not yet committed; the chain reaches ` +
-              `${proof.committedThrough}. Ask again when the window closes.`,
+        proof.interval !== undefined
+          ? `Sequence ${wanted} of ${id} falls in an interval this venue committed nothing ` +
+              `in: the chain covers through ${proof.interval.afterSequence} and resumes at ` +
+              `${proof.interval.fromSequence}. Nothing was published between them.`
+          : proof.committedThrough === null
+            ? `Sequence ${wanted} of ${id} is not in any committed window.`
+            : `Sequence ${wanted} of ${id} is published but not yet committed; the chain ` +
+              `reaches ${proof.committedThrough}. Ask again when the window closes.`,
       );
     }
     const recorded = await this.venue.recordedTick(id, wanted);

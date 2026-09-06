@@ -275,10 +275,15 @@ adelantadas (saltan del orden de 100.000), el stream empieza en la costura, y un
 se pierde: sigue en el registro, por secuencia (`/ticks/:sequence`) y por
 instante (`/price?at=`), y en el histórico de velas — pero el **hueco** no tiene
 precio: un `at` dentro de la costura es `409`, y la costura misma se lee en
-`GET /markets/:id/seams` (§3.7, §5). La cadena de compromisos
-**se reinicia** en la costura en vez de puentearla: `verifyCommitmentsFile`
-(de `@otc/distribution`) verifica las dos cadenas y nombra la ruptura en
-`breaks`.
+`GET /markets/:id/seams` (§3.7, §5). La cadena de compromisos **se sella** en la
+costura y **se reanuda** después de ella en vez de puentearla (Ciclo 10): la
+ventana abierta se cierra, por corta que sea — de modo que todo lo servido antes
+de la costura queda dentro de una ventana comprometida y tiene prueba —, y el
+enlace siguiente ata la cabeza sellada y declara la secuencia tras la que
+reanuda. `verifyCommitmentsFile` (de `@otc/distribution`) verifica una sola
+cadena y nombra el intervalo en `breaks`, con `bound: true` cuando su borde está
+atado. Una petición de prueba dentro del intervalo responde **409** nombrando
+sus dos extremos, no un «no» a secas.
 
 ### 3.5 Histórico de velas
 

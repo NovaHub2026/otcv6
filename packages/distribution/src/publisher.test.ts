@@ -167,3 +167,98 @@ describe('a restarted publisher continues one chain', () => {
     expect(closed[0]!.signed.commitment.fromSequence).toBe(21);
   });
 });
+
+/**
+ * Cycle Audit 10, a6-03 and a6-04.
+ *
+ * The open window used to end with the process: the release run left 5,749
+ * served ticks in no committed window, across all thirty markets, in one
+ * deploy — and answered `409` to a proof of any of them, for ever. And the
+ * chain that resumed afterwards began at an empty root, bound to what preceded
+ * it by nothing, so a window cut from the earlier tail read exactly like the
+ * honest gap.
+ */
+describe('a chain that stops is sealed, and one that resumes binds what it resumes after', () => {
+  it('seals the open window short, then continues after it without overlapping it', () => {
+    const p = publisher();
+    p.observe(ticks(1, 25));
+    expect(p.pendingTicks).toBe(5);
+    const sealed = p.sealChain();
+    expect(sealed).not.toBeNull();
+    expect(sealed!.signed.commitment.fromSequence).toBe(21);
+    expect(sealed!.signed.commitment.toSequence).toBe(25);
+    expect(sealed!.signed.commitment.count).toBe(5);
+    expect(p.pendingTicks).toBe(0);
+    // Idempotent: nothing is open, so nothing is written twice.
+    expect(p.sealChain()).toBeNull();
+    // And the next window starts after it. A short window followed by a
+    // disjoint one is not the overlap the open window exists to avoid.
+    const next = p.observe(ticks(26, 10));
+    expect(next[0]!.signed.commitment.fromSequence).toBe(26);
+    expect(
+      verifySignedChain(
+        [sealed!, ...next].map((w) => w.signed),
+        identity,
+      ),
+    ).toBeNull();
+  });
+
+  it('proves a tick that was in the open window once the chain is sealed', () => {
+    const p = publisher();
+    p.observe(ticks(1, 13));
+    const sealed = p.sealChain()!;
+    const proof = proveInclusion(sealed.ticks, 12);
+    expect(verifyInclusion(sealed.signed.commitment, proof)).toBe(true);
+  });
+
+  it('writes a resume link that binds the sealed head and declares the interval', () => {
+    const first = publisher();
+    const before = first.observe(ticks(1, 25));
+    const sealed = first.sealChain()!;
+
+    const second = publisher({ previousRoot: first.chainTip, resumesAfter: first.tipSequence! });
+    const after = second.observe(ticks(100_101, 10));
+    const resume = after[0]!.signed.commitment;
+    expect(resume.previousRoot).toBe(sealed.signed.commitment.root);
+    expect(resume.resumesAfter).toBe(25);
+    expect(resume.fromSequence).toBe(100_101);
+    // One chain, still: the hash link is unbroken across the interval.
+    const whole = [...before, sealed, ...after].map((w) => w.signed);
+    expect(verifySignedChain(whole, identity)).toBeNull();
+  });
+
+  it('writes an ordinary link when the first tick continues the head after all', () => {
+    // A market told it seamed and then publishing contiguously has no gap to
+    // declare, and a declaration with nothing behind it is noise in the record.
+    const first = publisher();
+    first.observe(ticks(1, 20));
+    const second = publisher({ previousRoot: first.chainTip, resumesAfter: first.tipSequence! });
+    const closed = second.observe(ticks(21, 10));
+    expect(closed[0]!.signed.commitment.resumesAfter).toBeUndefined();
+    expect(closed[0]!.signed.commitment.fromSequence).toBe(21);
+  });
+
+  it('restarts at an empty root rather than restate what the head already covers', () => {
+    // PH-28.3's own case: the record a market would have been folded from is
+    // gone, so it resumes from a checkpoint that lies *behind* the chain's tip
+    // and republishes sequences the chain has already committed. One chain
+    // cannot hold two roots over one range and a resume link declaring this
+    // would be a lie about where its predecessor ended, so the chain restarts
+    // — the break is unbound, which is what an unbound break says. Refusing
+    // would stop the market instead of recording what happened to it.
+    const first = publisher();
+    first.observe(ticks(1, 20));
+    const second = publisher({ previousRoot: first.chainTip, resumesAfter: first.tipSequence! });
+    const closed = second.observe(ticks(15, 10));
+    expect(closed[0]!.signed.commitment.previousRoot).toBe('');
+    expect(closed[0]!.signed.commitment.resumesAfter).toBeUndefined();
+    expect(closed[0]!.signed.commitment.fromSequence).toBe(15);
+  });
+
+  it('refuses to resume after a head it is not given, or with a sequence it cannot have', () => {
+    expect(() => publisher({ resumesAfter: 20 })).toThrow(/must be told the root it resumes after/);
+    expect(() =>
+      publisher({ previousRoot: 'ab'.repeat(32), resumesAfter: 20, nextSequence: 21 }),
+    ).toThrow(/cannot both resume after a gap/);
+  });
+});

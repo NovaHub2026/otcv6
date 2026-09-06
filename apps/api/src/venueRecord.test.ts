@@ -1,11 +1,12 @@
 // Invariant evidence: INV-002 (shared market), INV-008 (continuous market state), INV-009 (reproducible settlement).
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Logger } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import {
   EvictedError,
+  proveFromPublication,
   publicKeyHex,
   publishingKeyFromSeed,
   readCommitmentsStream,
@@ -37,6 +38,7 @@ import {
   type TickRecord,
 } from '@otc/runtime';
 import { HistoryService } from './history.service.js';
+import { MarketController } from './market.controller.js';
 import { PublicationService } from './publication.service.js';
 import { VenueService } from './venue.service.js';
 
@@ -304,6 +306,10 @@ describe('the record outlives the process (PH-28.1)', () => {
       expect(signed.commitment.fromSequence).toBe(expected);
       expected = signed.commitment.toSequence + 1;
     }
+    // `first` is a killed process, and it is stopped only here, after every
+    // assertion: a stop now *seals* its open window (Cycle Audit 10, a6-03),
+    // and appending it to a file the second process already owns would put a
+    // window after windows that follow it. A real kill never reaches `stop`.
     await first.stop();
     await second.stop();
     await rm(directory, { recursive: true, force: true });
@@ -338,7 +344,7 @@ describe('the record outlives the process (PH-28.1)', () => {
     const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     await second.start();
     expect(errors.mock.calls.map((c) => String(c[0])).join('\n')).toMatch(
-      /restarted at an empty root/,
+      /sealed there and resumed after the gap/,
     );
     errors.mockRestore();
     expect(second.stalledMarkets).toEqual([]);
@@ -350,7 +356,18 @@ describe('the record outlives the process (PH-28.1)', () => {
     // deduplicated, so the second chain begins at the resume point and
     // overlaps the first — which is what happened, and what a verifier must
     // be able to see rather than a window that binds a tip it does not follow.
-    const links: { previousRoot: string; fromSequence: number; toSequence: number }[] = [];
+    //
+    // **This is the case a resume link cannot state (Cycle Audit 10).** The
+    // chain is told to resume after sequence N and the market hands it a tick
+    // at or before N: one chain cannot hold two roots over one range, so the
+    // publisher falls back to a restart at an empty root and the break is
+    // reported **unbound** — which is exactly what an unbound break means.
+    const links: {
+      previousRoot: string;
+      fromSequence: number;
+      toSequence: number;
+      root: string;
+    }[] = [];
     const file = path.join(directory, ID, 'commitments.ndjson');
     for await (const { signed } of readCommitmentsStream(file)) links.push(signed.commitment);
     const genesis = links.map((l, i) => (l.previousRoot === '' ? i : -1)).filter((i) => i >= 0);
@@ -364,7 +381,13 @@ describe('the record outlives the process (PH-28.1)', () => {
     );
     expect(verdict.ok, JSON.stringify(verdict.error)).toBe(true);
     expect(verdict.breaks).toEqual([
-      { link: restart, afterSequence: links[restart - 1]!.toSequence, fromSequence: resumedFrom },
+      {
+        link: restart,
+        afterSequence: links[restart - 1]!.toSequence,
+        afterRoot: links[restart - 1]!.root,
+        fromSequence: resumedFrom,
+        bound: false,
+      },
     ]);
     expect(links[restart]!.fromSequence).toBe(resumedFrom);
     expect(links[restart]!.fromSequence).toBeLessThanOrEqual(links[restart - 1]!.toSequence);
@@ -503,29 +526,138 @@ describe('a restart past the catch-up bound seams the record (PH-30.4)', () => {
     sequencesContiguous(third.feed.since(ID, seam));
     await third.stop();
 
-    // Two chains in the file: the second begins at the seam, and within each
-    // every window follows the one before it.
+    // **One chain, and nothing served outside it (Cycle Audit 10, a6-03 and
+    // a6-04).** PH-30.4 restarted the chain at an empty root here, and both
+    // halves of that cost the record something permanent. The window open when
+    // the first process stopped went with it — 5,749 served ticks across the
+    // release run's thirty markets, in no committed window for ever, answering
+    // 409 to any proof of them — and the second chain was bound to the first
+    // by nothing, so a window deleted from the first chain's tail was
+    // indistinguishable from the honest gap.
     const file = path.join(directory, ID, 'commitments.ndjson');
     const verified = await verifyCommitmentsFile(
       file,
       publicKeyHex(publishingKeyFromSeed(env.OTC_PUBLISHING_KEY)),
     );
     expect(verified.ok, JSON.stringify(verified.error)).toBe(true);
-    const links: { previousRoot: string; fromSequence: number; toSequence: number }[] = [];
+    const links: {
+      previousRoot: string;
+      fromSequence: number;
+      toSequence: number;
+      root: string;
+      resumesAfter?: number;
+    }[] = [];
     for await (const { signed } of readCommitmentsStream(file)) links.push(signed.commitment);
     const genesis = links.map((l, i) => (l.previousRoot === '' ? i : -1)).filter((i) => i >= 0);
-    expect(genesis).toEqual([0, expect.any(Number)]);
-    expect(links[genesis[1]!]!.fromSequence).toBe(seam);
+    expect(genesis).toEqual([0]);
+    const resume = links.findIndex((l) => l.resumesAfter !== undefined);
+    expect(resume).toBeGreaterThan(0);
+    expect(links[resume]!.fromSequence).toBe(seam);
+    // The chain is sealed exactly at the record's head, so every tick the first
+    // process served is inside a committed window — and the interval the second
+    // process resumes after is the outage, not the outage plus a window.
+    expect(links[resume]!.resumesAfter).toBe(firstHead);
+    expect(links[resume - 1]!.toSequence).toBe(firstHead);
     expect(verified.breaks).toEqual([
-      { link: genesis[1], afterSequence: links[genesis[1]! - 1]!.toSequence, fromSequence: seam },
+      {
+        link: resume,
+        afterSequence: firstHead,
+        afterRoot: links[resume - 1]!.root,
+        fromSequence: seam,
+        bound: true,
+      },
     ]);
+    // And the proof of the last tick before the seam is served, rather than
+    // `409 not in any committed window`, for ever.
+    expect((await proveFromPublication(directory, ID, firstHead)).kind).toBe('proved');
     for (let i = 1; i < links.length; i += 1) {
-      if (genesis.includes(i)) continue;
+      if (i === resume) continue;
       expect(links[i]!.fromSequence).toBe(links[i - 1]!.toSequence + 1);
     }
-    // The new chain closed at least one window of its own.
-    expect(links.length).toBeGreaterThan(genesis[1]! + 0);
+    // The resumed market closed at least one window of its own.
+    expect(links.length).toBeGreaterThan(resume);
     expect(links[links.length - 1]!.toSequence).toBeGreaterThanOrEqual(seam + 99);
+    await rm(directory, { recursive: true, force: true });
+  });
+});
+
+/**
+ * Cycle Audit 10, a6-03: retirement is the other place the chain stops.
+ *
+ * Nothing will ever fill a retired market's open window, so leaving it open
+ * puts the market's last ticks permanently outside the record's own evidence
+ * — the same loss a deploy used to make, minus the deploy.
+ */
+describe('retiring a market seals its chain (Cycle Audit 10)', () => {
+  it('commits the tail it served, so its last tick has a proof', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'otc-retire-'));
+    const env = { OTC_PUBLICATION_DIR: directory, OTC_PUBLISHING_KEY: '48'.repeat(32) };
+    const record = new MemoryTickRecord();
+    const clock = new SteppableClock(GENESIS);
+    const service = venue(
+      new MemoryStateStore(),
+      clock,
+      new InMemoryCandleHistory(),
+      record,
+      // A window wide enough that the run below closes none of its own.
+      new PublicationService([asset], 100_000, env),
+    );
+    await service.start();
+    await run(service, clock, 20);
+    const head = (await record.head(ID))!;
+    expect(head).toBeGreaterThan(50);
+    await service.retire(ID);
+    const file = path.join(directory, ID, 'commitments.ndjson');
+    const verdict = await verifyCommitmentsFile(
+      file,
+      publicKeyHex(publishingKeyFromSeed(env.OTC_PUBLISHING_KEY)),
+    );
+    expect(verdict.ok, JSON.stringify(verdict.error)).toBe(true);
+    expect(verdict.tip?.toSequence).toBe(head);
+    expect((await proveFromPublication(directory, ID, head)).kind).toBe('proved');
+    await service.stop();
+    await rm(directory, { recursive: true, force: true });
+  });
+});
+
+/**
+ * Cycle Audit 10, a2-04, a3-08 and a8-06.
+ *
+ * The chain is appended with `appendFileSync` and never fsynced, so ENOSPC or
+ * a power loss can leave a partial last line. The refuter measured what that
+ * did to this route on a live venue: proofs resolved *before* the torn line
+ * still answered 200, and every proof at or beyond it answered
+ * `500 {"statusCode":500,"message":"Internal server error"}` — a bare
+ * `SyntaxError` out of `proveFromPublication`, naming nothing, for exactly the
+ * recent sequences a broker settling asks about.
+ */
+describe('a chain file cut mid-append answers by name, not with a bare 500 (Cycle Audit 10)', () => {
+  it('serves proofs before the damage and refuses past it, naming the line', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'otc-torn-'));
+    const env = { OTC_PUBLICATION_DIR: directory, OTC_PUBLISHING_KEY: '47'.repeat(32) };
+    const clock = new SteppableClock(GENESIS);
+    const service = venue(
+      new MemoryStateStore(),
+      clock,
+      new InMemoryCandleHistory(),
+      new MemoryTickRecord(),
+      new PublicationService([asset], 20, env),
+    );
+    await service.start();
+    await run(service, clock, 30);
+    const controller = new MarketController(service);
+    const file = path.join(directory, ID, 'commitments.ndjson');
+    const lines = (await readFile(file, 'utf8')).split('\n').filter((l) => l.length > 0);
+    expect(lines.length).toBeGreaterThan(3);
+    await writeFile(file, `${lines.slice(0, 2).join('\n')}\n${lines[2]!.slice(0, 180)}`);
+    // Window one is whole and still proves.
+    expect(await controller.proofFor(ID, '5')).toMatchObject({ assetId: ID, sequence: 5 });
+    // The third window is where the file stops being readable, and the refusal
+    // says so rather than "Internal server error".
+    await expect(controller.proofFor(ID, '45')).rejects.toThrow(
+      /The commitment chain for .* cannot be read past line 3: the file is damaged/,
+    );
+    await service.stop();
     await rm(directory, { recursive: true, force: true });
   });
 });

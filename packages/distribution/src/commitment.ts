@@ -52,6 +52,17 @@ import type { Tick } from '@otc/core';
 const LEAF_TAG = 0x00;
 const NODE_TAG = 0x01;
 const ROOT_TAG = 0x02;
+/**
+ * A **resume link**: a window that binds its predecessor by root and does not
+ * continue it in sequence.
+ *
+ * Its own tag, so the two shapes cannot be confused by construction — the same
+ * domain separation {@link LEAF_TAG} exists for. A link cannot be dressed as a
+ * resume, or stripped of one, without changing its root, and a root that
+ * changes invalidates every root after it. That is what makes the interval a
+ * resume declares evidence rather than a claim (Cycle Audit 10, a6-04).
+ */
+const RESUME_ROOT_TAG = 0x03;
 
 export interface Commitment {
   readonly assetId: string;
@@ -63,6 +74,26 @@ export interface Commitment {
   readonly count: number;
   /** Root of the preceding window, or the empty string for the first. */
   readonly previousRoot: string;
+  /**
+   * Present only on a **resume link**: the last sequence the window named by
+   * {@link previousRoot} covered.
+   *
+   * A market's record is not always contiguous. A restart past the 15 s
+   * catch-up bound — which every deploy is — jumps the sequences by the lease,
+   * and a record that cannot reach the chain's tip leaves an interval nobody
+   * can commit to. Before Cycle Audit 10 the chain answered that by starting
+   * again at an empty root, which lost the one thing worth keeping: the file
+   * then held two chains bound to each other by nothing, so a window deleted
+   * from the tail of the earlier one was indistinguishable from the honest
+   * gap (a6-04), and the anchor could not summarise the file at all (a6-12).
+   *
+   * A resume link instead **binds the head the earlier run ended at** —
+   * `previousRoot` is that head's root and `resumesAfter` is the sequence it
+   * ended at — and declares that its own `fromSequence` is beyond it. The
+   * hash chain is therefore unbroken for the life of the market; what is
+   * discontinuous, and stated, is the sequence coverage.
+   */
+  readonly resumesAfter?: number;
   /** Hex SHA-256. */
   readonly root: string;
 }
@@ -191,6 +222,28 @@ function foldLevel(level: readonly Buffer[]): Buffer[] {
   return next;
 }
 
+/**
+ * The root preimage, in the one shape each kind of link has.
+ *
+ * Shared by {@link commit} and {@link verifyInclusion} so the two can never
+ * drift: a verifier that computed a different preimage from the writer would
+ * reject every honest proof, and one that computed a laxer one would accept a
+ * forged link.
+ */
+function rootOf(commitment: Omit<Commitment, 'root'>, merkle: Buffer): Buffer {
+  const head = [
+    framed(Buffer.from(commitment.assetId, 'utf8')),
+    u64(commitment.fromSequence),
+    u64(commitment.toSequence),
+    u64(commitment.count),
+    framed(Buffer.from(commitment.previousRoot, 'hex')),
+  ];
+  if (commitment.resumesAfter === undefined) {
+    return sha256([Buffer.of(ROOT_TAG), ...head, merkle]);
+  }
+  return sha256([Buffer.of(RESUME_ROOT_TAG), ...head, u64(commitment.resumesAfter), merkle]);
+}
+
 function merkleRoot(leaves: readonly Buffer[]): Buffer {
   let level = [...leaves];
   while (level.length > 1) level = foldLevel(level);
@@ -221,30 +274,50 @@ function assertRange(ticks: readonly Tick[]): void {
  *   be checked to tile without gaps, and a differently-sized tree cannot match.
  * - **previousRoot** — the chain is append-only. Rewriting any earlier window
  *   invalidates every root after it, so history cannot be quietly restated.
+ * - **resumesAfter**, on a resume link — the sequence the bound predecessor
+ *   ended at, so the interval the record does not cover is stated by the link
+ *   that crosses it rather than inferred by whoever reads the file.
  */
-export function commit(assetId: string, ticks: readonly Tick[], previousRoot = ''): Commitment {
+export function commit(
+  assetId: string,
+  ticks: readonly Tick[],
+  previousRoot = '',
+  resumesAfter?: number,
+): Commitment {
   assertAssetId(assetId);
   assertPreviousRoot(previousRoot);
   assertRange(ticks);
+  if (resumesAfter !== undefined) {
+    if (previousRoot === '') {
+      throw new CommitmentError(
+        'A resume link binds the head the earlier run ended at, so it cannot be a genesis ' +
+          'link. Pass the root it resumes after, or commit without resumesAfter.',
+      );
+    }
+    if (!Number.isSafeInteger(resumesAfter) || resumesAfter < 0) {
+      throw new CommitmentError(
+        `resumesAfter must be a non-negative safe integer, received ${String(resumesAfter)}.`,
+      );
+    }
+    if (ticks[0]!.sequence <= resumesAfter + 1) {
+      throw new CommitmentError(
+        `A resume link declares an interval the record does not cover, and ` +
+          `${ticks[0]!.sequence} follows ${resumesAfter} with nothing between. A window that ` +
+          `continues its predecessor is an ordinary link; one that overlaps it is a restatement.`,
+      );
+    }
+  }
   const leaves = ticks.map(leafHash);
   const merkle = merkleRoot(leaves);
-  const root = sha256([
-    Buffer.of(ROOT_TAG),
-    framed(Buffer.from(assetId, 'utf8')),
-    u64(ticks[0]!.sequence),
-    u64(ticks[ticks.length - 1]!.sequence),
-    u64(ticks.length),
-    framed(Buffer.from(previousRoot, 'hex')),
-    merkle,
-  ]);
-  return {
+  const fields = {
     assetId,
     fromSequence: ticks[0]!.sequence,
     toSequence: ticks[ticks.length - 1]!.sequence,
     count: ticks.length,
     previousRoot,
-    root: root.toString('hex'),
+    ...(resumesAfter === undefined ? {} : { resumesAfter }),
   };
+  return { ...fields, root: rootOf(fields, merkle).toString('hex') };
 }
 
 /** An inclusion proof for one tick in a committed range. */
@@ -316,6 +389,14 @@ export function verifyInclusion(commitment: Commitment, proof: InclusionProof): 
 function verifyInclusionOrThrow(commitment: Commitment, proof: InclusionProof): boolean {
   if (!Number.isSafeInteger(commitment.count) || commitment.count < 1) return false;
   if (!Number.isSafeInteger(commitment.fromSequence)) return false;
+  // A resume link's root is computed under its own tag and binds `resumesAfter`,
+  // so a proof against one only verifies when the field is read as published.
+  if (
+    commitment.resumesAfter !== undefined &&
+    (!Number.isSafeInteger(commitment.resumesAfter) || commitment.resumesAfter < 0)
+  ) {
+    return false;
+  }
   if (!Number.isSafeInteger(proof.index) || !Number.isSafeInteger(proof.sequence)) return false;
   if (!Number.isSafeInteger(proof.instant) || !Number.isSafeInteger(proof.price)) return false;
   // Narrowed into a fresh array rather than checked in place: `Array.isArray`
@@ -356,24 +437,26 @@ function verifyInclusionOrThrow(commitment: Commitment, proof: InclusionProof): 
   // redundant: accepting it would let a forger append junk that never gets read.
   if (consumed !== path.length) return false;
 
-  const expected = sha256([
-    Buffer.of(ROOT_TAG),
-    framed(Buffer.from(commitment.assetId, 'utf8')),
-    u64(commitment.fromSequence),
-    u64(commitment.toSequence),
-    u64(commitment.count),
-    framed(Buffer.from(commitment.previousRoot, 'hex')),
-    hash,
-  ]);
-  return expected.toString('hex') === commitment.root;
+  return rootOf(commitment, hash).toString('hex') === commitment.root;
 }
 
 /**
- * Check that a chain of commitments is append-only and tiles the record.
+ * Check that a chain of commitments is append-only and covers the record.
  *
  * Returns the first problem found, or `null`. Reported rather than thrown so a
  * verifier can show a counterparty exactly where a published history stops
  * being consistent.
+ *
+ * ## Windows tile, except where a link says they do not
+ *
+ * A **resume link** (`resumesAfter`) declares that the record it belongs to
+ * has an interval nobody published — a deploy-length restart's seam, or a
+ * record that could not reach the tip. It is still a link: it binds its
+ * predecessor's root, is for the same asset, and states the sequence that
+ * predecessor ended at. So the hash chain is unbroken and the *coverage* is
+ * discontinuous exactly where a signed link says so, which is the difference
+ * between an interval a reader can bound and one an operator can widen by
+ * deleting windows (Cycle Audit 10, a6-04).
  */
 export function verifyChain(commitments: readonly Commitment[]): string | null {
   if (commitments.length === 0) return 'The chain is empty.';
@@ -389,6 +472,17 @@ export function verifyChain(commitments: readonly Commitment[]): string | null {
       if (link.previousRoot !== '' && !/^[0-9a-f]{64}$/i.test(link.previousRoot)) {
         return `Commitment 0 has a previousRoot that is neither empty nor a digest.`;
       }
+      // A genesis link resumes nothing: there is no head for it to bind, so a
+      // declaration on it is a claim about a predecessor it does not have.
+      // (A resume link carries a digest, so it is never this branch's case
+      // when the array begins at a real genesis; a caller who hands over a
+      // slice starting mid-chain gets element 0 unchecked, as it always has.)
+      if (link.previousRoot === '' && link.resumesAfter !== undefined) {
+        return (
+          `Commitment 0 declares a resume and is a genesis link, so there is no head for it ` +
+          `to resume after.`
+        );
+      }
       continue;
     }
     const previous = commitments[i - 1]!;
@@ -403,6 +497,29 @@ export function verifyChain(commitments: readonly Commitment[]): string | null {
     }
     if (!Number.isSafeInteger(link.toSequence) || !Number.isSafeInteger(link.fromSequence)) {
       return `Commitment ${i} has a sequence outside the safe integer range.`;
+    }
+    if (link.resumesAfter !== undefined) {
+      if (!Number.isSafeInteger(link.resumesAfter)) {
+        return `Commitment ${i} has a resumesAfter outside the safe integer range.`;
+      }
+      // The whole value of the declaration: it names where the predecessor
+      // ended, so windows cut from the earlier run's tail are refused here
+      // rather than read as a wider honest gap (Cycle Audit 10, a6-04).
+      if (link.resumesAfter !== previous.toSequence) {
+        return (
+          `Commitment ${i} resumes after sequence ${link.resumesAfter}, but commitment ` +
+          `${i - 1} ends at ${previous.toSequence}. The record between them is not the one ` +
+          `this link was signed over.`
+        );
+      }
+      if (link.fromSequence - previous.toSequence <= 1) {
+        return (
+          `Commitment ${i} declares a resume but starts at ${link.fromSequence}, which ` +
+          `follows ${previous.toSequence} with nothing between. A window that continues its ` +
+          `predecessor is an ordinary link.`
+        );
+      }
+      continue;
     }
     // `previous.toSequence + 1 === previous.toSequence` at 2^53, so a naive
     // comparison lets two windows share a sequence (Cycle Audit 4, M-4).

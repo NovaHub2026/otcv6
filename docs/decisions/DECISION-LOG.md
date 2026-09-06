@@ -913,3 +913,106 @@ and staying lost, release touching only its own grant, and the lock invisible to
 `apps/api/src/venueStall.test.ts` (a stalled market's checkpoint frozen, and the
 restart seaming and publishing again). Every one was watched failing on the
 unfixed code, with the failures recorded in the audit's fix rationale.
+
+## 2026-09-06 — The chain is sealed where it stops and resumed by a link that binds the head; a seam no longer starts a second chain (Cycle Audit 10)
+
+**Context.** PH-30.4, earlier the same day, made a seam **restart** the chain at
+an empty root rather than bridge it. That was right as far as it went, and
+Cycle Audit 10 measured what it left behind, in the release run's own
+artefacts.
+
+- **a6-03** (confirmed). The window open when a process stops went with the
+  process: `restartChain` replaced the publisher and dropped its pending ticks,
+  and the next chain began at the seam, so nothing ever closed that window.
+  **5,749 ticks that had been served — and could have settled contracts — were
+  in no committed window, in all thirty markets, permanently**, and
+  `/proof` answered `409 not in any committed window` for them for ever. The
+  loss is per deploy.
+- **a6-04**. A window deleted from the tail of the earlier chain by whoever
+  holds the publishing key is _indistinguishable_ from that honest loss: the
+  file verifier still says `ok: true` with a wider break, the proof route
+  answers the same words, and the anchor and a rotation over the newer chain
+  are byte-identical either way.
+- **a6-12** (partial; the refuter narrowed the title and kept the mechanism).
+  `summarise` verified the whole array with `verifyChain`, which requires every
+  link after the first to carry a digest, so `buildAnchor` threw on any file
+  holding a seam — thirty of thirty in the release run. The anchor is what
+  makes the chain evidence against the operator rather than a number the
+  operator serves.
+- **a2-04, a3-08, a8-06** (confirmed; the boot half executed by two refuters).
+  Every reader of the file called `JSON.parse` bare, and the chain is the one
+  durable file here that is never fsynced. One torn last line took the boot of
+  all thirty markets down with a `SyntaxError` naming no file and no asset, and
+  made `verifyCommitmentsFile` throw instead of returning the
+  `{ok:false, error:{line, detail}}` its own verdict type promises.
+
+**Decision.**
+
+- **Seal, then resume.** Where the chain stops growing — a clean stop, a
+  retirement, the moment a seam is found — the open window is closed however
+  short (`CommitmentPublisher.sealChain`), so the chain ends exactly where the
+  record does. The publisher's standing objection to committing a partial
+  window is that committing and then extending would put two roots over one
+  range; a _terminal_ short window is never extended, so the objection does not
+  reach it.
+- **A resume link, not a second chain.** The window after the interval binds
+  the sealed head in `previousRoot` and declares the sequence that head ended
+  at in a new `resumesAfter` field. The field is inside the root, under its own
+  domain tag, and inside the signature, so it cannot be added, removed or moved
+  without invalidating every root after it. The hash chain is therefore
+  unbroken for the life of a market; what is discontinuous, and signed, is the
+  coverage. `verifyChain` checks `resumesAfter` against the predecessor's
+  `toSequence`, which is what turns a6-04's cut from invisible into a refusal
+  at the line where the cut is.
+- **`breaks` grows `afterRoot` and `bound`.** A break is now an interval the
+  file commits nothing in, and it says whether its near edge is attested.
+  Unbound breaks still exist and are still accepted, for two reasons that are
+  not going away: every file written before today holds one, and a market that
+  resumes at a sequence the chain **already covers** (PH-28.3's lost-record
+  case) cannot be described by a resume link at all — one chain cannot hold two
+  roots over one range — so the publisher falls back to a restart at an empty
+  root rather than sign a declaration that is false about its predecessor.
+  Refusing instead would stop the market to protect the file, which is the
+  wrong way round.
+- **The anchor's unit is the asset, not the unbroken chain.** `summarise`
+  splits a file where a genesis link appears mid-array, verifies each piece,
+  and publishes the head root of the whole plus the breaks between the pieces.
+  `verifyAnchor` refuses an anchor that understates its breaks and
+  `extendsAnchor` refuses a later anchor that has lost one, because across an
+  _unbound_ break the head-root match certifies nothing about the prefix.
+- **A file cut mid-append is refused by name, and repaired by nobody.**
+  `chainTipOf` treats bytes after the file's last newline as a line that was
+  never finished — a window is appended as one `${json}\n`, so the only prefix
+  of it ending in a newline is all of it — and refuses at boot naming the
+  asset, the file, the bytes lost and the byte to truncate to. It does not
+  bridge (appending after a fragment would write the next window onto the
+  fragment's own line, destroying a second window to hide the first) and it
+  does not truncate (an evidence file is not repaired by the process that found
+  it damaged, and there is no env flag to wave it through). The readers raise
+  `CommitmentsFileError` naming the line, so the verifier answers rather than
+  throws, and `/proof` gives a named `503` past the damage instead of a bare
+  `500`.
+
+**Deliberately not built.** a6-04 also proposed a `chain:verify` command that
+cross-checks each break against `record.db`, on the grounds that no consumer in
+the repository read `breaks`. Not built: with a bound break the file verifier
+itself refuses the cut, which is stronger than a tool that has to be run, and
+`breaks` now has three consumers in-tree (`summarise`, `verifyAnchor`,
+`extendsAnchor`) plus the proof route's named interval. What such a command
+would still add is a check over the _legacy_ unbound breaks in files already
+written; that is worth building when a second operator has to audit a
+deployment they did not run, and it is written down here so it is not
+rediscovered.
+
+**Guards.** Each was watched failing with the fix reverted in place, and the
+exact failures are in `/home/alejo/.otc-audit10/findings/fix-chain.md`.
+`publisher.test.ts` — the seal, the resume link, and the fall back to an empty
+root where the record goes backwards. `commitmentsFile.test.ts` — the sealed
+tail committed, the bound break, the a6-04 cut refused at line 3, a resume that
+disagrees with the head it binds, a torn file's verdict, and the boot refusal
+by asset. `anchor.test.ts` — an anchor over a seamed record, over a file the
+old code wrote, and refusals for an anchor that understates its breaks or a
+later one that has lost an interval. `journalFile.test.ts` — the named interval
+on a `/proof` refusal, and proofs before a torn line surviving it.
+`venueRecord.test.ts` — three real boots: one chain, sealed exactly at the
+record's head, the break bound, and `proof(firstHead)` **proved**.

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, type Tick } from '@otc/core';
 import { CommitmentError, verifyInclusion } from './commitment.js';
+import { CommitmentsFileError } from './commitmentsFile.js';
 import { JournalFileError, proveFromPublication, readJournalFile } from './journalFile.js';
 import { PublicationWriter } from './publicationWriter.js';
 import { publicKeyHex, publishingKeyFromSeed, verifyCommitment } from './signing.js';
@@ -122,13 +123,48 @@ describe('a proof comes from the archive (PH-29.1)', () => {
       [lines[0]!.replace('"ticks":10', '"ticks":9'), ...lines.slice(1, 10)].join('\n'),
     );
     await expect(proveFromPublication(directory, 'eurusd', 15)).rejects.toThrow(CommitmentError);
-    // A chain restarted at 31: sequences 21-30 were never committed.
-    writer.restartChain('eurusd');
+    // A chain resumed at 31: sequences 21-30 were never committed, and the
+    // refusal names the interval's two edges rather than saying only "no"
+    // (Cycle Audit 10, a6-04).
+    writer.seamChain('eurusd');
     writer.observe('eurusd', ticks(31, 10));
     expect(await proveFromPublication(directory, 'eurusd', 25)).toEqual({
       kind: 'uncommitted',
       committedThrough: null,
+      interval: { afterSequence: 20, fromSequence: 31 },
     });
     expect((await proveFromPublication(directory, 'eurusd', 35)).kind).toBe('proved');
+  });
+});
+
+/**
+ * Cycle Audit 10, a8-06 (refuter-measured).
+ *
+ * `proveFromPublication` streams the chain from the top and stops at the first
+ * window that spans the sequence, so a torn line does not break every proof —
+ * it breaks every proof **at or beyond** it, which is every proof of a recent
+ * sequence and so every proof a broker settling actually asks for. It did that
+ * by throwing a bare `SyntaxError` out of the route, which Nest served as a
+ * `500 Internal server error` naming nothing.
+ */
+describe('a proof over a chain file that was cut mid-append (Cycle Audit 10)', () => {
+  it('still proves what precedes the torn line, and names the line beyond it', async () => {
+    const directory = await scratch();
+    const writer = new PublicationWriter({
+      directory,
+      windowTicks: 10,
+      privateKey: KEY,
+      assets: [SPEC],
+    });
+    writer.observe('eurusd', ticks(1, 40));
+    const file = path.join(directory, 'eurusd', 'commitments.ndjson');
+    const lines = (await readFile(file, 'utf8')).split('\n').filter((l) => l.length > 0);
+    await writeFile(file, `${lines.slice(0, 2).join('\n')}\n${lines[2]!.slice(0, 180)}`);
+    expect((await proveFromPublication(directory, 'eurusd', 5)).kind).toBe('proved');
+    expect((await proveFromPublication(directory, 'eurusd', 20)).kind).toBe('proved');
+    await expect(proveFromPublication(directory, 'eurusd', 25)).rejects.toThrow(
+      CommitmentsFileError,
+    );
+    await expect(proveFromPublication(directory, 'eurusd', 25)).rejects.toThrow(/line 3/);
   });
 });

@@ -233,13 +233,33 @@ found two chains where one market was. `PublicationWriter` now resumes each
 asset at the tip of its `commitments.ndjson` (`chainTipOf`, which reads the
 tail of the file), and `PublicationService.prime` reads back from the tick
 record the ticks the previous process published after that tip and committed
-nothing for — so the chain continues where it stopped. Where the record does
-not reach the tip — a lost `record.db`, a trim — the chain is **restarted at an
-empty root and logged as an error, never bridged**: a window whose
-`previousRoot` bound a tip its ticks do not follow would verify structurally
-and be a lie about continuity, while a second genesis link is a break a
-verifier can see. A directory written by another publishing identity or window
-size is refused at construction — that is a rotation, with its own record.
+nothing for — so the chain continues where it stopped. Where it cannot — a lost
+`record.db`, a trim, a seam — the chain is **sealed there and resumed after the
+gap, logged as an error, never bridged** (Cycle Audit 10): the open window is
+closed however short, so the chain ends exactly where the record does, and the
+next window binds the sealed head and declares the sequence it resumes after.
+A window whose `previousRoot` bound a tip its ticks do not follow would verify
+structurally and be a lie about continuity; a resume link states the gap
+instead, and because the declaration is inside the root, a window deleted from
+before it breaks the chain where the cut is. Where the market resumes at a
+sequence the chain already covers, one chain cannot hold two roots over one
+range, so it restarts at an empty root and the break is reported **unbound**.
+A directory written by another publishing identity or window size is refused at
+construction — that is a rotation, with its own record.
+
+**A chain file cut mid-append refuses the boot by name (Cycle Audit 10).** A
+window is one `appendFileSync` and is never fsynced, so ENOSPC, a power loss or
+an interrupted copy can leave a partial last line. Every whole line ends in a
+newline, so a file that does not is torn: `chainTipOf` refuses naming the
+asset, the file, the bytes lost and the byte to truncate to. It repairs
+nothing — appending after a fragment would write the next window onto the
+fragment's own line, and an evidence file is not repaired by the process that
+found it damaged — so the operator truncates to the named byte and starts
+again, which resumes the chain from the last whole window. Until then the venue
+does not start, and the message says which market. `verifyCommitmentsFile`
+answers `{ok:false, error:{line, detail}}` over the same file rather than
+throwing, and `/markets/:id/proof/:sequence` answers a named `503` for
+sequences at or beyond the damage while earlier proofs are unaffected.
 
 **The commitments file is read as a stream (Issue #19).** The chain is never
 pruned and grows for the life of the market — about 92 MB a year on the

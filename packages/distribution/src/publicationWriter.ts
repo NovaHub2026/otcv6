@@ -4,13 +4,19 @@ import type { KeyObject } from 'node:crypto';
 import type { Tick } from '@otc/core';
 import { CommitmentPublisher, type ClosedWindow } from './publisher.js';
 import { assertAssetId, CommitmentError } from './commitment.js';
-import { chainTipOf } from './commitmentsFile.js';
+import { chainTipOf, CommitmentsFileError, parseLink } from './commitmentsFile.js';
 import { publicKeyHex, type SignedCommitment } from './signing.js';
 
 /** How an asset's chain stood when this writer took it over (PH-28.3). */
 export type ChainResumption =
   | { readonly kind: 'fresh' }
-  | { readonly kind: 'continued'; readonly tipRoot: string; readonly nextSequence: number };
+  | { readonly kind: 'continued'; readonly tipRoot: string; readonly nextSequence: number }
+  /**
+   * The chain was sealed and told to resume after a gap (Cycle Audit 10): its
+   * next window will bind `tipRoot` and declare `resumesAfter`, wherever the
+   * first tick lands.
+   */
+  | { readonly kind: 'resuming'; readonly tipRoot: string; readonly resumesAfter: number };
 
 /**
  * Writes the published record to disk: journals, and the signed commitment chain.
@@ -134,7 +140,13 @@ export class PublicationWriter {
     // commitments for this asset is continued from its tip, never restarted.
     // Until this, every boot began a new chain at an empty root, and a broker
     // verifying across a restart found two chains where one market was.
-    const tip = chainTipOf(path.join(this.#directory, spec.assetId, 'commitments.ndjson'));
+    // A damaged chain file stops the boot, and it must stop it by name: this
+    // runs for every asset before any market resumes, so an unguarded parse
+    // here took all thirty markets down with a `SyntaxError` that named no
+    // file and no asset (Cycle Audit 10, a2-04, a3-08, a8-06). `chainTipOf`
+    // names the file and the repair; the asset is added here, because the
+    // operator's question is which market is broken.
+    const tip = this.#tipOf(spec.assetId);
     if (tip === null) {
       this.#resumptions.set(spec.assetId, { kind: 'fresh' });
       this.#publishers.set(
@@ -165,28 +177,96 @@ export class PublicationWriter {
     );
   }
 
+  /** The asset's chain tip, with a damaged file refused by asset and by name. */
+  #tipOf(assetId: string): SignedCommitment | null {
+    try {
+      return chainTipOf(path.join(this.#directory, assetId, 'commitments.ndjson'));
+    } catch (error) {
+      if (!(error instanceof CommitmentsFileError)) throw error;
+      throw new CommitmentsFileError(error.filePath, error.line, `${assetId}: ${error.detail}`);
+    }
+  }
+
   /**
-   * Abandon the chain's tip and start a new chain at an empty root.
+   * Seal the chain here and resume it after the gap ahead.
    *
-   * For a caller that has found the record cannot reach the tip (PH-28.3):
-   * the alternative — a window whose `previousRoot` binds a tip its ticks do
-   * not follow — would verify structurally and be a lie about continuity.
-   * The old chain stays in the file; the new one begins after it, and a
-   * verifier reading the file sees the break where it is.
+   * For a caller that has found the record cannot reach the tip (PH-28.3) or
+   * that its sequences jump (PH-30.4): a window whose `previousRoot` binds a
+   * tip its ticks do not follow would verify structurally and be a lie about
+   * continuity, so the gap is declared instead of bridged.
+   *
+   * **What PH-30.4 did here was start a new chain at an empty root, and Cycle
+   * Audit 10 measured what that cost.** Two things, both permanent. The open
+   * window went with it, so every deploy left ticks that had been served in no
+   * committed window for ever and answered `409` to any proof of them (a6-03);
+   * and the two chains were bound to each other by nothing, so a window
+   * deleted from the tail of the earlier one was indistinguishable from the
+   * honest gap, to the file verifier, the proof route, a rotation and the
+   * anchor alike (a6-04) — which could not summarise the file at all (a6-12).
+   *
+   * So: the open window is **sealed** first, short if need be, and the next
+   * window is a **resume link** binding the sealed head and declaring the
+   * sequence it resumes after. The chain stays one chain, the interval nobody
+   * published is stated by a signed link, and cutting a window from before it
+   * now breaks the chain where the cut is.
    */
-  restartChain(assetId: string): void {
+  seamChain(assetId: string): void {
     const spec = this.#specs.get(assetId);
     if (spec === undefined)
       throw new RangeError(`Asset ${assetId} is not published by this writer.`);
+    const publisher = this.#publishers.get(assetId)!;
+    this.sealChain(assetId);
+    const tipRoot = publisher.chainTip;
+    const resumesAfter = publisher.tipSequence;
+    if (tipRoot === '' || resumesAfter === null) {
+      // Nothing has ever been committed for this asset, so there is no head to
+      // bind and no coverage to interrupt: the next window is this market's
+      // genesis, wherever it lands.
+      this.#publishers.set(
+        assetId,
+        new CommitmentPublisher({
+          assetId,
+          windowTicks: this.#windowTicks,
+          privateKey: this.#privateKey,
+        }),
+      );
+      this.#resumptions.set(assetId, { kind: 'fresh' });
+      return;
+    }
     this.#publishers.set(
       assetId,
       new CommitmentPublisher({
         assetId,
         windowTicks: this.#windowTicks,
         privateKey: this.#privateKey,
+        previousRoot: tipRoot,
+        resumesAfter,
       }),
     );
-    this.#resumptions.set(assetId, { kind: 'fresh' });
+    this.#resumptions.set(assetId, { kind: 'resuming', tipRoot, resumesAfter });
+  }
+
+  /**
+   * Close and write an asset's open window, however short. Idempotent.
+   *
+   * Called where the chain stops growing — a clean stop, a retirement, the
+   * moment before a seam. Returns the window written, or null when nothing was
+   * open. What it cannot cover is a `SIGKILL`: a process that is not asked to
+   * stop still loses the ticks since its last window, and that residual is the
+   * reason the record (PH-28) exists to fold them back.
+   */
+  sealChain(assetId: string): ClosedWindow | null {
+    const publisher = this.#publishers.get(assetId);
+    const spec = this.#specs.get(assetId);
+    if (publisher === undefined || spec === undefined) return null;
+    const sealed = publisher.sealChain();
+    if (sealed !== null) this.#write(spec, sealed);
+    return sealed;
+  }
+
+  /** The assets this writer publishes, in registration order. */
+  get assetIds(): readonly string[] {
+    return [...this.#publishers.keys()];
   }
 
   /** How this writer took over an asset's chain. */
@@ -241,10 +321,22 @@ export class PublicationWriter {
   }
 }
 
-/** Parse a commitments file. Exported so a verifier needs no private knowledge. */
-export function readCommitments(text: string): SignedCommitment[] {
-  return text
-    .split('\n')
-    .filter((line) => line.length > 0)
-    .map((line) => JSON.parse(line) as SignedCommitment);
+/**
+ * Parse a commitments file. Exported so a verifier needs no private knowledge.
+ *
+ * Guarded the same way the streaming reader is (Cycle Audit 10, a3-08): a line
+ * that is not JSON — a file cut mid-append, a partial download — is a
+ * `CommitmentsFileError` naming the line, not a bare `SyntaxError` naming a
+ * character offset in a string the caller never sees. A line of whitespace is
+ * blank, like an empty one.
+ */
+export function readCommitments(text: string, filePath = '(commitments text)'): SignedCommitment[] {
+  const out: SignedCommitment[] = [];
+  let line = 0;
+  for (const raw of text.split('\n')) {
+    line += 1;
+    if (raw.trim().length === 0) continue;
+    out.push(parseLink(filePath, line, raw));
+  }
+  return out;
 }

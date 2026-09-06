@@ -500,7 +500,16 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     return this.stop();
   }
 
-  /** Stop publishing and write a final checkpoint. */
+  /**
+   * Stop publishing, write a final checkpoint, and seal the commitment chains.
+   *
+   * **Cycle Audit 10, a6-03.** The open commitment window used to go with the
+   * process. Its ticks had been served, could have settled contracts, were in
+   * the record — and were in no committed window, for ever, because the next
+   * boot's chain resumed past them at a seam. The release run left 5,749 of
+   * them across thirty markets in one deploy. Sealing here closes the window
+   * short, so the chain ends exactly where the record does.
+   */
   async stop(): Promise<void> {
     this.stopping = true;
     // Wait for a tick that is already running before checkpointing on top of it.
@@ -514,6 +523,9 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       this.timer = null;
     }
     await this.checkpoint();
+    // After the checkpoint and after the last advance, so what is sealed is
+    // exactly what the record holds.
+    this.publication.sealAll();
   }
 
   get assetIds(): readonly string[] {
@@ -589,8 +601,11 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     }
     await this.inFlight;
     // A final checkpoint before it leaves, so the last tick it published is the
-    // last tick its record holds.
+    // last tick its record holds — and the chain sealed on top of it, so the
+    // last tick it published is also the last tick it committed to (a6-03).
+    // Retirement is final: nothing will ever fill this market's open window.
     await this.checkpoint();
+    this.publication.seal(assetId);
     this.venue?.unhost(assetId);
     this.retired.add(assetId);
     // **Cycle Audit 7, CA7-15.** Everything this service remembers *about* a
