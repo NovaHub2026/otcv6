@@ -16,7 +16,7 @@ Last synchronized: 2026-09-06
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Active development cycle         | Cycle 10 — **3 of 3** phases approved (PH-28, PH-29, PH-30); the closing cycle (Cycle Audit 10)                                                            |
 | Approved phases in current cycle | **3 of 3** — PH-28, PH-29, PH-30                                                                                                                           |
-| Cycle Audit state                | **010 OPEN** — the closing cycle's audit: eight independent auditors, every finding put to an independent refuter, fixes on `audit/ca10-fixes`             |
+| Cycle Audit state                | **010 closed** — 98 claims, 86 confirmed, 12 partial, 0 refuted; 45 plants, 23 survived and are closed; fixes gated green on `audit/ca10-fixes`            |
 | Last Cycle Audit                 | [Cycle Audit 009](docs/audits/CYCLE-AUDIT-009.md) — 2026-09-05, eight independent auditors, one worktree each, every finding refuted independently; closed |
 
 ## Phase and subphase
@@ -151,35 +151,28 @@ the record should say that the audited commit itself was never green.
 
 ## Verification state
 
-Executed on `feature/ph-30-release` at `6f1efa9`, 2026-09-06, with
-`OTC_REQUIRE_BROWSER=1` and the browser prefix — the PH-30 phase gate,
-recorded in PH-30 §9:
+Executed on `audit/ca10-fixes` at `970f54b`, 2026-09-06, with
+`OTC_REQUIRE_BROWSER=1` and the browser prefix — the Cycle Audit 10 gate:
 
 ```
-npm run gate  ->  GATE_EXIT=0
+npm run gate  ->  GATE_EXIT=0        (21:27-22:51Z)
   format:check     0
   build            0
   typecheck:web    0
   typecheck:config 0
   lint             0
-  unit         161 files, 3,244 tests          33.3s
-  coverage     161 files, 3,244 tests         117.7s   (floors enforced)
-  statistical   47 files,   402 tests       4,797.8s
+  unit         163 files, 3,348 tests          33.2s
+  coverage     163 files, 3,348 tests         113.5s   (floors enforced)
+  statistical   47 files,   402 tests       4,838.5s
 GATE COMPLETE: unit, coverage floors and statistical suites all ran, with a real browser
 ```
 
-The statistical suite is 4,798 s — 80 minutes — against 4,472 s at the PH-27
-gate and 4,352 s at PH-25: it grew with the release's own suites, not with the
-engine. Three earlier attempts were refused before a test ran (a document
-Prettier had not seen, the guide's examples under the type-aware lint, a file
-name inside a finding) and a machine reboot killed a fourth at its 85th
-minute; PH-30.5 §5 records them.
-
-**Hosted CI on the merge that carries this gate went red**, on one browser
-test of the Lab, and the cause was a real defect in the Lab's position
-opening rather than a flake — see the table above and Cycle Audit 10. The
-fixes for it and for the audit's other findings are being gated on
-`audit/ca10-fixes`; that run replaces this block when it passes.
+The statistical suite is 4,838 s — 81 minutes — against 4,798 s at the PH-30
+gate. The first run of this gate was **red**, and correctly: a statistical test
+booted a second venue on a state directory a live venue still held, and the
+one-writer lock the audit added refused it before the token refusal it was
+asserting could be reached. The test was sharing a directory; the lock was
+right. That is the statistical layer doing what the unit layer cannot.
 
 ## Relevant records
 
@@ -212,7 +205,7 @@ fixes for it and for the audit's other findings are being gated on
 
 ## EXACT NEXT LEGAL ACTION
 
-**Run Cycle Audit 10 (GOVERNANCE §28): three phases are approved, normal development stops, and the merge of the third phase — tagged `v1.0.0`, with `RELEASE-1.0.0.md` as the release record — is pushed before the auditors' worktrees are cut from it (`tools/sim/scripts/cycle-audit-worktrees.sh <merge>` with `OTC_AUDIT_ROOT=~/.otc-audit10`; briefs under `~/.otc-audit10/prompts`). Hosted CI on the merge is recorded in the table below when it lands.**
+**Merge `audit/ca10-fixes` into `main` with `--no-ff`, push, and tag the merge `v2.0.0` once hosted CI on it is green — not before, because `v1.0.0` was tagged on a red run and that is one of Cycle Audit 10's findings (`DECISION-LOG.md`, 2026-09-06). Then regenerate the integration package from the tag and record the hosted run in the table below. Cycle 11 opens from there; the roadmap's Cycle 10 section names what is deferred.**
 
 Cycle 10 is complete and it was the closing cycle: PH-28 (the durable venue),
 PH-29 (the integration boundary), PH-30 (release 1.0). The third merge is

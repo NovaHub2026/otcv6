@@ -1,6 +1,6 @@
 # Release 1.0.0 — The OTC Market Engine As A Broker Integrates It
 
-Type: EVIDENCE (the release record)
+Type: EVIDENCE (the release record for `v1.0.0`, **superseded** — see [`RELEASE-2.0.0.md`](RELEASE-2.0.0.md))
 Recorded: 2026-09-06
 Tag: `v1.0.0` — the commit named in §4, the one the PH-30 phase gate passed locally. **Hosted CI on that push went red**: the Quality Gate green, the Statistical Gate failed on one browser test of the Lab (§7)
 Package: `tools/sim/scripts/integration-package.sh v1.0.0 <dir>` — `git archive` of the tag minus the process documents, the guide and the examples at the top

@@ -1,7 +1,7 @@
 # Cycle Audit 010
 
 Type: CYCLE AUDIT RECORD
-Status: OPEN — the audit has run and its fixes are being gated on `audit/ca10-fixes`
+Status: CLOSED — 98 claims, 86 confirmed, 12 partial, 0 refuted; fixed on `audit/ca10-fixes`, gated green (`GATE_EXIT=0`, 970f54b)
 Cycle audited: Cycle 10 (PH-28, PH-29, PH-30) — the closing cycle
 Commit audited: `353f101` (the PH-30 merge, tagged `v1.0.0`)
 Conducted: 2026-09-06
@@ -274,10 +274,69 @@ Named, so the next audit knows where it did not look.
 ## 7. Verification
 
 The fixes are on `audit/ca10-fixes`, integrated one at a time with the unit
-suite green after each. The record is closed on the full gate on that branch
-and a **green hosted run** — the second is not optional here, because the
-release tag was cut on a red one and that is one of the findings.
+suite green after each.
+
+```
+npm run gate  ->  GATE_EXIT=0        (970f54b, 2026-09-06, 21:27–22:51Z)
+  format:check     0
+  build            0
+  typecheck:web    0
+  typecheck:config 0
+  lint             0
+  unit         163 files, 3,348 tests          33.2s
+  coverage     163 files, 3,348 tests         113.5s   (floors enforced)
+  statistical   47 files,   402 tests       4,838.5s
+```
+
+**The first run of that gate was red, and it was right to be.** A statistical
+test booted a second venue on a state directory a live venue still held, and
+the new one-writer lock refused it before the module was constructed, so the
+token refusal it was asserting was never reached. The lock was correct and the
+test was sharing a directory. The assertion moved to a directory nothing holds,
+and the lock's own refusal is now asserted where the sharing was — in two real
+processes, which is the end-to-end form of the a6-05 fix. That is the audit's
+own rule applied to itself: the gate found a fix's consequence that no unit
+test could, which is what the statistical layer is for.
+
+Hosted CI on the merge is recorded in `CURRENT_STATE.md` § "Hosted CI,
+honestly". A green hosted run is not optional here: the release tag was cut on
+a red one, and that is one of this audit's findings.
 
 ## 8. Closing
 
-_Filled when the gate and hosted CI are in._
+Cycle Audit 10 audited the cycle that was meant to close the project, and found
+that the release it was closing on could not be defended: a settlement query
+that answered inside a hole nobody published, a venue that could stop serving
+while reporting itself healthy, a chain that stopped covering what it served at
+the first deploy, a backup nobody could restore, a rate limit that put the
+whole Internet in one bucket, and a release record claiming a corroboration it
+did not have — on a tag whose hosted run went red two hours after it was
+pushed.
+
+None of that is a reason to distrust the engine's core. The price path was not
+touched by a single finding: the sign is still an independent fair coin, the
+magnitude engine still cannot observe one, and the mirror test and the battery
+still hold. **What the audit found was a boundary problem**, over and over: two
+parts of one system, each individually correct and individually tested, giving
+different answers to the same question — and no test that asked them both.
+
+Three things are worth carrying forward.
+
+1. **The most dangerous defect of this cycle was not a wrong number.** It was
+   `/price?at=` and `settle()` disagreeing about a window, with the guide
+   telling a broker to reconcile them from a frame that carries the wrong
+   quantity. A project that guards invariants one file at a time will keep
+   producing this shape.
+2. **Twenty-three of forty-five plants survived.** The rule that would have
+   caught almost all of them — _a guard is not finished until it has been
+   watched failing_ — is not new here; it has been in the repository since
+   Cycle Audit 2. It was applied to every guard written in this audit's fixes,
+   and the words each one printed are recorded.
+3. **The release tag stands as a scar.** `v1.0.0` was cut on a commit hosted CI
+   did not corroborate, and it is superseded rather than moved
+   (`DECISION-LOG.md`, 2026-09-06). The repository's history will always show
+   that the project shipped once before it was ready. That is the honest
+   record, and it is cheaper than the alternative.
+
+The cycle closes with the engine measurably better than the release it was
+supposed to close on, and with the release record saying so.

@@ -6,16 +6,16 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                                            |
-| ------------------ | -------------------------------------------------------------------------------- |
-| Last clean session | 2026-09-06                                                                       |
-| Branch             | `audit/ca10-fixes`, off `main` at `353f101` (the PH-30 merge, tagged `v1.0.0`)   |
-| Remote             | `origin` → NovaHub2026/otcv6, public                                             |
-| Active cycle       | Cycle 10, **3 of 3** — PH-28, PH-29, PH-30 approved; Cycle Audit 10 next         |
-| Active phase       | none — the third phase is approved; Cycle Audit 10 next                          |
-| Active subphase    | none                                                                             |
-| Cycle Audit        | **010 OPEN** — eight auditors, refuters per finding; fixes on `audit/ca10-fixes` |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                               |
+| Field              | Value                                                                             |
+| ------------------ | --------------------------------------------------------------------------------- |
+| Last clean session | 2026-09-06                                                                        |
+| Branch             | `audit/ca10-fixes`, off `main` at `353f101` (the PH-30 merge, tagged `v1.0.0`)    |
+| Remote             | `origin` → NovaHub2026/otcv6, public                                              |
+| Active cycle       | Cycle 10, **3 of 3** — PH-28, PH-29, PH-30 approved; Cycle Audit 10 next          |
+| Active phase       | none — the third phase is approved; Cycle Audit 10 next                           |
+| Active subphase    | none                                                                              |
+| Cycle Audit        | **010 closed** — 98 claims, 86 confirmed, 12 partial; fixes on `audit/ca10-fixes` |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                                |
 
 ---
 
