@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, type Tick } from '@otc/core';
-import { LabPositions, presetLevel, PRESETS, recordOf, type LabPosition } from './positions.js';
+import {
+  EntryPriceDisagreementError,
+  LabPositions,
+  presetLevel,
+  PRESETS,
+  recordOf,
+  type LabPosition,
+} from './positions.js';
 
 /**
  * PH-24.3 §4: the presets, on the lattice, and a position's entry read as
@@ -52,6 +59,7 @@ describe('a simulated position', () => {
       { assetId: 'eurusd', direction: 'up', stake: 10, horizonMs: 60_000 },
       epochMillis(t0 + 6_000),
       ticks,
+      null,
     );
     expect(position.entryPrice).toBe(105);
     expect(position.expiryInstant).toBe(t0 + 66_000);
@@ -64,11 +72,13 @@ describe('a simulated position', () => {
       { assetId: 'eurusd', direction: 'up', stake: 10, horizonMs: 60_000 },
       epochMillis(t0 + 6_000),
       ticks,
+      null,
     );
     const b = positions.open(
       { assetId: 'eurusd', direction: 'down', stake: 20, horizonMs: 60_000 },
       epochMillis(t0 + 6_000),
       ticks,
+      null,
     );
     expect(a.expiryInstant).toBe(b.expiryInstant);
     expect(positions.list('eurusd')).toHaveLength(2);
@@ -82,6 +92,7 @@ describe('a simulated position', () => {
         { assetId: 'eurusd', direction: 'up', stake: 10, horizonMs: 60_000 },
         epochMillis(t0),
         ticks,
+        null,
       ),
     ).toThrow(RangeError);
     expect(() =>
@@ -89,6 +100,7 @@ describe('a simulated position', () => {
         { assetId: 'eurusd', direction: 'up', stake: 0, horizonMs: 60_000 },
         epochMillis(t0 + 6_000),
         ticks,
+        null,
       ),
     ).toThrow(RangeError);
     expect(() =>
@@ -96,6 +108,7 @@ describe('a simulated position', () => {
         { assetId: 'eurusd', direction: 'up', stake: 1, horizonMs: 10 },
         epochMillis(t0 + 6_000),
         ticks,
+        null,
       ),
     ).toThrow(RangeError);
   });
@@ -106,6 +119,7 @@ describe('a simulated position', () => {
       { assetId: 'eurusd', direction: 'up', stake: 10, horizonMs: 60_000 },
       epochMillis(t0 + 6_000),
       ticks,
+      null,
     );
     expect(LabPositions.expected(call, logPrice(106), 'armed-target')).toMatchObject({
       outcome: 'win',
@@ -124,6 +138,7 @@ describe('a simulated position', () => {
       { assetId: 'eurusd', direction: 'down', stake: 10, horizonMs: 60_000 },
       epochMillis(t0 + 6_000),
       ticks,
+      null,
     );
     expect(LabPositions.actual(put, ticks)).toBeNull(); // record ends before expiry: refused, not guessed
     expect(LabPositions.status(put, ticks).kind).toBe('pending');
@@ -141,6 +156,7 @@ describe('a simulated position', () => {
       { assetId: 'eurusd', direction: 'up', stake: 10, horizonMs: 60_000 },
       epochMillis(t0 + 6_000),
       ticks,
+      null,
     );
     // The retained window has rolled past the entry: expiry is covered, the
     // entry is not. This position will never settle, and reporting it as "not
@@ -161,6 +177,7 @@ describe('a simulated position', () => {
       { assetId: 'eurusd', direction: 'up', stake: 10, horizonMs: 60_000 },
       epochMillis(t0 + 6_000),
       ticks,
+      null,
     );
     const malformed: LabPosition = {
       ...sound,
@@ -169,5 +186,71 @@ describe('a simulated position', () => {
     const later = [...ticks, tick(65_000, 4, 101), tick(70_000, 5, 99)];
     expect(() => LabPositions.status(malformed, later)).toThrow(RangeError);
     expect(() => LabPositions.actual(malformed, later)).toThrow(RangeError);
+  });
+});
+
+/**
+ * PH-30 / Cycle Audit 10. The entry price the Lab stores and the entry price
+ * `settle` recomputes are two reads of one rule against a record that grows
+ * between them, and a tick that is already due but not yet published is the
+ * gap. See {@link LabPositions.open}.
+ */
+describe("a position's entry survives the tick that was due and unpublished", () => {
+  const ticks = [tick(1_000, 1, 100), tick(4_000, 2, 105)];
+  const dueButUnpublished = tick(6_000, 3, 106);
+
+  it('pins the entry to the last instant the published record is final for', () => {
+    const positions = new LabPositions();
+    // The clock is past the drawn tick at t0+6 000; the feed has not got it yet.
+    const position = positions.open(
+      { assetId: 'eurusd', direction: 'up', stake: 10, horizonMs: 60_000 },
+      epochMillis(t0 + 6_100),
+      ticks,
+      dueButUnpublished.instant,
+    );
+    expect(position.contract.entryInstant).toBe(t0 + 5_999);
+    expect(position.expiryInstant).toBe(t0 + 65_999);
+    expect(position.openedAt).toBe(t0 + 6_100);
+    expect(position.entryPrice).toBe(105);
+    // And now the pass runs. Without the pin the entry instant would be
+    // t0+6 100, `settle` would read 106, and "win by minimum" — armed at
+    // 105 + 1 = 106 from the stored entry — would settle as a tie.
+    const later = [...ticks, dueButUnpublished, tick(70_000, 4, 106)];
+    const settlement = LabPositions.actual(position, later)!;
+    expect(settlement.entryPrice).toBe(position.entryPrice);
+    expect(presetLevel('win-minimum', position.entryPrice, 'up')).toBe(106);
+    expect(settlement.outcome).toBe('win');
+  });
+
+  it('leaves an up-to-date market alone: the entry is the instant of opening', () => {
+    const positions = new LabPositions();
+    const position = positions.open(
+      { assetId: 'eurusd', direction: 'up', stake: 10, horizonMs: 60_000 },
+      epochMillis(t0 + 5_000),
+      ticks,
+      epochMillis(t0 + 6_000),
+    );
+    expect(position.contract.entryInstant).toBe(t0 + 5_000);
+    expect(position.expiryInstant).toBe(t0 + 65_000);
+  });
+
+  it('names a settlement that disagrees with the entry it was opened at', () => {
+    const positions = new LabPositions();
+    const position = positions.open(
+      { assetId: 'eurusd', direction: 'up', stake: 10, horizonMs: 60_000 },
+      epochMillis(t0 + 6_100),
+      ticks,
+      null, // no pin: the shape of the defect, kept so the guard has something to catch
+    );
+    expect(position.entryPrice).toBe(105);
+    const later = [...ticks, dueButUnpublished, tick(70_000, 4, 106)];
+    // 106 was in force at t0+6 100 by the time the record was complete, so
+    // `settle` reads an entry the row never showed. That is not an outcome
+    // the "COINCIDE / NO COINCIDE" column can express: both sides would be
+    // describing different contracts.
+    expect(() => LabPositions.status(position, later)).toThrow(EntryPriceDisagreementError);
+    expect(() => LabPositions.actual(position, later)).toThrow(
+      /was opened at level 105 but settles from level 106/,
+    );
   });
 });

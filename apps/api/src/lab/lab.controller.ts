@@ -1442,14 +1442,26 @@ export class LabController {
    * settled later by the production `settle` against this market's own record.
    * Entry is now, and the entry price is the price in force now, read as
    * settlement reads (ADR-0017). Kept in this process and nowhere else (O10).
+   *
+   * **Inside the critical section, and pinned to the record** (PH-30 / Cycle
+   * Audit 10). The clock, the record and the pending tick are three reads, and
+   * an advance between any two of them makes the entry price the panel shows
+   * different from the entry price `settle` recomputes for the same instant —
+   * silently, because both are the same expression against different records.
+   * A preset armed from the stale one lands a "WIN by minimum distance" exactly
+   * on the newer entry, and the row reads «esperado gana … real empate … NO
+   * COINCIDE». `betweenAdvances` closes the half of the window where a pass is
+   * mid-flight (ticks generated, feed not yet written); `nextInstant` closes
+   * the half where the clock has passed a drawn tick the next pass will
+   * publish. Neither closes the other, so both are here.
    */
   @Post('markets/:id/positions')
-  openPosition(
+  async openPosition(
     @Param('id') id: string,
     @Query('direction') direction?: string,
     @Query('stake') stake?: string,
     @Query('horizonMs') horizonMs?: string,
-  ): unknown {
+  ): Promise<unknown> {
     if (this.engine.hostedMarket(id) === null)
       throw new NotFoundException(`Asset ${id} is not hosted.`);
     if (direction !== 'up' && direction !== 'down') {
@@ -1458,13 +1470,16 @@ export class LabController {
     const stakeValue = Number(stake);
     const horizon = Number(horizonMs);
     try {
-      const position = this.positions.open(
-        { assetId: id, direction, stake: stakeValue, horizonMs: horizon },
-        this.venue.now(),
-        this.recordTicks(id),
+      const position = await this.venue.betweenAdvances(() =>
+        this.positions.open(
+          { assetId: id, direction, stake: stakeValue, horizonMs: horizon },
+          this.venue.now(),
+          this.recordTicks(id),
+          this.engine.hostedMarket(id)?.nextInstant ?? null,
+        ),
       );
       this.session.recordAction({
-        at: this.venue.now(),
+        at: position.openedAt,
         asset: id,
         engineVersion: ENGINE_VERSION,
         action: 'position.open',
@@ -1476,7 +1491,12 @@ export class LabController {
       });
       return { environment: LAB, asset: id, position: this.describe(position) };
     } catch (error) {
-      throw new BadRequestException((error as Error).message);
+      // `open` refuses a bad request with a `RangeError` and nothing else.
+      // Anything else here — an `EntryPriceDisagreementError` above all — is a
+      // finding, and reporting it as "400, your request was malformed" is how
+      // a disagreement gets read as an operator's typo.
+      if (error instanceof RangeError) throw new BadRequestException(error.message);
+      throw error;
     }
   }
 
