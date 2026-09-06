@@ -14,8 +14,8 @@ Last synchronized: 2026-09-05
 
 | Field                            | Value                                                                                                                                                      |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 10 — **0 of 3** phases approved; planned as the closing cycle (PH-28, PH-29, PH-30), Cycle 9 audited and closed                                      |
-| Approved phases in current cycle | **0 of 3** — PH-28, PH-29, PH-30 planned; none active yet                                                                                                  |
+| Active development cycle         | Cycle 10 — **1 of 3** phases approved (PH-28); the closing cycle (PH-29, PH-30 next)                                                                       |
+| Approved phases in current cycle | **1 of 3** — PH-28                                                                                                                                         |
 | Cycle Audit state                | **009 closed** — 64 claims, 62 confirmed, 61 resolved with a guard each, one carried (a8-12)                                                               |
 | Last Cycle Audit                 | [Cycle Audit 009](docs/audits/CYCLE-AUDIT-009.md) — 2026-09-05, eight independent auditors, one worktree each, every finding refuted independently; closed |
 
@@ -23,11 +23,11 @@ Last synchronized: 2026-09-05
 
 | Field                  | Value                                                      |
 | ---------------------- | ---------------------------------------------------------- |
-| Active phase           | PH-28 — The durable venue: the record outlives the process |
-| Phase lifecycle        | ACTIVE                                                     |
-| Active subphase        | none — all four approved; the phase gate runs              |
+| Active phase           | none                                                       |
+| Phase lifecycle        | none                                                       |
+| Active subphase        | none                                                       |
 | Subphase lifecycle     | none                                                       |
-| Last approved phase    | PH-27 — Review and improvement of the whole project        |
+| Last approved phase    | PH-28 — The durable venue: the record outlives the process |
 | Last approved subphase | PH-28.4 — The served verdict across a kill and a restart   |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
@@ -194,7 +194,7 @@ on `audit/ca9-fixes`; that run replaces this block when it passes.
 
 ## EXACT NEXT LEGAL ACTION
 
-**Create the PH-28 Phase Context Document (`docs/phases/PH-28.md`, the durable venue) and activate PH-28.1, per the Cycle 10 plan in `docs/phases/ROADMAP.md`; hosted CI on the Cycle Audit 9 merge (`45187d9`) is recorded in the table above when it lands.**
+**Merge PH-28 to `main`, then create the PH-29 Phase Context Document (the integration boundary) and activate PH-29.1, per the Cycle 10 plan in `docs/phases/ROADMAP.md`; hosted CI on the PH-28 merge is recorded in the table above when it lands.**
 
 PH-27 is approved on its integrated phase verification (`GATE_EXIT=0` first
 attempt, 45 statistical files in 4,472 s) and is being merged. Cycle 9 is

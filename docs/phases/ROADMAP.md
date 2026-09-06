@@ -807,12 +807,12 @@ improvement report's ranking (`../reports/IMPROVEMENT-REPORT-001.md` §4) is
 followed where it serves that end and departed from where it does not, and the
 departure is recorded ([decision](../decisions/DECISION-LOG.md), 2026-09-05).
 
-| Phase | Title                                                       | State   |
-| ----- | ----------------------------------------------------------- | ------- |
-| PH-28 | The durable venue: the record outlives the process          | ACTIVE  |
-| PH-29 | The integration boundary: what a broker's settlement needs  | PLANNED |
-| PH-30 | Release 1.0: the engine as a broker integrates it           | PLANNED |
-| —     | **Cycle Audit 10** — the closing audit, adversarial as ever | PLANNED |
+| Phase | Title                                                       | State        |
+| ----- | ----------------------------------------------------------- | ------------ |
+| PH-28 | The durable venue: the record outlives the process          | **APPROVED** |
+| PH-29 | The integration boundary: what a broker's settlement needs  | PLANNED      |
+| PH-30 | Release 1.0: the engine as a broker integrates it           | PLANNED      |
+| —     | **Cycle Audit 10** — the closing audit, adversarial as ever | PLANNED      |
 
 **What "finished" means here, and what it does not.** The product is the
 engine; the broker is somebody else's. At the end of Cycle 10 a broker runs the
