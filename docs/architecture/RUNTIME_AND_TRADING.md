@@ -114,6 +114,11 @@ socket, against a spawned service killed with `SIGKILL`, in
 `servedRecord.stat.test.ts`. Nothing reaches the engine from any of it
 (INV-001).
 
+The directory those files live in is verified as one thing before any market
+resumes and can be backed up consistently while the venue runs; the
+commitment chain continues across a restart from the same record
+(`MULTI_NODE_AND_OPERATIONS.md` §5, PH-28.3).
+
 ## Settlement reads the record, never the engine
 
 `settle()` is a pure function of the published ticks and a contract. No keys, no

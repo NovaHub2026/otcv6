@@ -227,6 +227,40 @@ hole.
 
 ## 5. Publication operations
 
+**The chain outlives the process (PH-28.3).** Until Cycle 10 every boot began a
+new commitment chain at an empty root, so a broker verifying across a restart
+found two chains where one market was. `PublicationWriter` now resumes each
+asset at the tip of its `commitments.ndjson` (`chainTipOf`, which reads the
+tail of the file), and `PublicationService.prime` reads back from the tick
+record the ticks the previous process published after that tip and committed
+nothing for — so the chain continues where it stopped. Where the record does
+not reach the tip — a lost `record.db`, a trim — the chain is **restarted at an
+empty root and logged as an error, never bridged**: a window whose
+`previousRoot` bound a tip its ticks do not follow would verify structurally
+and be a lie about continuity, while a second genesis link is a break a
+verifier can see. A directory written by another publishing identity or window
+size is refused at construction — that is a rotation, with its own record.
+
+**The commitments file is read as a stream (Issue #19).** The chain is never
+pruned and grows for the life of the market — about 92 MB a year on the
+fastest asset — and `readCommitments(text)` needed it as one string, which
+Node stops allowing near six years. `readCommitmentsStream`,
+`IncrementalChainVerifier` and `verifyCommitmentsFile`
+(`packages/distribution/src/commitmentsFile.ts`) hold one line at a time and
+give `verifySignedChain`'s verdicts, rotations included, with the file line a
+refusal happened on.
+
+**The state directory is one thing (PH-28.3).** `verifyStateDirectory` runs
+before any market resumes (`main.ts`) and as `npm run state:verify`: a
+checkpoint that cannot be read, a database from newer code, a record behind
+its checkpoint or a candle history ahead of the record each refuse the boot by
+file and asset — a restore that mixed files from two backups looks exactly
+like that. `npm run state:backup` copies the directory consistently per file
+while the venue runs (checkpoints are single atomic files; each SQLite
+database through `VACUUM INTO`), verifies the copy and writes `backup.json`
+with every asset's heads. Restore is a directory swap with the service
+stopped; the boot check is the acceptance test.
+
 **Key rotation** (`packages/distribution/src/rotation.ts`). `verifySignedChain`
 took one key, so a rotated key failed verification exactly as a forgery does.
 Now a rotation is a record **signed by the outgoing key** naming its successor;

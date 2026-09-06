@@ -113,6 +113,9 @@ npm test               # both, in that order
 npm run gate           # format:check → build → typecheck:web → typecheck:config
                        #   → lint → unit → statistical   (dominated by test:stat)
 npm run test:cov       # coverage over packages/, tools/ and apps/, both projects
+
+npm run state:verify -- --dir ./.otc-state            # the state directory agrees with itself (PH-28.3)
+npm run state:backup -- --dir ./.otc-state --out DIR  # a consistent, verified copy with its manifest
 ```
 
 **Always `npm run test:stat`, never a bare `npx vitest run --project statistical`.**

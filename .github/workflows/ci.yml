@@ -32,6 +32,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The documentation guard holds historical documents to git's history
+          # (every test file ever added); a one-commit checkout has none (PH-28.3).
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
@@ -94,6 +98,10 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The documentation guard holds historical documents to git's history
+          # (every test file ever added); a one-commit checkout has none (PH-28.3).
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc

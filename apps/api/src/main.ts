@@ -41,8 +41,7 @@ async function bootstrap(): Promise<void> {
   // noticed. A record an operator steered must not become production's by a
   // redeploy — see `labState.ts` for what the mark is and why there is no
   // variable to wave it through.
-  const stateDir = process.env.OTC_STATE_DIR ?? './.otc-state';
-  const refusal = refuseLabState(stateDir);
+  const refusal = refuseLabState(process.env.OTC_STATE_DIR ?? './.otc-state');
   if (refusal !== null) {
     logger.error(refusal);
     process.exit(1);
@@ -52,6 +51,7 @@ async function bootstrap(): Promise<void> {
   // ahead of the record, a database from newer code — each boots a venue that
   // serves something observers did not see, and each is refused here by name.
   // A warning is a seam a resume will take and say so; it is logged, not fatal.
+  const stateDir = process.env.OTC_STATE_DIR ?? './.otc-state';
   const report = await verifyStateDirectory(stateDir);
   for (const warning of report.warnings) {
     logger.warn(

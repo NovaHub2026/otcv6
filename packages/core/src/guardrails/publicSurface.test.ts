@@ -97,6 +97,9 @@ const INTERNAL: Record<string, readonly string[]> = {
     // `npm run assurance:served` and reached by no barrel; the pure half is
     // guarded by `servedAssuranceRun.test.ts`.
     'servedAssuranceJob.ts',
+    // PH-28.3: the operator's verify/backup tool for the state directory, a
+    // binary entry point like the job above it.
+    'stateTool.ts',
     'servedAssuranceRun.ts',
   ],
 };
