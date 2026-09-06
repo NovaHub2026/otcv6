@@ -498,7 +498,9 @@ const MUTATIONS: Mutation[] = [
     // of its nine tagged files and the guard correctly did not care — which read
     // as the guard being toothless when the mutation was simply not a loss of
     // evidence. Same shape as PH-8.1's spike landing on a sampling boundary: the
-    // plant has to be the defect the guard names.
+    // plant has to be the defect the guard names. `traceability.test.ts` holds
+    // INV-005 to that one file, so a second tag fails in a second rather than
+    // here, eighty minutes into a phase gate (PH-29).
     edits: [
       {
         file: guard('guardrails.test.ts'),

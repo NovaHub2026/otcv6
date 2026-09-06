@@ -151,6 +151,18 @@ describe('every invariant is traceable to evidence', () => {
     expect(isInvariantStatus(normaliseInvariantStatus('Verified'))).toBe(false);
   });
 
+  it('keeps INV-005 on exactly one evidence file, the one the meta-audit mutates (PH-29)', () => {
+    // `guardrailMetaAudit.stat.test.ts` proves this guard has teeth by stripping
+    // INV-005 from `guardrails.test.ts` — chosen because it is the only
+    // invariant with a single evidence file — and expecting a failure. The
+    // PH-29 phase gate found the mutation survived: a new test had tagged
+    // INV-005 too, so the strip was no longer a loss of evidence, and the
+    // whole statistical suite had to run to say so. This says it in a second:
+    // tag INV-005 elsewhere only by moving the mutation with it.
+    const files = evidence().get('INV-005') ?? [];
+    expect(files.map((file) => path.basename(file))).toEqual(['guardrails.test.ts']);
+  });
+
   it('tags no invariant that does not exist', () => {
     const unknown = [...found.keys()].filter((id) => !declared.includes(id)).sort();
     expect(unknown, 'tagged invariant ids absent from CLAUDE.md').toEqual([]);

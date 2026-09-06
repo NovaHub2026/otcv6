@@ -1,4 +1,4 @@
-// Invariant evidence: INV-005 (expiration independence), INV-009 (reproducible settlement), INV-010 (private generator state).
+// Invariant evidence: INV-009 (reproducible settlement), INV-010 (private generator state).
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
