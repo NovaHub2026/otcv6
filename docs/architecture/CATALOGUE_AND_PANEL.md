@@ -338,6 +338,25 @@ file (readiness as the health check, `SIGTERM` as the stop), the proxy with
 the stream unbuffered and the write surface cut, and the backup loop over
 `state:backup`; `deploy.test.ts` holds those files to the engine.
 
+## 5.5 The stream at scale (PH-30.2, Issue #16)
+
+A browser allows six connections per origin on HTTP/1.1; a page of eight
+charts on eight streams blocked on the seventh. `streamMarkets`
+(`apps/web/src/lib/marketStream.ts`) opens **one** `/markets/stream` for a
+page's set of assets, keeps a window per asset, resumes every asset from its
+own last sequence plus one after a drop, tells each chart its own told hole —
+bounded, from the requested sequence to `resumesAt`, when the venue names it
+— and drops a retired market from the next connection. The preview's board
+(`Board.tsx`, the _Tablero_ toggle) is eight cards on that one connection,
+and `otc_stream_connections` counts what a page costs the venue: one. The
+metric's first reading was sixteen for a board of eight: the panel's engine
+proxy did not abort its upstream fetch when the browser disconnected, so every
+chart a page had ever opened stayed subscribed on the engine. It passes the
+request's signal now. `panel.stat.test.ts` holds all of it in a browser: one
+connection for eight charts, a retired card that says so, and — after a
+restart that lost the tick record — the single chart, which resumes from the
+stored record's head, reading a bounded hole the venue told (a8-12).
+
 ## 6. Creating an asset is a job
 
 `POST /assets` returns a **job id**, and the panel polls `/registrations/:id`.
