@@ -262,10 +262,21 @@ motivo de arriba, y un cliente que no consume lo bastante rápido se desconecta
 en vez de degradar su vista. Los ticks se retienen **50.000 por activo** — algo
 más de una hora en el activo más rápido, varias horas en los lentos —
 cómodamente por encima del contrato más largo (15 min): más atrás de eso se
-recarga del histórico de velas, no del stream. Y **la ventana no sobrevive a un
-reinicio del motor**: tras reiniciar, el stream solo retiene lo publicado desde
-el arranque; un `from` anterior recibe el 400 (o, con `onGap=live`, el `gap`
-con su `resumesAt`), y el histórico de velas guarda lo anterior.
+recarga del histórico de velas, no del stream. Y **la ventana depende de cómo
+fue el reinicio del motor**. Con registro durable (`OTC_RECORD_DB`, §3.7) un
+reinicio **rápido** — el punto de control tiene menos de 15 s — continúa sin
+salto: el stream se ceba con la cola del registro y un `from` anterior al
+arranque se sirve como si el proceso no hubiera muerto. Un reinicio **más largo
+que 15 s** — lo que es cualquier despliegue — produce una **costura**: el
+mercado continúa desde el último precio publicado con las secuencias
+adelantadas (saltan del orden de 100.000), el stream empieza en la costura, y un
+`from` anterior recibe el 400 que nombra dónde empieza la ventana (o, con
+`onGap=live`, el `gap` con su `resumesAt`). Lo publicado antes de la costura no
+se pierde: sigue en el registro, por secuencia (`/ticks/:sequence`) y por
+instante (`/price?at=`), y en el histórico de velas. La cadena de compromisos
+**se reinicia** en la costura en vez de puentearla: `verifyCommitmentsFile`
+(de `@otc/distribution`) verifica las dos cadenas y nombra la ruptura en
+`breaks`.
 
 ### 3.5 Histórico de velas
 
@@ -473,7 +484,8 @@ separada del estado, y rotación solo con un plan de migración explícito.
 
 Todo bajo `OTC_STATE_DIR`:
 
-- puntos de control por mercado, para que un reinicio continúe **sin salto**;
+- puntos de control por mercado, para que un reinicio rápido continúe **sin
+  salto** y uno largo cosa desde el último precio publicado (§3.4);
 - `history.db`, el histórico de velas;
 - `assets/`, los activos creados y sus superposiciones;
 - con el Lab, además el fichero de sesión del Lab.
@@ -752,6 +764,34 @@ location /otc/ {
 `POST /assets`, `PATCH /assets/:id` y `POST /assets/:id/retire` no deberían salir
 a Internet. O los cortas en el proxy, o dejas el motor en loopback y expones solo
 el panel detrás de tu autenticación.
+
+### Los ficheros de despliegue (`deploy/`)
+
+Desde PH-30.1 el repositorio trae lo que un despliegue arranca:
+
+- `deploy/otc-engine.service` — la unidad de systemd (SIGTERM, `Restart=always`,
+  el directorio de estado, el fichero de secretos).
+- `deploy/Dockerfile` y `deploy/docker-compose.yml` — la imagen y el compose
+  del motor con un volumen para el estado, `healthcheck` sobre `/health/ready`,
+  y un servicio `backup` que ejecuta `deploy/backup.sh` cada seis horas.
+- `deploy/nginx.conf` — el proxy con el stream sin búfer, las rutas de escritura
+  cortadas, `/metrics` y `/health/ready` solo para tu red, y la dirección del
+  cliente reenviada (el límite de peticiones la usa).
+- `deploy/backup.sh` — `npm run state:backup` en bucle, conservando las últimas N.
+
+### Operación: vivo, listo, métricas, límite
+
+- `GET /health/live` responde en cuanto el proceso sirve HTTP; `GET /health/ready`
+  responde `200` cuando todos los mercados han reanudado y ninguno está parado, y
+  `503` con el motivo si no. Apunta tu orquestador a `ready` y tu reinicio a `live`.
+- `GET /metrics` sirve los contadores en formato Prometheus: mercados, parados,
+  `otc_ready`, ticks publicados, suscriptores del stream, presupuesto de replay,
+  uptime, memoria residente y la cabeza del registro por activo.
+- **Límite de peticiones**: `OTC_RATE_LIMIT_PER_MINUTE` (600 por defecto, `0` lo
+  desactiva) por dirección de cliente; el exceso recibe `429` con `Retry-After`.
+  Una conexión de stream cuenta una vez; sus tramas no.
+- La credencial de administración es `OTC_ADMIN_TOKEN` (a6-01): sin ella toda
+  escritura se rechaza; el proxy corta las rutas además, no en su lugar.
 
 ### systemd
 

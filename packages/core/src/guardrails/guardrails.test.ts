@@ -166,6 +166,9 @@ const AMBIENT_STATE_ALLOWLIST = [
   'tools/sim/src/stateTool.ts',
   // PH-29.3: the conformance command, the same shape.
   'tools/sim/src/conformanceTool.ts',
+  // PH-30.3: the observer fleet, a driver that spawns workers and an entry point each.
+  'tools/sim/src/observerFleet.ts',
+  'tools/sim/src/observerFleetWorker.ts',
   'tools/sim/src/dispersionEvidence.ts',
   'tools/sim/src/horizonEvidence.ts',
   /**
@@ -223,6 +226,8 @@ const AMBIENT_TIME_ALLOWLIST = [
    */
   'tools/sim/src/observerLoad.ts',
   'tools/sim/src/observerLoadRun.ts',
+  // PH-30.3: the fleet driver times its sampling and its workers' windows.
+  'tools/sim/src/observerFleet.ts',
   // PH-25.3's served-assurance job stamps its verdicts with the instant of
   // the run and times each asset; nothing it reads reaches a draw — the ticks
   // come over a socket from a venue that has its own clock.

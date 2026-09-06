@@ -67,7 +67,15 @@ Recovery has two branches:
 - **Snapshot unusable** — seam: continue from the last published price, forward
   only. The seam opens at the clock rather than at the stale checkpoint, and both
   keystream cursors and **sequence numbers** are leased ahead, so nothing is ever
-  published twice under one asset id.
+  published twice under one asset id. A checkpoint older than the 15 s catch-up
+  bound is unusable by definition, so **every deploy-length restart seams**.
+  With a durable record (PH-28) the seamed market's feed begins at the seam
+  rather than at the record's tail — the feed is gapless by contract and the
+  next tick lands a lease ahead — and the commitment chain is restarted there,
+  in the file and at the next boot's priming, with the break named by the
+  verifier. Found by the release run (PH-30.4): primed with the pre-seam tail,
+  the venue refused every post-seam tick and served nothing, and the following
+  boot died folding the record across the jump.
 
 A record that exists but cannot be read is neither: the market refuses to start,
 because the information needed to seam safely is exactly what was lost. So does

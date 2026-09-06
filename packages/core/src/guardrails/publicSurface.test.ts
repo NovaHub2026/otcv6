@@ -102,6 +102,9 @@ const INTERNAL: Record<string, readonly string[]> = {
     'stateTool.ts',
     // PH-29.3: the conformance suite's command, a binary entry point.
     'conformanceTool.ts',
+    // PH-30.3: the observer fleet's driver and its worker, binary entry points.
+    'observerFleet.ts',
+    'observerFleetWorker.ts',
     'servedAssuranceRun.ts',
   ],
 };

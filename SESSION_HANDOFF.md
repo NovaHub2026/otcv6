@@ -6,16 +6,16 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                                           |
-| ------------------ | ------------------------------------------------------------------------------- |
-| Last clean session | 2026-09-05                                                                      |
-| Branch             | `feature/ph-29-integration-boundary`, off `main` at `fd17ec0` (the PH-28 merge) |
-| Remote             | `origin` → NovaHub2026/otcv6, public                                            |
-| Active cycle       | Cycle 10, **2 of 3** — PH-28, PH-29 approved; PH-30 then Cycle Audit 10         |
-| Active phase       | none                                                                            |
-| Active subphase    | none                                                                            |
-| Cycle Audit        | **009 closed** — 62 confirmed, 61 resolved, one carried (a8-12)                 |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                              |
+| Field              | Value                                                                    |
+| ------------------ | ------------------------------------------------------------------------ |
+| Last clean session | 2026-09-05                                                               |
+| Branch             | `feature/ph-30-release`, off `main` at `668efa9` (the PH-29 merge)       |
+| Remote             | `origin` → NovaHub2026/otcv6, public                                     |
+| Active cycle       | Cycle 10, **3 of 3** — PH-28, PH-29, PH-30 approved; Cycle Audit 10 next |
+| Active phase       | none — the third phase is approved; Cycle Audit 10 next                  |
+| Active subphase    | none                                                                     |
+| Cycle Audit        | **009 closed** — 62 confirmed, 61 resolved, one carried (a8-12)          |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                       |
 
 ---
 

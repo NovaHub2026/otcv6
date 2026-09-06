@@ -62,6 +62,8 @@ function venue(
   /** As the real feed: retain from here and refuse anything older, naming the start. */
   windowStart: number | null = null,
   requests: string[] = [],
+  /** As the real stream: close every replay after this many ticks with the cap's own reason, naming the resume point (PH-30.4). */
+  capEvery: number | null = null,
 ): Promise<string> {
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://venue');
@@ -117,15 +119,27 @@ function venue(
       }
       response.writeHead(200, { 'content-type': 'text/event-stream' });
       let served = 0;
+      let lastServed: number | null = null;
+      let cappedAt: number | null = null;
       for (const tick of ticks) {
         if (tick.sequence < from) continue;
         if (closeAfter !== null && served >= closeAfter) break;
+        if (capEvery !== null && served >= capEvery) {
+          cappedAt = lastServed;
+          break;
+        }
         response.write(`id: ${String(tick.sequence)}\ndata: ${JSON.stringify(tick)}\n\n`);
         served += 1;
+        lastServed = tick.sequence;
       }
       response.write(
         `event: close\ndata: ${JSON.stringify({
-          reason: closeAfter === null ? 'record ends' : 'client fell behind during replay',
+          reason:
+            cappedAt !== null
+              ? `replay capped at 1000000 bytes after sequence ${String(cappedAt)}; resume from ${String(cappedAt + 1)}`
+              : closeAfter === null
+                ? 'record ends'
+                : 'client fell behind during replay',
         })}\n\n`,
       );
       response.end();
@@ -214,6 +228,23 @@ describe('the job as a scheduler runs it', () => {
     expect(code).toBe(1);
     expect(stderr).toMatch(/wire-otc: FAILED — .*400/);
   }, 60_000);
+
+  it('resumes across the replay cap and grades the whole window (PH-30.4)', async () => {
+    // The record outlives the process, so an hour's window is several caps
+    // long; the cap's close names where to resume, and the job does.
+    const requests: string[] = [];
+    const base = await venue(predictableByTheClock(36_000), false, null, null, requests, 5_000);
+    const directory = await mkdtemp(path.join(tmpdir(), 'otc-served-job-cap-'));
+    directories.push(directory);
+    const out = path.join(directory, 'verdict.md');
+    const { code, stderr } = await run(['--base', base, '--out', out, '--max-ticks', '36000']);
+    expect(code, stderr).toBe(2);
+    const text = await readFile(out, 'utf8');
+    expect(text).toMatch(/\| wire-otc \| 36000 \| /);
+    expect(text).toMatch(/\| 2124001–2160000 [0-9a-f]{12} \|/);
+    expect(text).toContain('**exploitable**');
+    expect(requests.length, 'stream reads across the caps').toBeGreaterThanOrEqual(8);
+  }, 120_000);
 
   it('exits 1 and records no verdict when the venue closes the read short (CA9 a4-01)', async () => {
     // The venue's 1 MB replay cap ends a long replay with a `close` that blames

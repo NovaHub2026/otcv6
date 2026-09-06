@@ -98,6 +98,11 @@ async function proxy(request: NextRequest, path: string[]): Promise<Response> {
     ...(reads ? {} : { body: await request.text() }),
     cache: 'no-store',
     redirect: 'manual',
+    // The browser's disconnect ends the upstream stream (PH-30.2). Without
+    // this every chart a page ever opened stayed subscribed on the engine
+    // through this proxy — `otc_stream_connections` read 16 for a board of
+    // eight, the other eight being the closed charts of earlier screens.
+    signal: request.signal,
   });
 
   const out = new Headers();

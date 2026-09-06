@@ -1,4 +1,4 @@
-import type { EpochMillis, Tick } from '@otc/core/browser';
+import { assertInt32Price, type EpochMillis, type Tick } from '@otc/core/browser';
 
 /**
  * A client's view of the market, held as a bounded contiguous window.
@@ -109,7 +109,7 @@ export class TickWindow {
     const prices = new Int32Array(this.#ticks.length);
     for (let i = 0; i < this.#ticks.length; i += 1) {
       instants[i] = this.#ticks[i]!.instant;
-      prices[i] = this.#ticks[i]!.price;
+      prices[i] = assertInt32Price(this.#ticks[i]!.price);
     }
     return { instants, prices };
   }

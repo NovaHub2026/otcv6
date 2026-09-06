@@ -83,6 +83,8 @@ function venueStub(
     lastTick: () => null,
     recoveryFor: () => null,
     stalledMarkets: stalled,
+    // PH-30.1: ready is the absence of stalls once resumed, as the venue reports it.
+    isReady: stalled.length === 0,
   } as unknown as VenueService;
 }
 
@@ -109,6 +111,7 @@ describe('health says whether the venue is publishing, not merely running', () =
       stalled: [],
       bootNonce: null,
       apiVersion: API_VERSION,
+      ready: true,
     });
   });
 
@@ -124,6 +127,7 @@ describe('health says whether the venue is publishing, not merely running', () =
       stalled,
       bootNonce: null,
       apiVersion: API_VERSION,
+      ready: false,
     });
   });
 

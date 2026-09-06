@@ -148,9 +148,14 @@ async function waitUntilReady(
   throw new Error(`never became healthy on ${port}:\n${output.slice(-2_000)}`);
 }
 
-async function bootEngine(port: number): Promise<void> {
-  const stateDir = await mkdtemp(path.join(tmpdir(), 'otc-panel-'));
-  directories.push(stateDir);
+/** The engine under the panel: its process and its state directory (PH-30.2 restarts it). */
+let engine: { child: ChildProcess; stateDir: string; port: number } | null = null;
+
+async function bootEngine(port: number, stateDir?: string): Promise<void> {
+  if (stateDir === undefined) {
+    stateDir = await mkdtemp(path.join(tmpdir(), 'otc-panel-'));
+    directories.push(stateDir);
+  }
   const nonce = randomUUID();
   const child = spawn(process.execPath, [path.join(repoRoot, 'apps/api/dist/main.js')], {
     env: {
@@ -167,6 +172,7 @@ async function bootEngine(port: number): Promise<void> {
     detached: true,
   });
   started.push(child);
+  engine = { child, stateDir, port };
   await waitUntilReady(
     port,
     '/health',
@@ -174,6 +180,30 @@ async function bootEngine(port: number): Promise<void> {
     async (response) =>
       ((await response.json()) as { bootNonce: string | null }).bootNonce === nonce,
   );
+}
+
+/**
+ * Kill the engine, lose its tick record, boot it again on the same directory
+ * and port (PH-30.2, a8-12). Without the record the feed is primed with
+ * nothing, so a chart resuming from a sequence the first process served is
+ * refused as evicted and told where the record picks up — the bounded hole
+ * PH-25.1 found, reproduced on purpose so the screen can be held to it.
+ */
+async function restartEngineLosingRecord(): Promise<void> {
+  if (engine === null) throw new Error('no engine to restart');
+  const { child, stateDir, port } = engine;
+  child.kill('SIGKILL');
+  await new Promise((resolve) => setTimeout(resolve, 1_000));
+  for (const file of ['record.db', 'record.db-wal', 'record.db-shm']) {
+    await rm(path.join(stateDir, file), { force: true });
+  }
+  await bootEngine(port, stateDir);
+}
+
+async function metric(port: number, name: string): Promise<number | null> {
+  const text = await (await fetch(`http://127.0.0.1:${String(port)}/metrics`)).text();
+  const line = text.split('\n').find((l) => l.startsWith(`${name} `));
+  return line === undefined ? null : Number(line.slice(name.length + 1));
 }
 
 async function bootPanel(port: number, enginePort: number): Promise<void> {
@@ -670,6 +700,79 @@ describe('the panel, in a browser', () => {
 
       expect(observed.consoleErrors, 'console errors').toEqual([]);
       expect(observed.failedRequests, 'failed requests').toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 300_000);
+
+  it('PH-30.2: eight charts on one connection; a retired market says so; a hole after a lost record reads as a hole (a8-12)', async (ctx) => {
+    const page = await requireBrowser(ctx).newPage({ viewport: { width: 1440, height: 900 } });
+    try {
+      await page.goto(`http://127.0.0.1:${webPort}/preview`, { waitUntil: 'networkidle' });
+      await page.getByTestId('board-toggle').click();
+      await page.getByTestId('board').waitFor({ state: 'visible', timeout: 30_000 });
+      const cards = page.locator('[data-testid^="board-card-"]');
+      await page.waitForFunction(
+        () => document.querySelectorAll('[data-testid^="board-card-"]').length === 8,
+        undefined,
+        { timeout: 30_000 },
+      );
+      const ids = await cards.evaluateAll((nodes) =>
+        nodes.map((n) => n.getAttribute('data-testid')!.replace('board-card-', '')),
+      );
+      expect(ids).toHaveLength(8);
+      // Every card prices, from the one stream.
+      await page.waitForFunction(
+        () =>
+          Array.from(document.querySelectorAll('[data-testid^="board-price-"]')).every((n) =>
+            /^-?\d+$/.test(n.textContent ?? ''),
+          ),
+        undefined,
+        { timeout: 60_000 },
+      );
+      // Issue #16: one connection for eight charts, eight subscriptions on it.
+      let connections: number | null = null;
+      let subscribers: number | null = null;
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        connections = await metric(apiPort, 'otc_stream_connections');
+        subscribers = await metric(apiPort, 'otc_stream_subscribers');
+        if (connections === 1 && subscribers === 8) break;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      expect(connections, 'stream connections for a board of eight').toBe(1);
+      expect(subscribers, 'subscriptions on that connection').toBe(8);
+
+      // A retired market says so on its card (a8-12).
+      const retired = ids[ids.length - 1]!;
+      const response = await fetch(`http://127.0.0.1:${apiPort}/assets/${retired}/retire`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+        body: '{}',
+      });
+      expect(response.status).toBe(201);
+      await page.waitForFunction(
+        (id) =>
+          (
+            document.querySelector(`[data-testid="board-status-${id}"]`)?.textContent ?? ''
+          ).includes('retirado'),
+        retired,
+        { timeout: 30_000 },
+      );
+
+      // A hole the venue tells is a hole on the screen, with its bounds (a8-12).
+      // The single chart resumes from where the *stored record* stops — the
+      // newest candle's last sequence — so after a restart that lost the tick
+      // record it asks for a sequence the new process cannot serve, is told
+      // where the record picks up, and must say so with the bounds.
+      await restartEngineLosingRecord();
+      await page.getByTestId('board-toggle').click();
+      await expect
+        .poll(async () => page.getByTestId('stream-status').textContent(), { timeout: 120_000 })
+        .toMatch(/hueco avisado por el motor: secuencias \d+–\d+ no servidas/);
+      const status = await page.getByTestId('stream-status').textContent();
+      console.info(
+        `[PH-30.2] board: ${String(connections)} connection, ${String(subscribers)} subscriptions; after the lost record the chart reads: ${String(status)}`,
+      );
     } finally {
       await page.close();
     }

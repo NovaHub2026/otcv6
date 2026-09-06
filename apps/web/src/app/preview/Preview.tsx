@@ -6,6 +6,7 @@ import { filterCatalogue, groupByFamily } from '../../lib/catalogueView.js';
 import { es } from '../../lib/es.js';
 import { PANEL_TIMEFRAMES, type PanelTimeframeId } from '@otc/chart';
 import { Badge, FIELD, Info, T } from '../ui/kit.js';
+import { Board } from './Board.js';
 import { PreviewChart } from './PreviewChart.js';
 
 /**
@@ -21,6 +22,7 @@ export function Preview({ apiBase }: { apiBase: string }): ReactElement {
   const [selected, setSelected] = useState<string | null>(null);
   const [timeframe, setTimeframe] = useState<PanelTimeframeId>('1h');
   const [query, setQuery] = useState('');
+  const [board, setBoard] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -178,9 +180,27 @@ export function Preview({ apiBase }: { apiBase: string }): ReactElement {
                 {shown.displayName}
               </span>
               <span style={{ color: T.faint, fontSize: 11 }}>{shown.id}</span>
+              <button
+                type="button"
+                data-testid="board-toggle"
+                onClick={() => setBoard((current) => !current)}
+                style={{
+                  marginLeft: 'auto',
+                  background: board ? T.raised : 'transparent',
+                  color: T.muted,
+                  border: `1px solid ${T.line}`,
+                  borderRadius: 4,
+                  padding: '2px 8px',
+                  cursor: 'pointer',
+                  font: 'inherit',
+                  fontSize: 12,
+                }}
+              >
+                {board ? es.preview.board.single : es.preview.board.toggle}
+              </button>
               <a
                 href={`/preview/ticks/${shown.id}`}
-                style={{ marginLeft: 'auto', color: T.muted, textDecoration: 'none', fontSize: 12 }}
+                style={{ marginLeft: 8, color: T.muted, textDecoration: 'none', fontSize: 12 }}
               >
                 {es.preview.ticks}
               </a>
@@ -188,7 +208,14 @@ export function Preview({ apiBase }: { apiBase: string }): ReactElement {
           )}
         </div>
         <div style={{ flex: 1, minHeight: 0 }}>
-          {shown === null ? (
+          {board ? (
+            <Board
+              apiBase={apiBase}
+              entries={filterCatalogue(catalogue, query)
+                .filter((entry) => entry.live)
+                .slice(0, 8)}
+            />
+          ) : shown === null ? (
             <Message text={es.preview.select} />
           ) : (
             <PreviewChart key={shown.id} apiBase={apiBase} asset={shown} timeframeId={timeframe} />

@@ -12,6 +12,8 @@ export {
   type AssetFamily,
   type InstrumentSpec,
   type LogPrice,
+  assertInt32Price,
+  INT32_PRICE_BOUND,
 } from './instrument.js';
 export { assertTickOrder, type Tick } from './tick.js';
 export type { TickSource } from './source.js';

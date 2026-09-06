@@ -47,6 +47,13 @@ export const es = {
       interrupted: 'stream interrumpido',
       notHosted: 'sin hospedar',
       reconnecting: 'reconectando',
+      retired: 'retirado — el motor cerró su stream',
+    },
+    board: {
+      toggle: 'Tablero',
+      single: 'Un gráfico',
+      title: (n: number) => `Tablero: ${String(n)} mercados en una conexión`,
+      empty: 'Ningún mercado en vivo coincide con el filtro.',
     },
     bars: (n: string) => `${n} velas`,
     liveBar: 'vela en curso',

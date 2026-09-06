@@ -49,6 +49,7 @@ export {
   IncrementalChainVerifier,
   readCommitmentsStream,
   verifyCommitmentsFile,
+  type ChainBreak,
   type CommitmentsFileVerdict,
 } from './commitmentsFile.js';
 export {

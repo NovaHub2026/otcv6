@@ -1,0 +1,34 @@
+# The OTC market engine as a systemd service (PH-30.1).
+#
+#   install -d /opt/otc /var/lib/otc /etc/otc
+#   cp -r . /opt/otc && cd /opt/otc && npm ci && npm run build
+#   printf 'OTC_MASTER_SECRET=%s\nOTC_ADMIN_TOKEN=%s\nOTC_PUBLISHING_KEY=%s\n' ... > /etc/otc/secrets.env
+#   chmod 600 /etc/otc/secrets.env
+#   cp deploy/otc-engine.service /etc/systemd/system/ && systemctl enable --now otc-engine
+#
+# SIGTERM is the right stop signal: the process writes a final checkpoint.
+# A SIGKILL loses nothing the record does not hold (PH-28), it only makes the
+# next boot replay from the last checkpoint.
+[Unit]
+Description=OTC market engine
+After=network.target
+
+[Service]
+Type=simple
+User=otc
+WorkingDirectory=/opt/otc
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=OTC_BIND=127.0.0.1
+Environment=OTC_STATE_DIR=/var/lib/otc
+Environment=OTC_PUBLICATION_DIR=/var/lib/otc/publication
+EnvironmentFile=/etc/otc/secrets.env
+ExecStart=/usr/bin/node /opt/otc/apps/api/dist/main.js
+Restart=always
+RestartSec=2
+KillSignal=SIGTERM
+TimeoutStopSec=30
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

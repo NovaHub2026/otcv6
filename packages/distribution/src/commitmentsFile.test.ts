@@ -205,7 +205,7 @@ describe('a commitments file is verified without being held whole (Issue #19)', 
     const links = chain(6);
     await writeFile(file, `${links.map((l) => JSON.stringify(l)).join('\n')}\n`);
     const ok = await verifyCommitmentsFile(file, HEX_0);
-    expect(ok).toEqual({ ok: true, count: 6, tip: links[5]!.commitment });
+    expect(ok).toEqual({ ok: true, count: 6, tip: links[5]!.commitment, breaks: [] });
     const tampered = [...links];
     tampered[3] = { ...links[3]!, signature: links[2]!.signature };
     await writeFile(file, `${tampered.map((l) => JSON.stringify(l)).join('\n')}\n`);
@@ -240,6 +240,51 @@ describe('a commitments file is verified without being held whole (Issue #19)', 
       `[commitments] ${(size / 1e6).toFixed(1)} MB verified; heap moved ${((after - before) / 1e6).toFixed(1)} MB`,
     );
     expect(after - before).toBeLessThan(size);
+  });
+});
+
+describe('a chain restarted at an empty root is two chains, and the break is named (PH-30.4)', () => {
+  it('verifies both chains, names the break, and shows a window cut from the earlier tail as a wider gap', async () => {
+    const directory = await scratch();
+    const file = path.join(directory, 'commitments.ndjson');
+    // Six windows to sequence 60, then a seam: the chain restarts at 100_061.
+    const links = [...chain(6), ...chain(3, KEY_0, 100_061)];
+    await writeFile(file, `${links.map((l) => JSON.stringify(l)).join('\n')}\n`);
+    const verdict = await verifyCommitmentsFile(file, HEX_0);
+    expect(verdict.ok).toBe(true);
+    expect(verdict.count).toBe(9);
+    expect(verdict.tip).toEqual(links[8]!.commitment);
+    expect(verdict.breaks).toEqual([{ link: 6, afterSequence: 60, fromSequence: 100_061 }]);
+    // The incremental verifier says the same, one link at a time.
+    const verifier = new IncrementalChainVerifier(HEX_0);
+    for (const link of links) expect(verifier.accept(link)).toBeNull();
+    expect(verifier.finish()).toBeNull();
+    expect(verifier.breaks).toEqual(verdict.breaks);
+    // A window dropped from the tail of the first chain does not break a
+    // signature; it widens the reported gap, which is what a reader can see.
+    const cut = [...links.slice(0, 5), ...links.slice(6)];
+    await writeFile(file, `${cut.map((l) => JSON.stringify(l)).join('\n')}\n`);
+    const wider = await verifyCommitmentsFile(file, HEX_0);
+    expect(wider.ok).toBe(true);
+    expect(wider.breaks).toEqual([{ link: 5, afterSequence: 50, fromSequence: 100_061 }]);
+    // A restart is still a link: one for another asset, or signed by a key
+    // that was never authorised, is refused where it stands.
+    const other = [...chain(6), ...chain(1, KEY_1, 100_061)];
+    await writeFile(file, `${other.map((l) => JSON.stringify(l)).join('\n')}\n`);
+    const refused = await verifyCommitmentsFile(file, HEX_0);
+    expect(refused.ok).toBe(false);
+    expect(refused.breaks).toEqual([]);
+    expect(refused.error).toEqual({
+      line: 7,
+      detail: 'Commitment 6 is signed by a key that was never authorised to publish.',
+    });
+    const foreign: SignedCommitment = signCommitment(
+      commit('gbpusd', ticks(100_061, 10), ''),
+      KEY_0,
+    );
+    expect(incremental([...chain(6), foreign])).toBe(
+      'Commitment 6 is for gbpusd, following eurusd.',
+    );
   });
 });
 

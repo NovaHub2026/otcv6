@@ -1,8 +1,8 @@
 # API Contract
 
 Type: SUPPORTING DOCUMENTATION (generated; do not edit by hand)
-Version: 1.0.0
-Digest: 5bc1dd766f15aa0c
+Version: 1.1.0
+Digest: 1f9fc7c84b19c58c
 Source: `apps/api/src/contract.ts` — rendered by `npm run contract:render`; held to the controller by `contract.test.ts`
 
 ---
@@ -26,6 +26,37 @@ Response: a JSON object:
 | `stalled` | `array` |
 | `bootNonce` | `string|null` |
 | `apiVersion` | `string` |
+| `ready` | `boolean` |
+
+## GET `/health/live`
+
+Liveness: the process serves HTTP. Nothing about the markets.
+
+Response: a JSON object:
+
+| Key | Type |
+| --- | --- |
+| `live` | `boolean` |
+
+## GET `/health/ready`
+
+Readiness: every market resumed and primed, nothing stalled; 503 with the reason until then.
+
+Response: a JSON object:
+
+| Key | Type |
+| --- | --- |
+| `ready` | `boolean` |
+
+| Status | When |
+| --- | --- |
+| 503 | the markets have not finished resuming, the venue is shutting down, or a market is stalled (named) |
+
+## GET `/metrics`
+
+The operator counters in the Prometheus text format: markets, stalls, readiness, ticks published, subscribers, replay budget, uptime, memory, record heads.
+
+Response: `text/plain`, the prometheus text format.
 
 ## GET `/contract`
 

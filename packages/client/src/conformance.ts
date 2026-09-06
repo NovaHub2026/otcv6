@@ -114,6 +114,24 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
     `venue ${String(digest)}, this client ${contractDigest()}`,
   );
 
+  // ---- readiness and metrics (PH-30.1) ---------------------------------------
+  const ready = await get('/health/ready');
+  check(
+    'ready',
+    ready.status === 200,
+    `GET /health/ready answered ${String(ready.status)}: ${ready.text.slice(0, 120)}`,
+  );
+  const metrics = await get('/metrics');
+  const metricLines = metrics.text.split('\n').filter((l) => l.length > 0 && !l.startsWith('#'));
+  const wellFormed = metricLines.every((l) => /^[a-z_]+(\{[^}]*\})? -?\d+(\.\d+)?$/.test(l));
+  check(
+    'metrics',
+    metrics.status === 200 &&
+      wellFormed &&
+      metricLines.some((l) => l.startsWith('otc_markets_hosted ')),
+    `GET /metrics answered ${String(metrics.status)} with ${String(metricLines.length)} samples${wellFormed ? '' : ', not all well formed'}`,
+  );
+
   // ---- every contracted JSON route, by keys and types -----------------------
   const markets = await get('/markets');
   const views = Array.isArray(markets.body) ? (markets.body as MarketView[]) : [];
@@ -151,7 +169,9 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
     }
     const answer = await get(path);
     if (answer.status !== 200) {
-      const listed = route.refusals !== undefined && String(answer.status) in route.refusals;
+      const listed =
+        answer.status === 429 ||
+        (route.refusals !== undefined && String(answer.status) in route.refusals);
       check(
         `GET ${route.path}`,
         listed,

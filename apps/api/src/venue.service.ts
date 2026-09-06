@@ -96,6 +96,12 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
   private inFlight: Promise<void> = Promise.resolve();
   /** Assets an operator has retired. Read at `start`, never hosted. */
   private readonly retired = new Set<string>();
+  /** Set once every market has resumed and primed (PH-30.1): what `/health/ready` reads. */
+  private ready = false;
+  /** Ticks published by this process, every asset, for `/metrics` (PH-30.1). */
+  private ticksPublished = 0;
+  /** The venue clock's reading when `start()` finished, for uptime. */
+  private startedAt: EpochMillis | null = null;
 
   constructor(
     private readonly store: StateStore,
@@ -263,7 +269,55 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     // what this one's feed resumes from, and what its recorder folds first.
     for (const { asset } of markets) await this.#primeFromRecord(asset.definition.id);
     this.lastCheckpointAt = this.clock.now();
+    this.startedAt = epochMillis(this.clock.now());
+    this.ready = true;
     this.schedule();
+  }
+
+  /**
+   * Whether an orchestrator may route traffic here (PH-30.1): every market
+   * resumed and primed, the scheduler running, nothing stalled. Distinct from
+   * liveness — a process that answers HTTP while a market is stalled is alive
+   * and not ready — and from `/health`'s `status`, which a human reads.
+   */
+  get isReady(): boolean {
+    return this.ready && !this.stopping && this.stalled.size === 0;
+  }
+
+  /** Why the venue is not ready, or null when it is. */
+  get notReadyReason(): string | null {
+    if (!this.ready) return 'the markets have not finished resuming';
+    if (this.stopping) return 'the venue is shutting down';
+    if (this.stalled.size > 0) {
+      return `stalled: ${[...this.stalled.keys()].join(', ')}`;
+    }
+    return null;
+  }
+
+  /** What `/metrics` reads, from what this service already counts (PH-30.1). */
+  get counters(): {
+    readonly ticksPublished: number;
+    readonly uptimeMs: number;
+    readonly subscribers: number;
+  } {
+    let subscribers = 0;
+    for (const id of this.assetIds) subscribers += this.feed.subscriberCount(id);
+    return {
+      ticksPublished: this.ticksPublished,
+      uptimeMs: this.startedAt === null ? 0 : this.clock.now() - this.startedAt,
+      subscribers,
+    };
+  }
+
+  /** The record's head per hosted asset, for `/metrics`; empty without a record. */
+  async recordHeads(): Promise<ReadonlyMap<string, number>> {
+    const heads = new Map<string, number>();
+    if (this.record === null) return heads;
+    for (const id of this.assetIds) {
+      const head = await this.record.head(id);
+      if (head !== null) heads.set(id, head);
+    }
+    return heads;
   }
 
   /**
@@ -295,22 +349,36 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
    */
   async #primeFromRecord(assetId: string): Promise<void> {
     if (this.record === null) return;
+    // A market that seamed at this boot publishes its next tick a lease
+    // beyond the record's head, and the feed is gapless by contract: primed
+    // with the pre-seam tail it refused every post-seam pass, and the release
+    // run's venue served nothing after its first deploy-length restart
+    // (PH-30.4). So a seamed market's feed begins at the seam — what the
+    // previous process served stays in the record, reachable by sequence and
+    // by instant, and a client resuming from before the seam is told the
+    // window starts after it, which is the refusal the resume contract is
+    // built on.
+    const seamed = this.recovery.get(assetId)?.kind === 'seam';
     const tail = await this.record.tail(assetId, DEFAULT_RETAIN_TICKS);
     if (tail.length > 0) {
-      this.feed.publish(assetId, tail);
+      if (!seamed) this.feed.publish(assetId, tail);
       const newest = tail[tail.length - 1]!;
       const known = this.latest.get(assetId);
       if (known === undefined || newest.sequence > known.sequence) this.latest.set(assetId, newest);
     }
     const folded = await this.history?.prime(assetId, this.record);
     // And the commitment chain, which the record lets continue across the
-    // boundary rather than restart at every boot (PH-28.3).
-    await this.publication.prime(assetId, this.record);
+    // boundary rather than restart at every boot (PH-28.3) — and which a seam
+    // restarts (PH-30.4).
+    await this.publication.prime(assetId, this.record, seamed);
     const head = tail.length > 0 ? tail[tail.length - 1]!.sequence : null;
     this.logger.log(
       head === null
         ? `${assetId}: no published record to prime from`
-        : `${assetId}: feed primed from the record through sequence ${head} ` +
+        : seamed
+          ? `${assetId}: seamed; the record ends at sequence ${head} and the feed begins at ` +
+            `the seam; ${folded ?? 0} folded into the open minute`
+          : `${assetId}: feed primed from the record through sequence ${head} ` +
             `(${tail.length} ticks); ${folded ?? 0} folded into the open minute`,
     );
   }
@@ -624,6 +692,7 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       const last = generated[generated.length - 1];
       if (last !== undefined) this.latest.set(assetId, last);
       if (ticks.length === 0) continue;
+      this.ticksPublished += ticks.length;
       this.feed.publish(assetId, ticks);
       // After publication, never before: the publisher sees the record, it does
       // not participate in producing it (INV-001). The same is true of the

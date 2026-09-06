@@ -811,7 +811,7 @@ departure is recorded ([decision](../decisions/DECISION-LOG.md), 2026-09-05).
 | ----- | ----------------------------------------------------------- | ------------ |
 | PH-28 | The durable venue: the record outlives the process          | **APPROVED** |
 | PH-29 | The integration boundary: what a broker's settlement needs  | **APPROVED** |
-| PH-30 | Release 1.0: the engine as a broker integrates it           | PLANNED      |
+| PH-30 | Release 1.0: the engine as a broker integrates it           | APPROVED     |
 | —     | **Cycle Audit 10** — the closing audit, adversarial as ever | PLANNED      |
 
 **What "finished" means here, and what it does not.** The product is the
@@ -882,13 +882,13 @@ held from several harness processes with memory measured; the whole catalogue
 measured by the standing job on the release build; every open Issue closed or
 decided; the integration package regenerated from the tag.
 
-| Subphase | Title                                                                                       | State   |
-| -------- | ------------------------------------------------------------------------------------------- | ------- |
-| PH-30.1  | Operations: readiness, liveness, metrics, admin credential, rate limits, unit files         | PLANNED |
-| PH-30.2  | The stream at scale: one multiplexed stream (#16); the operator's panel with holes, retired | PLANNED |
-| PH-30.3  | Ten thousand observers held, from several processes, memory measured at the target          | PLANNED |
-| PH-30.4  | The whole catalogue measured on the release build; the per-asset evidence complete          | PLANNED |
-| PH-30.5  | Every open Issue closed or decided; the package regenerated; `v1.0.0` tagged and recorded   | PLANNED |
+| Subphase | Title                                                                                       | State    |
+| -------- | ------------------------------------------------------------------------------------------- | -------- |
+| PH-30.1  | Operations: readiness, liveness, metrics, admin credential, rate limits, unit files         | APPROVED |
+| PH-30.2  | The stream at scale: one multiplexed stream (#16); the operator's panel with holes, retired | APPROVED |
+| PH-30.3  | Ten thousand observers held, from several processes, memory measured at the target          | APPROVED |
+| PH-30.4  | The whole catalogue measured on the release build; the per-asset evidence complete          | APPROVED |
+| PH-30.5  | Every open Issue closed or decided; the package regenerated; `v1.0.0` tagged and recorded   | APPROVED |
 
 ## Known uncertainties
 

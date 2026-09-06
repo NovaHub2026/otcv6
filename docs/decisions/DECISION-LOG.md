@@ -723,3 +723,81 @@ across the change should not lose it.
 per horizon; `PH-25-SERVED-VERDICT.md` and `PH-28-DURABLE-VENUE.md` were
 graded before this and say so in their tables' provenance. The tripwire
 `gateSensitivity.stat.test.ts` stays as it is.
+
+## 2026-09-06 — The release closes or decides every open Issue (PH-30.5)
+
+Cycle 10 is the closing cycle, and a release carries no Issue nobody decided.
+Each open Issue on the day, and what was decided:
+
+- **#4 (B-029, `xauusd`'s realised spread against its calibrated one)** —
+  closed as superseded: `xauusd` is not in the catalogue of thirty that ships
+  (PH-26), so the question has no subject in the release. The method note —
+  size the standard error of σ from the empirical kurtosis, not the Gaussian
+  formula — stays in `docs/BACKLOG.md` under B-029 for whoever calibrates an
+  asset with a tail like it.
+- **#7 (CA6-37, PH-17's headline numbers printed, not asserted)** — closed:
+  the phase document already says the figure is `console.info` and that what
+  the test enforces is the band, two to three times wider than the number
+  quoted (`PH-17-assets-become-data.md` §7). Marked informational there; the
+  band is what is asserted, and that is the honest claim.
+- **#8 (CA6-39, the drift reconciliation table does not reproduce)** — closed
+  by annotation: the table is marked not reproducible from its inputs, with
+  the reason, in `CYCLE-6-DRIFT.md`. Regenerating it would measure a
+  catalogue that no longer exists.
+- **#12 (a2 residue, guardrail evasions no textual scan can see)** — closed as
+  accepted residue, recorded: a name split across literals, an economic word
+  outside the vocabulary, `Symbol.for` as a channel — no source scan sees
+  these and none will. The defence is behavioural and stays: tick identity,
+  the settlement mirror, economic blindness by value, the production-responses
+  walk by value (a1-01), and the meta-audit that plants against every guard.
+- **#20 (Int32 narrowing where `logPrice` guards at 2^53)** — fixed: every
+  site that narrows a run of prices to an `Int32Array` — the chart's window,
+  the lab's datasets and journal reader, the served-record reference — asserts
+  through `assertInt32Price`, which refuses a price outside ±2^31 by name where
+  the array would have wrapped silently. The bound is 1.6 × 10⁷ years away for
+  the fastest asset; the guard exists because the failure would be silent.
+- **#16 (six connections per origin)** — closed by PH-30.2 at the merge.
+- **#9 (the multi-node composition), #3 and #14 (Governance amendments)** —
+  stay open by name: the first is deferred by the Cycle 10 plan and is the
+  next cycle's if the Human Owner wants it; the two amendments are theirs.
+
+## 2026-09-06 — A seam restarts the feed and the chain at the seam; the verifier names breaks (PH-30.4)
+
+**Context.** The release run (PH-30.4) stopped the venue cleanly after an hour
+and restarted it on the same directory 23 minutes later. Every market seamed —
+the checkpoint was past the 15 s catch-up bound, as it is after any deploy —
+and the venue then served **nothing**: PH-28.1 primes the feed with the
+record's tail, the feed is gapless by contract, and the first post-seam tick
+lands a lease ahead of that tail, so every pass failed with "tick failed" for
+every asset while the record kept filling. The standing job read thirty 400s.
+A third boot, prompt this time, died at priming: the chain writer folded the
+record across the recorded jump and the publisher refused the gap. And the
+chain restart PH-28.3 promised — "a verifier sees the break where it is" —
+produced a file `verifyCommitmentsFile` refused at the second genesis link;
+the test that established the restart read the links and never verified the
+file.
+
+**Decision.**
+
+- A market that seamed at this boot has its feed begin **at the seam**. The
+  record keeps both sides, by sequence and by instant; a client resuming from
+  before the seam is told where the window starts, the refusal the resume
+  contract is built on. The alternative — a feed that admits one told gap —
+  would put a discontinuity into the one structure INV-002 forbids one in.
+- The commitment chain is **restarted** at a seam, never bridged: by the venue
+  when the market seams, and by the next boot's priming wherever the record's
+  sequences jump. Same rule as a record that cannot reach the tip (PH-28.3).
+- The verifier **accepts** a genesis link after the first when it is signed by
+  an authorised key for the same asset, and **names it** in `breaks` as
+  `{ link, afterSequence, fromSequence }`. `ok` means every link verifies and
+  every chain is whole; continuity is a separate question the reader can ask.
+  What a break cannot prove — a window cut from the earlier chain's tail
+  widens the interval and breaks no signature — is documented rather than
+  hidden.
+
+**Guards.** `venueRecord.test.ts` runs the three boots (whole, seamed, resumed
+across the recorded seam) and verifies the file with its one break;
+`commitmentsFile.test.ts` verifies a two-chain file, shows the widened gap,
+and refuses a restart by an unauthorised key or for another asset. Both were
+watched failing on the unfixed code: the seam test dies exactly as the release
+run's venue did, `Feed ... received sequence 100984 after 982`.

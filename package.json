@@ -34,6 +34,7 @@
     "state:backup": "npm run build && node tools/sim/dist/stateTool.js backup",
     "contract:render": "npm run build && node apps/api/dist/renderContract.js",
     "conformance": "npm run build && node tools/sim/dist/conformanceTool.js",
+    "observer:fleet": "npm run build && node tools/sim/dist/observerFleet.js",
     "state:check": "vitest run --project unit packages/core/src/guardrails/stateConsistency.test.ts packages/core/src/guardrails/documentation.test.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

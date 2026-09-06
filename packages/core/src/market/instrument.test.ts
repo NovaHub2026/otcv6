@@ -10,6 +10,8 @@ import {
   stepsBetween,
   toDisplayPrice,
   type InstrumentSpec,
+  assertInt32Price,
+  INT32_PRICE_BOUND,
 } from './instrument.js';
 
 const EURUSD: InstrumentSpec = {
@@ -138,5 +140,17 @@ describe('proportionality — the property the log lattice exists for', () => {
 
   it('measures distance in whole steps', () => {
     expect(stepsBetween(logPrice(100), logPrice(250))).toBe(150);
+  });
+});
+
+describe('a price run is held in an Int32 lattice, and a price outside it is refused by name (Issue #20)', () => {
+  it('accepts the bound and refuses one past it, where an Int32Array would wrap', () => {
+    expect(assertInt32Price(INT32_PRICE_BOUND)).toBe(INT32_PRICE_BOUND);
+    expect(assertInt32Price(-INT32_PRICE_BOUND - 1)).toBe(-INT32_PRICE_BOUND - 1);
+    expect(() => assertInt32Price(INT32_PRICE_BOUND + 1)).toThrow(/outside the Int32 lattice/);
+    expect(() => assertInt32Price(-INT32_PRICE_BOUND - 2)).toThrow(/Issue #20/);
+    expect(() => assertInt32Price(1.5)).toThrow(RangeError);
+    // What the wrap would have done, so the guard's reason is on the record.
+    expect(new Int32Array([INT32_PRICE_BOUND + 1])[0]).toBe(-INT32_PRICE_BOUND - 1);
   });
 });

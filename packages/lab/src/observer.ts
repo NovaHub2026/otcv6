@@ -1,4 +1,5 @@
 import {
+  assertInt32Price,
   CandleAggregator,
   epochMillis,
   indexAtOrAfter,
@@ -165,7 +166,7 @@ export async function buildObserverDataset(options: DatasetBuildOptions): Promis
         `Observer dataset requires non-decreasing instants: ${tick.instant} follows ${instants[count - 1]!}.`,
       );
     }
-    prices[count] = tick.price;
+    prices[count] = assertInt32Price(tick.price);
     instants[count] = tick.instant;
     count += 1;
     if (count % chunkTicks === 0) await yieldToLoop();
@@ -204,7 +205,7 @@ export function datasetFromTicks(
         `Observer dataset requires non-decreasing instants: ${tick.instant} follows ${instants[i - 1]!}.`,
       );
     }
-    prices[i] = tick.price;
+    prices[i] = assertInt32Price(tick.price);
     instants[i] = tick.instant;
   }
   const publicSpec: PublicInstrument =

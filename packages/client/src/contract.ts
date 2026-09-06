@@ -47,6 +47,8 @@ export interface RouteContract {
   readonly refusals?: Readonly<Record<string, string>>;
   /** Needs the operator's bearer token (`OTC_ADMIN_TOKEN`) and a JSON body. */
   readonly admin?: true;
+  /** A plain-text response in the named format rather than JSON. */
+  readonly text?: 'prometheus';
 }
 
 const MARKET: Shape = {
@@ -94,8 +96,33 @@ export const API_ROUTES: readonly RouteContract[] = [
         stalled: 'array',
         bootNonce: 'string|null',
         apiVersion: 'string',
+        ready: 'boolean',
       },
     },
+  },
+  {
+    method: 'GET',
+    path: '/health/live',
+    summary: 'Liveness: the process serves HTTP. Nothing about the markets.',
+    response: { object: { live: 'boolean' } },
+  },
+  {
+    method: 'GET',
+    path: '/health/ready',
+    summary:
+      'Readiness: every market resumed and primed, nothing stalled; 503 with the reason until then.',
+    response: { object: { ready: 'boolean' } },
+    refusals: {
+      '503':
+        'the markets have not finished resuming, the venue is shutting down, or a market is stalled (named)',
+    },
+  },
+  {
+    method: 'GET',
+    path: '/metrics',
+    summary:
+      'The operator counters in the Prometheus text format: markets, stalls, readiness, ticks published, subscribers, replay budget, uptime, memory, record heads.',
+    text: 'prometheus',
   },
   {
     method: 'GET',
@@ -304,6 +331,8 @@ export const API_ROUTES: readonly RouteContract[] = [
  */
 export const CONTRACT_HISTORY: readonly { readonly version: string; readonly digest: string }[] = [
   { version: '1.0.0', digest: '5bc1dd766f15aa0c' },
+  // PH-30.1: liveness, readiness, metrics; `ready` on /health. Additive.
+  { version: '1.1.0', digest: '1f9fc7c84b19c58c' },
 ];
 
 export const API_VERSION: string = CONTRACT_HISTORY[CONTRACT_HISTORY.length - 1]!.version;
@@ -372,6 +401,9 @@ export function renderContract(): string {
         shapeRows(isArray ? route.response.array : route.response.object),
         '',
       );
+    }
+    if (route.text !== undefined) {
+      lines.push(`Response: \`text/plain\`, the ${route.text} text format.`, '');
     }
     if (route.stream) {
       lines.push(

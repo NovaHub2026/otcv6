@@ -86,6 +86,7 @@ packages/trading           Contracts and deterministic settlement against the pu
 packages/distribution      Sequence-addressed tick distribution and the consistency contract
 packages/chart             The rendering contract: extreme-preserving reduction to columns
 packages/client            What a broker embeds: the API contract, the conformance suite, the reference client
+deploy/                    What a deployment starts from: systemd unit, Dockerfile, compose, nginx, backup (PH-30.1)
 tools/sim                  Offline simulation runner and statistical evidence generator
 apps/api                   NestJS runtime service hosting the catalogue continuously
 apps/web                   Next.js observer frontend and trading chart
