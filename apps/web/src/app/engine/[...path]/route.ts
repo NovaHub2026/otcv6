@@ -74,6 +74,19 @@ const FORWARDED = ['accept', 'accept-language', 'content-type', 'last-event-id']
 
 const READ_METHODS: ReadonlySet<string> = new Set(['GET', 'HEAD']);
 
+/**
+ * The address this server sees the browser at, or null when the runtime does
+ * not expose one. `NextRequest.ip` is populated by some hosts and not others,
+ * and a proxy in front of the panel puts the client in `x-real-ip`; both are
+ * read, neither is invented.
+ */
+function clientAddress(request: NextRequest): string | null {
+  const direct = (request as NextRequest & { ip?: string }).ip;
+  if (direct !== undefined && direct.length > 0) return direct;
+  const real = request.headers.get('x-real-ip');
+  return real === null || real.length === 0 ? null : real;
+}
+
 async function proxy(request: NextRequest, path: string[]): Promise<Response> {
   const url = new URL(`${engineOrigin()}/${path.join('/')}`);
   url.search = new URL(request.url).search;
@@ -82,6 +95,19 @@ async function proxy(request: NextRequest, path: string[]): Promise<Response> {
   for (const name of FORWARDED) {
     const value = request.headers.get(name);
     if (value !== null) headers.set(name, value);
+  }
+  // **Whose request this is (Cycle Audit 10, a8-01).** The panel proxies every
+  // chart under its own origin, so without this the engine sees one address —
+  // the panel's — for every operator at every screen, and its rate limit puts
+  // them all in one bucket. `OTC_TRUSTED_PROXIES` on the engine says how many
+  // hops to trust; this is the hop that would otherwise carry nothing. The
+  // browser's own `x-forwarded-for` is appended to rather than trusted: the
+  // engine decides how far down that list to read, and a client that sends the
+  // header must not be able to displace the address this server observed.
+  const client = clientAddress(request);
+  if (client !== null) {
+    const upstreamChain = request.headers.get('x-forwarded-for');
+    headers.set('x-forwarded-for', upstreamChain === null ? client : `${upstreamChain}, ${client}`);
   }
   const reads = READ_METHODS.has(request.method.toUpperCase());
   if (!reads) {
