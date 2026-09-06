@@ -676,3 +676,26 @@ happened and what the file should say. Asserted in `venueRecord.test.ts`.
 of a process that will not boot, and a restore is a directory swap with the
 service stopped anyway. `npm run state:verify` and `npm run state:backup` work
 on the directory, with or without a venue running on it.
+
+## 2026-09-06 — Settlement money is an integer in the broker's minor unit, and the payout is computed exactly (Issue #11, PH-29.4)
+
+**Decision.** `Contract.stake` is an integer count of the broker's minor unit
+(cents, satoshis — the broker's, and the library does not know which);
+`payoutRatio` is a decimal with at most four places; a winning contract
+returns `stake + floor(stake × payoutRatio × 10 000 / 10 000)` computed in
+integer arithmetic, so `returned` and `net` are integers and `tally` sums
+integers. Truncation, not rounding: the fraction of a minor unit a payout
+cannot carry stays with the operator, deterministically, and never exceeds one
+minor unit per contract.
+
+**Why this shape.** The out-of-band audit measured 124 of 100 000 cent stakes
+disagreeing with exact arithmetic under `stake × (1 + payout)` in floating
+point (a5-08). Changing the contract's fields — a `stakeMinor`, a rational
+payout — would have reached twenty files including the Lab's positions and
+screen for a library the broker embeds and the venue never routes; keeping the
+fields and fixing their meaning and arithmetic reaches the library and its
+tests. A stake that is not an integer, or a payout with more than four places,
+is refused by name.
+
+**What it does not decide.** The currency, the payout ratio itself and the
+at-the-money policy remain the broker's (ADR-0007 for the default refund).
