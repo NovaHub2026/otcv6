@@ -116,6 +116,7 @@ npm run test:cov       # coverage over packages/, tools/ and apps/, both project
 
 npm run state:verify -- --dir ./.otc-state            # the state directory agrees with itself (PH-28.3)
 npm run state:backup -- --dir ./.otc-state --out DIR  # a consistent, verified copy with its manifest
+npm run contract:render                               # docs/architecture/API_CONTRACT.md from apps/api/src/contract.ts (PH-29.2)
 ```
 
 **Always `npm run test:stat`, never a bare `npx vitest run --project statistical`.**

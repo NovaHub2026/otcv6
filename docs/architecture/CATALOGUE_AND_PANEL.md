@@ -291,6 +291,15 @@ was a copy of the stream. Three read routes answer from the published record
 instants and to `settle()`'s own entry and expiry prices, and verifies a served
 proof with the distribution package's verifiers.
 
+**And the whole surface is a contract** (PH-29.2). `apps/api/src/contract.ts`
+names every public route, its parameters, its response keys with their types
+and its refusals, as data; the venue serves it at `GET /contract` with a
+version and a digest, `/health` carries the version, and
+[`API_CONTRACT.md`](API_CONTRACT.md) is rendered from it. A guard holds the
+controller to it — the route set, and every live response's keys and types —
+and fails when the routes' digest moves without a new entry in the contract's
+history. A breaking change is a version, or it is a red build.
+
 ## 6. Creating an asset is a job
 
 `POST /assets` returns a **job id**, and the panel polls `/registrations/:id`.

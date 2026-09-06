@@ -867,8 +867,8 @@ Issue #11 decided as the library's concern only.
 | Subphase | Title                                                                                  | State    |
 | -------- | -------------------------------------------------------------------------------------- | -------- |
 | PH-29.1  | The settlement query: price at a sequence and at an instant, with its inclusion proof  | APPROVED |
-| PH-29.2  | The API contract frozen: versioned, schema-described, breaking changes guarded         | ACTIVE   |
-| PH-29.3  | The conformance suite: the integration checklist made executable against a live venue  | PLANNED  |
+| PH-29.2  | The API contract frozen: versioned, schema-described, breaking changes guarded         | APPROVED |
+| PH-29.3  | The conformance suite: the integration checklist made executable against a live venue  | ACTIVE   |
 | PH-29.4  | The reference client and settlement library: exercised by the release, #11 decided     | PLANNED  |
 | PH-29.5  | The standing verdict's figure decided (#10); the guide's §5 rewritten around the query | PLANNED  |
 
