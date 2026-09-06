@@ -5,7 +5,11 @@ import { stateRefusal, verifyStateDirectory, type AssetRegistry } from '@otc/run
 import { ADMIN_TOKEN } from './adminAuth.guard.js';
 import { AppModule } from './app.module.js';
 import { VenueService } from './venue.service.js';
-import { bindAddressFromEnvironment, isExposedBind } from './bind.js';
+import {
+  bindAddressFromEnvironment,
+  isExposedBind,
+  trustedProxiesFromEnvironment,
+} from './bind.js';
 import { refuseLabState } from './labState.js';
 
 /**
@@ -88,6 +92,17 @@ async function bootstrap(): Promise<void> {
   // gets the write methods in the preflight — and then still needs the token.
   // The panel needs neither: it proxies the engine under its own origin and adds
   // the token on its server.
+  // **Whose address the venue thinks it is talking to (Cycle Audit 10).** The
+  // rate limit keys on it, so with nothing configured behind the shipped
+  // reverse proxy every client shared one bucket. Express only reads
+  // `X-Forwarded-For` when it is told how many hops to trust, and trusting
+  // that header from a direct client would be the same defect pointing the
+  // other way — so this is 0 unless the deployment says otherwise.
+  const trustedProxies = trustedProxiesFromEnvironment(process.env);
+  if (trustedProxies > 0) {
+    app.getHttpAdapter().getInstance().set('trust proxy', trustedProxies);
+  }
+
   const origins = process.env.OTC_CORS_ORIGIN;
   const wildcard = origins === undefined || origins.trim() === '' || origins.trim() === '*';
   app.enableCors({

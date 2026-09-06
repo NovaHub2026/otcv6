@@ -2,7 +2,12 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { bindAddressFromEnvironment, DEFAULT_BIND_ADDRESS, isExposedBind } from './bind.js';
+import {
+  bindAddressFromEnvironment,
+  DEFAULT_BIND_ADDRESS,
+  isExposedBind,
+  trustedProxiesFromEnvironment,
+} from './bind.js';
 
 /** `apps/api/src` -> the repository root. */
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -73,5 +78,33 @@ describe('the panel binds where the engine does', () => {
     // a panel nobody runs — which is how this exposure survived PH-20.
     const suite = readFileSync(path.join(repoRoot, 'apps/web/src/panel.stat.test.ts'), 'utf8');
     expect(suite).toMatch(/'start',\s*'-p',\s*String\(port\),\s*'-H',\s*'127\.0\.0\.1'/);
+  });
+});
+
+describe('how many proxy hops the venue trusts (Cycle Audit 10)', () => {
+  it('trusts nothing by default, reads a hop count, and refuses anything else', () => {
+    // Nothing configured means nothing trusted: a service reachable directly
+    // must not let a header choose which bucket a client falls in.
+    expect(trustedProxiesFromEnvironment({})).toBe(0);
+    expect(trustedProxiesFromEnvironment({ OTC_TRUSTED_PROXIES: '' })).toBe(0);
+    expect(trustedProxiesFromEnvironment({ OTC_TRUSTED_PROXIES: '  ' })).toBe(0);
+    // Behind the nginx this repository ships, one hop.
+    expect(trustedProxiesFromEnvironment({ OTC_TRUSTED_PROXIES: '1' })).toBe(1);
+    expect(trustedProxiesFromEnvironment({ OTC_TRUSTED_PROXIES: ' 2 ' })).toBe(2);
+    // A boolean spelling is the mistake this refuses by name, because Express
+    // reads `true` as "trust every hop", which trusts the client's own header.
+    for (const raw of ['true', 'yes', 'on', '1.5', '-1', 'all'])
+      expect(() => trustedProxiesFromEnvironment({ OTC_TRUSTED_PROXIES: raw }), raw).toThrow(
+        /whole number of proxy hops/,
+      );
+  });
+
+  it('is what production wires into the HTTP adapter, before it listens', () => {
+    // main.ts is composed once and never imported by a test, so the wiring is
+    // asserted where it lives (the pattern labState.test.ts uses).
+    const production = readFileSync(new URL('./main.ts', import.meta.url), 'utf8');
+    expect(production).toMatch(/trustedProxiesFromEnvironment\(process\.env\)/);
+    expect(production).toMatch(/sets?\(\s*'trust proxy'/);
+    expect(production.indexOf("'trust proxy'")).toBeLessThan(production.indexOf('app.listen('));
   });
 });

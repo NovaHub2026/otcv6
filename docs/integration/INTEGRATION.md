@@ -446,22 +446,23 @@ decimales y nunca menos.
 
 ## 4. Configuración
 
-| Variable                 | Por defecto                 | Qué hace                                                                                                                                                                     |
-| ------------------------ | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OTC_MASTER_SECRET`      | — **obligatoria**           | 64 caracteres hex (32 bytes). De aquí se deriva todo el mercado.                                                                                                             |
-| `OTC_KEY_ID`             | `primary`                   | **Solo una etiqueta**, anotada en los puntos de control para saber qué secreto los generó. **No entra en la derivación**: cambiarla no cambia el mercado.                    |
-| `PORT`                   | `3000`                      | Puerto del motor.                                                                                                                                                            |
-| `OTC_BIND`               | `127.0.0.1`                 | Interfaz. Rechaza `0`, `*`, `any`, `all`: si quieres exponerlo, escribe `0.0.0.0` — y pon el token antes.                                                                    |
-| `OTC_ADMIN_TOKEN`        | —                           | Sin él, toda escritura se rechaza (403). **Mínimo 16 caracteres**: uno más corto impide arrancar.                                                                            |
-| `OTC_CORS_ORIGIN`        | `*` (solo `GET, HEAD`)      | Orígenes permitidos, separados por comas. CORS no es autorización.                                                                                                           |
-| `OTC_STATE_DIR`          | `./.otc-state`              | Directorio de estado durable.                                                                                                                                                |
-| `OTC_HISTORY_DB`         | `$OTC_STATE_DIR/history.db` | Base SQLite del histórico.                                                                                                                                                   |
-| `OTC_ASSET_REGISTRY_DIR` | `$OTC_STATE_DIR/assets`     | Activos creados y sus superposiciones.                                                                                                                                       |
-| `OTC_BOOT_NONCE`         | —                           | Se devuelve en `/health` como `bootNonce`; sirve para saber **qué** proceso contestó en un puerto.                                                                           |
-| `OTC_BACKFILL_DAYS`      | `0`                         | Días de pasado sintético que se dan a un activo **sin registro previo**. Solo dígitos, tope 365. **Irreversible**: una vez generado, ese pasado es el pasado de ese mercado. |
-| `OTC_PUBLICATION_DIR`    | —                           | Activa la publicación firmada del registro. Si la pones, `OTC_PUBLISHING_KEY` pasa a ser obligatoria.                                                                        |
-| `OTC_PUBLISHING_KEY`     | —                           | Semilla Ed25519, 64 hex. **Se rechaza si es igual a `OTC_MASTER_SECRET`**: firmar con el secreto del que se deriva el mercado lo filtraría.                                  |
-| `OTC_LAB_PORT`           | `PORT` o `3100`             | Puerto del proceso Lab.                                                                                                                                                      |
+| Variable                 | Por defecto                 | Qué hace                                                                                                                                                                                          |
+| ------------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OTC_MASTER_SECRET`      | — **obligatoria**           | 64 caracteres hex (32 bytes). De aquí se deriva todo el mercado.                                                                                                                                  |
+| `OTC_KEY_ID`             | `primary`                   | **Solo una etiqueta**, anotada en los puntos de control para saber qué secreto los generó. **No entra en la derivación**: cambiarla no cambia el mercado.                                         |
+| `PORT`                   | `3000`                      | Puerto del motor.                                                                                                                                                                                 |
+| `OTC_BIND`               | `127.0.0.1`                 | Interfaz. Rechaza `0`, `*`, `any`, `all`: si quieres exponerlo, escribe `0.0.0.0` — y pon el token antes.                                                                                         |
+| `OTC_TRUSTED_PROXIES`    | `0`                         | Saltos de proxy en los que confiar para leer la dirección del cliente (`X-Forwarded-For`). `1` detrás del nginx incluido; `0` si el motor se expone directamente. Lo lee el límite de peticiones. |
+| `OTC_ADMIN_TOKEN`        | —                           | Sin él, toda escritura se rechaza (403). **Mínimo 16 caracteres**: uno más corto impide arrancar.                                                                                                 |
+| `OTC_CORS_ORIGIN`        | `*` (solo `GET, HEAD`)      | Orígenes permitidos, separados por comas. CORS no es autorización.                                                                                                                                |
+| `OTC_STATE_DIR`          | `./.otc-state`              | Directorio de estado durable.                                                                                                                                                                     |
+| `OTC_HISTORY_DB`         | `$OTC_STATE_DIR/history.db` | Base SQLite del histórico.                                                                                                                                                                        |
+| `OTC_ASSET_REGISTRY_DIR` | `$OTC_STATE_DIR/assets`     | Activos creados y sus superposiciones.                                                                                                                                                            |
+| `OTC_BOOT_NONCE`         | —                           | Se devuelve en `/health` como `bootNonce`; sirve para saber **qué** proceso contestó en un puerto.                                                                                                |
+| `OTC_BACKFILL_DAYS`      | `0`                         | Días de pasado sintético que se dan a un activo **sin registro previo**. Solo dígitos, tope 365. **Irreversible**: una vez generado, ese pasado es el pasado de ese mercado.                      |
+| `OTC_PUBLICATION_DIR`    | —                           | Activa la publicación firmada del registro. Si la pones, `OTC_PUBLISHING_KEY` pasa a ser obligatoria.                                                                                             |
+| `OTC_PUBLISHING_KEY`     | —                           | Semilla Ed25519, 64 hex. **Se rechaza si es igual a `OTC_MASTER_SECRET`**: firmar con el secreto del que se deriva el mercado lo filtraría.                                                       |
+| `OTC_LAB_PORT`           | `PORT` o `3100`             | Puerto del proceso Lab.                                                                                                                                                                           |
 
 Toda la configuración se lee **una vez, al componer el proceso**. No hay recarga
 en caliente: un cambio de variable es un reinicio. Dos cosas que **no** son
@@ -789,7 +790,18 @@ Desde PH-30.1 el repositorio trae lo que un despliegue arranca:
   uptime, memoria residente y la cabeza del registro por activo.
 - **Límite de peticiones**: `OTC_RATE_LIMIT_PER_MINUTE` (600 por defecto, `0` lo
   desactiva) por dirección de cliente; el exceso recibe `429` con `Retry-After`.
-  Una conexión de stream cuenta una vez; sus tramas no.
+  Una conexión de stream cuenta una vez; sus tramas no. **Las tres sondas de
+  operación — `/health/live`, `/health/ready` y `/metrics` — nunca se
+  rechazan**: una avalancha que dejara al motor respondiendo `429` a su propio
+  orquestador lo sacaría de rotación estando sano.
+- **Si pones un proxy delante, dile al motor cuántos saltos confiar**:
+  `OTC_TRUSTED_PROXIES` (0 por defecto, es decir no confiar en ninguna
+  cabecera; `1` detrás del `nginx.conf` que se incluye). Sin esto el motor solo
+  ve la dirección del proxy y **todos tus clientes comparten un único cubo** de
+  600 peticiones por minuto. El `docker-compose.yml` y la unidad de systemd que
+  se incluyen ya lo ponen a 1. Déjalo en 0 si el motor se expone directamente:
+  confiar en `X-Forwarded-For` sin proxy delante deja que el cliente elija su
+  propio cubo.
 - La credencial de administración es `OTC_ADMIN_TOKEN` (a6-01): sin ella toda
   escritura se rechaza; el proxy corta las rutas además, no en su lugar.
 

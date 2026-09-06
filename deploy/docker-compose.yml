@@ -15,6 +15,11 @@ services:
       OTC_PUBLISHING_KEY: ${OTC_PUBLISHING_KEY:-}
       OTC_PUBLICATION_DIR: /var/lib/otc/publication
       OTC_RATE_LIMIT_PER_MINUTE: ${OTC_RATE_LIMIT_PER_MINUTE:-600}
+      # One hop: nginx below is the only thing that talks to the engine, and it
+      # forwards the client in X-Forwarded-For. Without this the rate limit
+      # keys every client on nginx's own address and they share one bucket
+      # (Cycle Audit 10). Raise it only if you add another proxy in front.
+      OTC_TRUSTED_PROXIES: ${OTC_TRUSTED_PROXIES:-1}
     volumes:
       - otc-state:/var/lib/otc
     ports:

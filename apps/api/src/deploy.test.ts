@@ -62,6 +62,20 @@ describe('the deployment files match the engine (PH-30.1)', () => {
     expect(proxy).toContain("proxy_set_header Connection ''");
   });
 
+  /**
+   * Cycle Audit 10 (a1-02, a5-01, a8-01). The proxy forwarded the client and
+   * the engine was never told to read it, so the guard above asserted the half
+   * nobody consumed: behind this deployment every client shared one bucket.
+   */
+  it('every composition that puts a proxy in front tells the engine how many hops to trust', () => {
+    for (const file of ['docker-compose.yml', 'otc-engine.service']) {
+      const text = read(file);
+      expect(text, file).toMatch(/OTC_TRUSTED_PROXIES/);
+      // The value is a hop count, and one proxy is one hop.
+      expect(text, file).toMatch(/OTC_TRUSTED_PROXIES[:=]\s*(\$\{OTC_TRUSTED_PROXIES:-)?1/);
+    }
+  });
+
   it('the backup script runs the state tool and keeps the newest N', () => {
     const script = read('backup.sh');
     expect(script).toContain('stateTool.js backup');
