@@ -92,6 +92,17 @@ describe('a proof comes from the archive (PH-29.1)', () => {
       committedThrough: 20,
     });
     expect(await proveFromPublication(directory, 'gbpusd', 1)).toEqual({ kind: 'not-published' });
+    // Registered, nothing committed yet: "not yet", not "no".
+    new PublicationWriter({
+      directory,
+      windowTicks: 10,
+      privateKey: KEY,
+      assets: [{ ...SPEC, assetId: 'gbpusd', instrumentId: 'GBPUSD' }],
+    });
+    expect(await proveFromPublication(directory, 'gbpusd', 1)).toEqual({
+      kind: 'uncommitted',
+      committedThrough: null,
+    });
     await expect(proveFromPublication(directory, 'eurusd', 0)).rejects.toThrow(/positive integer/);
   });
 

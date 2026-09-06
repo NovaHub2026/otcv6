@@ -300,6 +300,18 @@ controller to it — the route set, and every live response's keys and types —
 and fails when the routes' digest moves without a new entry in the contract's
 history. A breaking change is a version, or it is a red build.
 
+**The contract lives with its clients** (PH-29.3). `@otc/client`
+(`packages/client`) is what a broker embeds: the contract itself (the venue
+imports it back), the shape checker, an SSE reader that holds the stream
+contract, and `conformance(baseUrl)` — the integration checklist run against a
+live venue: the version and digest, every contracted JSON route's keys and
+types over HTTP, the stream's order and exact resume and its told gap, the
+price rule over the ticks the stream delivered for a hundred instants, and a
+proof verified against the publisher's key. `npm run conformance -- --base URL`
+runs it and exits 0 or 1 with a report; `conformance.test.ts` proves each check
+fails for the reason it names against a fake venue with one fault at a time,
+and `conformance.stat.test.ts` runs the suite against the shipped service.
+
 ## 6. Creating an asset is a job
 
 `POST /assets` returns a **job id**, and the panel polls `/registrations/:id`.

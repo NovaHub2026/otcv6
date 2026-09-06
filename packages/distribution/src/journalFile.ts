@@ -108,7 +108,15 @@ export async function proveFromPublication(
     throw new RangeError(`A sequence must be a positive integer, received ${sequence}.`);
   }
   const file = path.join(directory, assetId, 'commitments.ndjson');
-  if (!existsSync(file)) return { kind: 'not-published' };
+  if (!existsSync(file)) {
+    // The writer makes the asset's directory when it registers the asset and
+    // the file when its first window closes: a directory with no file is a
+    // market that publishes and has not committed yet — "not yet", not "no"
+    // (PH-29.3's run against the shipped service answered 404 here).
+    return existsSync(path.join(directory, assetId))
+      ? { kind: 'uncommitted', committedThrough: null }
+      : { kind: 'not-published' };
+  }
   let committedThrough: number | null = null;
   let linksRead = 0;
   for await (const { signed } of readCommitmentsStream(file)) {

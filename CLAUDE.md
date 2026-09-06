@@ -85,6 +85,7 @@ packages/runtime           Framework-free market runtime: hosted markets, schedu
 packages/trading           Contracts and deterministic settlement against the published record
 packages/distribution      Sequence-addressed tick distribution and the consistency contract
 packages/chart             The rendering contract: extreme-preserving reduction to columns
+packages/client            What a broker embeds: the API contract, the conformance suite, the reference client
 tools/sim                  Offline simulation runner and statistical evidence generator
 apps/api                   NestJS runtime service hosting the catalogue continuously
 apps/web                   Next.js observer frontend and trading chart
@@ -116,7 +117,8 @@ npm run test:cov       # coverage over packages/, tools/ and apps/, both project
 
 npm run state:verify -- --dir ./.otc-state            # the state directory agrees with itself (PH-28.3)
 npm run state:backup -- --dir ./.otc-state --out DIR  # a consistent, verified copy with its manifest
-npm run contract:render                               # docs/architecture/API_CONTRACT.md from apps/api/src/contract.ts (PH-29.2)
+npm run contract:render                               # docs/architecture/API_CONTRACT.md from the contract in @otc/client (PH-29.2)
+npm run conformance -- --base URL [--out r.md]        # the broker's checklist against a live venue, exit 0/1 (PH-29.3)
 ```
 
 **Always `npm run test:stat`, never a bare `npx vitest run --project statistical`.**

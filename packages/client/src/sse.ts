@@ -1,0 +1,171 @@
+import type { Tick } from '@otc/core';
+
+/** One server-sent event as the venue writes it. */
+export interface SseEvent {
+  readonly event: string | null;
+  readonly data: string;
+  readonly id: string | null;
+}
+
+/**
+ * A line-based, chunk-agnostic parser for `text/event-stream`, per the
+ * specification: `event`, `data` (joined by newlines) and `id` fields, a blank
+ * line dispatches, a `:` line is a comment, CRLF is tolerated. The lab has the
+ * same parser; a broker's client cannot depend on the lab, which carries the
+ * planted-defect corpus, so it has its own.
+ */
+export class SseParser {
+  #carry = '';
+  #event: string | null = null;
+  #data: string[] = [];
+  #id: string | null = null;
+
+  push(chunk: string): SseEvent[] {
+    const completed: SseEvent[] = [];
+    const text = this.#carry + chunk;
+    let start = 0;
+    for (;;) {
+      const lf = text.indexOf('\n', start);
+      if (lf === -1) break;
+      const line = text[lf - 1] === '\r' ? text.slice(start, lf - 1) : text.slice(start, lf);
+      start = lf + 1;
+      const event = this.#line(line);
+      if (event !== null) completed.push(event);
+    }
+    this.#carry = text.slice(start);
+    return completed;
+  }
+
+  #line(line: string): SseEvent | null {
+    if (line === '') return this.#dispatch();
+    if (line.startsWith(':')) return null;
+    const colon = line.indexOf(':');
+    const field = colon === -1 ? line : line.slice(0, colon);
+    let value = colon === -1 ? '' : line.slice(colon + 1);
+    if (value.startsWith(' ')) value = value.slice(1);
+    if (field === 'event') this.#event = value;
+    else if (field === 'data') this.#data.push(value);
+    else if (field === 'id') this.#id = value;
+    return null;
+  }
+
+  #dispatch(): SseEvent | null {
+    if (this.#data.length === 0 && this.#event === null) return null;
+    const event: SseEvent = { event: this.#event, data: this.#data.join('\n'), id: this.#id };
+    this.#event = null;
+    this.#data = [];
+    return event;
+  }
+}
+
+export interface GapFrame {
+  readonly requested: number | null;
+  readonly reason: string;
+  readonly resumesAt: number | null;
+}
+
+export interface StreamRead {
+  readonly ticks: readonly Tick[];
+  readonly gaps: readonly GapFrame[];
+  readonly closes: readonly string[];
+  /** Why the read ended: the rule was met, the server closed, or the caller aborted. */
+  readonly endedBy: 'rule' | 'close' | 'abort';
+  readonly status: number;
+  /** The body when the server refused with a status other than 200. */
+  readonly refusal: string | null;
+}
+
+export interface StreamReadOptions {
+  readonly baseUrl: string;
+  readonly assetId: string;
+  readonly from?: number;
+  readonly onGap?: 'live';
+  /** Stop after this many ticks, inclusive. */
+  readonly ticks: number;
+  readonly signal?: AbortSignal;
+  readonly fetch?: typeof fetch;
+}
+
+function isInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value);
+}
+
+/**
+ * Read one market's stream until `ticks` ticks have arrived.
+ *
+ * What the venue's stream contract promises, held exactly: a `message` frame
+ * is a tick with three integer fields; a `gap` frame is a hole the client is
+ * told about and must not fill; a `close` frame ends the read. A refusal — a
+ * status other than 200 — is returned with its body rather than thrown, so a
+ * conformance check can assert on it.
+ */
+export async function readStream(options: StreamReadOptions): Promise<StreamRead> {
+  const doFetch = options.fetch ?? fetch;
+  const query = new URLSearchParams();
+  if (options.from !== undefined) query.set('from', String(options.from));
+  if (options.onGap !== undefined) query.set('onGap', options.onGap);
+  const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+  const url = `${options.baseUrl}/markets/${encodeURIComponent(options.assetId)}/stream${suffix}`;
+  const controller = new AbortController();
+  const onAbort = (): void => controller.abort();
+  options.signal?.addEventListener('abort', onAbort, { once: true });
+  const ticks: Tick[] = [];
+  const gaps: GapFrame[] = [];
+  const closes: string[] = [];
+  let endedBy: StreamRead['endedBy'] = 'abort';
+  try {
+    const response = await doFetch(url, {
+      headers: { accept: 'text/event-stream' },
+      signal: controller.signal,
+    });
+    if (response.status !== 200 || response.body === null) {
+      return {
+        ticks,
+        gaps,
+        closes,
+        endedBy: 'close',
+        status: response.status,
+        refusal: await response.text(),
+      };
+    }
+    const parser = new SseParser();
+    const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+    const decoder = new TextDecoder();
+    read: for (;;) {
+      const { value, done } = await reader.read();
+      if (done) {
+        endedBy = 'close';
+        break;
+      }
+      for (const event of parser.push(decoder.decode(value, { stream: true }))) {
+        if (event.event === 'gap') {
+          const gap = JSON.parse(event.data) as GapFrame;
+          gaps.push({ requested: gap.requested, reason: gap.reason, resumesAt: gap.resumesAt });
+        } else if (event.event === 'close') {
+          closes.push((JSON.parse(event.data) as { reason: string }).reason);
+          endedBy = 'close';
+          break read;
+        } else if (event.event === null) {
+          const row = JSON.parse(event.data) as Partial<Record<keyof Tick, unknown>>;
+          if (!isInteger(row.sequence) || !isInteger(row.instant) || !isInteger(row.price)) {
+            throw new Error(`a tick frame without three integer fields: ${event.data}`);
+          }
+          ticks.push({
+            sequence: row.sequence,
+            instant: row.instant as Tick['instant'],
+            price: row.price as Tick['price'],
+          });
+          if (ticks.length >= options.ticks) {
+            endedBy = 'rule';
+            break read;
+          }
+        }
+      }
+    }
+    controller.abort();
+    return { ticks, gaps, closes, endedBy, status: 200, refusal: null };
+  } finally {
+    options.signal?.removeEventListener('abort', onAbort);
+    controller.abort();
+  }
+}

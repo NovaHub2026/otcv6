@@ -84,6 +84,11 @@ const REPLAYABLE_ROOTS = [
   // caught by nothing. Its measurements of its own elapsed time are allowed by
   // name below, as the evidence runners' are.
   'packages/lab/src',
+  // PH-29.3: what a broker embeds. It reads a venue over HTTP and verifies
+  // what it is served; it holds no economic state and reaches no engine, and
+  // it is replayable for the same reason the lab is — a client that read the
+  // wall clock would be measuring its own machine.
+  'packages/client/src',
 ];
 
 /**
@@ -159,6 +164,8 @@ const AMBIENT_STATE_ALLOWLIST = [
   // its arguments and writes its report; it verifies and copies files and
   // never reaches a draw.
   'tools/sim/src/stateTool.ts',
+  // PH-29.3: the conformance command, the same shape.
+  'tools/sim/src/conformanceTool.ts',
   'tools/sim/src/dispersionEvidence.ts',
   'tools/sim/src/horizonEvidence.ts',
   /**
