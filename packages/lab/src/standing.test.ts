@@ -13,6 +13,7 @@ import {
   PRODUCT_MARGIN_PP,
   runStandingAssurance,
   StandingAssuranceError,
+  horizonStanding,
 } from './standing.js';
 
 const GENESIS = 1_776_000_000_000;
@@ -258,6 +259,38 @@ describe('the detection floor is the battery own, and it moves with the history'
     const floorAt = (v: typeof short, label: string): number =>
       v.horizons.find((h) => h.horizon === label)!.detectionFloorPp;
     expect(floorAt(long, '30s')).toBeLessThan(floorAt(short, '30s'));
+  });
+
+  it('judges sufficiency on the gate floor, not the single-test one (PH-29.5, Issue #10)', () => {
+    const base = { horizon: '30s', samples: 100_000, sufficientForPayout: true };
+    // Fine by the single test, coarse by the gate: not sufficient.
+    expect(
+      horizonStanding({
+        ...base,
+        minimumDetectableEffectPoints: 0.1,
+        gateMinimumDetectableEffectPoints: 0.5,
+      }),
+    ).toMatchObject({
+      sufficientForProductMargin: false,
+      detectionFloorPp: 0.1,
+      gateDetectionFloorPp: 0.5,
+    });
+    // Fine by both: sufficient.
+    expect(
+      horizonStanding({
+        ...base,
+        minimumDetectableEffectPoints: 0.1,
+        gateMinimumDetectableEffectPoints: 0.2,
+      }),
+    ).toMatchObject({ sufficientForProductMargin: true });
+    // Never finer than the margin by the gate while coarser by the single test.
+    expect(
+      horizonStanding({
+        ...base,
+        minimumDetectableEffectPoints: 0.4,
+        gateMinimumDetectableEffectPoints: 0.2,
+      }),
+    ).toMatchObject({ sufficientForProductMargin: true });
   });
 
   it('states the margin it is judging against', () => {
