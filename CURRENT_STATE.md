@@ -14,8 +14,8 @@ Last synchronized: 2026-09-05
 
 | Field                            | Value                                                                                                                                                      |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 10 — **1 of 3** phases approved (PH-28); the closing cycle (PH-29, PH-30 next)                                                                       |
-| Approved phases in current cycle | **1 of 3** — PH-28                                                                                                                                         |
+| Active development cycle         | Cycle 10 — **2 of 3** phases approved (PH-28, PH-29); the closing cycle (PH-30 next, then Cycle Audit 10)                                                  |
+| Approved phases in current cycle | **2 of 3** — PH-28, PH-29                                                                                                                                  |
 | Cycle Audit state                | **009 closed** — 64 claims, 62 confirmed, 61 resolved with a guard each, one carried (a8-12)                                                               |
 | Last Cycle Audit                 | [Cycle Audit 009](docs/audits/CYCLE-AUDIT-009.md) — 2026-09-05, eight independent auditors, one worktree each, every finding refuted independently; closed |
 
@@ -23,11 +23,11 @@ Last synchronized: 2026-09-05
 
 | Field                  | Value                                                              |
 | ---------------------- | ------------------------------------------------------------------ |
-| Active phase           | PH-29 — The integration boundary: what a broker's settlement needs |
-| Phase lifecycle        | ACTIVE                                                             |
-| Active subphase        | none — all five approved; the phase gate runs                      |
+| Active phase           | none                                                               |
+| Phase lifecycle        | none                                                               |
+| Active subphase        | none                                                               |
 | Subphase lifecycle     | none                                                               |
-| Last approved phase    | PH-28 — The durable venue: the record outlives the process         |
+| Last approved phase    | PH-29 — The integration boundary: what a broker's settlement needs |
 | Last approved subphase | PH-29.5 — The standing verdict's figure and the guide              |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
@@ -195,7 +195,7 @@ on `audit/ca9-fixes`; that run replaces this block when it passes.
 
 ## EXACT NEXT LEGAL ACTION
 
-**Run the PH-29 phase gate (`npm run gate`), approve PH-29 from it, merge to `main`, close Issues #10 and #11, then open PH-30 (release 1.0); hosted CI on the PH-28 merge (`fd17ec0`) is recorded in the table above when it lands.**
+**Merge PH-29 to `main`, close Issues #10 and #11, then create the PH-30 Phase Context Document (release 1.0) and activate PH-30.1; hosted CI on the PH-29 merge is recorded in the table above when it lands.**
 
 PH-27 is approved on its integrated phase verification (`GATE_EXIT=0` first
 attempt, 45 statistical files in 4,472 s) and is being merged. Cycle 9 is

@@ -810,7 +810,7 @@ departure is recorded ([decision](../decisions/DECISION-LOG.md), 2026-09-05).
 | Phase | Title                                                       | State        |
 | ----- | ----------------------------------------------------------- | ------------ |
 | PH-28 | The durable venue: the record outlives the process          | **APPROVED** |
-| PH-29 | The integration boundary: what a broker's settlement needs  | ACTIVE       |
+| PH-29 | The integration boundary: what a broker's settlement needs  | **APPROVED** |
 | PH-30 | Release 1.0: the engine as a broker integrates it           | PLANNED      |
 | —     | **Cycle Audit 10** — the closing audit, adversarial as ever | PLANNED      |
 

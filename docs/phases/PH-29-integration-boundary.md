@@ -2,7 +2,8 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-29
-Status: ACTIVE
+Status: APPROVED
+Approved: 2026-09-06 — from the integrated phase verification in §9
 Cycle: 10 (phase 2 of 3) — the closing cycle
 Created: 2026-09-06
 Branch: `feature/ph-29-integration-boundary`
@@ -108,18 +109,24 @@ publish`** where the contract says `409 not yet committed` (PH-29.3); the
    the SSE reader became a generator.
 6. **The sufficiency grading needed a guard that separates the two floors**
    (PH-29.5, Issue #10).
+7. **The phase gate's first run failed the meta-audit**, eighty minutes in: a
+   new test had tagged INV-005 as evidence, so the mutation that strips
+   INV-005 from its only file was no longer a loss of evidence and the
+   traceability guard rightly survived it. The weak tag is gone and the guard
+   now holds INV-005 to that one file in a second, so the next such tag fails
+   at `state:check` rather than at the end of a gate.
 
 ## 9. Integrated phase verification
 
-| Check                                                                               | Result                                                                                                      |
-| ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Every subphase document APPROVED and the roadmap agrees                             | `documentation.test.ts`, `stateConsistency.test.ts` green                                                   |
-| The query reads the record and the archive, never an engine (INV-001, INV-010)      | `productionResponses.test.ts` by value over 9 routes; `labSurface.test.ts`; no diff under `packages/engine` |
-| The price rule is `settle()`'s, and a served proof verifies (INV-009)               | `settlementQuery.test.ts` (a thousand instants, `settle()`'s own prices); `journalFile.test.ts`             |
-| The contract holds the controller; a breaking change is a version                   | `contract.test.ts`, four plants                                                                             |
-| The conformance suite passes the shipped venue and fails each fault by name         | `conformance.stat.test.ts`; `conformance.test.ts` five faults                                               |
-| The client resumes exactly, never repeats, refuses an untold skip, verifies a proof | `venueClient.test.ts`                                                                                       |
-| Money is exact in the minor unit; the verdict grades on the gate's floor            | `settle.test.ts` (100 000 stakes), `standing.test.ts`                                                       |
-| Every guard watched failing                                                         | PH-29.1 three plants, PH-29.2 four, PH-29.3 one, PH-29.4 three, PH-29.5 one                                 |
-| Phase quality gate `npm run gate` with the browser prefix                           | _pending: recorded at approval_                                                                             |
-| Hosted CI on the merge commit                                                       | _recorded in `CURRENT_STATE.md` § "Hosted CI, honestly" when it lands_                                      |
+| Check                                                                               | Result                                                                                                                                                                                                                                                                                                                                                     |
+| ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Every subphase document APPROVED and the roadmap agrees                             | `documentation.test.ts`, `stateConsistency.test.ts` green                                                                                                                                                                                                                                                                                                  |
+| The query reads the record and the archive, never an engine (INV-001, INV-010)      | `productionResponses.test.ts` by value over 9 routes; `labSurface.test.ts`; no diff under `packages/engine`                                                                                                                                                                                                                                                |
+| The price rule is `settle()`'s, and a served proof verifies (INV-009)               | `settlementQuery.test.ts` (a thousand instants, `settle()`'s own prices); `journalFile.test.ts`                                                                                                                                                                                                                                                            |
+| The contract holds the controller; a breaking change is a version                   | `contract.test.ts`, four plants                                                                                                                                                                                                                                                                                                                            |
+| The conformance suite passes the shipped venue and fails each fault by name         | `conformance.stat.test.ts`; `conformance.test.ts` five faults                                                                                                                                                                                                                                                                                              |
+| The client resumes exactly, never repeats, refuses an untold skip, verifies a proof | `venueClient.test.ts`                                                                                                                                                                                                                                                                                                                                      |
+| Money is exact in the minor unit; the verdict grades on the gate's floor            | `settle.test.ts` (100 000 stakes), `standing.test.ts`                                                                                                                                                                                                                                                                                                      |
+| Every guard watched failing                                                         | PH-29.1 three plants, PH-29.2 four, PH-29.3 one, PH-29.4 three, PH-29.5 one                                                                                                                                                                                                                                                                                |
+| Phase quality gate `npm run gate` with the browser prefix                           | `GATE_EXIT=0` on the second run, on `5483cbc` — format, build, `typecheck:web`, `typecheck:config`, lint, unit 158 files / 3,209 tests, the coverage floors, statistical 47 files / 401 tests in 4,844 s (80.7 min), `GATE COMPLETE`; started 06:53:06Z, finished 08:17:03Z; the first run (85.9 min) failed only the meta-audit's INV-005 mutation (§8.7) |
+| Hosted CI on the merge commit                                                       | _recorded in `CURRENT_STATE.md` § "Hosted CI, honestly" when it lands_                                                                                                                                                                                                                                                                                     |
