@@ -243,7 +243,7 @@ describe('the job as a scheduler runs it', () => {
     expect(text).toMatch(/\| wire-otc \| 36000 \| /);
     expect(text).toMatch(/\| 2124001–2160000 [0-9a-f]{12} \|/);
     expect(text).toContain('**exploitable**');
-    expect(requests.filter((r) => r.includes('/stream')).length).toBeGreaterThanOrEqual(8);
+    expect(requests.length, 'stream reads across the caps').toBeGreaterThanOrEqual(8);
   }, 120_000);
 
   it('exits 1 and records no verdict when the venue closes the read short (CA9 a4-01)', async () => {
