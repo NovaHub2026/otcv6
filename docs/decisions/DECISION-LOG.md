@@ -699,3 +699,27 @@ is refused by name.
 
 **What it does not decide.** The currency, the payout ratio itself and the
 at-the-money policy remain the broker's (ADR-0007 for the default refund).
+
+## 2026-09-06 — The standing verdict grades sufficiency on the gate's figure and reports both (Issue #10, PH-29.5)
+
+**Decision.** Every horizon of a standing verdict carries two floors: the
+single-test sensitivity (`detectionFloorPp`, one test of the whole decided
+sample at 80% power) and the gate's own (`gateDetectionFloorPp`, the edge at
+which the largest tested bucket reaches both the corrected threshold and the
+held-out confirmation, at 50% power). `sufficientForProductMargin` — the flag
+`classifyStanding` reads — is judged on the **gate's** figure from now on.
+
+**Why.** A verdict a broker reads says what the battery could have seen. The
+single-test figure is for a test the battery does not run; the out-of-band
+audit re-signed a control at a realised 0.23pp — "detectable" by that figure —
+and the gate turned nothing on (a4-01). Grading on the gate's figure makes a
+venue `undecided` at sizes where the single-test figure said `clean`, and the
+record then carries the floor that says why, which is the truth about the size.
+The single-test figure stays in the record because it is what the
+`unconditional` family can see at that size, and a reader comparing records
+across the change should not lose it.
+
+**What changes downstream.** The served-assurance record prints both floors
+per horizon; `PH-25-SERVED-VERDICT.md` and `PH-28-DURABLE-VENUE.md` were
+graded before this and say so in their tables' provenance. The tripwire
+`gateSensitivity.stat.test.ts` stays as it is.

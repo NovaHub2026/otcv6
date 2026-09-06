@@ -112,6 +112,15 @@ export interface HorizonStanding {
    * test for its numeric value, and read by nothing. It is read here now.
    */
   readonly sufficientForProductMargin: boolean;
+  /**
+   * The gate's own floor (PH-29.5, Issue #10): the edge at which the largest
+   * bucket tested at this horizon reaches both the corrected threshold and
+   * the held-out confirmation, at 50% power — the smallest edge the gate could
+   * have turned on. `sufficientForProductMargin` is judged on this figure;
+   * `detectionFloorPp` stays beside it because the `unconditional` family can
+   * see a uniform edge at the sample the single test assumes.
+   */
+  readonly gateDetectionFloorPp: number;
 }
 
 /** A finding the battery judged both significant and economically material. */
@@ -311,7 +320,10 @@ export async function runStandingAssurance(options: StandingRunOptions): Promise
     samples: sensitivity.samples,
     detectionFloorPp: sensitivity.minimumDetectableEffectPoints,
     sufficientForPayout: sensitivity.sufficientForPayout,
-    sufficientForProductMargin: sensitivity.minimumDetectableEffectPoints < PRODUCT_MARGIN_PP,
+    // The gate's figure, not the single test's (PH-29.5, Issue #10): a
+    // verdict a broker reads says what the battery could have seen.
+    sufficientForProductMargin: sensitivity.gateMinimumDetectableEffectPoints < PRODUCT_MARGIN_PP,
+    gateDetectionFloorPp: sensitivity.gateMinimumDetectableEffectPoints,
   }));
 
   return {

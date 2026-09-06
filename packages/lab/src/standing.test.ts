@@ -232,6 +232,11 @@ describe('the detection floor is the battery own, and it moves with the history'
       expect(horizon.samples).toBeGreaterThanOrEqual(0);
       expect(typeof horizon.sufficientForPayout).toBe('boolean');
       expect(typeof horizon.sufficientForProductMargin).toBe('boolean');
+      // PH-29.5 (Issue #10): both floors, and sufficiency graded on the gate's.
+      expect(horizon.gateDetectionFloorPp).toBeGreaterThanOrEqual(horizon.detectionFloorPp);
+      expect(horizon.sufficientForProductMargin).toBe(
+        horizon.gateDetectionFloorPp < PRODUCT_MARGIN_PP,
+      );
     }
   });
 
@@ -358,6 +363,7 @@ describe('each rule of the classifier, on its own', () => {
       detectionFloorPp: 0.05,
       sufficientForPayout: true,
       sufficientForProductMargin: true,
+      gateDetectionFloorPp: 0.1,
     },
     {
       horizon: '15m',
@@ -365,6 +371,7 @@ describe('each rule of the classifier, on its own', () => {
       detectionFloorPp: 0.2,
       sufficientForPayout: true,
       sufficientForProductMargin: true,
+      gateDetectionFloorPp: 0.1,
     },
   ];
   const weak = [
@@ -374,6 +381,7 @@ describe('each rule of the classifier, on its own', () => {
       detectionFloorPp: 12,
       sufficientForPayout: false,
       sufficientForProductMargin: false,
+      gateDetectionFloorPp: 0.5,
     },
   ];
 
@@ -393,6 +401,7 @@ describe('each rule of the classifier, on its own', () => {
       detectionFloorPp: 4.04,
       sufficientForPayout: true,
       sufficientForProductMargin: false,
+      gateDetectionFloorPp: 0.5,
     },
   ];
   const oneFinding = { length: 1 };

@@ -96,7 +96,10 @@ export function verdictRow(run: AssetRun): string {
   }
   const v = run.verdict;
   const floors = v.horizons
-    .map((h) => `${h.horizon} ${pct(h.detectionFloorPp)} (${String(h.samples)})`)
+    .map(
+      (h) =>
+        `${h.horizon} ${pct(h.detectionFloorPp)} / gate ${pct(h.gateDetectionFloorPp)} (${String(h.samples)})`,
+    )
     .join(', ');
   const outcome = v.outcome === 'exploitable' ? `**${v.outcome}**` : v.outcome;
   const covered = (v.coveredMs / 3_600_000).toFixed(2);

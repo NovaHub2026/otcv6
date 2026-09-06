@@ -20,6 +20,7 @@ const verdict = (outcome: StandingVerdict['outcome']): StandingVerdict => ({
       detectionFloorPp: 4.321,
       sufficientForPayout: false,
       sufficientForProductMargin: false,
+      gateDetectionFloorPp: 0.5,
     },
   ],
   exploitable: [],
@@ -88,7 +89,7 @@ describe('the report says what the run did', () => {
       seconds: 12.4,
     });
     expect(row).toContain(
-      '| eurusd-otc | 12345 | 2.50 h | undecided | 321 / 3 / 1 | 30s 4.321pp (400) | -1.23 | 12s | 100–12444 abcdef012345 |',
+      '| eurusd-otc | 12345 | 2.50 h | undecided | 321 / 3 / 1 | 30s 4.321pp / gate 0.500pp (400) | -1.23 | 12s | 100–12444 abcdef012345 |',
     );
     expect(
       verdictRow({
