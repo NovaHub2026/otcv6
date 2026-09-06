@@ -14,7 +14,20 @@ import type { TickRecord } from '@otc/runtime';
 export type ChainPriming =
   | { readonly kind: 'fresh' }
   | { readonly kind: 'continued'; readonly from: number; readonly folded: number }
-  | { readonly kind: 'broken'; readonly from: number; readonly recordStartsAt: number | null };
+  | { readonly kind: 'broken'; readonly from: number; readonly recordStartsAt: number | null }
+  /**
+   * The chain was continued and then restarted at a seam (PH-30.4): a jump in
+   * the record's sequences, or a market that seamed at this boot. `folded` is
+   * what was read back on both sides; `restartedAt` names the sequence the new
+   * chain begins at, or null when the seam is at the live boundary and its
+   * first tick is not yet known.
+   */
+  | {
+      readonly kind: 'seamed';
+      readonly from: number;
+      readonly folded: number;
+      readonly restartedAt: number | null;
+    };
 
 /** Ticks read from the record per page while priming; a page is one await. */
 const PRIME_PAGE = 100_000;
@@ -102,8 +115,19 @@ export class PublicationService {
    * the writer is told to start a new chain at an empty root so the live
    * ticks are still committed to. A break a verifier can see beats a hole
    * that looks like tampering.
+   *
+   * **A seam is a break of the same kind (PH-30.4).** A market restarted past
+   * its catch-up bound seams: its sequences jump by the lease, and the record
+   * keeps both sides. The release run found two things at that jump. Folding
+   * the record across it made the publisher refuse the jump and the boot
+   * die; and a market that seamed at *this* boot continued its chain to the
+   * pre-seam tip and would have refused its first live tick. So the record
+   * is folded contiguous run by contiguous run, the chain restarted at each
+   * jump, and a market told to be `seamed` has its chain restarted after the
+   * fold — the first live tick then opens a new chain, wherever the seam
+   * lands it.
    */
-  async prime(assetId: string, record: TickRecord): Promise<ChainPriming> {
+  async prime(assetId: string, record: TickRecord, seamed = false): Promise<ChainPriming> {
     if (this.writer === null) return { kind: 'fresh' };
     const resumed = this.writer.resumption(assetId);
     if (resumed === null || resumed.kind !== 'continued') return { kind: 'fresh' };
@@ -121,13 +145,44 @@ export class PublicationService {
       return { kind: 'broken', from, recordStartsAt };
     }
     let folded = 0;
+    let restartedAt: number | null = null;
     for (;;) {
       const page = await record.since(assetId, from, PRIME_PAGE);
       if (page.length === 0) break;
-      this.writer.observe(assetId, page);
+      let runStart = 0;
+      for (let i = 0; i < page.length; i += 1) {
+        const expected = i === 0 ? from : page[i - 1]!.sequence + 1;
+        const sequence = page[i]!.sequence;
+        if (sequence === expected) continue;
+        this.writer.observe(assetId, page.slice(runStart, i));
+        this.logger.error(
+          `${assetId}: the record jumps from sequence ${expected - 1} to ${sequence} — a seam ` +
+            `left by a restart past the catch-up bound. The commitment chain is restarted at ` +
+            `an empty root there, not bridged; a verifier sees two chains for this market, ` +
+            `which is the truth (PH-30.4).`,
+        );
+        this.writer.restartChain(assetId);
+        restartedAt = sequence;
+        runStart = i;
+      }
+      this.writer.observe(assetId, page.slice(runStart));
       folded += page.length;
       from = page[page.length - 1]!.sequence + 1;
       if (page.length < PRIME_PAGE) break;
+    }
+    if (seamed) {
+      // The jump is ahead, at the first live tick. The chain the record was
+      // folded into ends at the record's head; whatever the seam publishes
+      // begins a new one.
+      this.logger.error(
+        `${assetId}: resumed with a seam; the commitment chain ends at sequence ${from - 1} ` +
+          `and the ticks the seam publishes begin a new chain at an empty root (PH-30.4).`,
+      );
+      this.writer.restartChain(assetId);
+      return { kind: 'seamed', from: resumed.nextSequence, folded, restartedAt };
+    }
+    if (restartedAt !== null) {
+      return { kind: 'seamed', from: resumed.nextSequence, folded, restartedAt };
     }
     this.logger.log(
       `${assetId}: commitment chain continued from sequence ${resumed.nextSequence}, ` +

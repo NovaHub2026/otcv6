@@ -122,6 +122,40 @@ reaches. The archived tick is compared with the tick record on the way out. A
 counterparty verifies with nothing but the response and the key it was told
 out of band (`CATALOGUE_AND_PANEL.md` §5.3).
 
+## Restarts, and the break a verifier sees
+
+One chain per market is the aim, and the record (PH-28) makes it the common
+case: a writer resumes at the tip of `commitments.ndjson`, the venue reads back
+from the record the ticks published after that tip, folds them, and the chain a
+broker verifies runs across the process boundary as if there had been none
+(PH-28.3).
+
+Two things end a chain, and both are handled the same way — **restart at an
+empty root, never bridge**:
+
+- the record cannot reach the tip (a trim, a lost `record.db`), so the ticks
+  between the tip and the first live one are unknown (PH-28.3);
+- a **seam**: the market was resumed past its 15 s catch-up bound — every
+  deploy-length restart — and its sequences jump by the lease. The venue
+  restarts the chain at the seam, and the next boot, folding a record that
+  contains the jump, restarts it there rather than hand the publisher a gap
+  (PH-30.4; the release run found the boot dying on exactly that).
+
+A bridged window — one whose `previousRoot` binds a tip its ticks do not follow
+— would verify structurally and be a lie about continuity. A genesis link
+mid-file is the truth: the file holds two chains. `verifyCommitmentsFile` and
+`IncrementalChainVerifier` accept it when it is signed by an authorised key and
+is for the same asset, and **name it** in `breaks` as
+`{ link, afterSequence, fromSequence }`. `ok` means every link verifies and every
+chain is whole; a verifier that needs one unbroken chain checks that `breaks`
+is empty. What a break cannot prove is what happened between
+`afterSequence` and `fromSequence`: a window deleted from the tail of the
+earlier chain leaves every signature intact and widens that interval, which is
+the most a file verifier can see, and the reader is told so. Before PH-30.4 the
+verifier refused the second genesis outright, so the restart PH-28.3 promised
+produced a file the project's own verifier called invalid — the test that
+established the restart read the links and never verified the file.
+
 ## Where it lives, and why
 
 `@otc/distribution`, not `@otc/lab` where the journal format is defined.

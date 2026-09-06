@@ -77,9 +77,33 @@ export function chainTipOf(filePath: string): SignedCommitment | null {
  * rotation's epoch floor the moment its head root passes through. A head never
  * seen by `finish()` is the same refusal the batch form makes up front.
  */
+/**
+ * Where a commitments file's chain was restarted at an empty root.
+ *
+ * PH-28.3 restarts the chain rather than bridge it when the record cannot
+ * reach the tip; PH-30.4 restarts it at a seam — a market resumed past its
+ * catch-up bound, whose sequences jump by the lease. Either way the file
+ * holds two chains and the genesis link of the second is signed by an
+ * authorised key, so the verifier accepts it and **names the break** rather
+ * than refuse the file: each chain still verifies link by link, and what the
+ * break cannot prove is continuity. `afterSequence` and `fromSequence` say
+ * how wide the uncommitted interval between the chains is; a window deleted
+ * from the tail of the earlier chain widens it, which is the most a file
+ * verifier can see and the reader is told so.
+ */
+export interface ChainBreak {
+  /** Index of the genesis link that begins the new chain. */
+  readonly link: number;
+  /** The last sequence the earlier chain committed to. */
+  readonly afterSequence: number;
+  /** The sequence the new chain begins at. */
+  readonly fromSequence: number;
+}
+
 export class IncrementalChainVerifier {
   readonly #epochOf: Map<string, number> | null;
   readonly #error: string | null;
+  readonly #breaks: ChainBreak[] = [];
   /** Rotations whose head root this chain has not reached yet: root → epoch. */
   readonly #pendingHeads = new Map<string, number>();
   readonly #rotations: readonly SignedRotation[];
@@ -110,13 +134,27 @@ export class IncrementalChainVerifier {
     return this.#previous;
   }
 
+  /** Every chain restart accepted so far, in file order. */
+  get breaks(): readonly ChainBreak[] {
+    return this.#breaks;
+  }
+
   /** Accept the next link, or return why it is refused. */
   accept(signed: SignedCommitment): string | null {
     if (this.#error !== null || this.#epochOf === null) return this.#error;
     const i = this.#count;
     const link = signed.commitment;
+    // A genesis link after the first is a restart (PH-28.3, PH-30.4): checked
+    // as a genesis, for the same asset, and reported as a break once the rest
+    // of the link — its key, its epoch, its signature — has been accepted.
+    const restart = this.#previous !== null && link.previousRoot === '';
     const structural =
-      this.#previous === null ? verifyChain([link]) : verifyChain([this.#previous, link]);
+      this.#previous === null || restart
+        ? verifyChain([link])
+        : verifyChain([this.#previous, link]);
+    if (structural === null && restart && link.assetId !== this.#assetId) {
+      return `Commitment ${i} is for ${link.assetId}, following ${String(this.#assetId)}.`;
+    }
     if (structural !== null) {
       // The pairwise check numbers the offered link 1 (or 0 at genesis); the
       // verdict names its place in the file.
@@ -153,6 +191,13 @@ export class IncrementalChainVerifier {
     if (!verifyCommitment(signed, signed.publicKey)) {
       return `Commitment ${i} is not signed by the key it names.`;
     }
+    if (restart && this.#previous !== null) {
+      this.#breaks.push({
+        link: i,
+        afterSequence: this.#previous.toSequence,
+        fromSequence: link.fromSequence,
+      });
+    }
     this.#epoch = linkEpoch;
     this.#previous = link;
     this.#count += 1;
@@ -184,6 +229,13 @@ export interface CommitmentsFileVerdict {
   /** Links accepted before the verdict. */
   readonly count: number;
   readonly tip: Commitment | null;
+  /**
+   * Where the chain was restarted at an empty root, in file order. Empty for
+   * one unbroken chain; a verifier that needs continuity checks this, because
+   * `ok` says every link verifies and every chain is whole, not that there is
+   * one chain.
+   */
+  readonly breaks: readonly ChainBreak[];
   /** The refusal, with the file line it happened on; absent when ok. */
   readonly error?: { readonly line: number | null; readonly detail: string };
 }
@@ -202,6 +254,7 @@ export async function verifyCommitmentsFile(
         ok: false,
         count: verifier.count,
         tip: verifier.tip,
+        breaks: verifier.breaks,
         error: { line, detail: refusal },
       };
     }
@@ -212,8 +265,9 @@ export async function verifyCommitmentsFile(
       ok: false,
       count: verifier.count,
       tip: verifier.tip,
+      breaks: verifier.breaks,
       error: { line: null, detail: final },
     };
   }
-  return { ok: true, count: verifier.count, tip: verifier.tip };
+  return { ok: true, count: verifier.count, tip: verifier.tip, breaks: verifier.breaks };
 }

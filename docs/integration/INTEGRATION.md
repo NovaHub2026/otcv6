@@ -262,10 +262,21 @@ motivo de arriba, y un cliente que no consume lo bastante rápido se desconecta
 en vez de degradar su vista. Los ticks se retienen **50.000 por activo** — algo
 más de una hora en el activo más rápido, varias horas en los lentos —
 cómodamente por encima del contrato más largo (15 min): más atrás de eso se
-recarga del histórico de velas, no del stream. Y **la ventana no sobrevive a un
-reinicio del motor**: tras reiniciar, el stream solo retiene lo publicado desde
-el arranque; un `from` anterior recibe el 400 (o, con `onGap=live`, el `gap`
-con su `resumesAt`), y el histórico de velas guarda lo anterior.
+recarga del histórico de velas, no del stream. Y **la ventana depende de cómo
+fue el reinicio del motor**. Con registro durable (`OTC_RECORD_DB`, §3.7) un
+reinicio **rápido** — el punto de control tiene menos de 15 s — continúa sin
+salto: el stream se ceba con la cola del registro y un `from` anterior al
+arranque se sirve como si el proceso no hubiera muerto. Un reinicio **más largo
+que 15 s** — lo que es cualquier despliegue — produce una **costura**: el
+mercado continúa desde el último precio publicado con las secuencias
+adelantadas (saltan del orden de 100.000), el stream empieza en la costura, y un
+`from` anterior recibe el 400 que nombra dónde empieza la ventana (o, con
+`onGap=live`, el `gap` con su `resumesAt`). Lo publicado antes de la costura no
+se pierde: sigue en el registro, por secuencia (`/ticks/:sequence`) y por
+instante (`/price?at=`), y en el histórico de velas. La cadena de compromisos
+**se reinicia** en la costura en vez de puentearla: `verifyCommitmentsFile`
+(de `@otc/distribution`) verifica las dos cadenas y nombra la ruptura en
+`breaks`.
 
 ### 3.5 Histórico de velas
 
@@ -473,7 +484,8 @@ separada del estado, y rotación solo con un plan de migración explícito.
 
 Todo bajo `OTC_STATE_DIR`:
 
-- puntos de control por mercado, para que un reinicio continúe **sin salto**;
+- puntos de control por mercado, para que un reinicio rápido continúe **sin
+  salto** y uno largo cosa desde el último precio publicado (§3.4);
 - `history.db`, el histórico de velas;
 - `assets/`, los activos creados y sus superposiciones;
 - con el Lab, además el fichero de sesión del Lab.

@@ -760,3 +760,44 @@ Each open Issue on the day, and what was decided:
 - **#9 (the multi-node composition), #3 and #14 (Governance amendments)** —
   stay open by name: the first is deferred by the Cycle 10 plan and is the
   next cycle's if the Human Owner wants it; the two amendments are theirs.
+
+## 2026-09-06 — A seam restarts the feed and the chain at the seam; the verifier names breaks (PH-30.4)
+
+**Context.** The release run (PH-30.4) stopped the venue cleanly after an hour
+and restarted it on the same directory 23 minutes later. Every market seamed —
+the checkpoint was past the 15 s catch-up bound, as it is after any deploy —
+and the venue then served **nothing**: PH-28.1 primes the feed with the
+record's tail, the feed is gapless by contract, and the first post-seam tick
+lands a lease ahead of that tail, so every pass failed with "tick failed" for
+every asset while the record kept filling. The standing job read thirty 400s.
+A third boot, prompt this time, died at priming: the chain writer folded the
+record across the recorded jump and the publisher refused the gap. And the
+chain restart PH-28.3 promised — "a verifier sees the break where it is" —
+produced a file `verifyCommitmentsFile` refused at the second genesis link;
+the test that established the restart read the links and never verified the
+file.
+
+**Decision.**
+
+- A market that seamed at this boot has its feed begin **at the seam**. The
+  record keeps both sides, by sequence and by instant; a client resuming from
+  before the seam is told where the window starts, the refusal the resume
+  contract is built on. The alternative — a feed that admits one told gap —
+  would put a discontinuity into the one structure INV-002 forbids one in.
+- The commitment chain is **restarted** at a seam, never bridged: by the venue
+  when the market seams, and by the next boot's priming wherever the record's
+  sequences jump. Same rule as a record that cannot reach the tip (PH-28.3).
+- The verifier **accepts** a genesis link after the first when it is signed by
+  an authorised key for the same asset, and **names it** in `breaks` as
+  `{ link, afterSequence, fromSequence }`. `ok` means every link verifies and
+  every chain is whole; continuity is a separate question the reader can ask.
+  What a break cannot prove — a window cut from the earlier chain's tail
+  widens the interval and breaks no signature — is documented rather than
+  hidden.
+
+**Guards.** `venueRecord.test.ts` runs the three boots (whole, seamed, resumed
+across the recorded seam) and verifies the file with its one break;
+`commitmentsFile.test.ts` verifies a two-chain file, shows the widened gap,
+and refuses a restart by an unauthorised key or for another asset. Both were
+watched failing on the unfixed code: the seam test dies exactly as the release
+run's venue did, `Feed ... received sequence 100984 after 982`.

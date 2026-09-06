@@ -5,6 +5,7 @@ import path from 'node:path';
 import { Logger } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  EvictedError,
   publicKeyHex,
   publishingKeyFromSeed,
   readCommitmentsStream,
@@ -353,6 +354,16 @@ describe('the record outlives the process (PH-28.1)', () => {
     const genesis = links.map((l, i) => (l.previousRoot === '' ? i : -1)).filter((i) => i >= 0);
     expect(genesis).toHaveLength(2);
     const restart = genesis[1]!;
+    // And the file verifies as two chains with the break named (PH-30.4);
+    // until then the restart PH-28.3 promised was one the verifier refused.
+    const verdict = await verifyCommitmentsFile(
+      file,
+      publicKeyHex(publishingKeyFromSeed(env.OTC_PUBLISHING_KEY)),
+    );
+    expect(verdict.ok, JSON.stringify(verdict.error)).toBe(true);
+    expect(verdict.breaks).toEqual([
+      { link: restart, afterSequence: links[restart - 1]!.toSequence, fromSequence: resumedFrom },
+    ]);
     expect(links[restart]!.fromSequence).toBe(resumedFrom);
     expect(links[restart]!.fromSequence).toBeLessThanOrEqual(links[restart - 1]!.toSequence);
     await rm(directory, { recursive: true, force: true });
@@ -408,5 +419,103 @@ describe('the record outlives the process (PH-28.1)', () => {
     expect(service.feed.since(ID, 1).length).toBeGreaterThan(5);
     expect(service.stalledMarkets).toEqual([]);
     await service.stop();
+  });
+});
+
+/**
+ * PH-30.4. The release run restarted the venue 23 minutes after a clean stop,
+ * every market seamed (the checkpoint was past the 15 s catch-up bound), and
+ * the venue then published **nothing**: the feed had been primed with the
+ * record's pre-seam tail and refused the first post-seam tick as a gap, on
+ * every pass, for every asset — "tick failed" thirty times a pass while the
+ * record filled. The next boot crashed at priming, because the chain writer
+ * folded the record across the seam and the publisher refused the jump. A
+ * restart longer than fifteen seconds is what every deploy is.
+ */
+describe('a restart past the catch-up bound seams the record (PH-30.4)', () => {
+  it('the seamed venue publishes from the seam, the chain restarts there, and the next boot primes across the recorded seam', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'otc-publication-'));
+    const env = { OTC_PUBLICATION_DIR: directory, OTC_PUBLISHING_KEY: '46'.repeat(32) };
+    // A window wide enough that the short seamed process closes none: the
+    // third boot then finds the chain's tip before the seam and must fold the
+    // record across it.
+    const publishing = (): PublicationService => new PublicationService([asset], 100, env);
+    const record = new MemoryTickRecord();
+    const clock = new SteppableClock(GENESIS);
+    const store = new MemoryStateStore();
+    const first = venue(store, clock, new InMemoryCandleHistory(), record, publishing());
+    await first.start();
+    await run(first, clock, 115);
+    await first.checkpoint();
+    await first.stop();
+    const firstHead = (await record.head(ID))!;
+    expect(firstHead).toBeGreaterThan(500);
+
+    // Two minutes later: the checkpoint is stale, so the market seams.
+    const clock2 = new SteppableClock(epochMillis(clock.now() + 120_000));
+    const second = venue(store, clock2, new InMemoryCandleHistory(), record, publishing());
+    const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    await second.start();
+    expect(second.recoveryFor(ID)?.kind).toBe('seam');
+    await run(second, clock2, 2);
+    const failed = errors.mock.calls.map((c) => String(c[0])).filter((m) => /tick failed/.test(m));
+    expect(failed, failed[0]).toEqual([]);
+    // The feed begins at the seam: what it retains is what this process
+    // published, and a client resuming from before the seam is told so.
+    const retained = second.feed.retained(ID);
+    expect(retained).not.toBeNull();
+    expect(retained!.oldest).toBeGreaterThan(firstHead);
+    expect(retained!.newest).toBeGreaterThan(retained!.oldest);
+    const seam = retained!.oldest;
+    expect(() => second.feed.since(ID, firstHead)).toThrow(EvictedError);
+    expect(second.stalledMarkets).toEqual([]);
+    // The record keeps both sides of the seam.
+    expect(await record.head(ID)).toBe(retained!.newest);
+    expect((await record.since(ID, firstHead, 2)).map((t) => t.sequence)).toEqual([
+      firstHead,
+      seam,
+    ]);
+    await second.checkpoint();
+    await second.stop();
+
+    // A prompt restart resumes rather than seams, and primes the chain from
+    // a tip that lies before the recorded seam.
+    const clock3 = new SteppableClock(clock2.now());
+    const third = venue(store, clock3, new InMemoryCandleHistory(), record, publishing());
+    await third.start();
+    expect(third.recoveryFor(ID)?.kind).toBe('resumed');
+    await run(third, clock3, 30);
+    expect(errors.mock.calls.map((c) => String(c[0])).filter((m) => /tick failed/.test(m))).toEqual(
+      [],
+    );
+    errors.mockRestore();
+    expect(third.stalledMarkets).toEqual([]);
+    sequencesContiguous(third.feed.since(ID, seam));
+    await third.stop();
+
+    // Two chains in the file: the second begins at the seam, and within each
+    // every window follows the one before it.
+    const file = path.join(directory, ID, 'commitments.ndjson');
+    const verified = await verifyCommitmentsFile(
+      file,
+      publicKeyHex(publishingKeyFromSeed(env.OTC_PUBLISHING_KEY)),
+    );
+    expect(verified.ok, JSON.stringify(verified.error)).toBe(true);
+    const links: { previousRoot: string; fromSequence: number; toSequence: number }[] = [];
+    for await (const { signed } of readCommitmentsStream(file)) links.push(signed.commitment);
+    const genesis = links.map((l, i) => (l.previousRoot === '' ? i : -1)).filter((i) => i >= 0);
+    expect(genesis).toEqual([0, expect.any(Number)]);
+    expect(links[genesis[1]!]!.fromSequence).toBe(seam);
+    expect(verified.breaks).toEqual([
+      { link: genesis[1], afterSequence: links[genesis[1]! - 1]!.toSequence, fromSequence: seam },
+    ]);
+    for (let i = 1; i < links.length; i += 1) {
+      if (genesis.includes(i)) continue;
+      expect(links[i]!.fromSequence).toBe(links[i - 1]!.toSequence + 1);
+    }
+    // The new chain closed at least one window of its own.
+    expect(links.length).toBeGreaterThan(genesis[1]! + 0);
+    expect(links[links.length - 1]!.toSequence).toBeGreaterThanOrEqual(seam + 99);
+    await rm(directory, { recursive: true, force: true });
   });
 });

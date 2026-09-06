@@ -349,22 +349,36 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
    */
   async #primeFromRecord(assetId: string): Promise<void> {
     if (this.record === null) return;
+    // A market that seamed at this boot publishes its next tick a lease
+    // beyond the record's head, and the feed is gapless by contract: primed
+    // with the pre-seam tail it refused every post-seam pass, and the release
+    // run's venue served nothing after its first deploy-length restart
+    // (PH-30.4). So a seamed market's feed begins at the seam — what the
+    // previous process served stays in the record, reachable by sequence and
+    // by instant, and a client resuming from before the seam is told the
+    // window starts after it, which is the refusal the resume contract is
+    // built on.
+    const seamed = this.recovery.get(assetId)?.kind === 'seam';
     const tail = await this.record.tail(assetId, DEFAULT_RETAIN_TICKS);
     if (tail.length > 0) {
-      this.feed.publish(assetId, tail);
+      if (!seamed) this.feed.publish(assetId, tail);
       const newest = tail[tail.length - 1]!;
       const known = this.latest.get(assetId);
       if (known === undefined || newest.sequence > known.sequence) this.latest.set(assetId, newest);
     }
     const folded = await this.history?.prime(assetId, this.record);
     // And the commitment chain, which the record lets continue across the
-    // boundary rather than restart at every boot (PH-28.3).
-    await this.publication.prime(assetId, this.record);
+    // boundary rather than restart at every boot (PH-28.3) — and which a seam
+    // restarts (PH-30.4).
+    await this.publication.prime(assetId, this.record, seamed);
     const head = tail.length > 0 ? tail[tail.length - 1]!.sequence : null;
     this.logger.log(
       head === null
         ? `${assetId}: no published record to prime from`
-        : `${assetId}: feed primed from the record through sequence ${head} ` +
+        : seamed
+          ? `${assetId}: seamed; the record ends at sequence ${head} and the feed begins at ` +
+            `the seam; ${folded ?? 0} folded into the open minute`
+          : `${assetId}: feed primed from the record through sequence ${head} ` +
             `(${tail.length} ticks); ${folded ?? 0} folded into the open minute`,
     );
   }
