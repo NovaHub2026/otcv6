@@ -113,6 +113,12 @@ coordinated store's, which already exists and is not hosted.
 5. **The row costs 32.6 bytes on disk**, so the default record is eight
    megabytes per asset and a quarter of a gigabyte for the thirty (PH-28.1).
 6. **Thirty of thirty** on the product, from outside the process (PH-28.4).
+7. **The phase gate's first run failed on the phase's own test**, not the
+   venue: the served-record suite's bar window after the kill was one minute
+   wide when the resume landed inside the minute after the kill, and a
+   one-bar window proves nothing about a hole. The suite now waits for three
+   closed minutes past the observer's last one and asserts the kill minute is
+   among them; passed alone (4 contiguous bars) and in the gate recorded in §9.
 
 ## 9. Integrated phase verification
 

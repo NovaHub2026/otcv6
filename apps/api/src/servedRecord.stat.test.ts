@@ -226,6 +226,7 @@ describe('the served record, read from outside the process', () => {
     // INV-008: SIGKILL — no shutdown hook, no final checkpoint — and the record
     // continues from where the observer left it, with any seam declared.
     await new Promise((resolve) => setTimeout(resolve, 7_000)); // a checkpoint
+    const killedAt = Date.now();
     first.child.kill('SIGKILL');
     await new Promise((resolve) => setTimeout(resolve, 500));
     const last = a.ticks[a.ticks.length - 1]!.sequence;
@@ -253,11 +254,23 @@ describe('the served record, read from outside the process', () => {
     // through the kill is stored whole. Asserted: the stored minute bars from
     // the observer's last whole minute to the resume are contiguous in
     // sequence — no bar is missing and none claims what it did not fold.
-    await new Promise((resolve) => setTimeout(resolve, 7_000)); // a flush
+    // Until three closed minutes past the observer's last one are stored, or
+    // four minutes pass: the phase gate found this window one bar wide when
+    // the resume landed inside the minute after the kill (PH-28, the phase
+    // gate's first run), and a one-bar window can prove nothing about a hole.
     const barsFrom = Math.floor(dataset.lastInstant / minute) * minute - minute;
-    const barsTo = Math.floor(c.ticks[0]!.instant / minute) * minute;
-    const bars = await storedCandles(second, barsFrom, barsTo + minute);
-    expect(bars.length, 'bars around the kill').toBeGreaterThanOrEqual(2);
+    let bars: Candle[] = [];
+    for (const started = Date.now(); Date.now() - started < 240_000;) {
+      await new Promise((resolve) => setTimeout(resolve, 7_000)); // a flush
+      bars = await storedCandles(second, barsFrom, Math.floor(Date.now() / minute) * minute);
+      if (bars.length >= 4) break;
+    }
+    expect(bars.length, 'bars around the kill').toBeGreaterThanOrEqual(3);
+    const killMinute = Math.floor(killedAt / minute) * minute;
+    expect(
+      bars.map((bar) => bar.openInstant),
+      'the minute the kill fell in is stored',
+    ).toContain(killMinute);
     for (const bar of bars) {
       expect(bar.tickCount, `bar at ${String(bar.openInstant)}`).toBe(
         bar.lastSequence - bar.firstSequence + 1,
