@@ -399,7 +399,20 @@ describe('an asset created from the panel', () => {
       200,
     );
 
-    await expect(boot(stateDir, await freePort(), { OTC_ADMIN_TOKEN: 'short' })).rejects.toThrow(
+    // **A second venue on this directory is refused by the lock, not by the
+    // token (Cycle Audit 10, a3-06/a6-05).** The venue above still holds it.
+    // Before the lock, both booted, both hosted the catalogue, both appended to
+    // one record.db, and each one's feed refused every pass afterwards while
+    // both reported ready — so this assertion is the end-to-end form of that
+    // fix, in two real processes rather than one test's fakes.
+    await expect(boot(stateDir, await freePort(), {})).rejects.toThrow(/already has a writer/);
+
+    // And the token check still refuses a token too short to be one, on a
+    // directory no other process holds — which is what this test was always
+    // about, and what the lock's refusal above would otherwise have hidden.
+    const ownDir = await mkdtemp(path.join(tmpdir(), 'otc-shorttoken-'));
+    directories.push(ownDir);
+    await expect(boot(ownDir, await freePort(), { OTC_ADMIN_TOKEN: 'short' })).rejects.toThrow(
       /OTC_ADMIN_TOKEN is 5 characters/,
     );
   }, 180_000);
