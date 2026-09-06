@@ -14,21 +14,21 @@ Last synchronized: 2026-09-05
 
 | Field                            | Value                                                                                                                                                      |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 10 — **2 of 3** phases approved (PH-28, PH-29); the closing cycle (PH-30 next, then Cycle Audit 10)                                                  |
-| Approved phases in current cycle | **2 of 3** — PH-28, PH-29                                                                                                                                  |
+| Active development cycle         | Cycle 10 — **3 of 3** phases approved (PH-28, PH-29, PH-30); the closing cycle (Cycle Audit 10)                                                            |
+| Approved phases in current cycle | **3 of 3** — PH-28, PH-29, PH-30                                                                                                                           |
 | Cycle Audit state                | **009 closed** — 64 claims, 62 confirmed, 61 resolved with a guard each, one carried (a8-12)                                                               |
 | Last Cycle Audit                 | [Cycle Audit 009](docs/audits/CYCLE-AUDIT-009.md) — 2026-09-05, eight independent auditors, one worktree each, every finding refuted independently; closed |
 
 ## Phase and subphase
 
-| Field                  | Value                                                              |
-| ---------------------- | ------------------------------------------------------------------ |
-| Active phase           | PH-30 — Release 1.0: the engine as a broker integrates it          |
-| Phase lifecycle        | ACTIVE                                                             |
-| Active subphase        | PH-30.5 — Every open Issue closed or decided; `v1.0.0` tagged      |
-| Subphase lifecycle     | ACTIVE                                                             |
-| Last approved phase    | PH-29 — The integration boundary: what a broker's settlement needs |
-| Last approved subphase | PH-30.4 — The whole catalogue measured on the release build        |
+| Field                  | Value                                                         |
+| ---------------------- | ------------------------------------------------------------- |
+| Active phase           | none                                                          |
+| Phase lifecycle        | none                                                          |
+| Active subphase        | none                                                          |
+| Subphase lifecycle     | none                                                          |
+| Last approved phase    | PH-30 — Release 1.0: the engine as a broker integrates it     |
+| Last approved subphase | PH-30.5 — Every open Issue closed or decided; `v1.0.0` tagged |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
@@ -196,7 +196,7 @@ on `audit/ca9-fixes`; that run replaces this block when it passes.
 
 ## EXACT NEXT LEGAL ACTION
 
-**Run PH-30.5 on `feature/ph-30-release`: the release record `docs/evidence/RELEASE-1.0.0.md` from the phase gate on the closing tree, PH-30 §8/§9, the approval, the merge to `main`, the `v1.0.0` tag, the regenerated package; then Cycle Audit 10. PH-30.4 is approved on two runs of the release build, the second across a deploy-length restart (`PH-30-RELEASE-RUN.md`); the seam defect that restart found is fixed in `e0c87cd`.**
+**Run Cycle Audit 10 (GOVERNANCE §28): three phases are approved, normal development stops, and the merge of the third phase — tagged `v1.0.0`, with `RELEASE-1.0.0.md` as the release record — is pushed before the auditors' worktrees are cut from it (`tools/sim/scripts/cycle-audit-worktrees.sh <merge>` with `OTC_AUDIT_ROOT=~/.otc-audit10`; briefs under `~/.otc-audit10/prompts`). Hosted CI on the merge is recorded in the table below when it lands.**
 
 PH-27 is approved on its integrated phase verification (`GATE_EXIT=0` first
 attempt, 45 statistical files in 4,472 s) and is being merged. Cycle 9 is

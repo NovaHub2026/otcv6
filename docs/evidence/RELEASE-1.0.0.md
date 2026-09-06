@@ -40,7 +40,7 @@ record (INV-009), and private generator state never served (INV-010).
 | The conformance suite on the release, twice | 27 of 27, contract 1.1.0 / `1f9fc7c84b19c58c`, on the fresh venue and on the seamed one                                          | `PH-30-RELEASE-CONFORMANCE.md`, `-RESTART.md`                            |
 | Observers held from eight processes         | 5 000 whole; 10 000 refused by the loop                                                                                          | `PH-30-TEN-THOUSAND-OBSERVERS.md`                                        |
 | The commitment chains after the restart     | 30 of 30 verify, 839 links, one break per asset at its seam, named by the verifier                                               | `PH-30-RELEASE-RUN.md` §3                                                |
-| The unit suite / the statistical suite      | **GATE**                                                                                                                         | PH-30 §9                                                                 |
+| The unit suite / the statistical suite      | unit 161 files / 3,244 tests in 33 s; statistical 47 files / 402 tests in 4,798 s; `GATE_EXIT=0` on `6f1efa9`                    | PH-30 §9                                                                 |
 
 ## 3. What a broker must know
 
@@ -56,14 +56,14 @@ record (INV-009), and private generator state never served (INV-010).
 
 ## 4. The commit, the gate and hosted CI
 
-|                              |                                                                          |
-| ---------------------------- | ------------------------------------------------------------------------ |
-| Release commit               | **RELEASE_COMMIT** on `main`, the PH-30 merge, tagged `v1.0.0`           |
-| Closing tree the gate ran on | **GATE_COMMIT** (`feature/ph-30-release`)                                |
-| `npm run gate`               | **GATE_RESULT**                                                          |
-| Hosted CI on the merge       | recorded in `CURRENT_STATE.md` § "Hosted CI, honestly" when it lands     |
-| Contract                     | `1.1.0`, digest `1f9fc7c84b19c58c` (`docs/architecture/API_CONTRACT.md`) |
-| Package                      | **PACKAGE**                                                              |
+|                              |                                                                                                                                                                                                                                                                                  |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Release commit               | the PH-30 merge commit on `main` (`git rev-parse v1.0.0`) on `main`, the PH-30 merge, tagged `v1.0.0`                                                                                                                                                                            |
+| Closing tree the gate ran on | `6f1efa9` (`feature/ph-30-release`)                                                                                                                                                                                                                                              |
+| `npm run gate`               | `GATE_EXIT=0`, 14:27–15:50Z on 2026-09-06, 83 minutes: format, build, both typechecks, lint, unit, coverage, statistical (serial, 4,798 s); the approval commit that fills this record is documents only and re-ran `state:check` and the documentation guards on the final tree |
+| Hosted CI on the merge       | recorded in `CURRENT_STATE.md` § "Hosted CI, honestly" when it lands                                                                                                                                                                                                             |
+| Contract                     | `1.1.0`, digest `1f9fc7c84b19c58c` (`docs/architecture/API_CONTRACT.md`)                                                                                                                                                                                                         |
+| Package                      | `tools/sim/scripts/integration-package.sh` from the closing tree `6f1efa9`: 158 files, `npm ci` + `npm run build` + the unit suite standalone, **158 files / 2,816 tests passed**, exit 0; regenerated from `v1.0.0` after the tag as the deliverable                            |
 
 ## 5. What the release found on its own build
 
