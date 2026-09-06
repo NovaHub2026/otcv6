@@ -632,3 +632,27 @@ record needs the record to survive a restart.
 
 **What is now explicitly out of scope.** Accounts, positions, payout, money,
 risk, and the trader's user interface — all the broker's.
+
+## 2026-09-05 — The engine's handle is a composition callback, not a branded token (PH-28.2)
+
+**Decision.** The engine-touching surface (`hostedMarket`, the forks, the
+lookaheads, the Lab's randomness) moved off `VenueService` onto
+`EngineAccess`, an object the venue constructs and hands **once** to the
+callback the composition passes as `AppModuleOptions.engineAccess`. Production
+passes none. The Lab passes `EngineHandle.hand` and provides what it receives.
+
+**Why a callback rather than the branded handle Cycle Audit 9 named.** A
+branded handle — a token only the Lab can unwrap — still leaves an unwrap method
+on the venue's type, and a method on the type is a thing a production
+controller can call with a token it should not have. A callback leaves nothing
+on the type: in a process whose composition passed no callback the object is
+never created, which is the same shape as ADR-0015 §3's "a missing module is
+not a flag". The guards are about the source, the way `composition.test.ts`
+already was: no public method of the venue returns a market, `snapshotEngine`
+appears in production only in `engineAccess.ts`, and only `venue.service.ts`
+constructs the access.
+
+**What it cost.** Every Lab test that built a venue now captures the handle
+through the same callback; the constructor's positional shape grew by one
+trailing parameter. The Lab's controller, observer and footprint take
+`EngineAccess` where they took the venue for engine reads.

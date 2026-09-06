@@ -85,6 +85,13 @@ exist in the production composition — not be present and disabled. An
 architecture test asserts it, because a flag is a thing that can be wrong and a
 missing module is not.
 
+> **Extended by PH-28.2 (2026-09-05).** The same rule applied one layer down:
+> the object that can snapshot a hosted engine is not on the venue's type but
+> on `EngineAccess`, built by the venue and handed once to the callback the
+> composition passes. Production passes none, so no production controller can
+> hold it; the Lab's composition passes a handle. A missing object cannot be
+> misused any more than a missing module can.
+
 The one genuinely non-natural capability the specification asks for — §37's
 stress test, a target outside the reachable range — appends a synthetic terminal
 tick. It is permitted **only** where it can never enter a published record, is

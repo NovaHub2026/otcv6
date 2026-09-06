@@ -299,9 +299,12 @@ surface hands production controllers an object that can snapshot the engine
 (`VenueService.hostedMarket()`); the by-value guard closes the leak, and the
 structural fix — a branded handle only the Lab's composition can unwrap — is
 phase-sized and stands beside the persisted tick record as Cycle 10's first
-concern (`IMPROVEMENT-REPORT-001.md` §4). Seventeen of thirty assets are still
-measured by no heavy suite at any gate; the whole-catalogue records the
-auditor proposed have a cost the next cycle can pay or decline on the record.
+concern (`IMPROVEMENT-REPORT-001.md` §4).
+
+> **Closed by PH-28.2** (2026-09-05): `EngineAccess`, built by the venue and
+> handed once to the callback the composition passes; production passes none. Seventeen of thirty assets are still
+> measured by no heavy suite at any gate; the whole-catalogue records the
+> auditor proposed have a cost the next cycle can pay or decline on the record.
 
 ### What this audit changed about how the next one should run
 
