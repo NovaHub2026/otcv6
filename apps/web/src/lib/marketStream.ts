@@ -169,3 +169,145 @@ export function columnsFor(window: TickWindow, columns: number, spanMs?: number)
   const { instants, prices } = window.series();
   return reduceToColumns(instants, prices, { from, to, columns });
 }
+
+/** What one market on a multiplexed stream tells its chart (PH-30.2). */
+export type MarketNotice =
+  | StreamNotice
+  | { readonly kind: 'hole'; readonly from: number; readonly to: number }
+  | { readonly kind: 'retired'; readonly reason: string };
+
+export interface MultiplexedHandle {
+  close(): void;
+  /** The one connection every chart on the page shares, or null between attempts. */
+  readonly connected: boolean;
+}
+
+/**
+ * Several markets on **one** stream (PH-30.2, Issue #16).
+ *
+ * A browser allows six connections per origin on HTTP/1.1, so a page with
+ * eight charts on eight streams blocks on the seventh. `/markets/stream`
+ * carries any set of assets on one connection, each frame naming its asset;
+ * this opens that one connection for the page, keeps a window per asset,
+ * resumes every asset from its own last sequence plus one after a drop, and
+ * tells each chart what happened to *its* market: a gap the venue announced
+ * (as a bounded hole when the frame names `resumesAt`), a close because the
+ * market was retired, or the plain reconnect notices `streamMarket` gives.
+ */
+export function streamMarkets(
+  apiBase: string,
+  assetIds: readonly string[],
+  createWindow: () => TickWindow,
+  onUpdate: (assetId: string, window: TickWindow) => void,
+  onNotice: (assetId: string | null, notice: MarketNotice) => void = () => undefined,
+  options: StreamOptions = {},
+): MultiplexedHandle {
+  const backoffMs = options.backoffMs ?? DEFAULT_RECONNECT_BACKOFF_MS;
+  const maxBackoffMs = options.maxBackoffMs ?? MAX_RECONNECT_BACKOFF_MS;
+  const Source = options.eventSource ?? EventSource;
+  const windows = new Map<string, TickWindow>(assetIds.map((id) => [id, createWindow()]));
+  const retired = new Set<string>();
+  let closed = false;
+  let source: EventSource | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let failures = 0;
+  let connected = false;
+
+  const connect = (): void => {
+    if (closed) return;
+    const carried = assetIds.filter((id) => !retired.has(id));
+    if (carried.length === 0) return;
+    const from = carried
+      .map((id) => [id, windows.get(id)!.resumeFrom] as const)
+      .filter((entry): entry is readonly [string, number] => entry[1] !== undefined)
+      .map(([id, sequence]) => `${id}:${String(sequence)}`)
+      .join(',');
+    const params = new URLSearchParams({ assets: carried.join(','), onGap: 'live' });
+    if (from.length > 0) params.set('from', from);
+    let opened = false;
+    const current = new Source(`${apiBase}/markets/stream?${params.toString()}`);
+    source = current;
+
+    current.onopen = (): void => {
+      opened = true;
+      connected = true;
+      failures = 0;
+      for (const id of carried) onNotice(id, { kind: 'live', afterGap: false });
+    };
+
+    current.onmessage = (event: MessageEvent<string>): void => {
+      const frame = JSON.parse(event.data) as Tick & { asset: string };
+      const window = windows.get(frame.asset);
+      if (window === undefined) return;
+      window.append([{ sequence: frame.sequence, instant: frame.instant, price: frame.price }]);
+      onUpdate(frame.asset, window);
+    };
+
+    current.addEventListener('gap', (event: Event): void => {
+      const frame = JSON.parse((event as MessageEvent<string>).data) as {
+        asset: string;
+        requested: number | null;
+        reason: string;
+        resumesAt: number | null;
+      };
+      // The window is reset: what it held ends before the hole, and drawing
+      // across a hole is the one thing a chart must not do.
+      windows.set(frame.asset, createWindow());
+      if (
+        frame.requested !== null &&
+        frame.resumesAt !== null &&
+        frame.resumesAt > frame.requested
+      ) {
+        onNotice(frame.asset, { kind: 'hole', from: frame.requested, to: frame.resumesAt - 1 });
+      } else {
+        onNotice(frame.asset, { kind: 'gap', reason: frame.reason });
+      }
+    });
+
+    current.addEventListener('close', (event: Event): void => {
+      const frame = JSON.parse((event as MessageEvent<string>).data) as {
+        asset?: string;
+        reason: string;
+      };
+      if (frame.asset !== undefined && /retired/i.test(frame.reason)) {
+        retired.add(frame.asset);
+        onNotice(frame.asset, { kind: 'retired', reason: frame.reason });
+      }
+    });
+
+    current.onerror = (): void => {
+      current.close();
+      connected = false;
+      if (closed || source !== current) return;
+      source = null;
+      failures += 1;
+      const inMs = Math.min(backoffMs * 2 ** (failures - 1), maxBackoffMs);
+      for (const id of carried) {
+        onNotice(id, {
+          kind: 'reconnecting',
+          attempt: failures,
+          inMs,
+          resuming: opened || windows.get(id)!.resumeFrom !== undefined,
+        });
+      }
+      timer = setTimeout(() => {
+        timer = null;
+        connect();
+      }, inMs);
+    };
+  };
+
+  connect();
+  return {
+    close(): void {
+      closed = true;
+      if (timer !== null) clearTimeout(timer);
+      source?.close();
+      source = null;
+      connected = false;
+    },
+    get connected(): boolean {
+      return connected;
+    },
+  };
+}

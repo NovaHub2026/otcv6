@@ -214,6 +214,9 @@ export class MarketController implements BeforeApplicationShutdown {
       '# HELP otc_process_resident_bytes Resident set size of the process.',
       '# TYPE otc_process_resident_bytes gauge',
       `otc_process_resident_bytes ${String(memory.rss)}`,
+      '# HELP otc_stream_connections Open stream connections; a multiplexed page is one.',
+      '# TYPE otc_stream_connections gauge',
+      `otc_stream_connections ${String(streamConnections)}`,
       '# HELP otc_record_head_sequence The newest recorded sequence per market.',
       '# TYPE otc_record_head_sequence gauge',
     ];
@@ -421,6 +424,7 @@ export class MarketController implements BeforeApplicationShutdown {
       throw error;
     }
 
+    streamConnections += 1;
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
@@ -460,6 +464,7 @@ export class MarketController implements BeforeApplicationShutdown {
     }
     this.streams.add(live);
     res.on('close', () => {
+      if (headersSent) streamConnections -= 1;
       this.streams.delete(live);
       live.cancel('client disconnected');
     });
@@ -1035,6 +1040,7 @@ export class MarketController implements BeforeApplicationShutdown {
       }
     }
 
+    streamConnections += 1;
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
@@ -1072,6 +1078,7 @@ export class MarketController implements BeforeApplicationShutdown {
     }
     this.streams.add(live);
     res.on('close', () => {
+      if (headersSent) streamConnections -= 1;
       this.streams.delete(live);
       live.cancel('client disconnected');
     });
@@ -1265,6 +1272,12 @@ let replayBudgetInUse = 0;
 /** What `/metrics` reports for the replay budget (PH-30.1). */
 export function replayBytesInUse(): number {
   return replayBudgetInUse;
+}
+
+/** Open stream connections, both routes (PH-30.2): what a page's charts cost the venue. */
+let streamConnections = 0;
+export function openStreamConnections(): number {
+  return streamConnections;
 }
 
 /**

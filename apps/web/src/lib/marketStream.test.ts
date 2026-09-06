@@ -1,7 +1,12 @@
 // Invariant evidence: INV-002 (shared market) — a client that cannot know what it missed must not pretend to.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TickWindow } from '@otc/chart';
-import { streamMarket, type StreamNotice } from './marketStream.js';
+import {
+  streamMarket,
+  streamMarkets,
+  type MarketNotice,
+  type StreamNotice,
+} from './marketStream.js';
 
 /**
  * The reconnect policy, driven in Node with a fake `EventSource` (a6-11).
@@ -173,5 +178,101 @@ describe('reconnecting a tick stream', () => {
     latest().tick(5);
     expect(() => latest().tick(7)).toThrow(/Expected sequence 6/);
     handle.close();
+  });
+});
+
+describe('several markets on one stream (PH-30.2, Issue #16)', () => {
+  class MuxSource extends FakeSource {
+    readonly listeners = new Map<string, (event: Event) => void>();
+    addEventListener(name: string, handler: (event: Event) => void): void {
+      this.listeners.set(name, handler);
+    }
+    frame(name: string, data: unknown): void {
+      this.listeners.get(name)?.({ data: JSON.stringify(data) } as unknown as Event);
+    }
+    muxTick(asset: string, sequence: number): void {
+      const data = JSON.stringify({
+        asset,
+        sequence,
+        instant: 1_776_000_000_000 + sequence,
+        price: 100 + sequence,
+      });
+      this.onmessage?.({ data } as MessageEvent<string>);
+    }
+  }
+  const muxLatest = (): MuxSource =>
+    FakeSource.instances[FakeSource.instances.length - 1] as MuxSource;
+
+  it('opens one connection for every asset, demultiplexes by asset and resumes each from its own sequence', () => {
+    vi.useFakeTimers();
+    const before = FakeSource.instances.length;
+    const updates: string[] = [];
+    const notices: string[] = [];
+    const handle = streamMarkets(
+      '/engine',
+      ['eurusd', 'gbpusd', 'btcusdt'],
+      () => new TickWindow({ capacity: 1_000 }),
+      (id, window) => updates.push(`${id}:${String(window.latest?.sequence)}`),
+      (id, notice) => notices.push(`${String(id)}:${notice.kind}`),
+      { eventSource: MuxSource as unknown as typeof EventSource, backoffMs: 10 },
+    );
+    expect(FakeSource.instances.length - before).toBe(1);
+    const first = muxLatest();
+    expect(query(first)).toBe('?assets=eurusd%2Cgbpusd%2Cbtcusdt&onGap=live');
+    first.open();
+    expect(handle.connected).toBe(true);
+    first.muxTick('eurusd', 1);
+    first.muxTick('gbpusd', 7);
+    first.muxTick('eurusd', 2);
+    expect(updates).toEqual(['eurusd:1', 'gbpusd:7', 'eurusd:2']);
+    // The connection drops: one reconnect, naming every asset's next sequence.
+    first.fail();
+    vi.advanceTimersByTime(10);
+    const second = muxLatest();
+    expect(second).not.toBe(first);
+    expect(decodeURIComponent(query(second))).toBe(
+      '?assets=eurusd,gbpusd,btcusdt&onGap=live&from=eurusd:3,gbpusd:8',
+    );
+    expect(notices.filter((n) => n.endsWith('reconnecting'))).toHaveLength(3);
+    handle.close();
+    vi.useRealTimers();
+  });
+
+  it('tells each market its own hole, its own gap, and its retirement — and stops carrying a retired market', () => {
+    vi.useFakeTimers();
+    const notices: { id: string | null; notice: MarketNotice }[] = [];
+    const handle = streamMarkets(
+      '/engine',
+      ['eurusd', 'gbpusd'],
+      () => new TickWindow({ capacity: 1_000 }),
+      () => undefined,
+      (id, notice) => notices.push({ id, notice }),
+      { eventSource: MuxSource as unknown as typeof EventSource, backoffMs: 10 },
+    );
+    const source = muxLatest();
+    source.open();
+    source.frame('gap', { asset: 'eurusd', requested: 100, reason: 'evicted', resumesAt: 140 });
+    source.frame('gap', {
+      asset: 'gbpusd',
+      requested: 5,
+      reason: 'never published',
+      resumesAt: null,
+    });
+    source.frame('close', { asset: 'gbpusd', reason: 'asset retired' });
+    expect(notices.find((n) => n.id === 'eurusd' && n.notice.kind === 'hole')?.notice).toEqual({
+      kind: 'hole',
+      from: 100,
+      to: 139,
+    });
+    expect(notices.find((n) => n.id === 'gbpusd' && n.notice.kind === 'gap')?.notice).toEqual({
+      kind: 'gap',
+      reason: 'never published',
+    });
+    expect(notices.find((n) => n.id === 'gbpusd' && n.notice.kind === 'retired')).toBeDefined();
+    source.fail();
+    vi.advanceTimersByTime(10);
+    expect(decodeURIComponent(query(muxLatest()))).toBe('?assets=eurusd&onGap=live');
+    handle.close();
+    vi.useRealTimers();
   });
 });
