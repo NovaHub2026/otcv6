@@ -1016,3 +1016,38 @@ later one that has lost an interval. `journalFile.test.ts` — the named interva
 on a `/proof` refusal, and proofs before a torn line surviving it.
 `venueRecord.test.ts` — three real boots: one chain, sealed exactly at the
 record's head, the break bound, and `proof(firstHead)` **proved**.
+
+## 2026-09-06 — `v1.0.0` is superseded, not moved, and the release that stands is `v2.0.0` (Cycle Audit 10)
+
+**Context.** PH-30 §3 says `v1.0.0` is the commit the phase gate passed and
+hosted CI corroborated, or it is not tagged. The tag was pushed six seconds
+after its CI run was created; the run finished red two hours later, on a real
+defect (the Lab's position entry price, fixed in `efb7658`). Two auditors found
+the release record claiming a corroboration it did not have before the result
+was in. So a tag exists, publicly, on a commit that does not satisfy the rule
+the phase wrote for it.
+
+Cycle Audit 10 then changed the API contract from `1.1.0` to `2.0.0`:
+`GET /markets/:id/price?at=` refuses an instant inside a recorded discontinuity
+where a 1.x venue answered it with a price, and `GET /markets/:id/seams`
+publishes what `settle()` needs.
+
+**Decision.**
+
+- **`v1.0.0` is not moved and not deleted.** It is a public tag; rewriting it
+  would make the repository's history disagree with what anyone who fetched it
+  holds, and the whole subject of this audit is records that say what did not
+  happen. It is marked **superseded** in `RELEASE-1.0.0.md`, with the reason and
+  the red run named.
+- **The release that stands is `v2.0.0`**, cut from the Cycle Audit 10 merge.
+  Major rather than patch because the contract is major: a broker that pinned
+  `1.x` and treats a non-200 as a transport error changes behaviour on requests
+  it was already making. Understating that as `v1.0.1` to make the first tag
+  look like a near miss would be the same kind of lie the audit was written
+  about.
+- **The tag is cut after a green hosted run, not before it.** That is what the
+  rule said, and the reason the rule exists is now on the record.
+
+**What this costs.** The project's first release tag is a tag nobody should
+use, and that is visible for ever in the repository. The alternative — a moved
+tag and a record that reads as though the release went cleanly — costs more.
