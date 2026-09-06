@@ -264,6 +264,33 @@ requires `gaplessFromHistory` explicitly and does not infer it from having been
 seeded — the bar advances by being seeded again, every completed minute, which
 is the record re-read rather than a rebuild from a partial view (CA6-30).
 
+## 5.3 The settlement query (PH-29.1)
+
+A broker settles a binary option on two prices — the one in force at entry
+and the one in force at expiry — and until PH-29.1 the only way to have them
+was a copy of the stream. Three read routes answer from the published record
+(PH-28.1) and the publication archive, and from nothing that generates:
+
+- **`GET /markets/:id/ticks/:sequence`** — the recorded tick, or a `404`
+  naming the record's bounds.
+- **`GET /markets/:id/price?at=<instant>`** — the price in force at the
+  instant: the **last tick at or before it**, the rule `settle()` and the
+  charts use, named in the response as `rule`. Refused before the record's
+  oldest tick (the record cannot say what was in force) and after the newest
+  published instant (a price for an instant nothing has been published for is
+  a prediction, not a record — an expiry a client chooses never changes what
+  is published, INV-005).
+- **`GET /markets/:id/proof/:sequence`** — the signed commitment of the window
+  holding the sequence, the Merkle path and the publisher's key, everything
+  `verifyInclusion` and `verifyCommitment` need (INV-009); `409` while the
+  window is open, naming how far the chain reaches; `404` when the deployment
+  does not publish. The archived tick is compared with the record's before a
+  proof is served, so an edited journal proves nothing.
+
+`settlementQuery.test.ts` holds the price route to the rule for a thousand
+instants and to `settle()`'s own entry and expiry prices, and verifies a served
+proof with the distribution package's verifiers.
+
 ## 6. Creating an asset is a job
 
 `POST /assets` returns a **job id**, and the panel polls `/registrations/:id`.

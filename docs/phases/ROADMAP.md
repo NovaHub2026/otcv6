@@ -864,13 +864,13 @@ deployment, a reference client in the package exercised by the release, and
 `packages/trading` kept as a reference settlement the broker may embed, with
 Issue #11 decided as the library's concern only.
 
-| Subphase | Title                                                                                  | State   |
-| -------- | -------------------------------------------------------------------------------------- | ------- |
-| PH-29.1  | The settlement query: price at a sequence and at an instant, with its inclusion proof  | ACTIVE  |
-| PH-29.2  | The API contract frozen: versioned, schema-described, breaking changes guarded         | PLANNED |
-| PH-29.3  | The conformance suite: the integration checklist made executable against a live venue  | PLANNED |
-| PH-29.4  | The reference client and settlement library: exercised by the release, #11 decided     | PLANNED |
-| PH-29.5  | The standing verdict's figure decided (#10); the guide's §5 rewritten around the query | PLANNED |
+| Subphase | Title                                                                                  | State    |
+| -------- | -------------------------------------------------------------------------------------- | -------- |
+| PH-29.1  | The settlement query: price at a sequence and at an instant, with its inclusion proof  | APPROVED |
+| PH-29.2  | The API contract frozen: versioned, schema-described, breaking changes guarded         | ACTIVE   |
+| PH-29.3  | The conformance suite: the integration checklist made executable against a live venue  | PLANNED  |
+| PH-29.4  | The reference client and settlement library: exercised by the release, #11 decided     | PLANNED  |
+| PH-29.5  | The standing verdict's figure decided (#10); the guide's §5 rewritten around the query | PLANNED  |
 
 **PH-30 — release 1.0.** What a broker's operator needs and the repository does
 not yet give them: readiness and liveness, metrics, an admin credential rather
