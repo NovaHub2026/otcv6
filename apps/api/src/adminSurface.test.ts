@@ -97,6 +97,11 @@ function venueStub(
     // Cycle Audit 10 (a3-06, a6-05): a pass that threw, and a lost writer lock.
     lastFailedPass: null,
     lostWriterLock: null,
+    // Cycle Audit 10 (a5-02): this stub is a venue that has finished resuming.
+    // The write routes refuse one that has not, because the listener now opens
+    // before `start()` and a write during a boot reaches a catalogue `start()`
+    // is walking.
+    started: true,
   } as unknown as VenueService;
 }
 

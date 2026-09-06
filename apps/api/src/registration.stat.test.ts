@@ -92,8 +92,10 @@ async function boot(
     try {
       const response = await fetch(`http://127.0.0.1:${port}/health`);
       if (response.ok) {
-        const health = (await response.json()) as { bootNonce: string | null };
-        if (health.bootNonce === nonce) return child;
+        // Ready, not merely answering: the listener opens before the markets
+        // resume (a5-02), so `/health` answers while the venue is still booting.
+        const health = (await response.json()) as { bootNonce: string | null; ready: boolean };
+        if (health.bootNonce === nonce && health.ready) return child;
       }
     } catch {
       /* not up yet */

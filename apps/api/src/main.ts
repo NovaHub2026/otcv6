@@ -21,10 +21,34 @@ import {
 import { refuseLabState } from './labState.js';
 
 /**
- * Boot the venue, then serve.
+ * Serve, then boot the venue.
  *
- * The markets start before the HTTP listener does, so nothing can observe a
- * half-recovered venue. Shutdown is the mirror: stop publishing, write a final
+ * **The listener opens first, and readiness is what holds traffic back (Cycle
+ * Audit 10, a5-02).** The markets used to resume before the listener opened,
+ * which meant the socket refused connections for the whole boot: with a backfill that
+ * is seconds to minutes of generation, and `/health/live` and `/health/ready`
+ * first answered at the same instant. PH-30.1 §1 promises an orchestrator can
+ * point its restart at liveness, and a liveness probe against a port that
+ * refuses connections restarts the venue every time the backfill outlasts it —
+ * for ever, since each restart begins the backfill again.
+ *
+ * So the process serves as soon as it can say `{"live":true}`, and
+ * `/health/ready` answers `503 the markets have not finished resuming` until
+ * `start()` returns. Nothing observes a half-recovered venue that was not told
+ * it was looking at one: a market that has not resumed is not hosted, so it is
+ * absent from `/markets` and a 404 on its own routes — never a price, and never
+ * a different price than another observer's (INV-002). A deployment routes on
+ * readiness (the shipped `Dockerfile` and `docker-compose.yml` health-check
+ * `/health/ready`, and `deploy/nginx.conf` proxies a venue that is up).
+ *
+ * What this does **not** change: a first boot whose backfill outlasts the
+ * shipped 60 s health-check start period is still unhealthy when it expires —
+ * `OTC_BACKFILL_DAYS` decides that and no default can. What changed is that
+ * the probe now gets `503 the markets have not finished resuming` instead of a
+ * refused connection, which is the difference between an operator seeing a
+ * venue that is working and one seeing a venue that is not there.
+ *
+ * Shutdown is the mirror: stop publishing, write a final
  * checkpoint, close the history, then exit. A process that exits without
  * checkpointing is still *correct* — the next boot replays from the last one —
  * but it makes the replay longer than it needs to be.
@@ -168,10 +192,6 @@ async function bootstrap(): Promise<void> {
   // process is refused at boot, and a first process that has been superseded
   // loses leadership rather than both carrying on.
   venue.holdWriterLock(lock);
-  // Overlays before start: a retirement decides whether a market is resumed at
-  // all, so it has to be known before the resume loop runs.
-  venue.applyOverlays(await app.get<AssetRegistry>('ASSET_REGISTRY').overlays());
-  await venue.start();
 
   // Loopback by default (a6-01). The service used to listen on every interface,
   // which on a LAN meant anyone who could reach the port could create, rename
@@ -179,7 +199,16 @@ async function bootstrap(): Promise<void> {
   // `OTC_BIND=0.0.0.0` — and sets `OTC_ADMIN_TOKEN` first.
   const host = bindAddressFromEnvironment(process.env);
   const port = Number.parseInt(process.env.PORT ?? '3000', 10);
+  // From here `/health/live` answers, and `/health/ready` refuses with the
+  // reason until the line below returns (a5-02).
   await app.listen(port, host);
+  logger.log(`listening on ${host}:${port}; resuming the markets`);
+
+  // Overlays before start: a retirement decides whether a market is resumed at
+  // all, so it has to be known before the resume loop runs.
+  venue.applyOverlays(await app.get<AssetRegistry>('ASSET_REGISTRY').overlays());
+  await venue.start();
+
   const writes =
     app.get<string | null>(ADMIN_TOKEN) === null
       ? 'writes refused (OTC_ADMIN_TOKEN is not set)'

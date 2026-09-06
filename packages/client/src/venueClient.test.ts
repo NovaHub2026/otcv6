@@ -75,7 +75,7 @@ describe('the reference client (PH-29.4)', () => {
     );
   });
 
-  it('subscribes across a told gap and a dropped connection with no repeat and no hole', async () => {
+  it('subscribes across a dropped connection with no repeat and no hole', async () => {
     const client = new VenueClient({ baseUrl: await fakeVenue({ dropAfter: 12 }) });
     const events: StreamEvent[] = [];
     let ended = '';
@@ -103,6 +103,46 @@ describe('the reference client (PH-29.4)', () => {
       .filter((e) => e.kind === 'reconnected')
       .map((e) => (e as { from: number }).from);
     expect(reconnects).toEqual([13, 25, 37, 49]);
+    expect(ended).toBe('end of tape');
+  });
+
+  /**
+   * **Cycle Audit 10 (a4-02, a8-02).** The venue tells a gap on the reconnect —
+   * the frame `market.controller.ts` writes when the sequence asked for has
+   * been evicted, or when a seamed boot restarted the feed past it — and the
+   * client threw `ContractViolation: sequence 19 after 12 with no gap told` on
+   * the first tick after it. The loop in `INTEGRATION.md` §4 is this one, so
+   * the guide's own client crashed on the case it exists for. The test above
+   * could not see it: its venue never tells a gap.
+   */
+  it('continues from resumesAt across a gap the venue tells on a reconnect', async () => {
+    const client = new VenueClient({
+      baseUrl: await fakeVenue({ dropAfter: 12, gapOnResume: true }),
+    });
+    const events: StreamEvent[] = [];
+    let ended = '';
+    const iterator = client.subscribe('eurusd', { from: 1, reconnects: 10 });
+    for (;;) {
+      const next = await iterator.next();
+      if (next.done) {
+        ended = next.value;
+        break;
+      }
+      events.push(next.value);
+    }
+    expect(events.filter((e) => e.kind === 'gap')).toEqual([
+      { kind: 'gap', gap: { requested: 13, reason: 'evicted', resumesAt: 19 } },
+    ]);
+    const sequences = events
+      .filter((e) => e.kind === 'tick')
+      .map((e) => (e as { tick: { sequence: number } }).tick.sequence);
+    // Twelve ticks, the drop, the gap the venue told — and then the record from
+    // where the venue said it resumes, with nothing invented in between.
+    expect(sequences.slice(0, 12)).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
+    expect(sequences.slice(12)).toEqual(Array.from({ length: 42 }, (_, i) => i + 19));
+    expect(events.filter((e) => e.kind === 'reconnected')).toEqual([
+      { kind: 'reconnected', from: 13 },
+    ]);
     expect(ended).toBe('end of tape');
   });
 

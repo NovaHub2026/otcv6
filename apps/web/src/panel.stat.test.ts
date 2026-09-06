@@ -177,8 +177,12 @@ async function bootEngine(port: number, stateDir?: string): Promise<void> {
     port,
     '/health',
     child,
-    async (response) =>
-      ((await response.json()) as { bootNonce: string | null }).bootNonce === nonce,
+    // Ready, not merely answering: the listener opens before the markets resume
+    // (a5-02), so `/health` answers while the venue is still booting.
+    async (response) => {
+      const health = (await response.json()) as { bootNonce: string | null; ready: boolean };
+      return health.bootNonce === nonce && health.ready;
+    },
   );
 }
 

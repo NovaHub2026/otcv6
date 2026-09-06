@@ -229,10 +229,22 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
       ...(options.signal === undefined ? {} : { signal: options.signal }),
       fetch: doFetch,
     });
+    // The name says *exactly*, and until Cycle Audit 10 it read five ticks and
+    // looked at the first: a venue that answered the right sequence and then
+    // dropped one out of the middle of the resumed run passed. A resume is
+    // contiguous or it is a hole nobody was told about (INV-002), so the whole
+    // run is checked, not its first frame.
+    let resumesExactly = resumed.gaps.length === 0 && resumed.ticks.length > 0;
+    if (resumed.ticks[0]?.sequence !== last.sequence + 1) resumesExactly = false;
+    for (let i = 1; i < resumed.ticks.length; i += 1)
+      if (resumed.ticks[i]!.sequence !== resumed.ticks[i - 1]!.sequence + 1) resumesExactly = false;
     check(
       'stream resumes exactly from M+1',
-      resumed.gaps.length === 0 && resumed.ticks[0]?.sequence === last.sequence + 1,
-      `asked ${String(last.sequence + 1)}, got ${String(resumed.ticks[0]?.sequence)}, ${String(resumed.gaps.length)} gaps`,
+      resumesExactly,
+      `asked ${String(last.sequence + 1)}, got [${resumed.ticks
+        .slice(0, 8)
+        .map((t) => String(t.sequence))
+        .join(', ')}], ${String(resumed.gaps.length)} gaps`,
     );
     const tooFar = await readStream({
       baseUrl: base,

@@ -4,6 +4,7 @@ import { TickWindow } from '@otc/chart';
 import {
   streamMarket,
   streamMarkets,
+  type FetchLike,
   type MarketNotice,
   type StreamNotice,
 } from './marketStream.js';
@@ -235,6 +236,105 @@ describe('several markets on one stream (PH-30.2, Issue #16)', () => {
     );
     expect(notices.filter((n) => n.endsWith('reconnecting'))).toHaveLength(3);
     handle.close();
+    vi.useRealTimers();
+  });
+
+  /**
+   * **Cycle Audit 10 (a5-03).** A market retired while the page is
+   * disconnected is learned from nothing: the `close` frame that teaches it
+   * needs an open connection, and the venue refuses the *whole* set with a 404
+   * for the one asset it no longer hosts. Measured on the shipped code: 21
+   * reconnects, the same URL every time, eight charts stuck on
+   * `reconnecting` for ever. An `EventSource` cannot see the 404, so the
+   * client asks the engine what it still hosts and carries on with that.
+   */
+  it('asks which markets remain when the whole set is refused, and carries the survivors (a5-03)', async () => {
+    vi.useFakeTimers();
+    const asked: string[] = [];
+    const notices: { id: string | null; notice: MarketNotice }[] = [];
+    const handle = streamMarkets(
+      '/engine',
+      ['eurusd', 'gbpusd'],
+      () => new TickWindow({ capacity: 1_000 }),
+      () => undefined,
+      (id, notice) => notices.push({ id, notice }),
+      {
+        eventSource: MuxSource as unknown as typeof EventSource,
+        backoffMs: 10,
+        fetch: (url: string) => {
+          asked.push(url);
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([{ id: 'eurusd', displayName: 'EUR/USD' }]),
+          });
+        },
+      },
+    );
+    const first = muxLatest();
+    first.open();
+    first.muxTick('eurusd', 1);
+    first.muxTick('gbpusd', 7);
+    first.fail(); // a drop, after it opened: resume each from its own sequence
+    await vi.advanceTimersByTimeAsync(10);
+    expect(decodeURIComponent(query(muxLatest()))).toBe(
+      '?assets=eurusd,gbpusd&onGap=live&from=eurusd:2,gbpusd:8',
+    );
+    muxLatest().fail(); // refused before opening: 404, because gbpusd is gone
+    await vi.advanceTimersByTimeAsync(20);
+    // The resume point is dropped first — it is the other thing a refusal can
+    // mean (a6-11) — and the whole set is asked for again.
+    expect(decodeURIComponent(query(muxLatest()))).toBe('?assets=eurusd,gbpusd&onGap=live');
+    expect(asked).toEqual([]);
+    muxLatest().fail(); // refused again, with nothing to blame but the set
+    await vi.advanceTimersByTimeAsync(40);
+    expect(asked).toEqual(['/engine/markets']);
+    expect(notices.find((n) => n.id === 'gbpusd' && n.notice.kind === 'retired')).toBeDefined();
+    // The market the venue still serves is still carried, and is live again.
+    expect(decodeURIComponent(query(muxLatest()))).toBe('?assets=eurusd&onGap=live');
+    muxLatest().open();
+    expect(handle.connected).toBe(true);
+    handle.close();
+    vi.useRealTimers();
+  });
+
+  it('drops nothing while the engine still lists the markets, or cannot be asked', async () => {
+    vi.useFakeTimers();
+    const answers: FetchLike[] = [
+      // Both still hosted: the refusal was something else, and nothing goes.
+      () =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([{ id: 'eurusd' }, { id: 'gbpusd' }]),
+        }),
+      // A venue that is still booting lists no market at all: dropping every
+      // chart on that answer would be this defect pointing the other way.
+      () => Promise.resolve({ ok: true, json: () => Promise.resolve([]) }),
+      // Refused, and unreachable: an engine that is down takes nothing off the
+      // page — the backoff is the answer to that.
+      () => Promise.resolve({ ok: false, json: () => Promise.resolve(null) }),
+      () => Promise.reject(new Error('the engine is not answering')),
+    ];
+    for (const answer of answers) {
+      FakeSource.instances = [];
+      const notices: { id: string | null; notice: MarketNotice }[] = [];
+      const handle = streamMarkets(
+        '/engine',
+        ['eurusd', 'gbpusd'],
+        () => new TickWindow({ capacity: 1_000 }),
+        () => undefined,
+        (id, notice) => notices.push({ id, notice }),
+        {
+          eventSource: MuxSource as unknown as typeof EventSource,
+          backoffMs: 10,
+          fetch: answer,
+        },
+      );
+      muxLatest().fail();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(decodeURIComponent(query(muxLatest()))).toBe('?assets=eurusd,gbpusd&onGap=live');
+      expect(notices.filter((n) => n.notice.kind === 'retired')).toEqual([]);
+      handle.close();
+    }
     vi.useRealTimers();
   });
 

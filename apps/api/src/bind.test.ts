@@ -102,7 +102,11 @@ describe('how many proxy hops the venue trusts (Cycle Audit 10)', () => {
   it('is what production wires into the HTTP adapter, before it listens', () => {
     // main.ts is composed once and never imported by a test, so the wiring is
     // asserted where it lives (the pattern labState.test.ts uses).
-    const production = readFileSync(new URL('./main.ts', import.meta.url), 'utf8');
+    // Comments stripped first (Cycle Audit 10): this compared positions in the
+    // raw file, so a docblock that mentioned either call decided the order.
+    const production = readFileSync(new URL('./main.ts', import.meta.url), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1');
     expect(production).toMatch(/trustedProxiesFromEnvironment\(process\.env\)/);
     expect(production).toMatch(/sets?\(\s*'trust proxy'/);
     expect(production.indexOf("'trust proxy'")).toBeLessThan(production.indexOf('app.listen('));

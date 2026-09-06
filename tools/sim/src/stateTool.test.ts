@@ -74,6 +74,35 @@ describe('the operator’s state tool', () => {
     expect((await runStateTool(['nonsense'])).code).toBe(2);
   });
 
+  /**
+   * **Cycle Audit 10 (a8-05).** `verify` on a path that does not exist printed
+   * `Assets: none (nothing to resume)` / `Consistent: every file agrees.` and
+   * exited **0** — a mistyped `--dir`, an unmounted volume or a restore that
+   * never landed, all reading as a healthy state directory, and PH-28 cites
+   * `state:verify — exit 0` as evidence of consistency. `backup` refused the
+   * same input. The two commands now agree, and an empty directory that does
+   * exist is still the legal first-boot state it always was.
+   */
+  it('verify refuses a directory that is not there, exactly as backup does', async () => {
+    const missing = path.join(scratch(), 'never-mounted');
+    const verified = await runStateTool(['verify', '--dir', missing]);
+    expect(verified.code).toBe(1);
+    expect(verified.output).toBe(`No state directory at ${missing}.`);
+    const backed = await runStateTool([
+      'backup',
+      '--dir',
+      missing,
+      '--out',
+      path.join(scratch(), 'out'),
+    ]);
+    expect(backed.code).toBe(1);
+    expect(backed.output).toBe(verified.output);
+    // And the other half: nothing to resume is not the same as nowhere to look.
+    const empty = await runStateTool(['verify', '--dir', scratch()]);
+    expect(empty.code).toBe(0);
+    expect(empty.output).toMatch(/Assets: none \(nothing to resume\)[\s\S]*Consistent/);
+  });
+
   it('backup writes a verified copy with its manifest, at the clock it is given', async () => {
     const source = await stateDir(100, 120);
     const out = path.join(scratch(), 'backup');

@@ -51,13 +51,15 @@ async function waitForHealth(baseUrl: string, timeoutMs = 60_000): Promise<void>
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     try {
-      const response = await fetch(`${baseUrl}/health`);
+      // Readiness, not liveness: since a5-02 the listener opens before the
+      // markets resume, and a load run against a venue that has not finished
+      // resuming measures the resume.
+      const response = await fetch(`${baseUrl}/health/ready`);
       if (response.ok) return;
     } catch {
       // not up yet
     }
-    if (Date.now() > deadline)
-      throw new Error(`engine did not answer /health within ${timeoutMs}ms`);
+    if (Date.now() > deadline) throw new Error(`engine did not become ready within ${timeoutMs}ms`);
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
 }

@@ -1,5 +1,8 @@
 // Invariant evidence: INV-010 (private generator state) — the operator surface carries counters, never state.
-import { ServiceUnavailableException } from '@nestjs/common';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 import { durationMillis, epochMillis, MasterKeyring, SteppableClock } from '@otc/core';
 import { ASSET_CATALOGUE } from '@otc/engine';
@@ -64,6 +67,80 @@ describe('liveness and readiness (PH-30.1)', () => {
     });
     await service.stop();
     expect(service.notReadyReason).toMatch(/shutting down/);
+  });
+});
+
+/**
+ * **Cycle Audit 10 (a5-02).** The controller answered liveness before
+ * readiness; the *process* did not. `bootstrap()` resumed every market and
+ * generated the backfill before `app.listen()`, so the socket refused
+ * connections for the whole boot and liveness and readiness first answered at
+ * the same instant — measured 14.4 s apart from nothing, with a one-day
+ * backfill. PH-30.1 §1 promises an orchestrator can point its restart at
+ * `/health/live`, and a restart pointed at a port that refuses connections
+ * kills the venue every time the backfill is longer than the probe allows.
+ *
+ * Composition is text here for the same reason it is in `composition.test.ts`:
+ * what is under test is the order of two awaits in the entrypoint, and no unit
+ * test can reach it without booting the service.
+ */
+describe('the process serves before it starts the markets (a5-02)', () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const main = readFileSync(path.join(here, 'main.ts'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+
+  it('listens before it resumes a market, so liveness answers during a backfill', () => {
+    const listen = main.indexOf('app.listen(');
+    const start = main.indexOf('venue.start()');
+    const overlays = main.indexOf('venue.applyOverlays(');
+    expect(listen, 'main.ts never listens').toBeGreaterThan(-1);
+    expect(start, 'main.ts never starts the venue').toBeGreaterThan(-1);
+    expect(overlays, 'main.ts never applies the overlays').toBeGreaterThan(-1);
+    expect(
+      listen,
+      'main.ts starts the venue before it serves HTTP: /health/live cannot answer until every market has resumed',
+    ).toBeLessThan(start);
+    expect(
+      listen,
+      'main.ts reads the overlays before it serves HTTP: liveness waits on the registry',
+    ).toBeLessThan(overlays);
+  });
+
+  /**
+   * The other side of the ordering change. Opening the listener first puts the
+   * administrative surface within reach of a boot for the first time, and
+   * `start()` walks `this.assets` across an `await` per market: an asset hosted
+   * underneath that loop is resumed twice or missing from the venue being
+   * built, and a retirement finds nothing hosted and throws a `RangeError`
+   * (a 500). Reads are honest in that window because an unresumed market is
+   * not hosted; writes are refused with the reason readiness already gives.
+   */
+  it('refuses an administrative write until the markets have resumed', async () => {
+    const { venue: service, controller } = venue();
+    expect(() => controller.createAsset({ id: 'x' })).toThrow(ServiceUnavailableException);
+    await expect(controller.retireAsset(asset.definition.id)).rejects.toThrow(
+      ServiceUnavailableException,
+    );
+    await expect(controller.editAsset(asset.definition.id, {})).rejects.toThrow(
+      ServiceUnavailableException,
+    );
+    await service.start();
+    // Once it has started, a write is refused for what this deployment is —
+    // no registry, no registration service — and not for the boot.
+    expect(() => controller.createAsset({ id: 'x' })).toThrow(NotFoundException);
+    await expect(controller.retireAsset(asset.definition.id)).rejects.toThrow(NotFoundException);
+    await service.stop();
+  });
+
+  it('never reports ready from anything but the venue', () => {
+    // The other half of the promise: liveness moving earlier must not move
+    // readiness with it. `/health/ready` reads the venue and nothing else.
+    expect(main).not.toMatch(/ready\s*[:=]/);
+    const { venue: service, controller } = venue();
+    expect(controller.live()).toEqual({ live: true });
+    expect(() => controller.ready()).toThrow(ServiceUnavailableException);
+    expect(service.notReadyReason).toMatch(/not finished resuming/);
   });
 });
 

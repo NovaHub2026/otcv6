@@ -339,6 +339,25 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     return this.notReadyReason === null;
   }
 
+  /**
+   * Whether `start()` has returned — every market resumed and the scheduler
+   * running — regardless of what has happened since.
+   *
+   * **Cycle Audit 10 (a5-02).** The HTTP listener now opens *before* this, so
+   * that liveness can answer during a backfill. That puts the administrative
+   * surface within reach of a boot for the first time, and `start()` reads
+   * `this.assets` across an `await` per market: an asset hosted underneath that
+   * loop is resumed twice or dropped from the venue being built, and a
+   * retirement finds nothing hosted yet and fails with a `RangeError`. So the
+   * write routes refuse until this is true. It is deliberately *not*
+   * {@link VenueService.isReady}: a stalled market makes a venue unready, and
+   * retiring a stalled market is exactly the administrative act an operator
+   * needs then (CA7-15).
+   */
+  get started(): boolean {
+    return this.ready;
+  }
+
   /** Why the venue is not ready, or null when it is. */
   get notReadyReason(): string | null {
     if (!this.ready) return 'the markets have not finished resuming';

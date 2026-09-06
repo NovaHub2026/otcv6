@@ -89,9 +89,14 @@ async function waitForHealth(
     try {
       const response = await fetch(`http://127.0.0.1:${port}/health`);
       if (response.ok) {
-        const health = (await response.json()) as { bootNonce: string | null };
-        if (health.bootNonce === nonce) return;
-        lastError = `a service without this boot's nonce is answering on ${port}`;
+        // Ready, not merely answering: the listener opens before the markets
+        // resume (a5-02), so `/health` answers while the venue is still booting.
+        const health = (await response.json()) as { bootNonce: string | null; ready: boolean };
+        if (health.bootNonce === nonce && health.ready) return;
+        lastError =
+          health.bootNonce === nonce
+            ? `the venue on ${port} is answering but has not finished resuming`
+            : `a service without this boot's nonce is answering on ${port}`;
       } else {
         lastError = `status ${response.status}`;
       }

@@ -32,6 +32,16 @@ export interface Faults {
   dropAfter?: number;
   /** On a resume, replay the tick before `from` as well: a venue that repeats itself. */
   repeatOnResume?: boolean;
+  /**
+   * On a resume, tell a gap and continue six sequences later: the frame a venue
+   * writes when the sequence asked for has been evicted, or when a seamed boot
+   * restarted the feed past it (Cycle Audit 10, a4-02/a8-02).
+   */
+  gapOnResume?: boolean;
+  /** On a resume, begin one sequence after the one asked for, telling no gap. */
+  wrongResume?: boolean;
+  /** On a resume, drop the third tick of the resumed run, telling no gap. */
+  skipOnResume?: boolean;
   extraKey?: boolean;
   skipSequence?: boolean;
   wrongRule?: boolean;
@@ -170,16 +180,29 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
     }
     if (p === '/markets/eurusd/stream') {
       const asked = Number(url.searchParams.get('from') ?? '1');
-      const from = faults.repeatOnResume && asked > 1 ? asked - 1 : asked;
+      const resuming = asked > 1;
+      let from = faults.repeatOnResume && resuming ? asked - 1 : asked;
+      if (faults.wrongResume && resuming) from = asked + 1;
       if (from > 60) {
         response.writeHead(400).end('never published');
         return;
       }
       response.writeHead(200, { 'content-type': 'text/event-stream' });
+      // A venue that tells the gap it is about to leave, as the contract's
+      // `gap` frame: the ticks that follow come from `resumesAt`, not from
+      // what the client last held.
+      const told = faults.gapOnResume === true && resuming;
+      if (told) {
+        from = Math.min(asked + 6, 60);
+        response.write(
+          `event: gap\ndata: ${JSON.stringify({ requested: asked, reason: 'evicted', resumesAt: from })}\n\n`,
+        );
+      }
       let written = 0;
       for (const t of TICKS.filter((t) => t.sequence >= from)) {
         if (faults.skipSequence && t.sequence === 30) continue;
-        if (faults.dropAfter !== undefined && written >= faults.dropAfter && from < 40) {
+        if (faults.skipOnResume && resuming && t.sequence === from + 2) continue;
+        if (!told && faults.dropAfter !== undefined && written >= faults.dropAfter && from < 40) {
           response.end(); // dropped mid-stream, no close frame
           return;
         }
@@ -233,6 +256,20 @@ describe('the conformance suite (PH-29.3)', () => {
       'a market serving the tick it has drawn but not published (a1-03)',
       { futureMarket: true },
       'the price the market reports is one the record already carries',
+    ],
+    // **Cycle Audit 10.** The resume check had no fault of its own: replacing
+    // its whole predicate with `true` left this matrix green. One fault for
+    // each half of what its name claims — the run begins where it was asked to,
+    // and the run is a run.
+    [
+      'a resume that begins one sequence late',
+      { wrongResume: true },
+      'stream resumes exactly from M+1',
+    ],
+    [
+      'a resume that drops a tick from the middle of the resumed run',
+      { skipOnResume: true },
+      'stream resumes exactly from M+1',
     ],
   ] as const)('fails a venue with %s, naming the check', async (_what, faults, name) => {
     const report = await conformance({ baseUrl: await fakeVenue(faults), ticks: 40 });

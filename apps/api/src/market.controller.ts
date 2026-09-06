@@ -546,6 +546,7 @@ export class MarketController implements BeforeApplicationShutdown {
    */
   @Post('assets')
   createAsset(@Body() body: unknown): unknown {
+    this.requireStarted();
     if (this.registration === null) {
       throw new NotFoundException('This deployment does not register assets at runtime.');
     }
@@ -577,6 +578,7 @@ export class MarketController implements BeforeApplicationShutdown {
    */
   @Patch('assets/:id')
   async editAsset(@Param('id') id: string, @Body() body: unknown): Promise<unknown> {
+    this.requireStarted();
     const registry = this.requireRegistry();
     if (this.venue.assetFor(id) === null) throw new NotFoundException(`Unknown asset ${id}.`);
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
@@ -625,6 +627,7 @@ export class MarketController implements BeforeApplicationShutdown {
    */
   @Post('assets/:id/retire')
   async retireAsset(@Param('id') id: string): Promise<unknown> {
+    this.requireStarted();
     const registry = this.requireRegistry();
     if (this.venue.assetFor(id) === null) throw new NotFoundException(`Unknown asset ${id}.`);
     if (this.venue.isRetired(id)) {
@@ -638,6 +641,24 @@ export class MarketController implements BeforeApplicationShutdown {
     await this.venue.retire(id);
     await registry.putOverlay(id, { retiredAt });
     return { id, retiredAt };
+  }
+
+  /**
+   * Refuse a write while the venue is still resuming (Cycle Audit 10, a5-02).
+   *
+   * The listener opens before `start()` now, so that `/health/live` can answer
+   * during a backfill. Every read is honest in that window — an unresumed
+   * market is not hosted, so `/markets` is empty and its routes are 404 — but a
+   * *write* would reach into a catalogue `start()` is iterating across awaits.
+   * 503 with the reason, which is what `/health/ready` is already saying.
+   */
+  private requireStarted(): void {
+    if (!this.venue.started) {
+      throw new ServiceUnavailableException({
+        ready: false,
+        reason: 'the markets have not finished resuming',
+      });
+    }
   }
 
   private requireRegistry(): AssetRegistry {
