@@ -37,6 +37,7 @@ import {
   type AssetRegistry,
 } from '@otc/runtime';
 import { displayPrice } from '@otc/chart';
+import { API_VERSION, contractDocument } from './contract.js';
 import { HistoryService } from './history.service.js';
 import { RegistrationService } from './registration.service.js';
 import { VenueService } from './venue.service.js';
@@ -144,7 +145,14 @@ export class MarketController implements BeforeApplicationShutdown {
       assets: this.venue.assetIds.length,
       stalled,
       bootNonce: this.bootNonce,
+      apiVersion: API_VERSION,
     };
+  }
+
+  /** The API as a contract, with its version and digest (PH-29.2). */
+  @Get('contract')
+  contract(): unknown {
+    return contractDocument();
   }
 
   @Get('markets')
