@@ -273,7 +273,9 @@ adelantadas (saltan del orden de 100.000), el stream empieza en la costura, y un
 `from` anterior recibe el 400 que nombra dónde empieza la ventana (o, con
 `onGap=live`, el `gap` con su `resumesAt`). Lo publicado antes de la costura no
 se pierde: sigue en el registro, por secuencia (`/ticks/:sequence`) y por
-instante (`/price?at=`), y en el histórico de velas. La cadena de compromisos
+instante (`/price?at=`), y en el histórico de velas — pero el **hueco** no tiene
+precio: un `at` dentro de la costura es `409`, y la costura misma se lee en
+`GET /markets/:id/seams` (§3.7, §5). La cadena de compromisos
 **se reinicia** en la costura en vez de puentearla: `verifyCommitmentsFile`
 (de `@otc/distribution`) verifica las dos cadenas y nombra la ruptura en
 `breaks`.
@@ -331,7 +333,13 @@ para liquidar.
   `settle()` y que dibujan las velas. La respuesta la nombra
   (`"rule": "last-tick-at-or-before"`). `404` si el registro empieza después del
   instante; `400` si el instante es posterior al último publicado — un precio
-  para un instante sin publicar es una predicción, no un registro.
+  para un instante sin publicar es una predicción, no un registro; **`409` si el
+  instante cae dentro de una costura** (§5): ahí no se publicó nada y nunca se
+  publicará, y la respuesta nombra los dos lados del hueco.
+- **`GET /markets/:id/seams`** — las costuras que el registro guarda para ese
+  mercado, de la más antigua a la más reciente: `assetId`, `lastSequence`,
+  `lastInstant`, `resumesAtSequence`, `resumesAtInstant`. Es lo que `settle()`
+  espera en `seams` (§5). Array vacío en un motor que nunca ha costurado.
 - **`GET /markets/:id/proof/:sequence`** — la prueba de inclusión: el
   compromiso firmado de la ventana que contiene la secuencia, la ruta Merkle y
   la clave pública del publicador. Con eso, `verifyInclusion` y
@@ -597,13 +605,43 @@ contrato:
 dentro del array exacto que pasaste. La identidad estable de un tick es su
 `sequence`.
 
-### Un aviso sobre las discontinuidades
+### Las discontinuidades: de dónde salen las costuras
 
 `TickRecord` acepta un campo `seams` — discontinuidades del registro — y `settle`
-se niega a liquidar un contrato que cruce una. El stream anuncia un hueco con un
-evento `gap` (`VenueClient.subscribe` lo entrega como evento); si tu ventana de
-liquidación cruza uno, rellena `seams` con él o no liquides ese contrato con esa
-ventana.
+se niega a liquidar un contrato cuya ventana toque una. **Rellénalo desde
+`GET /markets/:id/seams`**, no desde el stream:
+
+```ts
+const seams = await client.seams('eurusd-otc'); // RecordedSeam[]
+const record = {
+  instants,
+  prices,
+  seams: seams.map((s) => ({
+    lastInstant: s.lastInstant,
+    resumesAtInstant: s.resumesAtInstant,
+  })),
+};
+settle(contract, record); // NotSettleableError si la ventana toca una costura
+```
+
+Léelo una vez por pasada de liquidación, no por contrato: una costura cuesta un
+reinicio más largo que el límite de 15 s, así que la lista es corta y cambia poco.
+
+**Por qué no desde el evento `gap`.** Hasta la versión 2.0.0 del contrato esta
+sección decía «rellena `seams` con el evento `gap`», y no se puede hacer: el
+`gap` lleva **secuencias** (`requested`, `resumesAt`) donde `seams` necesita
+**instantes**, sólo lo ve un cliente que estuviera conectado en ese momento, y no
+dice nada de las costuras de arranques anteriores — que son las que importan al
+liquidar un contrato de la semana pasada. `recovery` en `GET /markets/:id`
+tampoco sirve: nombra el arranque **actual**. El registro es lo único que las
+recuerda todas, y `/seams` es cómo se leen (Auditoría de Ciclo 10).
+
+**Si liquidas sin las costuras** el resultado no es un error: es un precio. El
+motor devolvía —y `settle()` sin `seams` sigue devolviendo— el último tick
+_anterior_ al hueco como precio de expiración, y con la entrada antes de la
+costura eso es una pérdida liquidada contra un precio de un intervalo que nadie
+generó. Por eso `/price?at=` dentro de una costura ahora responde `409` en vez de
+un precio: la API y `settle()` se niegan en el mismo sitio.
 
 `packages/trading` trae además `tally` (ledger), `assessBookRisk` /
 `exposureByEvent` (exposición por evento) y `ExposureBook` / `admit` (límites),

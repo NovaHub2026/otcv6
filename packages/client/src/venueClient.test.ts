@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fakeVenue, HEX, TICKS } from './conformance.test.js';
+import { fakeVenue, HEX, SEAM, TICKS } from './conformance.test.js';
 import { ContractViolation, isRefusal, VenueClient, type StreamEvent } from './venueClient.js';
 
 describe('the reference client (PH-29.4)', () => {
@@ -17,6 +17,34 @@ describe('the reference client (PH-29.4)', () => {
     expect(isRefusal(future) && future.status).toBe(400);
     const missing = await client.history('eurusd', '1m', 0, 1);
     expect(isRefusal(missing)).toBe(false);
+  });
+
+  /**
+   * **Cycle Audit 10, a4-01 / a1-01.** A broker fills `settle()`'s `seams` from
+   * here. Before contract 2.0.0 there was nothing to fill it from, and a price
+   * inside a gap nobody generated came back `200`.
+   */
+  it("reads the record's discontinuities, and takes a price inside one as a refusal (PH-31)", async () => {
+    const client = new VenueClient({ baseUrl: await fakeVenue({ seamed: true }) });
+    const seams = await client.seams('eurusd');
+    expect(isRefusal(seams)).toBe(false);
+    if (isRefusal(seams)) return;
+    expect(seams).toEqual([SEAM]);
+    // The two instants `settle()` takes, straight off the answer.
+    expect(
+      seams.map((s) => ({ lastInstant: s.lastInstant, resumesAtInstant: s.resumesAtInstant })),
+    ).toEqual([{ lastInstant: SEAM.lastInstant, resumesAtInstant: SEAM.resumesAtInstant }]);
+    // A 409 is a refusal the contract lists, so it is a value and not a
+    // ContractViolation: a client that threw here would have no way to tell a
+    // seam from a broken venue.
+    const inside = await client.priceAt('eurusd', SEAM.lastInstant + 1);
+    expect(isRefusal(inside) && inside.status).toBe(409);
+    // Both boundary instants are still prices.
+    expect(isRefusal(await client.priceAt('eurusd', SEAM.lastInstant))).toBe(false);
+    expect(isRefusal(await client.priceAt('eurusd', SEAM.resumesAtInstant))).toBe(false);
+    // And a venue that never seamed answers an empty list.
+    const none = await new VenueClient({ baseUrl: await fakeVenue() }).seams('eurusd');
+    expect(none).toEqual([]);
   });
 
   it('verifies a proof against the publisher key, and refuses one that does not verify', async () => {

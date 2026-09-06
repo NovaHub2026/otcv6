@@ -20,6 +20,7 @@ import {
   Venue,
   type AssetBatch,
   type HostedMarket,
+  type RecordedSeam,
   type RecoveryOutcome,
   type SignSourceFactory,
   type StateStore,
@@ -624,6 +625,25 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
   priceAt(assetId: string, instant: number): Promise<Tick | null> {
     if (this.record === null) return Promise.resolve(null);
     return this.record.atOrBefore(assetId, instant);
+  }
+
+  /**
+   * Every discontinuity the record holds for an asset, oldest first (PH-31).
+   *
+   * From the record, not from `recoveryFor`: `recovery` is this boot's outcome
+   * in this process's memory, and a broker settling a contract from last
+   * month needs the seam a deploy three restarts ago left behind. The record is
+   * the only thing that remembers those.
+   */
+  seams(assetId: string): Promise<readonly RecordedSeam[]> {
+    if (this.record === null) return Promise.resolve([]);
+    return this.record.seams(assetId);
+  }
+
+  /** The recorded seam whose interval contains an instant, or null (PH-31). */
+  seamAt(assetId: string, instant: number): Promise<RecordedSeam | null> {
+    if (this.record === null) return Promise.resolve(null);
+    return this.record.seamAt(assetId, instant);
   }
 
   /** The proof of a published sequence from the publication archive (PH-29.1). */

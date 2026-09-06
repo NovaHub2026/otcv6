@@ -48,6 +48,18 @@ export interface PriceInForce extends Published {
   readonly rule: string;
 }
 
+/**
+ * A recorded discontinuity, as the venue lists it: an interval nothing was
+ * published in. The two instants are `settle()`'s `RecordSeam`.
+ */
+export interface RecordedSeam {
+  readonly assetId: string;
+  readonly lastSequence: number;
+  readonly lastInstant: number;
+  readonly resumesAtSequence: number;
+  readonly resumesAtInstant: number;
+}
+
 export interface VerifiedProof {
   readonly assetId: string;
   readonly sequence: number;
@@ -166,12 +178,36 @@ export class VenueClient {
     )) as (Published & { assetId: string }) | Refusal;
   }
 
-  /** The price in force at an instant — the last tick at or before it — or the refusal. */
+  /**
+   * The price in force at an instant — the last tick at or before it — or the
+   * refusal.
+   *
+   * A `409` is a refusal like any other here, and it is the one to read: the
+   * instant falls inside a recorded discontinuity, so there is no price and
+   * there never will be. Settle nothing against that window; take the seams
+   * from {@link VenueClient.seams} and let `settle()` refuse it by name.
+   */
   async priceAt(id: string, at: number): Promise<PriceInForce | Refusal> {
     return (await this.#getOrRefusal(
       'GET /markets/:id/price',
       `/markets/${encodeURIComponent(id)}/price?at=${String(at)}`,
     )) as PriceInForce | Refusal;
+  }
+
+  /**
+   * Every discontinuity the venue's record holds for a market (PH-31).
+   *
+   * What `settle()` wants as its `seams`: take `lastInstant` and
+   * `resumesAtInstant` from each entry. Read them once per settlement run
+   * rather than per contract — a seam costs a restart past the catch-up bound,
+   * so the list is short and changes rarely, and a venue that has never seamed
+   * answers an empty array.
+   */
+  async seams(id: string): Promise<RecordedSeam[] | Refusal> {
+    return (await this.#getOrRefusal(
+      'GET /markets/:id/seams',
+      `/markets/${encodeURIComponent(id)}/seams`,
+    )) as RecordedSeam[] | Refusal;
   }
 
   /**

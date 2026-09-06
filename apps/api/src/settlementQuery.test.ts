@@ -15,7 +15,7 @@ import {
 } from '@otc/distribution';
 import { ASSET_CATALOGUE } from '@otc/engine';
 import { MemoryStateStore, MemoryTickRecord } from '@otc/runtime';
-import { settle } from '@otc/trading';
+import { NotSettleableError, settle } from '@otc/trading';
 import { MarketController } from './market.controller.js';
 import { PublicationService } from './publication.service.js';
 import { VenueService } from './venue.service.js';
@@ -39,6 +39,13 @@ interface Published {
   at?: number;
   rule?: string;
 }
+interface SeamBody {
+  assetId: string;
+  lastSequence: number;
+  lastInstant: number;
+  resumesAtSequence: number;
+  resumesAtInstant: number;
+}
 interface ProofBody {
   publisherPublicKey: string | null;
   commitment: SignedCommitment;
@@ -46,7 +53,17 @@ interface ProofBody {
   linksRead: number;
 }
 
-async function venue(publishing: boolean): Promise<{
+interface Composition {
+  readonly store?: MemoryStateStore;
+  readonly record?: MemoryTickRecord;
+  readonly clock?: SteppableClock;
+  readonly seconds?: number;
+}
+
+async function venue(
+  publishing: boolean,
+  composition: Composition = {},
+): Promise<{
   venue: VenueService;
   controller: MarketController;
   clock: SteppableClock;
@@ -54,9 +71,9 @@ async function venue(publishing: boolean): Promise<{
 }> {
   const directory = publishing ? await mkdtemp(path.join(tmpdir(), 'otc-query-')) : null;
   if (directory !== null) directories.push(directory);
-  const clock = new SteppableClock(GENESIS);
+  const clock = composition.clock ?? new SteppableClock(GENESIS);
   const service = new VenueService(
-    new MemoryStateStore(),
+    composition.store ?? new MemoryStateStore(),
     MasterKeyring.fromSecret('settlement-query', new Uint8Array(32).fill(29)),
     clock,
     [asset],
@@ -72,14 +89,45 @@ async function venue(publishing: boolean): Promise<{
     null,
     null,
     null,
-    new MemoryTickRecord(),
+    composition.record ?? new MemoryTickRecord(),
   );
   await service.start();
-  for (let i = 0; i < 90; i += 1) {
+  for (let i = 0; i < (composition.seconds ?? 90); i += 1) {
     clock.advance(durationMillis(1_000));
     await service.tick();
   }
   return { venue: service, controller: new MarketController(service), clock, directory };
+}
+
+/**
+ * A venue that stopped and came back 120 s later: past the 15 s catch-up bound,
+ * so every market seams (PH-30.4 saw exactly this on the release build's
+ * deploy-length restart). The store and the record are shared across the two
+ * boots, so the record keeps both sides of an interval nobody generated.
+ */
+async function seamedVenue(): Promise<{
+  controller: MarketController;
+  service: VenueService;
+  record: MemoryTickRecord;
+  seam: SeamBody;
+  ticks: readonly Tick[];
+}> {
+  const store = new MemoryStateStore();
+  const record = new MemoryTickRecord();
+  const first = await venue(false, { store, record, seconds: 90 });
+  await first.venue.checkpoint();
+  await first.venue.stop();
+  const clock = new SteppableClock(epochMillis(first.clock.now() + 120_000));
+  const second = await venue(false, { store, record, clock, seconds: 5 });
+  const seams = (await second.controller.seams(ID)) as SeamBody[];
+  expect(seams, 'the restart seamed the record').toHaveLength(1);
+  return {
+    controller: second.controller,
+    service: second.venue,
+    record,
+    seam: seams[0]!,
+    ticks: await record.since(ID, 1, 1_000_000),
+  };
 }
 
 /** The rule, computed from the served ticks: the last at or before the instant. */
@@ -174,6 +222,138 @@ describe('the settlement query (PH-29.1)', () => {
       expect(expiry.price).toBe(settlement.expiryPrice);
     }
     await service.stop();
+  });
+
+  /**
+   * **Cycle Audit 10, a4-01 and a1-01 — the critical one.** A restart longer
+   * than the 15 s catch-up bound is what every deploy is, and it seams the
+   * record. `GET /markets/:id/price?at=` answered an instant inside the seam
+   * with the pre-seam tick and `"rule":"last-tick-at-or-before"`, naming
+   * nothing; `settle()` refuses the same window as `NotSettleableError`, but
+   * only when it is given the seams, and no route exposed them. The
+   * money-losing shape the refuter measured is entry before the seam and
+   * expiry inside it: net −100 against a price from before a gap nobody
+   * generated.
+   */
+  describe('a recorded seam (PH-31)', () => {
+    it('refuses the price of an instant inside it, naming both sides, and answers the boundaries', async () => {
+      const { controller, seam, service } = await seamedVenue();
+      const inside = Math.floor((seam.lastInstant + seam.resumesAtInstant) / 2);
+      expect(inside).toBeGreaterThan(seam.lastInstant);
+      expect(inside).toBeLessThan(seam.resumesAtInstant);
+      await expect(controller.priceAt(ID, String(inside))).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      await expect(controller.priceAt(ID, String(inside))).rejects.toThrow(
+        new RegExp(
+          `falls inside a recorded discontinuity.*sequence ${String(seam.lastSequence)} ` +
+            `\\(instant ${String(seam.lastInstant)}\\).*sequence ${String(seam.resumesAtSequence)} ` +
+            `\\(instant ${String(seam.resumesAtInstant)}\\)`,
+          's',
+        ),
+      );
+      // One millisecond either side of the boundary instants: refused inside,
+      // answered on the ticks themselves.
+      await expect(controller.priceAt(ID, String(seam.lastInstant + 1))).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      await expect(
+        controller.priceAt(ID, String(seam.resumesAtInstant - 1)),
+      ).rejects.toBeInstanceOf(ConflictException);
+      const before = (await controller.priceAt(ID, String(seam.lastInstant))) as Published;
+      expect(before.sequence, 'the last tick before the gap is still a price').toBe(
+        seam.lastSequence,
+      );
+      const after = (await controller.priceAt(ID, String(seam.resumesAtInstant))) as Published;
+      expect(after.sequence, 'and so is the first one after it').toBe(seam.resumesAtSequence);
+      await service.stop();
+    });
+
+    it('lists itself where a broker can read it, in the instants settle() takes', async () => {
+      const { controller, seam, record, service } = await seamedVenue();
+      expect(Object.keys(seam).sort()).toEqual([
+        'assetId',
+        'lastInstant',
+        'lastSequence',
+        'resumesAtInstant',
+        'resumesAtSequence',
+      ]);
+      expect(seam.assetId).toBe(ID);
+      // The seam the route names is the jump the record actually holds.
+      const held = await record.since(ID, seam.lastSequence, 2);
+      expect(held.map((t) => t.sequence)).toEqual([seam.lastSequence, seam.resumesAtSequence]);
+      expect(held[0]!.instant).toBe(seam.lastInstant);
+      expect(held[1]!.instant).toBe(seam.resumesAtInstant);
+      expect(seam.resumesAtInstant - seam.lastInstant).toBeGreaterThan(100_000);
+      await expect(controller.seams('nope')).rejects.toBeInstanceOf(NotFoundException);
+      await service.stop();
+    });
+
+    it('is what stops settle() computing a loss against a price from before the gap', async () => {
+      const { controller, seam, ticks, service } = await seamedVenue();
+      const instants = Float64Array.from(ticks.map((t) => t.instant));
+      const prices = Int32Array.from(ticks.map((t) => t.price));
+      // The money-losing shape: entry before the seam, expiry inside it.
+      const entryInstant = epochMillis(seam.lastInstant - 5_000);
+      const expiryInstant = Math.floor((seam.lastInstant + seam.resumesAtInstant) / 2);
+      const contract = {
+        id: 'across-the-seam',
+        assetId: ID,
+        direction: 'up' as const,
+        stake: 100,
+        entryInstant,
+        horizonMs: durationMillis(expiryInstant - entryInstant),
+        payoutRatio: 0.85,
+      };
+      // The record a broker could build from the API before this route
+      // existed: the ticks, and no seams.
+      const blind = settle(contract, { instants, prices });
+      const lastBeforeTheGap = ticks.find((t) => t.sequence === seam.lastSequence)!;
+      expect(blind.expiryPrice, 'settled against the last tick before a gap nobody generated').toBe(
+        lastBeforeTheGap.price,
+      );
+      // The record the route now lets it build.
+      const seams = ((await controller.seams(ID)) as SeamBody[]).map((one) => ({
+        lastInstant: one.lastInstant,
+        resumesAtInstant: one.resumesAtInstant,
+      }));
+      expect(() => settle(contract, { instants, prices, seams })).toThrow(NotSettleableError);
+      expect(() => settle(contract, { instants, prices, seams })).toThrow(
+        /touches a recorded discontinuity/,
+      );
+      // And the same window through the API refuses rather than serving the
+      // price `blind` used: the two agree now.
+      await expect(controller.priceAt(ID, String(expiryInstant))).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      // Either side of the seam the two still agree exactly.
+      const wholly = {
+        ...contract,
+        id: 'before-the-seam',
+        entryInstant: epochMillis(seam.lastInstant - 20_000),
+        horizonMs: durationMillis(10_000),
+      };
+      const settled = settle(wholly, { instants, prices, seams });
+      const entry = (await controller.priceAt(ID, String(wholly.entryInstant))) as Published;
+      const expiry = (await controller.priceAt(
+        ID,
+        String(wholly.entryInstant + 10_000),
+      )) as Published;
+      expect(entry.price).toBe(settled.entryPrice);
+      expect(expiry.price).toBe(settled.expiryPrice);
+      await service.stop();
+    });
+
+    it('a venue that never seamed lists none, and answers every instant', async () => {
+      const { venue: service, controller } = await venue(false);
+      expect(await controller.seams(ID)).toEqual([]);
+      const served = service.feed.since(ID, 1);
+      const middle = served[Math.floor(served.length / 2)]!;
+      expect(((await controller.priceAt(ID, String(middle.instant))) as Published).sequence).toBe(
+        middle.sequence,
+      );
+      await service.stop();
+    });
   });
 
   it('serves a proof a counterparty can verify, says "not yet" for the open window, and "no" without publication', async () => {

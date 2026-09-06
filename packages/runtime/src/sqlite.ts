@@ -89,9 +89,12 @@ export function enableWriteAheadLog(db: DatabaseSync): void {
  * any statement runs against it, with both numbers in the message.
  *
  * An *older* shape under version zero still fails closed where it always did,
- * at `prepare`, with SQLite's own message about a missing column. No migration
- * exists yet because no schema has changed yet; when one does, this is where
- * it will be asked for.
+ * at `prepare`, with SQLite's own message about a missing column. A migration
+ * is asked for here, and one exists now: the caller reads `PRAGMA user_version`
+ * before it creates its schema and, when the file is behind, brings it forward
+ * before {@link stampSchemaVersion} stamps it. `SqliteTickRecord` is the first
+ * to do it — version 1 to 2, the seam table, backfilled from the sequence jumps
+ * a version-1 file already holds (PH-31, Cycle Audit 10).
  */
 export function assertSchemaNotNewer(db: DatabaseSync, expected: number, what: string): void {
   const row = db.prepare('PRAGMA user_version').get();

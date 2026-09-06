@@ -725,6 +725,27 @@ export class MarketController implements BeforeApplicationShutdown {
    * the newest published instant, because a price for an instant nothing has
    * been published for is a prediction and not a record (INV-005: an expiry a
    * client chooses never changes what is published).
+   *
+   * **And refused inside a recorded seam (PH-31, Cycle Audit 10 a4-01 /
+   * a1-01).** An instant between the last tick before a restart-length gap and
+   * the first tick after it is exactly the case the paragraph above describes —
+   * nothing was published for it — and this route answered it anyway, with the
+   * pre-seam price and the rule's name, which is the number a broker settled
+   * real money against. `settle()` refuses the same window as
+   * `NotSettleableError`; the API now refuses the same point.
+   *
+   * **`409`, not `404` and not `400`.** The three refusals mean three different
+   * things to a broker, and the difference decides what it does next. `400`
+   * (after the newest) means *not yet* — ask again when it has been published.
+   * `404` (before the oldest) means *the record cannot say* — this deployment
+   * trimmed it, look elsewhere. A seam means *there is no answer and there
+   * never will be*: the interval was never generated, and the honest thing is
+   * neither a retry nor a search but a settlement that does not happen. `409`
+   * Conflict is the status this contract already uses for a request whose
+   * answer the record's own state forbids (the proof route's open window, and
+   * an archive that disagrees with the record), so a seam belongs on it. The
+   * body names both sides of the gap, in sequence and in instant, which is
+   * precisely what `settle()`'s `seams` field wants.
    */
   @Get('markets/:id/price')
   async priceAt(@Param('id') id: string, @Query('at') at?: string): Promise<unknown> {
@@ -742,6 +763,16 @@ export class MarketController implements BeforeApplicationShutdown {
           (newest === null ? '.' : `; the newest published instant is ${newest.instant}.`),
       );
     }
+    const seam = await this.venue.seamAt(id, instant);
+    if (seam !== null) {
+      throw new ConflictException(
+        `No price was published for ${id} at ${instant}: it falls inside a recorded ` +
+          `discontinuity. The record ends at sequence ${seam.lastSequence} ` +
+          `(instant ${seam.lastInstant}) and resumes at sequence ${seam.resumesAtSequence} ` +
+          `(instant ${seam.resumesAtInstant}); nothing was generating in between. A contract ` +
+          `whose window touches it cannot be settled — see GET /markets/${id}/seams.`,
+      );
+    }
     const tick = await this.venue.priceAt(id, instant);
     if (tick === null) {
       const bounds = await this.venue.recordBounds(id);
@@ -756,6 +787,42 @@ export class MarketController implements BeforeApplicationShutdown {
       rule: 'last-tick-at-or-before',
       ...this.published(asset, tick),
     };
+  }
+
+  /**
+   * Every discontinuity the record holds for a market, oldest first (PH-31).
+   *
+   * The fourth read a broker's settlement needs, and the one Cycle Audit 10
+   * found missing. `settle()` in `@otc/trading` takes a `seams` array and
+   * refuses to settle a contract whose window touches one — the fix for the
+   * real-money defect of Cycle Audit 5 — and until this route there was no way
+   * to fill it: `recovery` on `GET /markets/:id` names only *this* boot's
+   * outcome, and the stream's `gap` frame carries sequences where `seams` needs
+   * instants. `docs/integration/INTEGRATION.md` §5 told a broker to build
+   * `seams` from `gap` events, which cannot be done.
+   *
+   * Each entry maps onto `RecordSeam` by taking `lastInstant` and
+   * `resumesAtInstant`; the sequences are there so the same answer explains a
+   * hole in `/ticks/:sequence` and a restart in the commitment chain. An array,
+   * so a broker holding several markets concatenates them; empty for a venue
+   * that has never seamed, which is the common and happy case.
+   */
+  @Get('markets/:id/seams')
+  async seams(@Param('id') id: string): Promise<unknown> {
+    this.knownAsset(id);
+    if (!this.venue.keepsRecord) {
+      throw new NotFoundException(
+        'This deployment keeps no tick record; only the live stream is served.',
+      );
+    }
+    const seams = await this.venue.seams(id);
+    return seams.map((seam) => ({
+      assetId: seam.assetId,
+      lastSequence: seam.lastSequence,
+      lastInstant: seam.lastInstant,
+      resumesAtSequence: seam.resumesAtSequence,
+      resumesAtInstant: seam.resumesAtInstant,
+    }));
   }
 
   /**

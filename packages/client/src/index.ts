@@ -35,6 +35,7 @@ export {
   type Market,
   type PriceInForce,
   type Published,
+  type RecordedSeam,
   type Refusal,
   type StreamEvent,
   type SubscribeOptions,

@@ -108,6 +108,7 @@ export {
   RECORD_SCHEMA_VERSION,
   SqliteTickRecord,
   type AssetBatch,
+  type RecordedSeam,
   type TickRecord,
 } from './tickRecord.js';
 export { DEFAULT_BUSY_TIMEOUT_MS } from './sqlite.js';

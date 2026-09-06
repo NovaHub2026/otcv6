@@ -122,6 +122,22 @@ socket, against a spawned service killed with `SIGKILL`, in
 `servedRecord.stat.test.ts`. Nothing reaches the engine from any of it
 (INV-001).
 
+**And the record remembers its discontinuities** (PH-31, Cycle Audit 10). A
+restart past the catch-up bound seams a market, and the record then holds both
+sides of an interval nobody generated. The jump is detected where it enters the
+record — an appended sequence that is not the previous one plus one — and
+written, inside the same transaction as the ticks, to a second table: asset,
+the last sequence and instant before the gap, the first sequence and instant
+after it. Nothing an observer could not have read for itself, so INV-010 is
+untouched, and the file-shape guard asserts the two tables and their columns by
+name. A file written before this version is migrated on open, its seams read
+out of the sequence jumps it already holds: a deployment upgrading into this
+code keeps the seams of every restart it has lived through, which is the set a
+broker settling last month's contract needs. Before it, a seam from an earlier
+boot survived only in the sequence numbers — `RecoveryOutcome.seam` is this
+process's memory of this boot — and the settlement query answered inside the
+hole with the price from before it.
+
 The directory those files live in is verified as one thing before any market
 resumes and can be backed up consistently while the venue runs; the
 commitment chain continues across a restart from the same record
@@ -148,6 +164,18 @@ and the limiter charge the same exact obligation.
 price in force at an instant, by this rule, and the proof that it is in the
 signed record; `@otc/client`'s `VenueClient` asks for them and `settle()` over
 the ticks it subscribed to agrees (`conformance.stat.test.ts`).
+
+**And the third read: the seams** (PH-31, contract 2.0.0). `settle()` refuses a
+window that touches a recorded discontinuity — Cycle Audit 5's real-money
+defect — but only when the record it is handed declares one, and until this
+change nothing published them: the audit settled one contract twice from one
+`record.db`, a loss for the broker that could not see the seam and a refusal for
+the one that could. `GET /markets/:id/seams` lists what the record holds, in the
+instants `settle()` takes, and `GET /markets/:id/price?at=` answers `409` inside
+one instead of the price from before the gap. The API and `settle()` now refuse
+the same set, and the guide fills `seams` from the route rather than from the
+stream's `gap` frame, which carries sequences, is only seen live, and says
+nothing about earlier boots.
 
 ## Where economic blindness is actually enforced
 

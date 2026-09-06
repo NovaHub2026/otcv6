@@ -42,7 +42,18 @@ export interface Faults {
    * tick a venue has drawn and not yet served (Cycle Audit 10, a1-03).
    */
   futureMarket?: boolean;
+  /** A venue whose record carries a discontinuity: it lists it, and refuses a price inside it. */
+  seamed?: boolean;
 }
+
+/** The gap a `seamed` fake venue's record holds: between tick 30 and tick 31. */
+export const SEAM = {
+  assetId: 'eurusd',
+  lastSequence: 30,
+  lastInstant: TICKS[29]!.instant,
+  resumesAtSequence: 100_031,
+  resumesAtInstant: TICKS[30]!.instant,
+};
 
 const servers: Server[] = [];
 afterAll(() => {
@@ -123,11 +134,16 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
         to: 1,
         candles: [],
       });
+    // A venue that has never seamed: the record holds no discontinuity.
+    if (p === '/markets/eurusd/seams') return json(response, 200, faults.seamed ? [SEAM] : []);
     if (p === '/markets/eurusd/ticks/1')
       return json(response, 200, { assetId: 'eurusd', ...published(TICKS[0]!) });
     if (p === '/markets/eurusd/price') {
       const at = Number(url.searchParams.get('at'));
       if (at > TICKS[59]!.instant) return json(response, 400, { message: 'future' });
+      if (faults.seamed && at > SEAM.lastInstant && at < SEAM.resumesAtInstant) {
+        return json(response, 409, { message: 'inside a recorded discontinuity' });
+      }
       let found: Tick | null = null;
       for (const t of TICKS) if (faults.wrongRule ? t.instant < at : t.instant <= at) found = t;
       if (found === null) return json(response, 404, { message: 'before' });

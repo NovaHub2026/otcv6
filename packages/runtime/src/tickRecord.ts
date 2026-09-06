@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
-import { epochMillis, logPrice, type Tick } from '@otc/core';
+import { epochMillis, logPrice, type EpochMillis, type Tick } from '@otc/core';
 import { malformedBatch, RecordForkError, sameTick } from './replication.js';
 import {
   assertSchemaNotNewer,
@@ -77,6 +77,81 @@ export interface TickRecord {
   trim(assetId: string, keep: number): Promise<void>;
   /** Every asset with at least one recorded tick. */
   assets(): Promise<readonly string[]>;
+  /**
+   * Every discontinuity the record holds for an asset, oldest first (PH-31,
+   * Cycle Audit 10 a4-01/a1-01).
+   */
+  seams(assetId: string): Promise<readonly RecordedSeam[]>;
+  /**
+   * The seam whose interval contains `instant`, or null when none does.
+   *
+   * The interval is **open**: an instant equal to `lastInstant` is on the last
+   * published tick and an instant equal to `resumesAtInstant` is on the first
+   * one after the seam, so both are answerable prices. Everything strictly
+   * between them is an instant nothing was published for. That is exactly the
+   * predicate `settle()` applies to a window (`entry < resumesAtInstant &&
+   * expiry > lastInstant`), narrowed to a point.
+   */
+  seamAt(assetId: string, instant: number): Promise<RecordedSeam | null>;
+}
+
+/**
+ * A discontinuity in the published record: an interval nothing was published
+ * in, kept as a row rather than left as a hole (PH-31).
+ *
+ * **Cycle Audit 10, a4-01 and a1-01.** A restart longer than the 15 s catch-up
+ * bound — which is every deploy — seams a market: `resumeMarket` reports
+ * `{kind:'seam'}` and the record keeps both sides of an interval nobody
+ * generated. `settle()` refuses to settle a contract whose window touches one
+ * (`RecordSeam` in `@otc/trading`, Cycle Audit 5) — but only when it is *given*
+ * the seams, and nothing persisted them: `RecoveryOutcome.seam` lived in one
+ * process's memory for the latest boot, so a seam from an earlier boot was
+ * visible only as a jump in sequence. Meanwhile `GET /markets/:id/price?at=`
+ * answered an instant inside the interval with the pre-seam tick, which is the
+ * price a broker then settled real money against.
+ *
+ * The fields are what a settlement question needs and nothing else: which
+ * asset, where the record stopped, and where it starts again — in sequence
+ * *and* in instant, because `settle()` asks in instants and the stream's `gap`
+ * frame speaks only sequences.
+ *
+ * Narrower than {@link SeamMarker} in `replication.ts`, deliberately: that one
+ * describes a seam in the multi-node log, where a market may seam before it
+ * has published anything (`lastSequence: null`). Here a seam is a discontinuity
+ * *between two recorded ticks*, so both sides always exist.
+ */
+export interface RecordedSeam {
+  readonly assetId: string;
+  /** The last sequence the record holds before the gap. */
+  readonly lastSequence: number;
+  /** That tick's instant: the last instant a price was published for. */
+  readonly lastInstant: EpochMillis;
+  /** The first sequence the record holds after the gap. */
+  readonly resumesAtSequence: number;
+  /** That tick's instant: the first instant a price was published for again. */
+  readonly resumesAtInstant: EpochMillis;
+}
+
+/**
+ * The seam between two consecutive recorded ticks, or null when there is none.
+ *
+ * One rule, applied by both implementations at the one place a gap can enter
+ * the record: an append whose next sequence is not the previous one plus one.
+ * The record's own docstring already said what such a jump is — "a gap in
+ * sequence above the head is accepted: it is what a seam looks like here" — and
+ * this is that sentence made into a row. Detecting it here rather than in the
+ * caller means every writer gets it: the venue's resume, the runtime host, and
+ * any future path that appends past a hole.
+ */
+function seamBetween(assetId: string, previous: Tick, next: Tick): RecordedSeam | null {
+  if (next.sequence === previous.sequence + 1) return null;
+  return {
+    assetId,
+    lastSequence: previous.sequence,
+    lastInstant: previous.instant,
+    resumesAtSequence: next.sequence,
+    resumesAtInstant: next.instant,
+  };
 }
 
 export interface AssetBatch {
@@ -97,7 +172,21 @@ export interface AssetBatch {
  */
 export const DEFAULT_RECORD_TICKS = 250_000;
 
-export const RECORD_SCHEMA_VERSION = 1;
+/**
+ * The record's schema version.
+ *
+ * **2 (PH-31):** the `seam` table. The by-instant index of PH-29.1 was additive
+ * and left this at 1, because code that did not know about it still read the
+ * file correctly — only slower. A seam table is not that kind of addition:
+ * code that cannot read it answers `GET /markets/:id/price?at=` with a price
+ * for an instant inside a gap nobody generated, which is the settlement defect
+ * Cycle Audit 10 found. So a downgrade must fail closed at open rather than
+ * quietly serve the wrong answer, and `assertSchemaNotNewer` is what makes it.
+ * Forward is automatic: a version-1 file gains the table on open and is
+ * stamped 2, and its seams are whatever it can still observe — nothing before
+ * the upgrade, every one after it.
+ */
+export const RECORD_SCHEMA_VERSION = 2;
 
 /** A record kept in one SQLite file, opened the way the candle history is. */
 export class SqliteTickRecord implements TickRecord {
@@ -113,6 +202,9 @@ export class SqliteTickRecord implements TickRecord {
   readonly #nthNewest: StatementSync;
   readonly #deleteBelow: StatementSync;
   readonly #assets: StatementSync;
+  readonly #insertSeam: StatementSync;
+  readonly #readSeams: StatementSync;
+  readonly #readSeamAt: StatementSync;
 
   constructor(location: string) {
     if (location !== ':memory:' && !location.startsWith('file:')) {
@@ -128,6 +220,9 @@ export class SqliteTickRecord implements TickRecord {
     // holds the ticks a resumed market regenerates anyway.
     this.#db.exec('PRAGMA synchronous = NORMAL');
     assertSchemaNotNewer(this.#db, RECORD_SCHEMA_VERSION, 'tick record');
+    const foundVersion = Number(
+      this.#db.prepare('PRAGMA user_version').get()?.['user_version'] ?? 0,
+    );
     this.#db.exec(`
       CREATE TABLE IF NOT EXISTS tick (
         asset_id TEXT NOT NULL,
@@ -143,6 +238,38 @@ export class SqliteTickRecord implements TickRecord {
     this.#db.exec(
       'CREATE INDEX IF NOT EXISTS tick_by_instant ON tick (asset_id, instant, sequence)',
     );
+    // The discontinuities, one row per gap (PH-31). Tiny by construction — a
+    // seam costs a restart past the catch-up bound — so it carries no index of
+    // its own beyond its key.
+    this.#db.exec(`
+      CREATE TABLE IF NOT EXISTS seam (
+        asset_id TEXT NOT NULL,
+        last_sequence INTEGER NOT NULL,
+        last_instant INTEGER NOT NULL,
+        resumes_at_sequence INTEGER NOT NULL,
+        resumes_at_instant INTEGER NOT NULL,
+        PRIMARY KEY (asset_id, resumes_at_sequence)
+      ) WITHOUT ROWID
+    `);
+    // The migration `sqlite.ts` said would be asked for here one day. A file
+    // written before this version holds its seams already — as jumps between
+    // consecutive sequences — and they are the seams of every deploy this
+    // record has lived through, which is exactly the set a broker settling
+    // last month's contract needs. Reading them out is one ordered pass over
+    // the primary key, once, on the boot that upgrades the file; leaving them
+    // out would mean the fix only covered gaps this process happened to see.
+    if (foundVersion < RECORD_SCHEMA_VERSION) {
+      this.#db.exec(`
+        INSERT OR REPLACE INTO seam
+          (asset_id, last_sequence, last_instant, resumes_at_sequence, resumes_at_instant)
+        SELECT asset_id, sequence, instant, next_sequence, next_instant FROM (
+          SELECT asset_id, sequence, instant,
+                 LEAD(sequence) OVER (PARTITION BY asset_id ORDER BY sequence) AS next_sequence,
+                 LEAD(instant) OVER (PARTITION BY asset_id ORDER BY sequence) AS next_instant
+          FROM tick
+        ) WHERE next_sequence IS NOT NULL AND next_sequence <> sequence + 1
+      `);
+    }
     stampSchemaVersion(this.#db, RECORD_SCHEMA_VERSION);
     this.#insert = this.#db.prepare(
       'INSERT INTO tick (asset_id, sequence, instant, price) VALUES (?, ?, ?, ?)',
@@ -172,6 +299,21 @@ export class SqliteTickRecord implements TickRecord {
     );
     this.#deleteBelow = this.#db.prepare('DELETE FROM tick WHERE asset_id = ? AND sequence < ?');
     this.#assets = this.#db.prepare('SELECT DISTINCT asset_id FROM tick ORDER BY asset_id');
+    // `OR REPLACE`: the same gap written twice is the same true fact, and a
+    // constraint failure here would roll back the ticks of a whole pass and
+    // stall a market over a row that already says what we were about to say.
+    this.#insertSeam = this.#db.prepare(
+      'INSERT OR REPLACE INTO seam (asset_id, last_sequence, last_instant, ' +
+        'resumes_at_sequence, resumes_at_instant) VALUES (?, ?, ?, ?, ?)',
+    );
+    this.#readSeams = this.#db.prepare(
+      'SELECT asset_id, last_sequence, last_instant, resumes_at_sequence, resumes_at_instant ' +
+        'FROM seam WHERE asset_id = ? ORDER BY resumes_at_sequence',
+    );
+    this.#readSeamAt = this.#db.prepare(
+      'SELECT asset_id, last_sequence, last_instant, resumes_at_sequence, resumes_at_instant ' +
+        'FROM seam WHERE asset_id = ? AND last_instant < ? AND resumes_at_instant > ? LIMIT 1',
+    );
   }
 
   close(): void {
@@ -196,6 +338,11 @@ export class SqliteTickRecord implements TickRecord {
           const malformed = malformedBatch(assetId, ticks);
           if (malformed !== null) throw malformed;
           const head = this.#head(assetId);
+          // The tick the record ends at, so a jump away from it is seen and
+          // written down rather than left as a hole (PH-31). `head` is the
+          // maximum sequence, so the row is always there.
+          const headRow = head === null ? undefined : this.#readAt.get(assetId, head);
+          let previous: Tick | null = headRow === undefined ? null : toTick(headRow);
           const added: Tick[] = [];
           for (const tick of ticks) {
             if (head !== null && tick.sequence <= head) {
@@ -218,6 +365,17 @@ export class SqliteTickRecord implements TickRecord {
               continue;
             }
             this.#insert.run(assetId, tick.sequence, tick.instant, tick.price);
+            const seam = previous === null ? null : seamBetween(assetId, previous, tick);
+            if (seam !== null) {
+              this.#insertSeam.run(
+                seam.assetId,
+                seam.lastSequence,
+                seam.lastInstant,
+                seam.resumesAtSequence,
+                seam.resumesAtInstant,
+              );
+            }
+            previous = tick;
             added.push(tick);
           }
           fresh.set(assetId, added);
@@ -280,6 +438,20 @@ export class SqliteTickRecord implements TickRecord {
     return Promise.resolve(this.#assets.all().map((row) => String(row['asset_id'])));
   }
 
+  seams(assetId: string): Promise<readonly RecordedSeam[]> {
+    return Promise.resolve(this.#readSeams.all(assetId).map(toSeam));
+  }
+
+  seamAt(assetId: string, instant: number): Promise<RecordedSeam | null> {
+    if (!Number.isSafeInteger(instant)) {
+      return Promise.reject(
+        new RangeError(`An instant must be a safe integer, received ${instant}.`),
+      );
+    }
+    const row = this.#readSeamAt.get(assetId, instant, instant);
+    return Promise.resolve(row === undefined ? null : toSeam(row));
+  }
+
   #head(assetId: string): number | null {
     const row = this.#headOf.get(assetId);
     return nullableNumber(row?.['head']);
@@ -289,15 +461,21 @@ export class SqliteTickRecord implements TickRecord {
 /** A record that persists nothing: tests, and a runtime that must not. */
 export class MemoryTickRecord implements TickRecord {
   readonly #ticks = new Map<string, Tick[]>();
+  readonly #seams = new Map<string, RecordedSeam[]>();
 
   append(batches: readonly AssetBatch[]): Promise<ReadonlyMap<string, readonly Tick[]>> {
     const fresh = new Map<string, readonly Tick[]>();
     const staged = new Map<string, Tick[]>();
+    const stagedSeams = new Map<string, RecordedSeam[]>();
     for (const { assetId, ticks } of batches) {
       const malformed = malformedBatch(assetId, ticks);
       if (malformed !== null) return Promise.reject(malformed);
       const held = this.#ticks.get(assetId) ?? [];
       const head = held.length === 0 ? null : held[held.length - 1]!.sequence;
+      // The same jump detection the SQLite record runs, on the same rule: the
+      // two implementations must agree about what the record holds (PH-31).
+      let previous: Tick | null = held.length === 0 ? null : held[held.length - 1]!;
+      const seams: RecordedSeam[] = [];
       const added: Tick[] = [];
       for (const tick of ticks) {
         if (head !== null && tick.sequence <= head) {
@@ -316,9 +494,13 @@ export class MemoryTickRecord implements TickRecord {
           }
           continue;
         }
+        const seam = previous === null ? null : seamBetween(assetId, previous, tick);
+        if (seam !== null) seams.push(seam);
+        previous = tick;
         added.push({ sequence: tick.sequence, instant: tick.instant, price: tick.price });
       }
       staged.set(assetId, added);
+      stagedSeams.set(assetId, seams);
       fresh.set(assetId, added);
     }
     // Applied only once every batch passed, so a refusal leaves everything as
@@ -327,6 +509,17 @@ export class MemoryTickRecord implements TickRecord {
       const held = this.#ticks.get(assetId) ?? [];
       held.push(...added);
       this.#ticks.set(assetId, held);
+    }
+    for (const [assetId, added] of stagedSeams) {
+      if (added.length === 0) continue;
+      const held = this.#seams.get(assetId) ?? [];
+      for (const seam of added) {
+        const at = held.findIndex((one) => one.resumesAtSequence === seam.resumesAtSequence);
+        if (at < 0) held.push(seam);
+        else held[at] = seam;
+      }
+      held.sort((a, b) => a.resumesAtSequence - b.resumesAtSequence);
+      this.#seams.set(assetId, held);
     }
     return Promise.resolve(fresh);
   }
@@ -385,6 +578,22 @@ export class MemoryTickRecord implements TickRecord {
     );
   }
 
+  seams(assetId: string): Promise<readonly RecordedSeam[]> {
+    return Promise.resolve([...(this.#seams.get(assetId) ?? [])]);
+  }
+
+  seamAt(assetId: string, instant: number): Promise<RecordedSeam | null> {
+    if (!Number.isSafeInteger(instant)) {
+      return Promise.reject(
+        new RangeError(`An instant must be a safe integer, received ${instant}.`),
+      );
+    }
+    const held = this.#seams.get(assetId) ?? [];
+    return Promise.resolve(
+      held.find((seam) => seam.lastInstant < instant && instant < seam.resumesAtInstant) ?? null,
+    );
+  }
+
   /** Replace a held tick's price, to plant a fork. */
   corrupt(assetId: string, sequence: number, price: number): void {
     const held = this.#ticks.get(assetId) ?? [];
@@ -424,6 +633,16 @@ function toTick(row: Record<string, unknown>): Tick {
     sequence: asNumber(row['sequence']),
     instant: epochMillis(asNumber(row['instant'])),
     price: logPrice(asNumber(row['price'])),
+  };
+}
+
+function toSeam(row: Record<string, unknown>): RecordedSeam {
+  return {
+    assetId: String(row['asset_id']),
+    lastSequence: asNumber(row['last_sequence']),
+    lastInstant: epochMillis(asNumber(row['last_instant'])),
+    resumesAtSequence: asNumber(row['resumes_at_sequence']),
+    resumesAtInstant: epochMillis(asNumber(row['resumes_at_instant'])),
   };
 }
 
