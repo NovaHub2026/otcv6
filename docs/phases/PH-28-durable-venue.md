@@ -93,3 +93,37 @@ whole. Nothing reaches the engine from any of it.
 The record is one process's, on one machine. The multi-node composition
 (Issue #9) is deferred by the Cycle 10 plan; a fleet's record is the
 coordinated store's, which already exists and is not hosted.
+
+## 8. What the phase found
+
+1. **Every boot began a new commitment chain** (PH-28.3). `PublicationService`
+   built a fresh writer at an empty root on every start, so a broker verifying
+   across a restart found one chain per boot. The record built in PH-28.1 is
+   what continuing the chain needed; where the record cannot reach the tip the
+   chain is restarted and the break is visible, never bridged.
+2. **Two guards were wrong about a clean tree** — the stale-build guard
+   (mtimes after a checkout, PH-28.1) and the documentation guard's history
+   under hosted CI's one-commit checkout (PH-28.3). Both now ask the right
+   question; hosted CI on the Cycle Audit 9 merge was red on the second.
+3. **The engine's handle is a composition callback** (PH-28.2), not the
+   branded token the audit named: an unwrap method on the venue's type is
+   still a method on the type.
+4. **A lost record makes a restart republish**, and the chain shows it as a
+   second genesis link overlapping the first (PH-28.3, decision log).
+5. **The row costs 32.6 bytes on disk**, so the default record is eight
+   megabytes per asset and a quarter of a gigabyte for the thirty (PH-28.1).
+6. **Thirty of thirty** on the product, from outside the process (PH-28.4).
+
+## 9. Integrated phase verification
+
+| Check                                                                                               | Result                                                                                                                                    |
+| --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Every subphase document APPROVED and the roadmap agrees                                             | `documentation.test.ts`, `stateConsistency.test.ts` green                                                                                 |
+| The record holds sequence, instant and price only; nothing of the engine (INV-010)                  | `tickRecord.test.ts` asserts the schema; `productionResponses.test.ts` by value                                                           |
+| The record is written after generation and feeds nothing back (INV-001)                             | the venue's `tick()` order, `venueRecord.test.ts`; the engine untouched (no diff under `packages/engine`)                                 |
+| A resume across a kill honoured; the kill minute stored; a fork refused (INV-002, INV-008, INV-009) | `venueRecord.test.ts` in-process; `servedRecord.stat.test.ts` over the socket; thirty of thirty on the product (`PH-28-DURABLE-VENUE.md`) |
+| The engine unreachable from a production controller's type (INV-010)                                | `labSurface.test.ts` three guards, each watched failing                                                                                   |
+| The directory verified at boot, backed up and restored; the chain across the process                | `stateDirectory.test.ts`, `stateTool.test.ts`, `commitmentsFile.test.ts`, `venueRecord.test.ts`                                           |
+| Every guard watched failing                                                                         | PH-28.1 four plants, PH-28.2 three, PH-28.3 three                                                                                         |
+| Phase quality gate `npm run gate` with the browser prefix                                           | _pending: recorded at approval_                                                                                                           |
+| Hosted CI on the merge commit                                                                       | _recorded in `CURRENT_STATE.md` § "Hosted CI, honestly" when it lands_                                                                    |

@@ -849,7 +849,7 @@ settles against this record needs it to still be there after a restart.
 | PH-28.1  | The record composed: ticks persisted, replay served from the store across a restart    | APPROVED |
 | PH-28.2  | The venue's handle: production controllers see a published view, never the engine      | APPROVED |
 | PH-28.3  | The store operated: integrity at boot, backup and restore, the commitments file (#19)  | APPROVED |
-| PH-28.4  | The served verdict across a kill and a restart, on the thirty (PH-25.1 a and c closed) | ACTIVE   |
+| PH-28.4  | The served verdict across a kill and a restart, on the thirty (PH-25.1 a and c closed) | APPROVED |
 
 **PH-29 — the integration boundary.** The venue publishes prices; the broker
 settles. Today the integration guide's §5 tells the broker to keep its own copy

@@ -25,10 +25,10 @@ Last synchronized: 2026-09-05
 | ---------------------- | ---------------------------------------------------------- |
 | Active phase           | PH-28 — The durable venue: the record outlives the process |
 | Phase lifecycle        | ACTIVE                                                     |
-| Active subphase        | PH-28.4 — The served verdict across a kill and a restart   |
-| Subphase lifecycle     | ACTIVE                                                     |
+| Active subphase        | none — all four approved; the phase gate runs              |
+| Subphase lifecycle     | none                                                       |
 | Last approved phase    | PH-27 — Review and improvement of the whole project        |
-| Last approved subphase | PH-28.3 — The store operated                               |
+| Last approved subphase | PH-28.4 — The served verdict across a kill and a restart   |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was

@@ -102,10 +102,14 @@ phase's results (PH-25.1 §5, PH-25.2 §5, PH-25.3 §5):
    refused as evicted though nothing was evicted. The ticks are reproducible
    (INV-009) and unservable. Measured, asserted as the honest behaviour, and
    carried to the improvement report as the first item of Cycle 10.
+   > **Closed by PH-28.1**, and on the product by **PH-28.4**: thirty of thirty
+   > resume across a `SIGKILL` (`docs/evidence/PH-28-DURABLE-VENUE.md`).
 3. **A SIGKILL costs the candle record up to the minute it fell in** — the
    open bar dies with the process and the resumed recorder withholds the
    partial bucket (CA6-30). Measured at 0 and 1 bars spanning the hole on two
    runs, printed rather than asserted; same fix as 2.
+   > **Closed by PH-28.1**, and on the product by **PH-28.4**: thirty of thirty
+   > have the kill minute stored and contiguous.
 4. **The battery through the wire loses nothing**: a Thue–Morse record
    served as frames is `exploitable`; the venue's own served record is
    `undecided` at the sizes read, never `exploitable`, with its floors named —
