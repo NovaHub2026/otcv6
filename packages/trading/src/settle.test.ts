@@ -1,7 +1,12 @@
 // Invariant evidence: INV-009 (reproducible settlement), INV-001 (economic independence).
 import { describe, expect, it } from 'vitest';
 import { durationMillis, epochMillis } from '@otc/core';
-import { DEFAULT_AT_MONEY_POLICY, payoutMinor, type Contract } from './contract.js';
+import {
+  DEFAULT_AT_MONEY_POLICY,
+  PAYOUT_RATIO_SCALE,
+  payoutMinor,
+  type Contract,
+} from './contract.js';
 import { NotSettleableError, settle, tally, type TickRecord } from './settle.js';
 
 /** A record with ticks every second, at the prices given. */
@@ -417,6 +422,71 @@ describe('money is exact in the minor unit (PH-29.4, Issue #11)', () => {
     console.info(
       `[money] the replaced formula returned a fraction of a minor unit for ${String(fractional)} of 100 000 stakes; exact arithmetic disagrees with the rational 0 times`,
     );
+  });
+
+  /**
+   * **Cycle Audit 10 (a4-08).** The test above is the evidence PH-29.4 cites
+   * for Issue #11, and it is written at one ratio — 0.85, where `Math.floor`
+   * of the floating-point product happens to equal the exact rational value
+   * for *every* stake up to a hundred thousand. So the refactor the criterion
+   * exists to forbid, `Math.floor(stake * payoutRatio)`, passed the whole
+   * `packages/trading` suite: 60 tests, exit 0.
+   *
+   * A ratio is a four-place decimal, and most four-place decimals are not
+   * exact in binary. This sweeps ratios that are not — a broker's 0.7 and 0.57
+   * as much as the small ones — and holds every payout to `BigInt` arithmetic,
+   * which has no rounding to be lucky about.
+   *
+   * The last assertion is the one that keeps this honest: it fails if the
+   * ratios swept could no longer tell floored floating point from exact
+   * arithmetic. A guard for a defect must be able to see the defect, and
+   * shrinking this list back towards 0.85 is exactly how it would stop.
+   */
+  it('agrees with exact rational arithmetic at ratios binary floating point gets wrong (a4-08)', () => {
+    // Advertised ratios, and small ones where a single minor unit is the whole
+    // payout — 0.0003 and 0.0006 are the first two places a sweep separates.
+    const RATIOS = [0.85, 0.9, 0.925, 0.8571, 0.83, 0.7, 0.57, 0.29, 0.0003, 0.0006];
+    /** The payout by rational arithmetic: an integer product, then truncation. */
+    const exactly = (stake: number, ratio: number): number =>
+      Number(
+        (BigInt(stake) * BigInt(Math.round(ratio * PAYOUT_RATIO_SCALE))) /
+          BigInt(PAYOUT_RATIO_SCALE),
+      );
+    const disagreements: string[] = [];
+    const separating: string[] = [];
+    for (const ratio of RATIOS) {
+      let floatWrong = 0;
+      for (let stake = 1; stake <= 100_000; stake += 1) {
+        const exact = exactly(stake, ratio);
+        const paid = payoutMinor(stake, ratio);
+        if (paid !== exact && disagreements.length < 5) {
+          disagreements.push(
+            `stake ${String(stake)} at ${String(ratio)}: ${String(paid)} ≠ exact ${String(exact)}`,
+          );
+        }
+        // Not an assertion about the shipped code: a measurement of whether
+        // this ratio is one at which the two implementations differ at all.
+        if (Math.floor(stake * ratio) !== exact) floatWrong += 1;
+      }
+      if (floatWrong > 0) separating.push(`${String(ratio)} (${String(floatWrong)})`);
+    }
+    expect(disagreements, 'payoutMinor is not exact').toEqual([]);
+    expect(
+      separating.length,
+      'the ratios swept cannot tell floored floating point from exact arithmetic, so this guard ' +
+        'would pass on the defect it is named for (Cycle Audit 10, a4-08)',
+    ).toBeGreaterThanOrEqual(3);
+    console.info(`[money] ratios where floored floating point disagrees: ${separating.join(', ')}`);
+  });
+
+  it('settles a win at a ratio floating point rounds the wrong way (a4-08)', () => {
+    // 100 × 0.57 is 57 exactly; the double nearest 0.57 is a shade below, so
+    // `Math.floor(100 * 0.57)` is 56 — a cent of a trader's payout, on a stake
+    // and a ratio a broker would really advertise.
+    const won = settle(contract({ stake: 100, payoutRatio: 0.57 }), ticks);
+    expect(won.outcome).toBe('win');
+    expect(won.net).toBe(57);
+    expect(won.returned).toBe(157);
   });
 
   it('settles a win to an integer: stake plus the truncated payout', () => {

@@ -7,6 +7,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, type Tick } from '@otc/core';
 import { RecordForkError } from './replication.js';
 import {
+  MEASURED_RECORD_BYTES_PER_TICK,
   MemoryTickRecord,
   RECORD_SCHEMA_VERSION,
   SqliteTickRecord,
@@ -93,6 +94,52 @@ describe.each(implementations)('%s', (_name, open) => {
     expect(await record.since('a', 3, 3)).toEqual([tick(3), tick(4), tick(5)]);
   });
 
+  /**
+   * **Cycle Audit 10, a4-01 and a1-01.** The test above accepts the gap; until
+   * PH-31 nothing wrote it down, so a seam from an earlier boot survived only
+   * as a jump in sequence — and `settle()`'s seam refusal, which takes
+   * instants, could not be reached through the API at all.
+   */
+  it('writes down the seam an accepted gap leaves, in sequences and in instants (PH-31)', async () => {
+    const record = await open();
+    expect(await record.seams('a'), 'nothing recorded, no seams').toEqual([]);
+    await record.append([{ assetId: 'a', ticks: run(1, 5) }]);
+    expect(await record.seams('a'), 'a contiguous record has no seams').toEqual([]);
+    await record.append([{ assetId: 'a', ticks: run(100_006, 100_009) }]);
+    const expected = {
+      assetId: 'a',
+      lastSequence: 5,
+      lastInstant: tick(5).instant,
+      resumesAtSequence: 100_006,
+      resumesAtInstant: tick(100_006).instant,
+    };
+    expect(await record.seams('a')).toEqual([expected]);
+    // Appending on past the seam adds no second one.
+    await record.append([{ assetId: 'a', ticks: run(100_010, 100_012) }]);
+    expect(await record.seams('a')).toEqual([expected]);
+    // A second seam is a second row, oldest first.
+    await record.append([{ assetId: 'a', ticks: run(200_000, 200_001) }]);
+    expect((await record.seams('a')).map((seam) => seam.resumesAtSequence)).toEqual([
+      100_006, 200_000,
+    ]);
+    expect(await record.seams('b'), 'per asset').toEqual([]);
+    // The interval is open at both ends: the boundary instants are on ticks
+    // that were published, and are answerable prices.
+    expect(await record.seamAt('a', tick(5).instant), 'on the last tick before it').toBeNull();
+    expect(await record.seamAt('a', tick(100_006).instant), 'on the first tick after').toBeNull();
+    expect(await record.seamAt('a', tick(5).instant + 1), 'one millisecond in').toEqual(expected);
+    expect(
+      await record.seamAt('a', tick(100_006).instant - 1),
+      'one millisecond before the resume',
+    ).toEqual(expected);
+    expect(
+      await record.seamAt('a', Math.floor((tick(5).instant + tick(100_006).instant) / 2)),
+      'the middle of the gap',
+    ).toEqual(expected);
+    expect(await record.seamAt('a', tick(3).instant), 'inside the contiguous run').toBeNull();
+    await expect(record.seamAt('a', 1.5)).rejects.toThrow(/safe integer/);
+  });
+
   it('refuses a batch that repeats or reorders a sequence, whole', async () => {
     const record = await open();
     await expect(
@@ -162,16 +209,75 @@ describe('the SQLite record, as a file', () => {
       .all()
       .map((row) => String(row['name']));
     expect(columns.sort()).toEqual(['asset_id', 'instant', 'price', 'sequence']);
+    const seamColumns = db
+      .prepare('PRAGMA table_info(seam)')
+      .all()
+      .map((row) => String(row['name']));
+    expect(seamColumns.sort()).toEqual([
+      'asset_id',
+      'last_instant',
+      'last_sequence',
+      'resumes_at_instant',
+      'resumes_at_sequence',
+    ]);
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
       .all()
       .map((row) => String(row['name']));
-    expect(tables).toEqual(['tick']);
+    // The record's two tables and no third: what was published, and where it
+    // stopped and started again (PH-31). Both are sequences, instants and
+    // prices — nothing an observer could not have read for themselves.
+    expect(tables.sort()).toEqual(['seam', 'tick']);
     expect(Number(db.prepare('PRAGMA user_version').get()!['user_version'])).toBe(
       RECORD_SCHEMA_VERSION,
     );
     db.close();
     reader.close();
+  });
+
+  it('reads the seams a file written before the seam table already holds (PH-31)', async () => {
+    const file = path.join(await scratch(), 'record.db');
+    // A version-1 record: the tick table alone, with a deploy-length seam in
+    // it — what every deployment upgrading to this code has on disk.
+    const old = new DatabaseSync(file);
+    old.exec(`
+      CREATE TABLE tick (
+        asset_id TEXT NOT NULL, sequence INTEGER NOT NULL,
+        instant INTEGER NOT NULL, price INTEGER NOT NULL,
+        PRIMARY KEY (asset_id, sequence)
+      ) WITHOUT ROWID
+    `);
+    for (const t of [...run(1, 5), ...run(100_006, 100_008)]) {
+      old.prepare('INSERT INTO tick VALUES (?, ?, ?, ?)').run('a', t.sequence, t.instant, t.price);
+    }
+    for (const t of run(1, 3)) {
+      old.prepare('INSERT INTO tick VALUES (?, ?, ?, ?)').run('b', t.sequence, t.instant, t.price);
+    }
+    old.exec('PRAGMA user_version = 1');
+    old.close();
+
+    const record = new SqliteTickRecord(file);
+    expect(await record.seams('a')).toEqual([
+      {
+        assetId: 'a',
+        lastSequence: 5,
+        lastInstant: tick(5).instant,
+        resumesAtSequence: 100_006,
+        resumesAtInstant: tick(100_006).instant,
+      },
+    ]);
+    expect(await record.seams('b'), 'a contiguous asset gains none').toEqual([]);
+    expect(await record.seamAt('a', tick(5).instant + 1)).not.toBeNull();
+    record.close();
+    // Stamped forward, and the second open does not double the row.
+    const again = new SqliteTickRecord(file);
+    expect(await again.seams('a')).toHaveLength(1);
+    again.close();
+    const db = new DatabaseSync(file);
+    expect(Number(db.prepare('PRAGMA user_version').get()!['user_version'])).toBe(
+      RECORD_SCHEMA_VERSION,
+    );
+    db.close();
   });
 
   it('refuses a file written by newer code', async () => {
@@ -182,7 +288,20 @@ describe('the SQLite record, as a file', () => {
     expect(() => new SqliteTickRecord(file)).toThrow(/newer than/);
   });
 
-  it('costs a bounded number of bytes per tick on disk, so the default bound can be sized', async () => {
+  /**
+   * **Cycle Audit 10 (a7-03).** This asserted a bound and printed a figure for
+   * a docstring nothing related it to. PH-29.1 added the `tick_by_instant`
+   * index, the cost went from 32.6 to 61.2 bytes a tick — a factor of 1.9 —
+   * the bound of 80 held, the suite stayed green, and the docstring that sizes
+   * `DEFAULT_RECORD_TICKS`, plus the PH-28 records, went on telling an
+   * operator to size disk at eight megabytes an asset for two phases.
+   *
+   * So the number in the prose is now read out of the prose and held to the
+   * measurement. Twenty per cent of slack: a page-size or SQLite change may
+   * move it a little without failing the suite, but nothing may add a second
+   * index and leave the sizing where it was.
+   */
+  it('costs the number of bytes per tick its own docstring says it does', async () => {
     const file = path.join(await scratch(), 'record.db');
     const record = new SqliteTickRecord(file);
     const n = 20_000;
@@ -190,11 +309,18 @@ describe('the SQLite record, as a file', () => {
     record.close();
     const bytes = (await stat(file)).size;
     const perTick = bytes / n;
-    // WITHOUT ROWID with a (text, integer) primary key and two integers: tens
-    // of bytes, not hundreds. The bound is generous so a page-size change does
-    // not fail the suite; the figure is printed for the docstring that sizes
-    // `DEFAULT_RECORD_TICKS` from it.
+    // WITHOUT ROWID with a (text, integer) primary key and two integers, plus
+    // the PH-29.1 index over (asset_id, instant, sequence): tens of bytes, not
+    // hundreds.
     console.info(`[tickRecord] ${perTick.toFixed(1)} bytes per tick on disk over ${n} ticks`);
     expect(perTick).toBeLessThan(80);
+
+    expect(
+      Math.abs(perTick - MEASURED_RECORD_BYTES_PER_TICK) / MEASURED_RECORD_BYTES_PER_TICK,
+      `the record costs ${perTick.toFixed(1)} bytes a tick, not ` +
+        `${String(MEASURED_RECORD_BYTES_PER_TICK)} — re-measure and update the sizing on ` +
+        `DEFAULT_RECORD_TICKS in tickRecord.ts, and the PH-28 and PH-28.1 records that ` +
+        `restate it; that is what an operator sizes disk from`,
+    ).toBeLessThan(0.2);
   });
 });

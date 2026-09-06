@@ -1,8 +1,8 @@
 # API Contract
 
 Type: SUPPORTING DOCUMENTATION (generated; do not edit by hand)
-Version: 1.1.0
-Digest: 1f9fc7c84b19c58c
+Version: 2.0.0
+Digest: 0d5dd03fcc427fee
 Source: `apps/api/src/contract.ts` — rendered by `npm run contract:render`; held to the controller by `contract.test.ts`
 
 ---
@@ -230,6 +230,29 @@ Response: a JSON object:
 | --- | --- |
 | 400 | a missing or malformed instant, or an instant after the newest published one |
 | 404 | the asset is unknown, the record starts after the instant, or this deployment keeps no record |
+| 409 | the instant falls inside a recorded discontinuity — nothing was published for it and nothing ever will be; the seam is named (see /markets/:id/seams) |
+
+## GET `/markets/:id/seams`
+
+Every discontinuity the record holds for this market: where it stops and where it starts again, in sequence and in instant. What settle() takes as seams.
+
+| Path parameter | Must be |
+| --- | --- |
+| `id` | a hosted asset id |
+
+Response: a JSON array; each item:
+
+| Key | Type |
+| --- | --- |
+| `assetId` | `string` |
+| `lastSequence` | `integer` |
+| `lastInstant` | `integer` |
+| `resumesAtSequence` | `integer` |
+| `resumesAtInstant` | `integer` |
+
+| Status | When |
+| --- | --- |
+| 404 | the asset is unknown, or this deployment keeps no record |
 
 ## GET `/markets/:id/proof/:sequence`
 

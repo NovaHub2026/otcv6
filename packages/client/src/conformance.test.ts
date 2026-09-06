@@ -25,6 +25,20 @@ export const TICKS: Tick[] = Array.from({ length: 60 }, (_, i) => ({
 }));
 const WINDOW = TICKS.slice(0, 20);
 const SIGNED = signCommitment(commit('eurusd', WINDOW), KEY);
+/**
+ * A second key nobody authorised, and the same window signed with it.
+ *
+ * **Cycle Audit 10 (a2-02).** The suite already had a venue that names a key
+ * the client did not expect, which any client catches by comparing two hex
+ * strings. It had nothing for the venue that names the **expected** key and
+ * signs with another — the only shape in which a forgery is worth attempting,
+ * and the one a client that skipped `verifyCommitment` would accept. A refuter
+ * built it and measured the consequence: with that check disabled the
+ * reference client returned a fabricated tick as `verified: true`, with every
+ * one of its tests green.
+ */
+const FORGER = publishingKeyFromSeed('99'.repeat(32));
+const FORGED = signCommitment(commit('eurusd', WINDOW), FORGER);
 
 export interface Faults {
   version?: string;
@@ -32,12 +46,40 @@ export interface Faults {
   dropAfter?: number;
   /** On a resume, replay the tick before `from` as well: a venue that repeats itself. */
   repeatOnResume?: boolean;
+  /**
+   * On a resume, tell a gap and continue six sequences later: the frame a venue
+   * writes when the sequence asked for has been evicted, or when a seamed boot
+   * restarted the feed past it (Cycle Audit 10, a4-02/a8-02).
+   */
+  gapOnResume?: boolean;
+  /** On a resume, begin one sequence after the one asked for, telling no gap. */
+  wrongResume?: boolean;
+  /** On a resume, drop the third tick of the resumed run, telling no gap. */
+  skipOnResume?: boolean;
   extraKey?: boolean;
   skipSequence?: boolean;
   wrongRule?: boolean;
   badProof?: boolean;
+  /** Names the expected publisher key and signs the commitment with another (a2-02). */
+  forgedSignature?: boolean;
   noProof?: boolean;
+  /**
+   * Answer `/markets/:id` with the tick after the newest published one — the
+   * tick a venue has drawn and not yet served (Cycle Audit 10, a1-03).
+   */
+  futureMarket?: boolean;
+  /** A venue whose record carries a discontinuity: it lists it, and refuses a price inside it. */
+  seamed?: boolean;
 }
+
+/** The gap a `seamed` fake venue's record holds: between tick 30 and tick 31. */
+export const SEAM = {
+  assetId: 'eurusd',
+  lastSequence: 30,
+  lastInstant: TICKS[29]!.instant,
+  resumesAtSequence: 100_031,
+  resumesAtInstant: TICKS[30]!.instant,
+};
 
 const servers: Server[] = [];
 afterAll(() => {
@@ -52,10 +94,10 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
     id: 'eurusd',
     displayName: 'EUR/USD',
     family: 'fx',
-    price: TICKS[59]!.price,
+    price: TICKS[59]!.price + (faults.futureMarket ? 3 : 0),
     displayPrice: '1.10000',
-    sequence: 60,
-    instant: TICKS[59]!.instant,
+    sequence: faults.futureMarket ? 61 : 60,
+    instant: TICKS[59]!.instant + (faults.futureMarket ? 400 : 0),
     recovery: null,
     ...(faults.extraKey ? { engineVersion: 1 } : {}),
   };
@@ -118,11 +160,16 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
         to: 1,
         candles: [],
       });
+    // A venue that has never seamed: the record holds no discontinuity.
+    if (p === '/markets/eurusd/seams') return json(response, 200, faults.seamed ? [SEAM] : []);
     if (p === '/markets/eurusd/ticks/1')
       return json(response, 200, { assetId: 'eurusd', ...published(TICKS[0]!) });
     if (p === '/markets/eurusd/price') {
       const at = Number(url.searchParams.get('at'));
       if (at > TICKS[59]!.instant) return json(response, 400, { message: 'future' });
+      if (faults.seamed && at > SEAM.lastInstant && at < SEAM.resumesAtInstant) {
+        return json(response, 409, { message: 'inside a recorded discontinuity' });
+      }
       let found: Tick | null = null;
       for (const t of TICKS) if (faults.wrongRule ? t.instant < at : t.instant <= at) found = t;
       if (found === null) return json(response, 404, { message: 'before' });
@@ -142,23 +189,36 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
         assetId: 'eurusd',
         sequence,
         publisherPublicKey: HEX,
-        commitment: SIGNED,
+        commitment: faults.forgedSignature ? FORGED : SIGNED,
         proof: faults.badProof ? { ...proof, price: proof.price + 1 } : proof,
         linksRead: 1,
       });
     }
     if (p === '/markets/eurusd/stream') {
       const asked = Number(url.searchParams.get('from') ?? '1');
-      const from = faults.repeatOnResume && asked > 1 ? asked - 1 : asked;
+      const resuming = asked > 1;
+      let from = faults.repeatOnResume && resuming ? asked - 1 : asked;
+      if (faults.wrongResume && resuming) from = asked + 1;
       if (from > 60) {
         response.writeHead(400).end('never published');
         return;
       }
       response.writeHead(200, { 'content-type': 'text/event-stream' });
+      // A venue that tells the gap it is about to leave, as the contract's
+      // `gap` frame: the ticks that follow come from `resumesAt`, not from
+      // what the client last held.
+      const told = faults.gapOnResume === true && resuming;
+      if (told) {
+        from = Math.min(asked + 6, 60);
+        response.write(
+          `event: gap\ndata: ${JSON.stringify({ requested: asked, reason: 'evicted', resumesAt: from })}\n\n`,
+        );
+      }
       let written = 0;
       for (const t of TICKS.filter((t) => t.sequence >= from)) {
         if (faults.skipSequence && t.sequence === 30) continue;
-        if (faults.dropAfter !== undefined && written >= faults.dropAfter && from < 40) {
+        if (faults.skipOnResume && resuming && t.sequence === from + 2) continue;
+        if (!told && faults.dropAfter !== undefined && written >= faults.dropAfter && from < 40) {
           response.end(); // dropped mid-stream, no close frame
           return;
         }
@@ -207,6 +267,30 @@ describe('the conformance suite (PH-29.3)', () => {
       'a proof that does not verify',
       { badProof: true },
       'proof verifies against the publisher key and agrees with the stream',
+    ],
+    [
+      'a commitment signed by a key that is not the one it names (a2-02)',
+      { forgedSignature: true },
+      'proof verifies against the publisher key and agrees with the stream',
+    ],
+    [
+      'a market serving the tick it has drawn but not published (a1-03)',
+      { futureMarket: true },
+      'the price the market reports is one the record already carries',
+    ],
+    // **Cycle Audit 10.** The resume check had no fault of its own: replacing
+    // its whole predicate with `true` left this matrix green. One fault for
+    // each half of what its name claims — the run begins where it was asked to,
+    // and the run is a run.
+    [
+      'a resume that begins one sequence late',
+      { wrongResume: true },
+      'stream resumes exactly from M+1',
+    ],
+    [
+      'a resume that drops a tick from the middle of the resumed run',
+      { skipOnResume: true },
+      'stream resumes exactly from M+1',
     ],
   ] as const)('fails a venue with %s, naming the check', async (_what, faults, name) => {
     const report = await conformance({ baseUrl: await fakeVenue(faults), ticks: 40 });

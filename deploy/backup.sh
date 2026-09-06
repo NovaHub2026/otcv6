@@ -17,4 +17,9 @@ run_once() {
   ls -1d "$out"/otc-* 2>/dev/null | sort | head -n -"$keep" | xargs -r rm -rf
 }
 if [ -z "$every" ]; then run_once; exit 0; fi
-while true; do run_once || echo "backup failed at $(date -u +%FT%TZ)" >&2; sleep "$every"; done
+# The first run is fatal, so a service that can never write a backup crash-loops
+# where an operator sees it instead of sleeping six hours at a time and looking
+# healthy (Cycle Audit 10, a5-04). Later failures are transient by comparison —
+# a full disk, a torn state directory — and are retried on the next tick.
+run_once
+while true; do sleep "$every"; run_once || echo "backup failed at $(date -u +%FT%TZ)" >&2; done

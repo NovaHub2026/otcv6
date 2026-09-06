@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { SystemClock } from '@otc/core';
 import {
   backupStateDirectory,
@@ -22,6 +23,16 @@ import {
  * Restore is a directory swap with the service stopped: move the live
  * directory aside, put the backup in its place, start; the boot check says
  * whether it agrees with itself, and the manifest says what it holds.
+ *
+ * **The manifest stays in the restored directory.** `backup.json` is left where
+ * the copy put it and is not a checkpoint: the store skips it by its `kind`, so
+ * the boot check and this tool's `verify` read the copy the same way. Until
+ * Cycle Audit 10 (a7-01) they did not — the manifest was read as a
+ * thirty-first asset, `backup`, and every directory this tool produced was
+ * refused at boot with `record belongs to asset undefined` until the operator
+ * deleted it. `backup` now also verifies the copy *after* writing the manifest,
+ * so this tool's exit code is a statement about the directory an operator will
+ * later swap in, not about one file less.
  */
 export interface StateToolOptions {
   readonly command: 'verify' | 'backup';
@@ -83,6 +94,21 @@ export async function runStateTool(
     options = parseStateToolArgs(argv);
   } catch (error) {
     return { code: 2, output: (error as Error).message };
+  }
+  // **Cycle Audit 10 (a8-05).** A directory that is not there is not a
+  // consistent one. `verifyStateDirectory` answers an empty, problem-free
+  // report for a missing path — right for the service's first boot, where
+  // nothing to resume is a legal state — and this command turned that into
+  // `Assets: none (nothing to resume)`, `Consistent: every file agrees.` and
+  // **exit 0**. A mistyped `--dir`, an unmounted volume, or a restore that
+  // never landed all read as a healthy state directory, and PH-28 records
+  // `state:verify — exit 0` as evidence of consistency. `backup` already
+  // refuses the same input with the same words — from `backupStateDirectory`,
+  // one layer down — so the check is made once here, for both commands, and
+  // says the same thing either way. An empty directory that *exists* is still
+  // `Assets: none`, exit 0: a first boot is a legal state.
+  if (!existsSync(options.dir)) {
+    return { code: 1, output: `No state directory at ${options.dir}.` };
   }
   if (options.command === 'verify') {
     const report = await verifyStateDirectory(options.dir);

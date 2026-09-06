@@ -16,7 +16,60 @@ import { verifyCommitment, type SignedCommitment } from './signing.js';
  * the worst shape for this failure. Everything here holds one line at a time.
  */
 
-/** One signed commitment per line, in file order; a blank line is skipped. */
+/**
+ * Thrown when a commitments file cannot be read as a chain **at all**.
+ *
+ * Not a verdict about the chain — that is `CommitmentsFileVerdict`, and a
+ * chain that verifies badly is still a chain. This is the file underneath it:
+ * a line that is not JSON, or a last line that was never finished.
+ *
+ * **Cycle Audit 10 (a2-04, a3-08, a8-06).** The chain is the one durable file
+ * in the deployment that is never fsynced — checkpoints go through
+ * `atomicFile.ts` and the databases are WAL, while a window is one
+ * `appendFileSync` — so it is the file most likely to end in a torn line after
+ * ENOSPC, a power loss or an interrupted copy, and it was the only one with no
+ * parse guard at all. Every path through it called `JSON.parse` bare:
+ * `chainTipOf` runs at boot for every asset, so one torn line in one market's
+ * file aborted the boot of all thirty with `SyntaxError: Unterminated string
+ * in JSON at position 200` and named no file, no asset and no repair; and
+ * `verifyCommitmentsFile` — whose whole verdict type carries `error: {line,
+ * detail}` so that a reader learns *where* a file went bad — threw the same
+ * exception instead of answering, in exactly the case where naming the line
+ * matters most.
+ */
+export class CommitmentsFileError extends Error {
+  constructor(
+    readonly filePath: string,
+    readonly line: number | null,
+    readonly detail: string,
+  ) {
+    super(`${filePath}${line === null ? '' : `, line ${line}`}: ${detail}`);
+    this.name = 'CommitmentsFileError';
+  }
+}
+
+/** One line of the file, or a refusal that names where it stopped being one. */
+export function parseLink(filePath: string, line: number | null, text: string): SignedCommitment {
+  try {
+    return JSON.parse(text) as SignedCommitment;
+  } catch (error) {
+    throw new CommitmentsFileError(
+      filePath,
+      line,
+      `this line is not JSON (${(error as Error).message}). A commitments file holds one ` +
+        `signed commitment per line; a line that is not one is a file cut mid-append or ` +
+        `partly copied, and no chain can be read across it.`,
+    );
+  }
+}
+
+/**
+ * One signed commitment per line, in file order; a blank line is skipped.
+ *
+ * A line of spaces is blank too: `trim` rather than `length`, because a bare
+ * length test sent whitespace into `JSON.parse` and threw where the file was
+ * merely padded (Cycle Audit 10, a3-08).
+ */
 export async function* readCommitmentsStream(
   filePath: string,
 ): AsyncGenerator<{ line: number; signed: SignedCommitment }> {
@@ -27,8 +80,8 @@ export async function* readCommitmentsStream(
   let line = 0;
   for await (const text of lines) {
     line += 1;
-    if (text.length === 0) continue;
-    yield { line, signed: JSON.parse(text) as SignedCommitment };
+    if (text.trim().length === 0) continue;
+    yield { line, signed: parseLink(filePath, line, text) };
   }
 }
 
@@ -37,6 +90,18 @@ export async function* readCommitmentsStream(
  *
  * Reads the tail of the file, not the file: a writer resuming a chain at boot
  * needs the tip and nothing before it.
+ *
+ * ## A file that does not end in a newline was cut mid-append
+ *
+ * Every window is appended as one `${json}\n` in a single call, and the only
+ * prefix of that payload ending in a newline is the whole of it. So bytes
+ * after the file's last newline are a line that was never finished, and this
+ * refuses by name (Cycle Audit 10, a2-04, a3-08, a8-06). It does **not**
+ * bridge: reading the tip from the last whole line and appending after it
+ * would write the next window onto the end of the fragment's own line, which
+ * destroys a second window to hide the first. It does not truncate either —
+ * an evidence file is not repaired by the process that found it damaged — so
+ * the refusal names the byte to truncate to and the operator decides.
  */
 export function chainTipOf(filePath: string): SignedCommitment | null {
   let size: number;
@@ -55,13 +120,35 @@ export function chainTipOf(filePath: string): SignedCommitment | null {
     for (;;) {
       const buffer = Buffer.alloc(span);
       readSync(fd, buffer, 0, span, size - span);
-      const text = buffer.toString('utf8').replace(/\n+$/, '');
-      const cut = text.lastIndexOf('\n');
-      if (cut >= 0 || span === size) {
-        const last = cut >= 0 ? text.slice(cut + 1) : text;
-        if (last.length === 0) return null;
-        return JSON.parse(last) as SignedCommitment;
+      const text = buffer.toString('utf8');
+      const whole = span === size;
+      const end = text.lastIndexOf('\n');
+      const fragment = text.slice(end + 1);
+      if (fragment.trim().length > 0 && (end >= 0 || whole)) {
+        const bytes = Buffer.byteLength(fragment, 'utf8');
+        throw new CommitmentsFileError(
+          filePath,
+          null,
+          `the file ends in an unfinished line of ${bytes} byte(s). Every window is appended ` +
+            `as one line ending in a newline, so a file that does not end in one was cut ` +
+            `mid-append — ENOSPC, a power loss, or an interrupted copy. The chain is not ` +
+            `continued across it and nothing is repaired here: truncate the file to ` +
+            `${size - bytes} bytes, its last newline, and start again. Nothing published is ` +
+            `necessarily lost by that: the next process resumes from the last whole window and ` +
+            `re-commits from the tick record what the unfinished one covered, and where the ` +
+            `record cannot reach it the chain states the interval instead.`,
+        );
       }
+      // Trailing blank lines are not the tip; step back over them.
+      const complete = text.slice(0, end + 1);
+      const done = complete.split('\n');
+      for (let i = done.length - 1; i >= 0; i -= 1) {
+        const line = done[i]!;
+        if (line.trim().length === 0) continue;
+        if (i === 0 && !whole) break;
+        return parseLink(filePath, null, line);
+      }
+      if (whole) return null;
       span = Math.min(size, span * 4);
     }
   } finally {
@@ -78,26 +165,42 @@ export function chainTipOf(filePath: string): SignedCommitment | null {
  * seen by `finish()` is the same refusal the batch form makes up front.
  */
 /**
- * Where a commitments file's chain was restarted at an empty root.
+ * An interval of the record that no window in this file commits to.
  *
- * PH-28.3 restarts the chain rather than bridge it when the record cannot
- * reach the tip; PH-30.4 restarts it at a seam — a market resumed past its
- * catch-up bound, whose sequences jump by the lease. Either way the file
- * holds two chains and the genesis link of the second is signed by an
- * authorised key, so the verifier accepts it and **names the break** rather
- * than refuse the file: each chain still verifies link by link, and what the
- * break cannot prove is continuity. `afterSequence` and `fromSequence` say
- * how wide the uncommitted interval between the chains is; a window deleted
- * from the tail of the earlier chain widens it, which is the most a file
- * verifier can see and the reader is told so.
+ * PH-28.3 stops bridging the chain when the record cannot reach the tip;
+ * PH-30.4 does the same at a seam — a market resumed past its catch-up bound,
+ * whose sequences jump by the lease. Both leave an interval nobody published,
+ * and the file states it in one of two shapes:
+ *
+ * - **bound** — a resume link (`resumesAfter`), which binds the head the
+ *   earlier run ended at and declares the sequence it ended at. The hash chain
+ *   is unbroken across it, so a window cut from before the break is refused
+ *   where the cut is rather than read as a wider gap.
+ * - **unbound** — a second genesis link, the shape PH-30.4 wrote and Cycle
+ *   Audit 10 found blind (a6-04): the two chains are bound to each other by
+ *   nothing, so `afterSequence` is only the tail this file happens to hold,
+ *   and an operator deleting the last windows of the earlier chain widens the
+ *   interval without breaking a signature. Files written before Cycle 10 hold
+ *   these, so they are read and reported rather than refused — and reported as
+ *   what they are.
  */
 export interface ChainBreak {
-  /** Index of the genesis link that begins the new chain. */
+  /** Index of the link that resumes the record after the interval. */
   readonly link: number;
-  /** The last sequence the earlier chain committed to. */
+  /** The last sequence committed before the interval. */
   readonly afterSequence: number;
-  /** The sequence the new chain begins at. */
+  /** Root of the window that ended at {@link afterSequence}. */
+  readonly afterRoot: string;
+  /** The sequence the record resumes at. */
   readonly fromSequence: number;
+  /**
+   * Whether the resuming link binds the head before the interval.
+   *
+   * `false` says the interval's near edge is unattested: what a reader can
+   * conclude is that this file commits nothing between the two sequences, not
+   * that nothing was published there.
+   */
+  readonly bound: boolean;
 }
 
 export class IncrementalChainVerifier {
@@ -144,9 +247,12 @@ export class IncrementalChainVerifier {
     if (this.#error !== null || this.#epochOf === null) return this.#error;
     const i = this.#count;
     const link = signed.commitment;
-    // A genesis link after the first is a restart (PH-28.3, PH-30.4): checked
-    // as a genesis, for the same asset, and reported as a break once the rest
-    // of the link — its key, its epoch, its signature — has been accepted.
+    // A genesis link after the first is an unbound restart (PH-28.3, PH-30.4,
+    // and the shape Cycle Audit 10 found blind): checked as a genesis, for the
+    // same asset, and reported as a break once the rest of the link — its key,
+    // its epoch, its signature — has been accepted. A **resume** link is not
+    // this: it binds its predecessor, so it goes through the pairwise check
+    // like any other link and is reported as a bound break.
     const restart = this.#previous !== null && link.previousRoot === '';
     const structural =
       this.#previous === null || restart
@@ -191,11 +297,13 @@ export class IncrementalChainVerifier {
     if (!verifyCommitment(signed, signed.publicKey)) {
       return `Commitment ${i} is not signed by the key it names.`;
     }
-    if (restart && this.#previous !== null) {
+    if (this.#previous !== null && (restart || link.resumesAfter !== undefined)) {
       this.#breaks.push({
         link: i,
         afterSequence: this.#previous.toSequence,
+        afterRoot: this.#previous.root,
         fromSequence: link.fromSequence,
+        bound: !restart,
       });
     }
     this.#epoch = linkEpoch;
@@ -230,10 +338,10 @@ export interface CommitmentsFileVerdict {
   readonly count: number;
   readonly tip: Commitment | null;
   /**
-   * Where the chain was restarted at an empty root, in file order. Empty for
-   * one unbroken chain; a verifier that needs continuity checks this, because
-   * `ok` says every link verifies and every chain is whole, not that there is
-   * one chain.
+   * Intervals of the record this file commits nothing in, in file order. Empty
+   * for a record covered end to end; a verifier that needs continuity checks
+   * this, because `ok` says every link verifies and the chain is sound, not
+   * that the coverage has no holes.
    */
   readonly breaks: readonly ChainBreak[];
   /** The refusal, with the file line it happened on; absent when ok. */
@@ -247,17 +355,34 @@ export async function verifyCommitmentsFile(
   rotations: readonly SignedRotation[] = [],
 ): Promise<CommitmentsFileVerdict> {
   const verifier = new IncrementalChainVerifier(genesisPublicKeyHex, rotations);
-  for await (const { line, signed } of readCommitmentsStream(filePath)) {
-    const refusal = verifier.accept(signed);
-    if (refusal !== null) {
-      return {
-        ok: false,
-        count: verifier.count,
-        tip: verifier.tip,
-        breaks: verifier.breaks,
-        error: { line, detail: refusal },
-      };
+  try {
+    for await (const { line, signed } of readCommitmentsStream(filePath)) {
+      const refusal = verifier.accept(signed);
+      if (refusal !== null) {
+        return {
+          ok: false,
+          count: verifier.count,
+          tip: verifier.tip,
+          breaks: verifier.breaks,
+          error: { line, detail: refusal },
+        };
+      }
     }
+  } catch (error) {
+    // A file that is not readable as lines is still a verdict, and the line it
+    // stopped on is the whole point of the verdict carrying one (Cycle Audit
+    // 10, a2-04): a broker verifying a partly downloaded chain could not
+    // otherwise tell a damaged file from a broken verifier. Only this one
+    // error is a verdict — anything else (EACCES, EISDIR) is the caller's
+    // problem with the path they passed, not the file's contents.
+    if (!(error instanceof CommitmentsFileError)) throw error;
+    return {
+      ok: false,
+      count: verifier.count,
+      tip: verifier.tip,
+      breaks: verifier.breaks,
+      error: { line: error.line, detail: error.detail },
+    };
   }
   const final = verifier.finish();
   if (final !== null) {

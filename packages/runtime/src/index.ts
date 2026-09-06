@@ -103,11 +103,26 @@ export {
   type StateProblem,
 } from './stateDirectory.js';
 export {
+  currentProcessIdentity,
+  DEFAULT_LOCK_RENEWAL_MS,
+  DEFAULT_LOCK_TERM_MS,
+  DirectoryLockedError,
+  LOCK_FILE,
+  processLiveness,
+  StateDirectoryLock,
+  type HolderLiveness,
+  type LockIdentity,
+  type LockOptions,
+  type LockRecord,
+} from './directoryLock.js';
+export {
   DEFAULT_RECORD_TICKS,
+  MEASURED_RECORD_BYTES_PER_TICK,
   MemoryTickRecord,
   RECORD_SCHEMA_VERSION,
   SqliteTickRecord,
   type AssetBatch,
+  type RecordedSeam,
   type TickRecord,
 } from './tickRecord.js';
 export { DEFAULT_BUSY_TIMEOUT_MS } from './sqlite.js';

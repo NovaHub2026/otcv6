@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fakeVenue, HEX, TICKS } from './conformance.test.js';
+import { fakeVenue, HEX, SEAM, TICKS } from './conformance.test.js';
 import { ContractViolation, isRefusal, VenueClient, type StreamEvent } from './venueClient.js';
 
 describe('the reference client (PH-29.4)', () => {
@@ -17,6 +17,34 @@ describe('the reference client (PH-29.4)', () => {
     expect(isRefusal(future) && future.status).toBe(400);
     const missing = await client.history('eurusd', '1m', 0, 1);
     expect(isRefusal(missing)).toBe(false);
+  });
+
+  /**
+   * **Cycle Audit 10, a4-01 / a1-01.** A broker fills `settle()`'s `seams` from
+   * here. Before contract 2.0.0 there was nothing to fill it from, and a price
+   * inside a gap nobody generated came back `200`.
+   */
+  it("reads the record's discontinuities, and takes a price inside one as a refusal (PH-31)", async () => {
+    const client = new VenueClient({ baseUrl: await fakeVenue({ seamed: true }) });
+    const seams = await client.seams('eurusd');
+    expect(isRefusal(seams)).toBe(false);
+    if (isRefusal(seams)) return;
+    expect(seams).toEqual([SEAM]);
+    // The two instants `settle()` takes, straight off the answer.
+    expect(
+      seams.map((s) => ({ lastInstant: s.lastInstant, resumesAtInstant: s.resumesAtInstant })),
+    ).toEqual([{ lastInstant: SEAM.lastInstant, resumesAtInstant: SEAM.resumesAtInstant }]);
+    // A 409 is a refusal the contract lists, so it is a value and not a
+    // ContractViolation: a client that threw here would have no way to tell a
+    // seam from a broken venue.
+    const inside = await client.priceAt('eurusd', SEAM.lastInstant + 1);
+    expect(isRefusal(inside) && inside.status).toBe(409);
+    // Both boundary instants are still prices.
+    expect(isRefusal(await client.priceAt('eurusd', SEAM.lastInstant))).toBe(false);
+    expect(isRefusal(await client.priceAt('eurusd', SEAM.resumesAtInstant))).toBe(false);
+    // And a venue that never seamed answers an empty list.
+    const none = await new VenueClient({ baseUrl: await fakeVenue() }).seams('eurusd');
+    expect(none).toEqual([]);
   });
 
   it('verifies a proof against the publisher key, and refuses one that does not verify', async () => {
@@ -38,6 +66,17 @@ describe('the reference client (PH-29.4)', () => {
       publisherPublicKey: 'ab'.repeat(32),
     });
     await expect(otherKey.proof('eurusd', 7)).rejects.toThrow(/another publisher key|not signed/);
+    // **The forgery that is worth attempting (Cycle Audit 10, a2-02).** The
+    // venue above names a key the client did not expect, which is caught by
+    // comparing two strings. This one names the key the client *does* expect
+    // and signs with another: only checking the signature refuses it, and a
+    // refuter measured that a client which skipped that check returned the
+    // fabricated tick as `verified: true` with every test green.
+    const forged = new VenueClient({
+      baseUrl: await fakeVenue({ forgedSignature: true }),
+      publisherPublicKey: HEX,
+    });
+    await expect(forged.proof('eurusd', 7)).rejects.toThrow(ContractViolation);
   });
 
   it('throws a ContractViolation naming the route and the departure', async () => {
@@ -47,7 +86,7 @@ describe('the reference client (PH-29.4)', () => {
     );
   });
 
-  it('subscribes across a told gap and a dropped connection with no repeat and no hole', async () => {
+  it('subscribes across a dropped connection with no repeat and no hole', async () => {
     const client = new VenueClient({ baseUrl: await fakeVenue({ dropAfter: 12 }) });
     const events: StreamEvent[] = [];
     let ended = '';
@@ -75,6 +114,46 @@ describe('the reference client (PH-29.4)', () => {
       .filter((e) => e.kind === 'reconnected')
       .map((e) => (e as { from: number }).from);
     expect(reconnects).toEqual([13, 25, 37, 49]);
+    expect(ended).toBe('end of tape');
+  });
+
+  /**
+   * **Cycle Audit 10 (a4-02, a8-02).** The venue tells a gap on the reconnect —
+   * the frame `market.controller.ts` writes when the sequence asked for has
+   * been evicted, or when a seamed boot restarted the feed past it — and the
+   * client threw `ContractViolation: sequence 19 after 12 with no gap told` on
+   * the first tick after it. The loop in `INTEGRATION.md` §4 is this one, so
+   * the guide's own client crashed on the case it exists for. The test above
+   * could not see it: its venue never tells a gap.
+   */
+  it('continues from resumesAt across a gap the venue tells on a reconnect', async () => {
+    const client = new VenueClient({
+      baseUrl: await fakeVenue({ dropAfter: 12, gapOnResume: true }),
+    });
+    const events: StreamEvent[] = [];
+    let ended = '';
+    const iterator = client.subscribe('eurusd', { from: 1, reconnects: 10 });
+    for (;;) {
+      const next = await iterator.next();
+      if (next.done) {
+        ended = next.value;
+        break;
+      }
+      events.push(next.value);
+    }
+    expect(events.filter((e) => e.kind === 'gap')).toEqual([
+      { kind: 'gap', gap: { requested: 13, reason: 'evicted', resumesAt: 19 } },
+    ]);
+    const sequences = events
+      .filter((e) => e.kind === 'tick')
+      .map((e) => (e as { tick: { sequence: number } }).tick.sequence);
+    // Twelve ticks, the drop, the gap the venue told — and then the record from
+    // where the venue said it resumes, with nothing invented in between.
+    expect(sequences.slice(0, 12)).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
+    expect(sequences.slice(12)).toEqual(Array.from({ length: 42 }, (_, i) => i + 19));
+    expect(events.filter((e) => e.kind === 'reconnected')).toEqual([
+      { kind: 'reconnected', from: 13 },
+    ]);
     expect(ended).toBe('end of tape');
   });
 

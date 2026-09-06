@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { epochMillis, MasterKeyring, SteppableClock } from '@otc/core';
 import { ASSET_CATALOGUE } from '@otc/engine';
 import { MemoryStateStore } from '@otc/runtime';
-import { RateLimitGuard } from './rateLimit.guard.js';
+import { isOperationalProbe, RateLimitGuard } from './rateLimit.guard.js';
 import { VenueService } from './venue.service.js';
 
 const GENESIS = epochMillis(1_776_000_000_000);
@@ -42,5 +42,59 @@ describe('the per-client rate limit (PH-30.1)', () => {
     const { guard: byDefault } = guard(null);
     for (let i = 0; i < 600; i += 1) expect(byDefault.admit('a', GENESIS).admitted).toBe(true);
     expect(byDefault.admit('a', GENESIS).admitted).toBe(false);
+  });
+});
+
+/**
+ * Cycle Audit 10 (a1-02, a5-01, a8-01 — three auditors, independently). The
+ * limit keyed on an address the venue could not see behind the proxy this
+ * repository ships, and it refused the orchestrator and the monitor along with
+ * the flood.
+ */
+describe('the limit is keyed on a client and never refuses the probes (Cycle Audit 10)', () => {
+  it('exempts liveness, readiness and the scrape, by exact path and nothing near them', () => {
+    for (const path of ['/health/live', '/health/ready', '/metrics'])
+      expect(isOperationalProbe(path), path).toBe(true);
+    // Not a prefix match: a route may not buy exemption by wearing the name.
+    for (const path of [
+      '/health',
+      '/metrics/all',
+      '/markets/metrics',
+      '/health/ready/x',
+      '/Metrics',
+      '',
+    ])
+      expect(isOperationalProbe(path), path).toBe(false);
+  });
+
+  it('admits a probe from an address whose bucket is empty', () => {
+    const { guard: limiter, clock } = guard(1);
+    const request = (path: string, ip: string): boolean => {
+      // The shape `canActivate` reads, and nothing else it touches.
+      const headers: Record<string, string> = {};
+      const context = {
+        switchToHttp: () => ({
+          getRequest: () => ({ path, ip, socket: { remoteAddress: ip }, headers }),
+          getResponse: () => ({ setHeader: () => undefined }),
+        }),
+      } as unknown as Parameters<RateLimitGuard['canActivate']>[0];
+      try {
+        return limiter.canActivate(context);
+      } catch {
+        return false;
+      }
+    };
+    expect(request('/markets', '10.0.0.1')).toBe(true);
+    // The bucket is empty now: a client is refused...
+    expect(request('/markets', '10.0.0.1')).toBe(false);
+    // ...and the orchestrator and the monitor are not, however empty it is.
+    for (let i = 0; i < 50; i += 1) {
+      expect(request('/health/live', '10.0.0.1')).toBe(true);
+      expect(request('/health/ready', '10.0.0.1')).toBe(true);
+      expect(request('/metrics', '10.0.0.1')).toBe(true);
+    }
+    // And a probe never spends a token, so the client's own refusal is
+    // unchanged by however many times the orchestrator asked.
+    expect(limiter.admit('10.0.0.1', clock.now()).admitted).toBe(false);
   });
 });

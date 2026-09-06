@@ -1,4 +1,5 @@
 // Invariant evidence: INV-002 (shared market), INV-008 (continuous market state), INV-009 (reproducible settlement).
+import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -16,6 +17,7 @@ import {
   RECORD_DB,
   stateRefusal,
   verifyStateDirectory,
+  type StateDirectoryReport,
 } from './stateDirectory.js';
 import { SqliteTickRecord } from './tickRecord.js';
 
@@ -88,6 +90,100 @@ async function directoryWith(options: {
     history.close();
   }
   return directory;
+}
+
+/**
+ * A second process appending ticks and closing bars into a live state
+ * directory, for the backup-while-running case (a3-05).
+ *
+ * Raw `INSERT`s rather than `SqliteTickRecord`/`SqliteCandleHistory`: a child
+ * process cannot use Vitest's module resolution, and what this test needs from
+ * the writer is only that the two databases advance together, under the
+ * invariant a venue keeps — the ticks are committed *before* the bar folded
+ * from them, so the record is never behind the history in the source. Driving
+ * `dist/` instead would tie a test about copy ordering to a build.
+ */
+const WRITER = `
+import { DatabaseSync } from 'node:sqlite';
+
+const [, , recordFile, historyFile, assetId, fromRaw, minuteRaw, genesisRaw] = process.argv;
+let sequence = Number(fromRaw);
+let minute = Number(minuteRaw);
+const genesis = Number(genesisRaw);
+
+const record = new DatabaseSync(recordFile);
+record.exec('PRAGMA busy_timeout = 5000');
+const insertTick = record.prepare(
+  'INSERT INTO tick (asset_id, sequence, instant, price) VALUES (?, ?, ?, ?)',
+);
+const history = new DatabaseSync(historyFile);
+history.exec('PRAGMA busy_timeout = 5000');
+const insertBar = history.prepare(
+  'INSERT INTO candle (asset_id, timeframe, open_instant, open, high, low, close, ' +
+    'tick_count, first_sequence, last_sequence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+);
+
+function step() {
+  const first = sequence;
+  record.exec('BEGIN IMMEDIATE');
+  for (let i = 0; i < 40; i += 1) {
+    insertTick.run(assetId, sequence, genesis + sequence * 500, 1000 + sequence);
+    sequence += 1;
+  }
+  record.exec('COMMIT');
+  // Only now: a bar is never visible before the ticks it was folded from.
+  insertBar.run(assetId, '1m', genesis + minute * 60000, 1000, 1000, 1000, 1000, 40, first, sequence - 1);
+  minute += 1;
+}
+
+step();
+process.stdout.write('ready\\n');
+setInterval(step, 1);
+`;
+
+/** Start the writer above against `directory`, and resolve once it has written. */
+async function advancing(directory: string, from: number): Promise<ChildProcess> {
+  // Not inside the state directory: nothing but the venue's own files belongs
+  // in one, and the backup is about to read it.
+  const script = path.join(scratch(), 'writer.mjs');
+  writeFileSync(script, WRITER, 'utf8');
+  const child = spawn(
+    process.execPath,
+    [
+      script,
+      path.join(directory, RECORD_DB),
+      path.join(directory, HISTORY_DB),
+      'eurusd',
+      String(from + 1),
+      '2',
+      String(GENESIS),
+    ],
+    { stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  let stderr = '';
+  child.stderr?.setEncoding('utf8');
+  child.stderr?.on('data', (chunk: string) => (stderr += chunk));
+  child.on('error', (error) => (stderr += String(error.message)));
+  await new Promise<void>((resolve, reject) => {
+    child.stdout?.setEncoding('utf8');
+    child.stdout?.on('data', (chunk: string) => {
+      if (chunk.includes('ready')) resolve();
+    });
+    child.once('exit', (code) => {
+      reject(
+        new Error(`the writer exited with ${String(code)} before writing anything: ${stderr}`),
+      );
+    });
+  });
+  return child;
+}
+
+/** Stop it, and wait: a child still writing outlives the test that started it. */
+async function stop(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
+  child.kill('SIGKILL');
+  await exited;
 }
 
 describe('a state directory is verified as one thing (PH-28.3)', () => {
@@ -192,6 +288,11 @@ describe('a state directory is backed up consistently and verified on the way ou
     });
     const again = await verifyStateDirectory(target);
     expect(again.heads).toEqual(manifest.heads);
+    // What the operator's `state:verify` would say about the copy, and what the
+    // boot check would do with it — not only its heads (Cycle Audit 10, a7-01).
+    expect(again.problems).toEqual([]);
+    expect(again.assets).toEqual(manifest.assets);
+    expect(stateRefusal(again)).toBeNull();
     expect(again.labComposed).toBe(true);
     expect(
       JSON.parse(
@@ -210,6 +311,69 @@ describe('a state directory is backed up consistently and verified on the way ou
     expect(await copy.head('eurusd')).toBe(130);
     copy.close();
   });
+
+  /**
+   * **Cycle Audit 10 (a7-01), the other half.** `backup` is a legal asset id
+   * and the manifest is written under that name, so a copy that carried the
+   * checkpoint across would have the manifest written over it — one market's
+   * lease marks lost, silently. Refusing costs an operator a rename.
+   */
+  it('refuses a source whose checkpoint would be written over by the manifest', async () => {
+    const directory = await directoryWith({ published: 10, recorded: 10, stored: null });
+    writeFileSync(
+      path.join(directory, BACKUP_MANIFEST),
+      JSON.stringify(stubRecord('backup', epochMillis(GENESIS))),
+    );
+    await expect(
+      backupStateDirectory(directory, path.join(scratch(), 'copy'), GENESIS),
+    ).rejects.toThrow(/holds a checkpoint at backup\.json/);
+  });
+
+  /**
+   * **Cycle Audit 10 (a3-05).** A backup is taken *while the venue runs* — that
+   * is what the tool is for — and each `VACUUM INTO` snapshots at its own
+   * instant, so the copy holds three files caught at three different moments.
+   * The order was checkpoints, record, history, which makes the history the
+   * newest file in the copy: a bar folded while the record's VACUUM ran lands
+   * in a copy whose record does not hold the ticks it came from, which is
+   * exactly the condition `verifyStateDirectory` refuses. The backup then
+   * failed its own verification, the tool exited 1, and the unbootable
+   * directory stayed on disk — on a perfectly healthy venue.
+   *
+   * So this runs the case the tool exists for: a real second process appending
+   * ticks and closing bars throughout the copy. The writer keeps the invariant
+   * a venue keeps — ticks first, then the bar folded from them — so with the
+   * copy ordered checkpoints, history, record the result is clean *whatever*
+   * the timing, and this test cannot flake green-side. Taken the other way it
+   * fails within milliseconds; that is the plant this guard was watched
+   * failing on.
+   */
+  it('verifies clean when taken against a directory a second process is advancing', async () => {
+    const recorded = 30_000;
+    const directory = await directoryWith({ published: 100, recorded, stored: 120 });
+    const writer = await advancing(directory, recorded);
+    let report: StateDirectoryReport;
+    try {
+      report = (await backupStateDirectory(directory, path.join(scratch(), 'hot'), GENESIS + 5))
+        .report;
+    } finally {
+      await stop(writer);
+    }
+    expect(stateRefusal(report)).toBeNull();
+    expect(report.problems).toEqual([]);
+    const heads = report.heads['eurusd'];
+    expect(heads, 'the copy holds no head for the asset it was taken from').toBeDefined();
+    expect(
+      heads!.history,
+      'the copy holds a bar folded from ticks it does not hold',
+    ).toBeLessThanOrEqual(heads!.record!);
+    // And the writer really was inside the window: the copy is ahead of where
+    // the record stood when it started, so the source moved while it was read.
+    expect(
+      heads!.record,
+      'nothing was written during the backup; the test proved nothing',
+    ).toBeGreaterThan(recorded);
+  }, 30_000);
 
   it('never writes over a non-empty target, and refuses a source that does not exist', async () => {
     const directory = await directoryWith({ published: 10, recorded: 10, stored: null });

@@ -18,7 +18,13 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { EvictedError, UnknownSequenceError, type FeedSink } from '@otc/distribution';
+import {
+  CommitmentsFileError,
+  EvictedError,
+  UnknownSequenceError,
+  type FeedSink,
+  type PublicationProof,
+} from '@otc/distribution';
 import {
   ASSET_ARCHETYPES,
   archetypeById,
@@ -142,8 +148,24 @@ export class MarketController implements BeforeApplicationShutdown {
   @Get('health')
   health(): unknown {
     const stalled = this.venue.stalledMarkets;
+    // **Three reasons, one word (Cycle Audit 10: a3-06, a6-05).** A market that
+    // failed its last advance was the only thing that could make this
+    // `degraded`, so a process whose every publish pass threw — and a process
+    // that had lost the state directory to a second writer — both answered `ok`
+    // with an empty `stalled` list while serving nothing.
+    //
+    // `status` is the key an operator's monitor reads, and it is the only field
+    // that changes here: the response shape is the contract's
+    // (`packages/client/src/contract.ts`, checked key-for-key by the conformance
+    // suite), so the *reason* goes where there is already room for it — the
+    // `/health/ready` refusal, the log line each writes once, and
+    // `otc_tick_pass_failures_total`.
+    const degraded =
+      stalled.length > 0 ||
+      this.venue.lastFailedPass !== null ||
+      this.venue.lostWriterLock !== null;
     return {
-      status: stalled.length === 0 ? 'ok' : 'degraded',
+      status: degraded ? 'degraded' : 'ok',
       assets: this.venue.assetIds.length,
       stalled,
       bootNonce: this.bootNonce,
@@ -199,6 +221,11 @@ export class MarketController implements BeforeApplicationShutdown {
       '# HELP otc_ticks_published_total Ticks published by this process, every market.',
       '# TYPE otc_ticks_published_total counter',
       `otc_ticks_published_total ${String(counters.ticksPublished)}`,
+      // Cycle Audit 10 (a3-06): the count that used to exist only as `tick
+      // failed` log lines — 6,795 of them in 45 seconds on a venue reporting `ok`.
+      '# HELP otc_tick_pass_failures_total Publish passes that threw, since boot.',
+      '# TYPE otc_tick_pass_failures_total counter',
+      `otc_tick_pass_failures_total ${String(counters.failedPasses)}`,
       '# HELP otc_stream_subscribers Open stream subscriptions, every market.',
       '# TYPE otc_stream_subscribers gauge',
       `otc_stream_subscribers ${String(counters.subscribers)}`,
@@ -525,6 +552,7 @@ export class MarketController implements BeforeApplicationShutdown {
    */
   @Post('assets')
   createAsset(@Body() body: unknown): unknown {
+    this.requireStarted();
     if (this.registration === null) {
       throw new NotFoundException('This deployment does not register assets at runtime.');
     }
@@ -556,6 +584,7 @@ export class MarketController implements BeforeApplicationShutdown {
    */
   @Patch('assets/:id')
   async editAsset(@Param('id') id: string, @Body() body: unknown): Promise<unknown> {
+    this.requireStarted();
     const registry = this.requireRegistry();
     if (this.venue.assetFor(id) === null) throw new NotFoundException(`Unknown asset ${id}.`);
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
@@ -604,6 +633,7 @@ export class MarketController implements BeforeApplicationShutdown {
    */
   @Post('assets/:id/retire')
   async retireAsset(@Param('id') id: string): Promise<unknown> {
+    this.requireStarted();
     const registry = this.requireRegistry();
     if (this.venue.assetFor(id) === null) throw new NotFoundException(`Unknown asset ${id}.`);
     if (this.venue.isRetired(id)) {
@@ -617,6 +647,24 @@ export class MarketController implements BeforeApplicationShutdown {
     await this.venue.retire(id);
     await registry.putOverlay(id, { retiredAt });
     return { id, retiredAt };
+  }
+
+  /**
+   * Refuse a write while the venue is still resuming (Cycle Audit 10, a5-02).
+   *
+   * The listener opens before `start()` now, so that `/health/live` can answer
+   * during a backfill. Every read is honest in that window — an unresumed
+   * market is not hosted, so `/markets` is empty and its routes are 404 — but a
+   * *write* would reach into a catalogue `start()` is iterating across awaits.
+   * 503 with the reason, which is what `/health/ready` is already saying.
+   */
+  private requireStarted(): void {
+    if (!this.venue.started) {
+      throw new ServiceUnavailableException({
+        ready: false,
+        reason: 'the markets have not finished resuming',
+      });
+    }
   }
 
   private requireRegistry(): AssetRegistry {
@@ -725,6 +773,27 @@ export class MarketController implements BeforeApplicationShutdown {
    * the newest published instant, because a price for an instant nothing has
    * been published for is a prediction and not a record (INV-005: an expiry a
    * client chooses never changes what is published).
+   *
+   * **And refused inside a recorded seam (PH-31, Cycle Audit 10 a4-01 /
+   * a1-01).** An instant between the last tick before a restart-length gap and
+   * the first tick after it is exactly the case the paragraph above describes —
+   * nothing was published for it — and this route answered it anyway, with the
+   * pre-seam price and the rule's name, which is the number a broker settled
+   * real money against. `settle()` refuses the same window as
+   * `NotSettleableError`; the API now refuses the same point.
+   *
+   * **`409`, not `404` and not `400`.** The three refusals mean three different
+   * things to a broker, and the difference decides what it does next. `400`
+   * (after the newest) means *not yet* — ask again when it has been published.
+   * `404` (before the oldest) means *the record cannot say* — this deployment
+   * trimmed it, look elsewhere. A seam means *there is no answer and there
+   * never will be*: the interval was never generated, and the honest thing is
+   * neither a retry nor a search but a settlement that does not happen. `409`
+   * Conflict is the status this contract already uses for a request whose
+   * answer the record's own state forbids (the proof route's open window, and
+   * an archive that disagrees with the record), so a seam belongs on it. The
+   * body names both sides of the gap, in sequence and in instant, which is
+   * precisely what `settle()`'s `seams` field wants.
    */
   @Get('markets/:id/price')
   async priceAt(@Param('id') id: string, @Query('at') at?: string): Promise<unknown> {
@@ -740,6 +809,16 @@ export class MarketController implements BeforeApplicationShutdown {
       throw new BadRequestException(
         `No price has been published for ${id} at ${instant}` +
           (newest === null ? '.' : `; the newest published instant is ${newest.instant}.`),
+      );
+    }
+    const seam = await this.venue.seamAt(id, instant);
+    if (seam !== null) {
+      throw new ConflictException(
+        `No price was published for ${id} at ${instant}: it falls inside a recorded ` +
+          `discontinuity. The record ends at sequence ${seam.lastSequence} ` +
+          `(instant ${seam.lastInstant}) and resumes at sequence ${seam.resumesAtSequence} ` +
+          `(instant ${seam.resumesAtInstant}); nothing was generating in between. A contract ` +
+          `whose window touches it cannot be settled — see GET /markets/${id}/seams.`,
       );
     }
     const tick = await this.venue.priceAt(id, instant);
@@ -759,6 +838,67 @@ export class MarketController implements BeforeApplicationShutdown {
   }
 
   /**
+   * Every discontinuity the record holds for a market, oldest first (PH-31).
+   *
+   * The fourth read a broker's settlement needs, and the one Cycle Audit 10
+   * found missing. `settle()` in `@otc/trading` takes a `seams` array and
+   * refuses to settle a contract whose window touches one — the fix for the
+   * real-money defect of Cycle Audit 5 — and until this route there was no way
+   * to fill it: `recovery` on `GET /markets/:id` names only *this* boot's
+   * outcome, and the stream's `gap` frame carries sequences where `seams` needs
+   * instants. `docs/integration/INTEGRATION.md` §5 told a broker to build
+   * `seams` from `gap` events, which cannot be done.
+   *
+   * Each entry maps onto `RecordSeam` by taking `lastInstant` and
+   * `resumesAtInstant`; the sequences are there so the same answer explains a
+   * hole in `/ticks/:sequence` and a restart in the commitment chain. An array,
+   * so a broker holding several markets concatenates them; empty for a venue
+   * that has never seamed, which is the common and happy case.
+   */
+  @Get('markets/:id/seams')
+  async seams(@Param('id') id: string): Promise<unknown> {
+    this.knownAsset(id);
+    if (!this.venue.keepsRecord) {
+      throw new NotFoundException(
+        'This deployment keeps no tick record; only the live stream is served.',
+      );
+    }
+    const seams = await this.venue.seams(id);
+    return seams.map((seam) => ({
+      assetId: seam.assetId,
+      lastSequence: seam.lastSequence,
+      lastInstant: seam.lastInstant,
+      resumesAtSequence: seam.resumesAtSequence,
+      resumesAtInstant: seam.resumesAtInstant,
+    }));
+  }
+
+  /**
+   * The proof, or a refusal that says the chain file itself is damaged.
+   *
+   * **Cycle Audit 10, a8-06.** The chain is streamed from the top for every
+   * proof, so a line cut mid-append — ENOSPC, a power loss — threw a bare
+   * `SyntaxError` out of this route for every sequence at or beyond it, which
+   * Nest served as `500 {"message":"Internal server error"}`: the one answer
+   * that tells a broker nothing about whether to retry, wait or escalate. The
+   * line is named; the path is not, because a public route is not where an
+   * operator learns the server's filesystem layout.
+   */
+  private async proof(id: string, wanted: number): Promise<PublicationProof> {
+    try {
+      return await this.venue.proofFor(id, wanted);
+    } catch (error) {
+      if (!(error instanceof CommitmentsFileError)) throw error;
+      throw new ServiceUnavailableException(
+        `The commitment chain for ${id} cannot be read` +
+          (error.line === null ? '' : ` past line ${error.line}`) +
+          `: the file is damaged, and no proof at or beyond that window is served until an ` +
+          `operator repairs it. Proofs of earlier sequences are unaffected.`,
+      );
+    }
+  }
+
+  /**
    * The inclusion proof of a published sequence (PH-29.1, INV-009).
    *
    * The signed commitment of the window holding the sequence, the Merkle path,
@@ -774,7 +914,7 @@ export class MarketController implements BeforeApplicationShutdown {
   async proofFor(@Param('id') id: string, @Param('sequence') sequence: string): Promise<unknown> {
     this.knownAsset(id);
     const wanted = sequenceParam(sequence);
-    const proof = await this.venue.proofFor(id, wanted);
+    const proof = await this.proof(id, wanted);
     if (proof.kind === 'not-published') {
       throw new NotFoundException(
         `This deployment does not publish commitments for ${id} (OTC_PUBLICATION_DIR is not set, ` +
@@ -782,11 +922,20 @@ export class MarketController implements BeforeApplicationShutdown {
       );
     }
     if (proof.kind === 'uncommitted') {
+      // Three refusals, not one. "Not yet" is a window that has not closed;
+      // "in a seam" is an interval the chain states and names both edges of;
+      // and only what is neither is the bare "no". Before Cycle Audit 10
+      // (a6-04) a seam and a window an operator had deleted answered in the
+      // same words, for ever.
       throw new ConflictException(
-        proof.committedThrough === null
-          ? `Sequence ${wanted} of ${id} is not in any committed window.`
-          : `Sequence ${wanted} of ${id} is published but not yet committed; the chain reaches ` +
-              `${proof.committedThrough}. Ask again when the window closes.`,
+        proof.interval !== undefined
+          ? `Sequence ${wanted} of ${id} falls in an interval this venue committed nothing ` +
+              `in: the chain covers through ${proof.interval.afterSequence} and resumes at ` +
+              `${proof.interval.fromSequence}. Nothing was published between them.`
+          : proof.committedThrough === null
+            ? `Sequence ${wanted} of ${id} is not in any committed window.`
+            : `Sequence ${wanted} of ${id} is published but not yet committed; the chain ` +
+              `reaches ${proof.committedThrough}. Ask again when the window closes.`,
       );
     }
     const recorded = await this.venue.recordedTick(id, wanted);

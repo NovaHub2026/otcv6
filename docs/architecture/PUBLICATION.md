@@ -122,7 +122,7 @@ reaches. The archived tick is compared with the tick record on the way out. A
 counterparty verifies with nothing but the response and the key it was told
 out of band (`CATALOGUE_AND_PANEL.md` §5.3).
 
-## Restarts, and the break a verifier sees
+## Restarts, seams, and the interval a verifier sees
 
 One chain per market is the aim, and the record (PH-28) makes it the common
 case: a writer resumes at the tip of `commitments.ndjson`, the venue reads back
@@ -130,31 +130,87 @@ from the record the ticks published after that tip, folds them, and the chain a
 broker verifies runs across the process boundary as if there had been none
 (PH-28.3).
 
-Two things end a chain, and both are handled the same way — **restart at an
-empty root, never bridge**:
+Two things interrupt the coverage, and neither is bridged:
 
 - the record cannot reach the tip (a trim, a lost `record.db`), so the ticks
   between the tip and the first live one are unknown (PH-28.3);
 - a **seam**: the market was resumed past its 15 s catch-up bound — every
-  deploy-length restart — and its sequences jump by the lease. The venue
-  restarts the chain at the seam, and the next boot, folding a record that
-  contains the jump, restarts it there rather than hand the publisher a gap
-  (PH-30.4; the release run found the boot dying on exactly that).
+  deploy-length restart — and its sequences jump by the lease (PH-30.4).
 
 A bridged window — one whose `previousRoot` binds a tip its ticks do not follow
-— would verify structurally and be a lie about continuity. A genesis link
-mid-file is the truth: the file holds two chains. `verifyCommitmentsFile` and
-`IncrementalChainVerifier` accept it when it is signed by an authorised key and
-is for the same asset, and **name it** in `breaks` as
-`{ link, afterSequence, fromSequence }`. `ok` means every link verifies and every
-chain is whole; a verifier that needs one unbroken chain checks that `breaks`
-is empty. What a break cannot prove is what happened between
-`afterSequence` and `fromSequence`: a window deleted from the tail of the
-earlier chain leaves every signature intact and widens that interval, which is
-the most a file verifier can see, and the reader is told so. Before PH-30.4 the
-verifier refused the second genesis outright, so the restart PH-28.3 promised
-produced a file the project's own verifier called invalid — the test that
-established the restart read the links and never verified the file.
+— would verify structurally and be a lie about continuity. What replaces it is
+**seal, then resume**:
+
+1. **Seal.** The open window is closed where the chain stops growing, however
+   short: at a clean stop, at a retirement, and at the moment a seam is found.
+   The chain then ends exactly where the record does.
+2. **Resume.** The next window is a **resume link**: `previousRoot` binds the
+   sealed head, `resumesAfter` states the sequence that head ended at, and
+   `fromSequence` is beyond it. The hash chain is unbroken for the life of the
+   market; what is discontinuous — and signed — is the coverage.
+
+`verifyCommitmentsFile` and `IncrementalChainVerifier` report every interval in
+`breaks` as `{ link, afterSequence, afterRoot, fromSequence, bound }`. `ok`
+means every link verifies and the chain is sound, not that the coverage has no
+holes; a reader that needs continuity checks `breaks` is empty. `summarise` and
+`buildAnchor` carry the same list into an anchor, so a reader who pins an
+anchor pins its holes, and `verifyAnchor` refuses an anchor that understates
+them.
+
+**`bound` is the whole point.** A bound break is evidence: the resume link's
+root binds the sealed head and the declaration is inside that root, so deleting
+a window from before the interval breaks the chain _where the cut is_, and
+re-signing the resume to match the new tail changes its root and every root
+after it. An **unbound** break — a second genesis link, bound to what precedes
+it by nothing — is only a statement that this file commits nothing between two
+sequences. Two shapes produce one:
+
+- files written before Cycle Audit 10, which is every file the release run
+  produced (thirty of thirty held two chains); they are read and reported, not
+  refused;
+- a market that resumes at a sequence the chain **already covers** — PH-28.3's
+  lost-record case, where a checkpoint lies behind the chain's tip. One chain
+  cannot hold two roots over one range, so the publisher restarts at an empty
+  root rather than sign a declaration that is false about its predecessor.
+
+**What is still lost, and it is bounded.** A `SIGKILL` is not asked to stop, so
+it seals nothing: the ticks since its last window stay published and
+uncommitted. The next process folds them back out of the record and commits
+them — that is what PH-28.3's resume is for — and only where the record cannot
+reach them (a trim, a seam at the same moment) are they permanently
+uncommitted. `GET /markets/:id/proof/:sequence` distinguishes the three cases
+in words: _not yet committed_ names how far the chain reaches, _in an interval
+this venue committed nothing in_ names both its edges, and the bare refusal is
+what is neither.
+
+**A file cut mid-append is refused by name.** The chain is the one durable file
+here that is never fsynced — a window is a single `appendFileSync` — so ENOSPC,
+a power loss or an interrupted copy can leave a partial last line. Every window
+is appended as one line ending in a newline, so a file that does not end in one
+was cut: `chainTipOf` refuses at boot naming the asset, the file, the bytes
+lost and the byte to truncate to, and repairs nothing itself; the streaming and
+batch readers raise `CommitmentsFileError` naming the line, so
+`verifyCommitmentsFile` returns the `{ok:false, error:{line, detail}}` its
+verdict type promises instead of throwing, and `/proof` answers a named `503`
+past the damage while proofs of earlier sequences are unaffected.
+
+### What Cycle Audit 10 measured here
+
+PH-30.4 restarted the chain at an empty root instead of sealing and resuming,
+and both halves of that cost the record something permanent. The window open
+when a process stopped went with it: **5,749 served ticks across the release
+run's thirty markets**, in no committed window for ever, with `/proof`
+answering `409` for them indefinitely (a6-03). And the two chains were bound to
+each other by nothing, so a window deleted from the earlier chain's tail read
+exactly like the honest gap — to the file verifier, the proof route, a rotation
+and the anchor alike (a6-04) — while `buildAnchor` could not summarise a
+two-chain file at all, which after one deploy was every file (a6-12). The three
+bare `JSON.parse` calls on this file took the boot of all thirty markets down
+with a `SyntaxError` naming no file and no asset (a2-04, a3-08, a8-06). Before
+PH-30.4 the verifier refused the second genesis outright, so the restart
+PH-28.3 promised produced a file the project's own verifier called invalid —
+the test that established the restart read the links and never verified the
+file.
 
 ## Where it lives, and why
 

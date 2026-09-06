@@ -233,13 +233,33 @@ found two chains where one market was. `PublicationWriter` now resumes each
 asset at the tip of its `commitments.ndjson` (`chainTipOf`, which reads the
 tail of the file), and `PublicationService.prime` reads back from the tick
 record the ticks the previous process published after that tip and committed
-nothing for — so the chain continues where it stopped. Where the record does
-not reach the tip — a lost `record.db`, a trim — the chain is **restarted at an
-empty root and logged as an error, never bridged**: a window whose
-`previousRoot` bound a tip its ticks do not follow would verify structurally
-and be a lie about continuity, while a second genesis link is a break a
-verifier can see. A directory written by another publishing identity or window
-size is refused at construction — that is a rotation, with its own record.
+nothing for — so the chain continues where it stopped. Where it cannot — a lost
+`record.db`, a trim, a seam — the chain is **sealed there and resumed after the
+gap, logged as an error, never bridged** (Cycle Audit 10): the open window is
+closed however short, so the chain ends exactly where the record does, and the
+next window binds the sealed head and declares the sequence it resumes after.
+A window whose `previousRoot` bound a tip its ticks do not follow would verify
+structurally and be a lie about continuity; a resume link states the gap
+instead, and because the declaration is inside the root, a window deleted from
+before it breaks the chain where the cut is. Where the market resumes at a
+sequence the chain already covers, one chain cannot hold two roots over one
+range, so it restarts at an empty root and the break is reported **unbound**.
+A directory written by another publishing identity or window size is refused at
+construction — that is a rotation, with its own record.
+
+**A chain file cut mid-append refuses the boot by name (Cycle Audit 10).** A
+window is one `appendFileSync` and is never fsynced, so ENOSPC, a power loss or
+an interrupted copy can leave a partial last line. Every whole line ends in a
+newline, so a file that does not is torn: `chainTipOf` refuses naming the
+asset, the file, the bytes lost and the byte to truncate to. It repairs
+nothing — appending after a fragment would write the next window onto the
+fragment's own line, and an evidence file is not repaired by the process that
+found it damaged — so the operator truncates to the named byte and starts
+again, which resumes the chain from the last whole window. Until then the venue
+does not start, and the message says which market. `verifyCommitmentsFile`
+answers `{ok:false, error:{line, detail}}` over the same file rather than
+throwing, and `/markets/:id/proof/:sequence` answers a named `503` for
+sequences at or beyond the damage while earlier proofs are unaffected.
 
 **The commitments file is read as a stream (Issue #19).** The chain is never
 pruned and grows for the life of the market — about 92 MB a year on the
@@ -260,6 +280,23 @@ while the venue runs (checkpoints are single atomic files; each SQLite
 database through `VACUUM INTO`), verifies the copy and writes `backup.json`
 with every asset's heads. Restore is a directory swap with the service
 stopped; the boot check is the acceptance test.
+
+**Two things about that make it work, and neither did until Cycle Audit 10.**
+The copy is ordered **checkpoints, then `history.db`, then `record.db`**
+(a3-05): each `VACUUM INTO` snapshots at its own instant, so a source that is
+still advancing is caught at three different moments, and each file must be
+copied before the file it may not overtake — the record may not fall behind its
+checkpoint, the history may not run ahead of its record. Copied the other way
+round, a bar folded during the record's VACUUM landed in a copy whose record
+did not hold its ticks, so a backup of a healthy running venue failed its own
+verification and exited 1. And the manifest **stays in the restored directory**
+(a7-01): `backup.json` is recognised by its `kind` (`otc-state-backup`) rather
+than by its name, so `FileStateStore.list` does not offer it as a thirty-first
+asset called `backup` — which is how every backup the tool wrote used to be
+refused at boot with `record belongs to asset undefined` until the operator
+deleted the one file that recorded what the backup held. `backup` verifies the
+copy _after_ writing the manifest, so its exit code is a statement about the
+directory an operator will actually swap in.
 
 **Key rotation** (`packages/distribution/src/rotation.ts`). `verifySignedChain`
 took one key, so a rotated key failed verification exactly as a forgery does.
@@ -398,8 +435,24 @@ through the **unfenced** `save` every 5 000 ms, and nothing in `apps/api`
 references `LeaderSession`, `FollowerMarket`, `AssetLease` or
 `SqliteCoordinatedStore`. PH-14.3 §9 deferred the holder id, the follower's
 polling and the topology to PH-15, and PH-15 built the store, not the wiring. A
-second process against the same state directory today is not a follower; it is
-a second writer with no fence.
+second process against the same state directory today is not a follower; it
+would be a second writer with no fence.
+
+**It is refused at boot instead (Cycle Audit 10: a3-07, a6-05).** Both entry
+points take an exclusive `venue.lock` in the state directory before any market
+starts (`packages/runtime/src/directoryLock.ts`), and the venue renews it on its
+checkpoint cadence — five seconds against a fifteen-second term — and stops
+publishing, checkpointing and recording the moment a renewal is refused. This is
+**mutual exclusion, not fencing**: nothing in `apps/api` writes through a
+`CoordinatedStore`, so a lease here would be, in `lease.ts`'s own words, a race
+with a comment. What it buys is that the two-writer state the audit measured —
+both processes appending to one `record.db`, each feed refusing what the other
+appended, both answering `{"status":"ok","stalled":[],"ready":true}` while every
+subscriber received nothing — cannot be reached by starting a second process.
+A holder whose heartbeat has expired, or whose pid is gone on this host, is
+adopted with a warning naming it, so a `SIGKILL` under `Restart=always` does not
+leave a directory nothing can open. See `docs/decisions/DECISION-LOG.md`,
+2026-09-06.
 
 **Rotation, retention, the anchor and the standing run are library
 capabilities.** `PublicationService` signs with the one key in

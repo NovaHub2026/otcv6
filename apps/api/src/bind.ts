@@ -56,3 +56,34 @@ export function bindAddressFromEnvironment(env: NodeJS.ProcessEnv): string {
 export function isExposedBind(host: string): boolean {
   return host !== DEFAULT_BIND_ADDRESS && host !== 'localhost' && host !== '::1';
 }
+
+/**
+ * Proxy hops to trust when reading a client's address, from `OTC_TRUSTED_PROXIES`.
+ *
+ * **Cycle Audit 10 (a1-02, a5-01, a8-01 — three auditors independently).** The
+ * rate limit keys on the address Express resolves, nothing configured `trust
+ * proxy`, and `deploy/nginx.conf` — the proxy this repository ships — forwards
+ * the client in `X-Forwarded-For` and connects from loopback. So behind the
+ * shipped deployment every client on the Internet shared **one** bucket: six
+ * distinct forwarded addresses were measured taking each other's tokens, and a
+ * flood then refused the orchestrator's readiness probe and the monitor's
+ * scrape along with everyone else.
+ *
+ * The number is hops, not a boolean, and it is Express's own `trust proxy`
+ * setting: `1` means the last entry of `X-Forwarded-For` is the client, which
+ * is true behind one reverse proxy. It defaults to **0** — trust nothing —
+ * because a service reachable directly must not let a header choose its own
+ * bucket, which is the other half of this defect and the reason a boolean
+ * would be wrong.
+ */
+export function trustedProxiesFromEnvironment(env: NodeJS.ProcessEnv): number {
+  const raw = env['OTC_TRUSTED_PROXIES']?.trim();
+  if (raw === undefined || raw.length === 0) return 0;
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(
+      `OTC_TRUSTED_PROXIES must be a whole number of proxy hops written as digits, got ${raw}. ` +
+        `Behind the nginx this repository ships, that is 1.`,
+    );
+  }
+  return Number.parseInt(raw, 10);
+}

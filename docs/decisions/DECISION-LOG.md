@@ -801,3 +801,253 @@ across the recorded seam) and verifies the file with its one break;
 and refuses a restart by an unauthorised key or for another asset. Both were
 watched failing on the unfixed code: the seam test dies exactly as the release
 run's venue did, `Feed ... received sequence 100984 after 982`.
+
+## 2026-09-06 — A failed publish is a fact the process carries; one writer per state directory (Cycle Audit 10: a3-06, a6-05, a3-07)
+
+**Context.** Two auditors reached the same critical state independently, and a
+refuter reproduced both halves from scratch. `VenueService.tick()` recorded a
+pass and then published it, and the publish loop had no per-asset isolation —
+unlike `advanceDetailed` directly above it, whose docstring explains at length
+why isolation is required there (CA6-33). A throw from `feed.publish` rejected
+the whole pass; `schedule()` caught it, wrote `tick failed: ...` and dropped it.
+Nothing reached `stalled`, so `/health` answered `{"status":"ok","stalled":[]}`,
+`otc_markets_stalled` stayed 0, `/health/ready` stayed 200, and
+`otc_ticks_published_total` kept climbing because it was incremented on the line
+**before** the publish that threw. Measured on the release build: 900+ ticks
+recorded, **zero bytes served in eight seconds**, 6,795 failed passes, green
+throughout, and no recovery for the life of the process.
+
+The trigger was two venue processes on one state directory — `grep` for a lock
+over `packages/`, `apps/`, `tools/` and `deploy/` found nothing, and this
+repository's own architecture note said so: "a second writer with no fence"
+(a3-07). Each process primed its feed from the shared record at boot and
+afterwards offered it only the ticks _its own_ `append` returned as fresh, so
+each feed was handed a sequence it could not follow. But the trigger is
+incidental. The swallow, the green health surface and the permanence are
+trigger-independent, and PH-30.4 had already met this failure in production once
+with a different trigger.
+
+**Decision.**
+
+- **The publish loop is isolated per asset, and a refusal is unserving, not
+  silent.** The market is stalled by name with `refused by the publish path — …`,
+  unhosted, and counted in `otc_markets_stalled`, exactly as a record refusal is.
+  The rest of the pass and the checkpoint proceed.
+- **There is no automatic retry, and that is the decision, not an omission.**
+  `append` compares: a sequence the record already holds is never returned as
+  fresh again, so re-offering the batch yields nothing. The machinery to repair
+  it in place does exist — `feed.forget` then `#primeFromRecord`, which is what a
+  boot does — and it is deliberately not wired. It would evict every subscriber
+  of that market on every occurrence; the refusal is _evidence_ that the record
+  moved without this process's feed seeing it, so healing it silently hides the
+  second writer and leaves two engines interleaving one asset id, which is
+  INV-002 broken where nobody can see it; and since the other writer keeps
+  appending, the heal would repeat every pass. A market that drops its
+  subscribers four times a second while `/health` says `ok` is worse than one
+  that stops and says so. The recovery is a restart.
+- **A pass that throws whole is degraded immediately and unready after three.**
+  `/health` says `degraded` on the first, `otc_tick_pass_failures_total` counts
+  every one, the log line is deduped on the error's _kind_ (an auditor counted
+  6,795 identical lines in 45 s), and `/health/ready` refuses with the message
+  after three consecutive failures — not one, because a single `EIO` should not
+  pull a healthy single-node venue out of rotation, and not never, because a
+  process that has not completed a pass three times running is not publishing.
+  `otc_ticks_published_total` is incremented **after** the publish.
+- **`/health`'s response shape is unchanged.** The conformance suite checks that
+  body key-for-key against `packages/client/src/contract.ts`, so the _reason_
+  goes where there is already room for it — the `/health/ready` refusal, the log,
+  and the new counter — rather than costing a contract version to carry a string.
+- **One writer per state directory, as a lock file and not a lease.** Both entry
+  points take an exclusive `venue.lock` before any market starts, and the venue
+  renews it on its checkpoint cadence (5 s against a 15 s term) and stops
+  publishing, checkpointing and recording the moment a renewal is refused.
+
+  It is a lock file **because a lease here would be a lie**. `lease.ts` says it
+  in its own words: a lease is worth nothing without the fence, and fencing means
+  every write presents a token to a store that checks it in the same critical
+  section. Nothing in `apps/api` writes through a `CoordinatedStore` — the
+  checkpoints go through `FileStateStore.save`, the record through
+  `SqliteTickRecord.append`, the bars through `SqliteCandleHistory`, the chain
+  through the publication writer. Acquiring an `AssetLease` and then writing
+  through four unfenced paths would be "a race with a comment", and worse than a
+  lock file because it would _look_ like fencing. So this claims exactly what it
+  delivers: mutual exclusion at boot between processes on one filesystem, which
+  is the deployment `deploy/` ships. It borrows the lease's vocabulary where the
+  vocabulary is honest — the holder grammar, and a term equal to
+  `DEFAULT_LEASE_TERM_MS`, so a heartbeat older than one catch-up bound is a
+  holder that could not have published anyway.
+
+  What it does not claim: the takeover of an _abandoned_ lock is not atomic
+  (read, write, confirming re-read), so two starters racing to adopt one dead
+  lock have a window. Closing it needs a compare-and-set the filesystem does not
+  offer, which is the same thing as saying it needs the coordinated store. The
+  common case — a live holder and a second `npm start` — is refused by `link`
+  with `EEXIST` and no race at all. The file is named `venue.lock`, not
+  `*.json`, so `FileStateStore.list` cannot read it as a checkpoint the way it
+  read `backup.json` (a3-01, a6-11) and `backupStateDirectory` does not copy it.
+
+- **A stalled market's checkpoint is no longer refreshed** (the operator's own
+  panel, recorded as `ops-observed`). `resumeMarket` chooses between continuing
+  and seaming on `clock.now() - record.savedAt`, and `checkpoint()` was writing
+  `savedAt = now` for every hosted market on every cadence — including markets
+  that had refused every advance for hours after the host was suspended. The
+  checkpoint stayed fresh while the market stayed stale, so every restart chose
+  `resumed` and stalled again, and the only remedy anyone had was to move the
+  state directory aside, which throws the record away. A checkpoint is a claim
+  that this market was here at this instant; a market past its catch-up bound was
+  not. Leaving its last true checkpoint alone makes the next boot take the seam
+  ADR-0010 already decided on, and a restart becomes the remedy it always looked
+  like.
+
+**Guards.** `apps/api/src/publishFailure.test.ts` (a refusing feed: the asset
+named in `stalledMarkets`, `isReady` false, `otc_markets_stalled` 1, the counter
+not moving, the other market in the pass surviving; a store that refuses:
+degraded on the first pass, unready on the third, counted on every one, and
+clearing; a lost lock: degraded, unready, nothing further published; and the
+entry-point wiring and renewal cadence as source);
+`packages/runtime/src/directoryLock.test.ts` (a second process refused by name, a
+holder on another host refused inside its term, an unreadable lock refused, an
+abandoned lock adopted with its previous holder named, a superseded holder losing
+and staying lost, release touching only its own grant, and the lock invisible to
+`verifyStateDirectory` and to `backupStateDirectory`);
+`apps/api/src/venueStall.test.ts` (a stalled market's checkpoint frozen, and the
+restart seaming and publishing again). Every one was watched failing on the
+unfixed code, with the failures recorded in the audit's fix rationale.
+
+## 2026-09-06 — The chain is sealed where it stops and resumed by a link that binds the head; a seam no longer starts a second chain (Cycle Audit 10)
+
+**Context.** PH-30.4, earlier the same day, made a seam **restart** the chain at
+an empty root rather than bridge it. That was right as far as it went, and
+Cycle Audit 10 measured what it left behind, in the release run's own
+artefacts.
+
+- **a6-03** (confirmed). The window open when a process stops went with the
+  process: `restartChain` replaced the publisher and dropped its pending ticks,
+  and the next chain began at the seam, so nothing ever closed that window.
+  **5,749 ticks that had been served — and could have settled contracts — were
+  in no committed window, in all thirty markets, permanently**, and
+  `/proof` answered `409 not in any committed window` for them for ever. The
+  loss is per deploy.
+- **a6-04**. A window deleted from the tail of the earlier chain by whoever
+  holds the publishing key is _indistinguishable_ from that honest loss: the
+  file verifier still says `ok: true` with a wider break, the proof route
+  answers the same words, and the anchor and a rotation over the newer chain
+  are byte-identical either way.
+- **a6-12** (partial; the refuter narrowed the title and kept the mechanism).
+  `summarise` verified the whole array with `verifyChain`, which requires every
+  link after the first to carry a digest, so `buildAnchor` threw on any file
+  holding a seam — thirty of thirty in the release run. The anchor is what
+  makes the chain evidence against the operator rather than a number the
+  operator serves.
+- **a2-04, a3-08, a8-06** (confirmed; the boot half executed by two refuters).
+  Every reader of the file called `JSON.parse` bare, and the chain is the one
+  durable file here that is never fsynced. One torn last line took the boot of
+  all thirty markets down with a `SyntaxError` naming no file and no asset, and
+  made `verifyCommitmentsFile` throw instead of returning the
+  `{ok:false, error:{line, detail}}` its own verdict type promises.
+
+**Decision.**
+
+- **Seal, then resume.** Where the chain stops growing — a clean stop, a
+  retirement, the moment a seam is found — the open window is closed however
+  short (`CommitmentPublisher.sealChain`), so the chain ends exactly where the
+  record does. The publisher's standing objection to committing a partial
+  window is that committing and then extending would put two roots over one
+  range; a _terminal_ short window is never extended, so the objection does not
+  reach it.
+- **A resume link, not a second chain.** The window after the interval binds
+  the sealed head in `previousRoot` and declares the sequence that head ended
+  at in a new `resumesAfter` field. The field is inside the root, under its own
+  domain tag, and inside the signature, so it cannot be added, removed or moved
+  without invalidating every root after it. The hash chain is therefore
+  unbroken for the life of a market; what is discontinuous, and signed, is the
+  coverage. `verifyChain` checks `resumesAfter` against the predecessor's
+  `toSequence`, which is what turns a6-04's cut from invisible into a refusal
+  at the line where the cut is.
+- **`breaks` grows `afterRoot` and `bound`.** A break is now an interval the
+  file commits nothing in, and it says whether its near edge is attested.
+  Unbound breaks still exist and are still accepted, for two reasons that are
+  not going away: every file written before today holds one, and a market that
+  resumes at a sequence the chain **already covers** (PH-28.3's lost-record
+  case) cannot be described by a resume link at all — one chain cannot hold two
+  roots over one range — so the publisher falls back to a restart at an empty
+  root rather than sign a declaration that is false about its predecessor.
+  Refusing instead would stop the market to protect the file, which is the
+  wrong way round.
+- **The anchor's unit is the asset, not the unbroken chain.** `summarise`
+  splits a file where a genesis link appears mid-array, verifies each piece,
+  and publishes the head root of the whole plus the breaks between the pieces.
+  `verifyAnchor` refuses an anchor that understates its breaks and
+  `extendsAnchor` refuses a later anchor that has lost one, because across an
+  _unbound_ break the head-root match certifies nothing about the prefix.
+- **A file cut mid-append is refused by name, and repaired by nobody.**
+  `chainTipOf` treats bytes after the file's last newline as a line that was
+  never finished — a window is appended as one `${json}\n`, so the only prefix
+  of it ending in a newline is all of it — and refuses at boot naming the
+  asset, the file, the bytes lost and the byte to truncate to. It does not
+  bridge (appending after a fragment would write the next window onto the
+  fragment's own line, destroying a second window to hide the first) and it
+  does not truncate (an evidence file is not repaired by the process that found
+  it damaged, and there is no env flag to wave it through). The readers raise
+  `CommitmentsFileError` naming the line, so the verifier answers rather than
+  throws, and `/proof` gives a named `503` past the damage instead of a bare
+  `500`.
+
+**Deliberately not built.** a6-04 also proposed a `chain:verify` command that
+cross-checks each break against `record.db`, on the grounds that no consumer in
+the repository read `breaks`. Not built: with a bound break the file verifier
+itself refuses the cut, which is stronger than a tool that has to be run, and
+`breaks` now has three consumers in-tree (`summarise`, `verifyAnchor`,
+`extendsAnchor`) plus the proof route's named interval. What such a command
+would still add is a check over the _legacy_ unbound breaks in files already
+written; that is worth building when a second operator has to audit a
+deployment they did not run, and it is written down here so it is not
+rediscovered.
+
+**Guards.** Each was watched failing with the fix reverted in place, and the
+exact failures are in `/home/alejo/.otc-audit10/findings/fix-chain.md`.
+`publisher.test.ts` — the seal, the resume link, and the fall back to an empty
+root where the record goes backwards. `commitmentsFile.test.ts` — the sealed
+tail committed, the bound break, the a6-04 cut refused at line 3, a resume that
+disagrees with the head it binds, a torn file's verdict, and the boot refusal
+by asset. `anchor.test.ts` — an anchor over a seamed record, over a file the
+old code wrote, and refusals for an anchor that understates its breaks or a
+later one that has lost an interval. `journalFile.test.ts` — the named interval
+on a `/proof` refusal, and proofs before a torn line surviving it.
+`venueRecord.test.ts` — three real boots: one chain, sealed exactly at the
+record's head, the break bound, and `proof(firstHead)` **proved**.
+
+## 2026-09-06 — `v1.0.0` is superseded, not moved, and the release that stands is `v2.0.0` (Cycle Audit 10)
+
+**Context.** PH-30 §3 says `v1.0.0` is the commit the phase gate passed and
+hosted CI corroborated, or it is not tagged. The tag was pushed six seconds
+after its CI run was created; the run finished red two hours later, on a real
+defect (the Lab's position entry price, fixed in `efb7658`). Two auditors found
+the release record claiming a corroboration it did not have before the result
+was in. So a tag exists, publicly, on a commit that does not satisfy the rule
+the phase wrote for it.
+
+Cycle Audit 10 then changed the API contract from `1.1.0` to `2.0.0`:
+`GET /markets/:id/price?at=` refuses an instant inside a recorded discontinuity
+where a 1.x venue answered it with a price, and `GET /markets/:id/seams`
+publishes what `settle()` needs.
+
+**Decision.**
+
+- **`v1.0.0` is not moved and not deleted.** It is a public tag; rewriting it
+  would make the repository's history disagree with what anyone who fetched it
+  holds, and the whole subject of this audit is records that say what did not
+  happen. It is marked **superseded** in `RELEASE-1.0.0.md`, with the reason and
+  the red run named.
+- **The release that stands is `v2.0.0`**, cut from the Cycle Audit 10 merge.
+  Major rather than patch because the contract is major: a broker that pinned
+  `1.x` and treats a non-200 as a transport error changes behaviour on requests
+  it was already making. Understating that as `v1.0.1` to make the first tag
+  look like a near miss would be the same kind of lie the audit was written
+  about.
+- **The tag is cut after a green hosted run, not before it.** That is what the
+  rule said, and the reason the rule exists is now on the record.
+
+**What this costs.** The project's first release tag is a tag nobody should
+use, and that is visible for ever in the repository. The alternative — a moved
+tag and a record that reads as though the release went cleanly — costs more.

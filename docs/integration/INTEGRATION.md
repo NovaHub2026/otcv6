@@ -273,10 +273,17 @@ adelantadas (saltan del orden de 100.000), el stream empieza en la costura, y un
 `from` anterior recibe el 400 que nombra dónde empieza la ventana (o, con
 `onGap=live`, el `gap` con su `resumesAt`). Lo publicado antes de la costura no
 se pierde: sigue en el registro, por secuencia (`/ticks/:sequence`) y por
-instante (`/price?at=`), y en el histórico de velas. La cadena de compromisos
-**se reinicia** en la costura en vez de puentearla: `verifyCommitmentsFile`
-(de `@otc/distribution`) verifica las dos cadenas y nombra la ruptura en
-`breaks`.
+instante (`/price?at=`), y en el histórico de velas — pero el **hueco** no tiene
+precio: un `at` dentro de la costura es `409`, y la costura misma se lee en
+`GET /markets/:id/seams` (§3.7, §5). La cadena de compromisos **se sella** en la
+costura y **se reanuda** después de ella en vez de puentearla (Ciclo 10): la
+ventana abierta se cierra, por corta que sea — de modo que todo lo servido antes
+de la costura queda dentro de una ventana comprometida y tiene prueba —, y el
+enlace siguiente ata la cabeza sellada y declara la secuencia tras la que
+reanuda. `verifyCommitmentsFile` (de `@otc/distribution`) verifica una sola
+cadena y nombra el intervalo en `breaks`, con `bound: true` cuando su borde está
+atado. Una petición de prueba dentro del intervalo responde **409** nombrando
+sus dos extremos, no un «no» a secas.
 
 ### 3.5 Histórico de velas
 
@@ -331,7 +338,13 @@ para liquidar.
   `settle()` y que dibujan las velas. La respuesta la nombra
   (`"rule": "last-tick-at-or-before"`). `404` si el registro empieza después del
   instante; `400` si el instante es posterior al último publicado — un precio
-  para un instante sin publicar es una predicción, no un registro.
+  para un instante sin publicar es una predicción, no un registro; **`409` si el
+  instante cae dentro de una costura** (§5): ahí no se publicó nada y nunca se
+  publicará, y la respuesta nombra los dos lados del hueco.
+- **`GET /markets/:id/seams`** — las costuras que el registro guarda para ese
+  mercado, de la más antigua a la más reciente: `assetId`, `lastSequence`,
+  `lastInstant`, `resumesAtSequence`, `resumesAtInstant`. Es lo que `settle()`
+  espera en `seams` (§5). Array vacío en un motor que nunca ha costurado.
 - **`GET /markets/:id/proof/:sequence`** — la prueba de inclusión: el
   compromiso firmado de la ventana que contiene la secuencia, la ruta Merkle y
   la clave pública del publicador. Con eso, `verifyInclusion` y
@@ -446,22 +459,23 @@ decimales y nunca menos.
 
 ## 4. Configuración
 
-| Variable                 | Por defecto                 | Qué hace                                                                                                                                                                     |
-| ------------------------ | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OTC_MASTER_SECRET`      | — **obligatoria**           | 64 caracteres hex (32 bytes). De aquí se deriva todo el mercado.                                                                                                             |
-| `OTC_KEY_ID`             | `primary`                   | **Solo una etiqueta**, anotada en los puntos de control para saber qué secreto los generó. **No entra en la derivación**: cambiarla no cambia el mercado.                    |
-| `PORT`                   | `3000`                      | Puerto del motor.                                                                                                                                                            |
-| `OTC_BIND`               | `127.0.0.1`                 | Interfaz. Rechaza `0`, `*`, `any`, `all`: si quieres exponerlo, escribe `0.0.0.0` — y pon el token antes.                                                                    |
-| `OTC_ADMIN_TOKEN`        | —                           | Sin él, toda escritura se rechaza (403). **Mínimo 16 caracteres**: uno más corto impide arrancar.                                                                            |
-| `OTC_CORS_ORIGIN`        | `*` (solo `GET, HEAD`)      | Orígenes permitidos, separados por comas. CORS no es autorización.                                                                                                           |
-| `OTC_STATE_DIR`          | `./.otc-state`              | Directorio de estado durable.                                                                                                                                                |
-| `OTC_HISTORY_DB`         | `$OTC_STATE_DIR/history.db` | Base SQLite del histórico.                                                                                                                                                   |
-| `OTC_ASSET_REGISTRY_DIR` | `$OTC_STATE_DIR/assets`     | Activos creados y sus superposiciones.                                                                                                                                       |
-| `OTC_BOOT_NONCE`         | —                           | Se devuelve en `/health` como `bootNonce`; sirve para saber **qué** proceso contestó en un puerto.                                                                           |
-| `OTC_BACKFILL_DAYS`      | `0`                         | Días de pasado sintético que se dan a un activo **sin registro previo**. Solo dígitos, tope 365. **Irreversible**: una vez generado, ese pasado es el pasado de ese mercado. |
-| `OTC_PUBLICATION_DIR`    | —                           | Activa la publicación firmada del registro. Si la pones, `OTC_PUBLISHING_KEY` pasa a ser obligatoria.                                                                        |
-| `OTC_PUBLISHING_KEY`     | —                           | Semilla Ed25519, 64 hex. **Se rechaza si es igual a `OTC_MASTER_SECRET`**: firmar con el secreto del que se deriva el mercado lo filtraría.                                  |
-| `OTC_LAB_PORT`           | `PORT` o `3100`             | Puerto del proceso Lab.                                                                                                                                                      |
+| Variable                 | Por defecto                 | Qué hace                                                                                                                                                                                          |
+| ------------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OTC_MASTER_SECRET`      | — **obligatoria**           | 64 caracteres hex (32 bytes). De aquí se deriva todo el mercado.                                                                                                                                  |
+| `OTC_KEY_ID`             | `primary`                   | **Solo una etiqueta**, anotada en los puntos de control para saber qué secreto los generó. **No entra en la derivación**: cambiarla no cambia el mercado.                                         |
+| `PORT`                   | `3000`                      | Puerto del motor.                                                                                                                                                                                 |
+| `OTC_BIND`               | `127.0.0.1`                 | Interfaz. Rechaza `0`, `*`, `any`, `all`: si quieres exponerlo, escribe `0.0.0.0` — y pon el token antes.                                                                                         |
+| `OTC_TRUSTED_PROXIES`    | `0`                         | Saltos de proxy en los que confiar para leer la dirección del cliente (`X-Forwarded-For`). `1` detrás del nginx incluido; `0` si el motor se expone directamente. Lo lee el límite de peticiones. |
+| `OTC_ADMIN_TOKEN`        | —                           | Sin él, toda escritura se rechaza (403). **Mínimo 16 caracteres**: uno más corto impide arrancar.                                                                                                 |
+| `OTC_CORS_ORIGIN`        | `*` (solo `GET, HEAD`)      | Orígenes permitidos, separados por comas. CORS no es autorización.                                                                                                                                |
+| `OTC_STATE_DIR`          | `./.otc-state`              | Directorio de estado durable.                                                                                                                                                                     |
+| `OTC_HISTORY_DB`         | `$OTC_STATE_DIR/history.db` | Base SQLite del histórico.                                                                                                                                                                        |
+| `OTC_ASSET_REGISTRY_DIR` | `$OTC_STATE_DIR/assets`     | Activos creados y sus superposiciones.                                                                                                                                                            |
+| `OTC_BOOT_NONCE`         | —                           | Se devuelve en `/health` como `bootNonce`; sirve para saber **qué** proceso contestó en un puerto.                                                                                                |
+| `OTC_BACKFILL_DAYS`      | `0`                         | Días de pasado sintético que se dan a un activo **sin registro previo**. Solo dígitos, tope 365. **Irreversible**: una vez generado, ese pasado es el pasado de ese mercado.                      |
+| `OTC_PUBLICATION_DIR`    | —                           | Activa la publicación firmada del registro. Si la pones, `OTC_PUBLISHING_KEY` pasa a ser obligatoria.                                                                                             |
+| `OTC_PUBLISHING_KEY`     | —                           | Semilla Ed25519, 64 hex. **Se rechaza si es igual a `OTC_MASTER_SECRET`**: firmar con el secreto del que se deriva el mercado lo filtraría.                                                       |
+| `OTC_LAB_PORT`           | `PORT` o `3100`             | Puerto del proceso Lab.                                                                                                                                                                           |
 
 Toda la configuración se lee **una vez, al componer el proceso**. No hay recarga
 en caliente: un cambio de variable es un reinicio. Dos cosas que **no** son
@@ -488,12 +502,22 @@ Todo bajo `OTC_STATE_DIR`:
   salto** y uno largo cosa desde el último precio publicado (§3.4);
 - `history.db`, el histórico de velas;
 - `assets/`, los activos creados y sus superposiciones;
+- `venue.lock`, el cerrojo de escritor (abajo);
 - con el Lab, además el fichero de sesión del Lab.
 
 Arranque en frío sin estado: el motor crea los mercados del catálogo desde el
 secreto. Arranque con estado: reanuda desde el último punto de control. La copia de
 seguridad es copiar el directorio con el proceso parado; moverlo a otra máquina
 funciona si va acompañado del mismo `OTC_MASTER_SECRET`.
+
+**Un solo escritor por directorio.** Al arrancar, el motor toma `venue.lock` en
+exclusiva y lo renueva cada cinco segundos; un segundo proceso apuntado al mismo
+directorio **se niega a arrancar** y dice de quién es el cerrojo. Esto no es
+opcional ni configurable: dos procesos sobre un mismo directorio se pisan el
+registro, cada uno rechaza lo que el otro publicó, y ambos siguen contestando
+`{"status":"ok","ready":true}` sin servir un solo tick a nadie. Un cerrojo cuyo
+proceso ya no existe se adopta solo, con un aviso en el log que lo nombra; si ves
+ese aviso después de un despliegue, tenías dos unidades arrancadas.
 
 Orden de arranque: los mercados se levantan **antes** de que escuche el puerto, así
 que nadie observa un motor a medio recuperar. El apagado es el espejo: deja de
@@ -596,13 +620,43 @@ contrato:
 dentro del array exacto que pasaste. La identidad estable de un tick es su
 `sequence`.
 
-### Un aviso sobre las discontinuidades
+### Las discontinuidades: de dónde salen las costuras
 
 `TickRecord` acepta un campo `seams` — discontinuidades del registro — y `settle`
-se niega a liquidar un contrato que cruce una. El stream anuncia un hueco con un
-evento `gap` (`VenueClient.subscribe` lo entrega como evento); si tu ventana de
-liquidación cruza uno, rellena `seams` con él o no liquides ese contrato con esa
-ventana.
+se niega a liquidar un contrato cuya ventana toque una. **Rellénalo desde
+`GET /markets/:id/seams`**, no desde el stream:
+
+```ts
+const seams = await client.seams('eurusd-otc'); // RecordedSeam[]
+const record = {
+  instants,
+  prices,
+  seams: seams.map((s) => ({
+    lastInstant: s.lastInstant,
+    resumesAtInstant: s.resumesAtInstant,
+  })),
+};
+settle(contract, record); // NotSettleableError si la ventana toca una costura
+```
+
+Léelo una vez por pasada de liquidación, no por contrato: una costura cuesta un
+reinicio más largo que el límite de 15 s, así que la lista es corta y cambia poco.
+
+**Por qué no desde el evento `gap`.** Hasta la versión 2.0.0 del contrato esta
+sección decía «rellena `seams` con el evento `gap`», y no se puede hacer: el
+`gap` lleva **secuencias** (`requested`, `resumesAt`) donde `seams` necesita
+**instantes**, sólo lo ve un cliente que estuviera conectado en ese momento, y no
+dice nada de las costuras de arranques anteriores — que son las que importan al
+liquidar un contrato de la semana pasada. `recovery` en `GET /markets/:id`
+tampoco sirve: nombra el arranque **actual**. El registro es lo único que las
+recuerda todas, y `/seams` es cómo se leen (Auditoría de Ciclo 10).
+
+**Si liquidas sin las costuras** el resultado no es un error: es un precio. El
+motor devolvía —y `settle()` sin `seams` sigue devolviendo— el último tick
+_anterior_ al hueco como precio de expiración, y con la entrada antes de la
+costura eso es una pérdida liquidada contra un precio de un intervalo que nadie
+generó. Por eso `/price?at=` dentro de una costura ahora responde `409` en vez de
+un precio: la API y `settle()` se niegan en el mismo sitio.
 
 `packages/trading` trae además `tally` (ledger), `assessBookRisk` /
 `exposureByEvent` (exposición por evento) y `ExposureBook` / `admit` (límites),
@@ -789,9 +843,30 @@ Desde PH-30.1 el repositorio trae lo que un despliegue arranca:
   uptime, memoria residente y la cabeza del registro por activo.
 - **Límite de peticiones**: `OTC_RATE_LIMIT_PER_MINUTE` (600 por defecto, `0` lo
   desactiva) por dirección de cliente; el exceso recibe `429` con `Retry-After`.
-  Una conexión de stream cuenta una vez; sus tramas no.
+  Una conexión de stream cuenta una vez; sus tramas no. **Las tres sondas de
+  operación — `/health/live`, `/health/ready` y `/metrics` — nunca se
+  rechazan**: una avalancha que dejara al motor respondiendo `429` a su propio
+  orquestador lo sacaría de rotación estando sano.
+- **Si pones un proxy delante, dile al motor cuántos saltos confiar**:
+  `OTC_TRUSTED_PROXIES` (0 por defecto, es decir no confiar en ninguna
+  cabecera; `1` detrás del `nginx.conf` que se incluye). Sin esto el motor solo
+  ve la dirección del proxy y **todos tus clientes comparten un único cubo** de
+  600 peticiones por minuto. El `docker-compose.yml` y la unidad de systemd que
+  se incluyen ya lo ponen a 1. Déjalo en 0 si el motor se expone directamente:
+  confiar en `X-Forwarded-For` sin proxy delante deja que el cliente elija su
+  propio cubo.
 - La credencial de administración es `OTC_ADMIN_TOKEN` (a6-01): sin ella toda
   escritura se rechaza; el proxy corta las rutas además, no en su lugar.
+- **Si la máquina estuvo suspendida, migrada en vivo o parada más de 15 s**, los
+  mercados vuelven `parados` con `Market is Ns behind the clock, past the 15s
+catch-up bound`: el motor se niega a inventar el intervalo que nadie observó
+  (ADR-0010). **La solución es reiniciar el proceso**, y solo eso: mientras un
+  mercado está parado su punto de control ya no se refresca, así que el
+  siguiente arranque lo ve viejo, cose una discontinuidad (`seam`), la deja
+  anotada en el registro y sigue publicando. No hace falta —ni conviene— mover
+  el directorio de estado: eso tira el registro. Lo que queda al otro lado de la
+  costura sigue ahí, legible por secuencia y por instante; lo que no existe es
+  el rato que nadie vio.
 
 ### systemd
 

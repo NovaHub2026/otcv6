@@ -45,7 +45,7 @@ function endlessStream(chunks: string[]): {
 
 function request(
   url: string,
-  init: { method?: string; headers?: Record<string, string> } = {},
+  init: { method?: string; headers?: Record<string, string>; ip?: string } = {},
 ): NextRequest {
   return {
     url,
@@ -53,6 +53,7 @@ function request(
     headers: new Headers(init.headers ?? {}),
     signal: new AbortController().signal,
     text: () => Promise.resolve(''),
+    ...(init.ip === undefined ? {} : { ip: init.ip }),
   } as unknown as NextRequest;
 }
 
@@ -253,5 +254,53 @@ describe('the engine proxy', () => {
     const [, init] = spy.mock.calls[0] as [URL, { method: string; headers: Headers }];
     expect(init.method).toBe('POST');
     expect(init.headers.get('content-type')).toBe('application/json');
+  });
+});
+
+/**
+ * Cycle Audit 10 (a8-01, second half). The engine's rate limit keys on the
+ * address it is given; this proxy gave it none, so every operator at every
+ * screen shared the panel's one bucket, and no `trust proxy` setting on the
+ * engine could recover an address that was never sent.
+ */
+describe('the proxy tells the engine whose request it is (Cycle Audit 10)', () => {
+  it('forwards the address it observed, appending to a chain rather than trusting one', async () => {
+    const spy = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    globalThis.fetch = spy;
+    await GET(
+      request('http://panel.test/engine/markets', { ip: '203.0.113.7' }),
+      params(['markets']),
+    );
+    const [, first] = spy.mock.calls[0] as [URL, { headers: Headers }];
+    expect(first.headers.get('x-forwarded-for')).toBe('203.0.113.7');
+
+    // A browser that sends its own chain does not get to displace what this
+    // server saw: the observed address is appended last, and the engine
+    // decides how far down the list to read.
+    spy.mockClear();
+    await GET(
+      request('http://panel.test/engine/markets', {
+        ip: '203.0.113.7',
+        headers: { 'x-forwarded-for': '198.51.100.9' },
+      }),
+      params(['markets']),
+    );
+    const [, second] = spy.mock.calls[0] as [URL, { headers: Headers }];
+    expect(second.headers.get('x-forwarded-for')).toBe('198.51.100.9, 203.0.113.7');
+
+    // A proxy in front of the panel puts the client in x-real-ip.
+    spy.mockClear();
+    await GET(
+      request('http://panel.test/engine/markets', { headers: { 'x-real-ip': '192.0.2.44' } }),
+      params(['markets']),
+    );
+    const [, third] = spy.mock.calls[0] as [URL, { headers: Headers }];
+    expect(third.headers.get('x-forwarded-for')).toBe('192.0.2.44');
+
+    // And nothing is invented when the runtime exposes no address.
+    spy.mockClear();
+    await GET(request('http://panel.test/engine/markets'), params(['markets']));
+    const [, fourth] = spy.mock.calls[0] as [URL, { headers: Headers }];
+    expect(fourth.headers.get('x-forwarded-for')).toBeNull();
   });
 });

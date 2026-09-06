@@ -46,6 +46,7 @@ export {
 } from './journalFile.js';
 export {
   chainTipOf,
+  CommitmentsFileError,
   IncrementalChainVerifier,
   readCommitmentsStream,
   verifyCommitmentsFile,
@@ -67,6 +68,7 @@ export {
   summarise,
   verifyAnchor,
   type Anchor,
+  type AnchorBreak,
   type AnchorEntry,
 } from './anchor.js';
 export {

@@ -266,7 +266,7 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
   it('PH-24.3: a preset closes a position the way it says, and the production settlement agrees', async () => {
     const { venue, clock, controller } = await labVenue();
     await advance(venue, clock, 20_000);
-    const opened = controller.openPosition(id, 'up', '100', '60000') as {
+    const opened = (await controller.openPosition(id, 'up', '100', '60000')) as {
       position: { id: string; expiryInstant: number; entryPrice: number };
     };
     const position = opened.position;
@@ -319,7 +319,9 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     venue.feed.forget(id, 'test: the window restarts late');
     await advance(venue, clock, 10_000);
     expect(venue.feed.retained(id)!.oldest).toBeGreaterThan(1);
-    const opened = controller.openPosition(id, 'up', '50', '30000') as { position: { id: string } };
+    const opened = (await controller.openPosition(id, 'up', '50', '30000')) as {
+      position: { id: string };
+    };
     await advance(venue, clock, 40_000);
     const after = controller.listPositions(id) as {
       positions: { id: string; actual: { outcome: string } | null }[];
@@ -336,7 +338,7 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     await expect(controller.applyPreset(id, 'lab-99', 'tie')).rejects.toMatchObject({
       status: 404,
     });
-    const opened = controller.openPosition(id, 'down', '10', '5000') as {
+    const opened = (await controller.openPosition(id, 'down', '10', '5000')) as {
       position: { id: string };
     };
     await expect(controller.applyPreset(id, opened.position.id, 'nonsense')).rejects.toMatchObject({
@@ -687,7 +689,7 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
      */
     const { venue, clock, controller } = await labVenue();
     await advance(venue, clock, 20_000);
-    const opened = controller.openPosition(id, 'up', '100', '60000') as {
+    const opened = (await controller.openPosition(id, 'up', '100', '60000')) as {
       position: { id: string };
     };
     type Row = {
@@ -767,6 +769,112 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     expect(applied.adjusted!.why).toBe('parity');
     // Upward request → the neighbour above: one lattice step beyond the request.
     expect(applied.delta).toBe(refused! + 1);
+    await venue.stop();
+  }, 60_000);
+  /**
+   * PH-30 / Cycle Audit 10: the hosted Statistical Gate's red run on `353f101`.
+   *
+   * `apps/web/src/lab.stat.test.ts` — "opens a CALL, applies WIN by minimum
+   * distance, and settlement agrees" — failed hosted while the same code's full
+   * local gate was green, with the row reading
+   *
+   *   esperado gana 1.1599862 (según el objetivo armado) · real empate
+   *   1.1599862 · neto 0 — NO COINCIDE CON LO ESPERADO
+   *
+   * beside a control row that read EXACTO. Nothing had gone wrong with the
+   * close: the close landed exactly where it was armed. What had gone wrong is
+   * that the position's entry was read while a tick was already due and not yet
+   * published, so the level the preset armed from was one step below the level
+   * `settle` recomputed for the very same entry instant — and "WIN by minimum
+   * distance" is exactly one step, so the win became a tie.
+   *
+   * Stepping the clock past the pending tick without a pass is that window, at
+   * a millisecond's precision instead of a loaded runner's luck. The offsets
+   * below were found by sweeping the open instant until the pending tick sat
+   * one step above the last published one, which is what makes it a tie rather
+   * than a merely wrong outcome.
+   */
+  it('PH-30: a position opened while a due tick is unpublished still settles from its own entry', async () => {
+    const { venue, clock, controller, engine } = await labVenue();
+    // 66 200 ms: the sweep's first open at which the drawn-and-due tick is
+    // exactly one lattice step above the last published one — the CI row.
+    await advance(venue, clock, 66_200);
+    const market = engine.hostedMarket(id)!;
+    const due = market.pending!;
+    const published = market.lastPublishedState!;
+    expect(due.price - published.price, 'the sweep no longer sets up the tie').toBe(1);
+
+    // The scheduler sleeps until the pending tick is due and then publishes it.
+    // Between those two, the clock is past the tick and the feed is not.
+    clock.advance(durationMillis(due.instant - clock.now() + 1));
+    expect(venue.now()).toBeGreaterThan(due.instant);
+    expect(venue.feed.retained(id)!.newest).toBe(published.sequence);
+
+    const opened = (await controller.openPosition(id, 'up', '100', '60000')) as {
+      position: { id: string; entryPrice: number; entryInstant: number };
+    };
+    // The entry is pinned to an instant the published record is final for, so
+    // the tick about to be published cannot end up at or before it.
+    expect(opened.position.entryInstant).toBeLessThan(due.instant);
+    expect(opened.position.entryPrice).toBe(published.price);
+
+    await venue.tick(); // the pass that publishes the due tick, a moment late
+    const applied = (await controller.applyPreset(
+      id,
+      opened.position.id,
+      'win-minimum',
+    )) as Applied;
+    expect(applied.armed).toBe(true);
+
+    await advance(venue, clock, 70_000);
+    const row = (
+      controller.listPositions(id) as {
+        positions: {
+          id: string;
+          entryPrice: number;
+          expected: { outcome: string };
+          actual: { outcome: string; agrees: boolean } | null;
+        }[];
+      }
+    ).positions.find((p) => p.id === opened.position.id)!;
+    expect(row.entryPrice).toBe(published.price);
+    expect(row.expected.outcome).toBe('win');
+    expect(row.actual!.outcome, 'a win armed by minimum distance settled as a tie').toBe('win');
+    expect(row.actual!.agrees).toBe(true);
+    await venue.stop();
+  }, 60_000);
+
+  /**
+   * The other half of the same window, and the reason `betweenAdvances` is
+   * there as well as the pin: a pass that has already generated its ticks but
+   * has not yet written them to the feed. The pin cannot see those — the market
+   * has drawn a *new* pending tick, comfortably in the future — so an open that
+   * read the feed here would miss ticks at or before its own entry instant.
+   *
+   * `inFlight` is assigned exactly as `schedule()` assigns it, because that is
+   * the only thing that makes a pass observable to `betweenAdvances`.
+   */
+  it('PH-30: a position opened during an advance waits for it rather than reading past it', async () => {
+    const { venue, clock, controller } = await labVenue();
+    await advance(venue, clock, 20_000);
+    clock.advance(durationMillis(5_000));
+    const pass = venue.tick();
+    (venue as unknown as { inFlight: Promise<void> }).inFlight = pass;
+    const opened = (await controller.openPosition(id, 'up', '100', '60000')) as {
+      position: { id: string; entryPrice: number; entryInstant: number };
+    };
+    await pass;
+    const inForce = inForceAt(venue, epochMillis(opened.position.entryInstant))!;
+    expect(opened.position.entryPrice, 'the open read a feed the pass had not written').toBe(
+      inForce.price,
+    );
+    await advance(venue, clock, 70_000);
+    const row = (
+      controller.listPositions(id) as {
+        positions: { id: string; actual: { agrees: boolean } | null }[];
+      }
+    ).positions.find((p) => p.id === opened.position.id)!;
+    expect(row.actual).not.toBeNull();
     await venue.stop();
   }, 60_000);
 });

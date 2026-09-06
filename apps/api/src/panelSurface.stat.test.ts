@@ -85,9 +85,10 @@ async function bootOn(candidate: number): Promise<void> {
   let output = '';
   child.stdout?.on('data', (chunk: Buffer) => (output += chunk.toString()));
   child.stderr?.on('data', (chunk: Buffer) => (output += chunk.toString()));
-  // Provisioning five assets over two days is minutes of generation before the
-  // listener opens, which is the point: a market is not served until it has the
-  // past it was promised.
+  // Provisioning five assets over two days is minutes of generation, and since
+  // a5-02 the listener opens before it: the process answers `/health/live` at
+  // once and reports `ready: false` until every market has the past it was
+  // promised. This waits for ready, which is what "served" means here.
   const deadline = Date.now() + 600_000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
@@ -96,8 +97,8 @@ async function bootOn(candidate: number): Promise<void> {
     try {
       const response = await fetch(`http://127.0.0.1:${candidate}/health`);
       if (response.ok) {
-        const health = (await response.json()) as { bootNonce: string | null };
-        if (health.bootNonce === nonce) return;
+        const health = (await response.json()) as { bootNonce: string | null; ready: boolean };
+        if (health.bootNonce === nonce && health.ready) return;
       }
     } catch {
       /* not up yet */

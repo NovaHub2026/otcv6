@@ -69,6 +69,21 @@ const PUBLISHED: Shape = {
   displayPrice: 'string',
 };
 
+/**
+ * A recorded discontinuity, as `GET /markets/:id/seams` lists it (PH-31).
+ *
+ * The two instants are what `settle()`'s `RecordSeam` takes; the two sequences
+ * say where the record stops and starts again, so the same answer explains a
+ * hole in `/ticks/:sequence` and a restart in the commitment chain.
+ */
+const SEAM: Shape = {
+  assetId: 'string',
+  lastSequence: 'integer',
+  lastInstant: 'integer',
+  resumesAtSequence: 'integer',
+  resumesAtInstant: 'integer',
+};
+
 const TICK_FRAME: Shape = { sequence: 'integer', instant: 'integer', price: 'integer' };
 const GAP_FRAME: Shape = { requested: 'integer|null', reason: 'string', resumesAt: 'integer|null' };
 
@@ -231,7 +246,18 @@ export const API_ROUTES: readonly RouteContract[] = [
       '400': 'a missing or malformed instant, or an instant after the newest published one',
       '404':
         'the asset is unknown, the record starts after the instant, or this deployment keeps no record',
+      '409':
+        'the instant falls inside a recorded discontinuity — nothing was published for it and nothing ever will be; the seam is named (see /markets/:id/seams)',
     },
+  },
+  {
+    method: 'GET',
+    path: '/markets/:id/seams',
+    summary:
+      'Every discontinuity the record holds for this market: where it stops and where it starts again, in sequence and in instant. What settle() takes as seams.',
+    params: { id: 'a hosted asset id' },
+    response: { array: SEAM },
+    refusals: { '404': 'the asset is unknown, or this deployment keeps no record' },
   },
   {
     method: 'GET',
@@ -333,6 +359,18 @@ export const CONTRACT_HISTORY: readonly { readonly version: string; readonly dig
   { version: '1.0.0', digest: '5bc1dd766f15aa0c' },
   // PH-30.1: liveness, readiness, metrics; `ready` on /health. Additive.
   { version: '1.1.0', digest: '1f9fc7c84b19c58c' },
+  // PH-31 (Cycle Audit 10, a4-01 / a1-01): `GET /markets/:id/seams`, and a
+  // `409` on `GET /markets/:id/price` for an instant inside a recorded
+  // discontinuity.
+  //
+  // **Major, not minor.** The route is additive, but the refusal is not: an
+  // instant a 1.x venue answered `200` with a price is now refused, so a
+  // broker that treats a non-200 as a transport error changes behaviour on
+  // requests it was already making. The old answer was wrong — it was the
+  // price of a tick from before a gap nobody generated, settled against for
+  // real money — and correcting a wrong answer to a refusal is still a change
+  // a client must be told about by its version.
+  { version: '2.0.0', digest: '0d5dd03fcc427fee' },
 ];
 
 export const API_VERSION: string = CONTRACT_HISTORY[CONTRACT_HISTORY.length - 1]!.version;

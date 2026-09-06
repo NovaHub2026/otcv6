@@ -81,7 +81,35 @@ export interface LabPosition {
   /** The price in force at entry, read as settlement reads (ADR-0017). */
   readonly entryPrice: LogPrice;
   readonly expiryInstant: EpochMillis;
+  /** The clock's reading when the operator opened it; see {@link LabPositions.open}. */
   readonly openedAt: EpochMillis;
+}
+
+/**
+ * The Lab read one entry price and `settle` later read another for the same
+ * contract (PH-30 / Cycle Audit 10).
+ *
+ * Named rather than shown, because the panel's own words for it — "esperado
+ * gana … real empate … NO COINCIDE" — describe an engine that disagreed with
+ * the Lab, and this is the one cause that is neither: the entry the row
+ * displays is simply not the entry the settlement used. It cost a hosted
+ * Statistical Gate a red run that a green local gate could not explain.
+ */
+export class EntryPriceDisagreementError extends Error {
+  constructor(
+    readonly contractId: string,
+    readonly shown: LogPrice,
+    readonly settled: LogPrice,
+    readonly entryInstant: EpochMillis,
+  ) {
+    super(
+      `Position ${contractId} was opened at level ${String(shown)} but settles from level ` +
+        `${String(settled)} at the same entry instant ${String(entryInstant)}: the record gained ` +
+        `a tick at or before the entry after the position was opened, so every expectation the ` +
+        `Lab computed from ${String(shown)} — presets included — is about a different contract.`,
+    );
+    this.name = 'EntryPriceDisagreementError';
+  }
 }
 
 export interface PositionRequest {
@@ -112,7 +140,42 @@ export class LabPositions {
   readonly #positions = new Map<string, LabPosition>();
   #next = 1;
 
-  open(request: PositionRequest, now: EpochMillis, ticks: readonly Tick[]): LabPosition {
+  /**
+   * Open a position, entered at an instant the published record is final for.
+   *
+   * `nextTickInstant` is the instant of the tick this market has drawn and not
+   * yet published, or null when it has none. It is what makes the entry price
+   * stable, and the reason is the whole of PH-30's hosted red run:
+   *
+   * The entry price here and the entry price `settle` computes are two reads of
+   * the same rule (`priceAtOrBefore` at `contract.entryInstant`) against a
+   * record that is **not** the same at the two moments. The clock passes the
+   * pending tick's instant before the scheduler pass that publishes it, so a
+   * position opened in that window stores the previous tick's price while the
+   * record acquires, seconds later, a tick at or before its entry instant. The
+   * preset then arms `entry ± 1` from a price that no longer is the entry, the
+   * close lands exactly there, and settlement — reading the *newer* entry —
+   * calls it a tie. The screen shows «esperado gana … real empate … NO
+   * COINCIDE» and nothing about it is a flake.
+   *
+   * So the entry is pinned to the last instant the published record can still
+   * speak for: the millisecond before the next tick, when the clock has already
+   * passed it. Ticks are only ever appended after the pending one, so no later
+   * publication can change what was in force then. When the market is up to
+   * date — every ordinary open — `nextTickInstant` is in the future and the
+   * entry is `now`, unchanged.
+   *
+   * The caller must read `now`, the record and `nextTickInstant` in one
+   * critical section (`VenueService.betweenAdvances`), or an advance can
+   * publish between the three reads and hand back a record that is behind a
+   * `nextTickInstant` already drawn past it.
+   */
+  open(
+    request: PositionRequest,
+    now: EpochMillis,
+    ticks: readonly Tick[],
+    nextTickInstant: EpochMillis | null,
+  ): LabPosition {
     // A whole number in the broker's minor unit, as `settle()` requires since
     // PH-29.4 (Issue #11); the Lab's positions settle through the same library.
     if (!Number.isSafeInteger(request.stake) || request.stake <= 0) {
@@ -126,7 +189,9 @@ export class LabPositions {
       );
     }
     const record = recordOf(ticks);
-    const entry = priceAtOrBefore(record.instants, record.prices, now);
+    const entryInstant =
+      nextTickInstant !== null && nextTickInstant <= now ? epochMillis(nextTickInstant - 1) : now;
+    const entry = priceAtOrBefore(record.instants, record.prices, entryInstant);
     if (entry === null) {
       throw new RangeError(
         'No price is in force yet for this asset; open the position after a tick.',
@@ -139,14 +204,14 @@ export class LabPositions {
       assetId: request.assetId,
       direction: request.direction,
       stake: request.stake,
-      entryInstant: now,
+      entryInstant,
       horizonMs: durationMillis(request.horizonMs),
       payoutRatio: request.payoutRatio ?? 0.85,
     };
     const position: LabPosition = {
       contract,
       entryPrice: entry.price,
-      expiryInstant: epochMillis(now + request.horizonMs),
+      expiryInstant: epochMillis(entryInstant + request.horizonMs),
       openedAt: now,
     };
     this.#positions.set(id, position);
@@ -192,11 +257,20 @@ export class LabPositions {
    * engine (O9, L5) and is raised rather than reported as a status: a bare
    * `catch { return null }` read a malformed record, an out-of-range instant and
    * a genuine disagreement as "not expired yet" (Cycle Audit 8, a8).
+   *
+   * The guard on the entry price belongs to the same rule. `settle` recomputes
+   * the entry from the record, so a settlement whose `entryPrice` is not the
+   * one the position was opened at means the record changed underneath a
+   * position — the one disagreement the "COINCIDE / NO COINCIDE" column cannot
+   * express, because both of its sides are then talking about different
+   * contracts. It is raised by name rather than rendered as a mismatched
+   * outcome (PH-30 / Cycle Audit 10).
    */
   static status(position: LabPosition, ticks: readonly Tick[]): SettlementStatus {
     const record = recordOf(ticks);
+    let settlement: Settlement;
     try {
-      return { kind: 'settled', settlement: settle(position.contract, record) };
+      settlement = settle(position.contract, record);
     } catch (error) {
       if (error instanceof NotSettleableError) {
         const last = record.instants[record.instants.length - 1];
@@ -210,6 +284,15 @@ export class LabPositions {
       }
       throw error;
     }
+    if (settlement.entryPrice !== position.entryPrice) {
+      throw new EntryPriceDisagreementError(
+        position.contract.id,
+        position.entryPrice,
+        settlement.entryPrice,
+        position.contract.entryInstant,
+      );
+    }
+    return { kind: 'settled', settlement };
   }
 
   /** The settlement alone; null for either refusal, which {@link status} tells apart. */

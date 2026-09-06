@@ -16,17 +16,19 @@ export type ChainPriming =
   | { readonly kind: 'continued'; readonly from: number; readonly folded: number }
   | { readonly kind: 'broken'; readonly from: number; readonly recordStartsAt: number | null }
   /**
-   * The chain was continued and then restarted at a seam (PH-30.4): a jump in
-   * the record's sequences, or a market that seamed at this boot. `folded` is
-   * what was read back on both sides; `restartedAt` names the sequence the new
-   * chain begins at, or null when the seam is at the live boundary and its
-   * first tick is not yet known.
+   * The chain was continued and then seamed (PH-30.4): a jump in the record's
+   * sequences, or a market that seamed at this boot. `folded` is what was read
+   * back on both sides; `restartedAt` names the sequence the record resumes
+   * at, or null when the seam is at the live boundary and its first tick is
+   * not yet known. `sealed` counts the windows closed short so the record's
+   * own tail is committed rather than abandoned (Cycle Audit 10, a6-03).
    */
   | {
       readonly kind: 'seamed';
       readonly from: number;
       readonly folded: number;
       readonly restartedAt: number | null;
+      readonly sealed: number;
     };
 
 /** Ticks read from the record per page while priming; a page is one await. */
@@ -86,6 +88,50 @@ export class PublicationService {
   }
 
   /**
+   * Commit what is open, because nothing more is coming (Cycle Audit 10, a6-03).
+   *
+   * A window is committed when it fills, and that is right while the market is
+   * running. Where it stops — a clean stop, a retirement — the open window is
+   * never extended, so leaving it open serves nobody and costs the record its
+   * own tail: the release run abandoned 5,749 served ticks this way, one deploy
+   * at a time, and `/proof` answered 409 for them permanently.
+   */
+  seal(assetId: string): boolean {
+    try {
+      const sealed = this.writer?.sealChain(assetId) ?? null;
+      if (sealed === null) return false;
+      this.logger.log(
+        `${assetId}: commitment chain sealed at sequence ${sealed.signed.commitment.toSequence} ` +
+          `(${sealed.ticks.length} tick(s) in a short final window)`,
+      );
+      return true;
+    } catch (error) {
+      // A seal that cannot be written must not stop the venue from stopping.
+      // This runs inside `onModuleDestroy`, after the final checkpoint and
+      // before the history database is closed, so a throw here — an unmounted
+      // volume, a full disk, the very conditions that make a chain worth
+      // having — would abandon the rest of the shutdown to save one window.
+      // The window is lost, which is the state every SIGKILL already leaves,
+      // and the loss is named rather than silent.
+      this.logger.error(
+        `${assetId}: the commitment chain could not be sealed (${(error as Error).message}). ` +
+          `The ticks in its open window stay published and uncommitted, as they would after a ` +
+          `kill; the next process folds them back from the record if it can reach them.`,
+      );
+      return false;
+    }
+  }
+
+  /** Seal every asset's open window. The shutdown path's one call. */
+  sealAll(): void {
+    let sealed = 0;
+    for (const assetId of this.writer?.assetIds ?? []) {
+      if (this.seal(assetId)) sealed += 1;
+    }
+    if (sealed > 0) this.logger.log(`commitment chains sealed for ${sealed} market(s)`);
+  }
+
+  /**
    * The inclusion proof for a published sequence, from the archive (PH-29.1).
    *
    * Read from the directory, never from the writer's memory: what a
@@ -112,9 +158,17 @@ export class PublicationService {
    * rather than one per boot. Where the record does not reach the tip — a
    * trim, a seam — the chain cannot be continued honestly and is **not**
    * bridged: the asset's chain is reported broken, logged as an error, and
-   * the writer is told to start a new chain at an empty root so the live
-   * ticks are still committed to. A break a verifier can see beats a hole
-   * that looks like tampering.
+   * the writer seals what is open and resumes the chain after the gap, so
+   * the live ticks are still committed to. A break a verifier can see beats a
+   * hole that looks like tampering.
+   *
+   * **What the seam leaves behind is committed, and the resume is bound
+   * (Cycle Audit 10).** The ticks folded into the open window used to be
+   * dropped when the chain restarted — served, settled against, and in no
+   * committed window for ever (a6-03) — and the new chain began at an empty
+   * root, which bound it to the old one by nothing at all (a6-04). Now the
+   * open window is sealed first, however short, and the resume link binds the
+   * sealed head.
    *
    * **A seam is a break of the same kind (PH-30.4).** A market restarted past
    * its catch-up bound seams: its sequences jump by the lease, and the record
@@ -138,13 +192,17 @@ export class PublicationService {
       this.logger.error(
         `${assetId}: the commitment chain ends at sequence ${from - 1} and the record ` +
           (recordStartsAt === null ? 'holds nothing after it' : `resumes at ${recordStartsAt}`) +
-          ` — the chain cannot be continued and is restarted at an empty root; a verifier ` +
-          `will see two chains for this market, which is the truth (PH-28.3).`,
+          ` — the chain cannot be continued, so it is sealed there and resumed after the gap ` +
+          `by a link that binds the sealed head. Where the market resumes at a sequence this ` +
+          `chain already covers, one chain cannot hold two roots over one range and it ` +
+          `restarts at an empty root instead; either way a verifier sees the interval where ` +
+          `it is, and whether its near edge is attested (PH-28.3, Cycle Audit 10).`,
       );
-      this.writer.restartChain(assetId);
+      this.writer.seamChain(assetId);
       return { kind: 'broken', from, recordStartsAt };
     }
     let folded = 0;
+    let sealed = 0;
     let restartedAt: number | null = null;
     for (;;) {
       const page = await record.since(assetId, from, PRIME_PAGE);
@@ -157,11 +215,12 @@ export class PublicationService {
         this.writer.observe(assetId, page.slice(runStart, i));
         this.logger.error(
           `${assetId}: the record jumps from sequence ${expected - 1} to ${sequence} — a seam ` +
-            `left by a restart past the catch-up bound. The commitment chain is restarted at ` +
-            `an empty root there, not bridged; a verifier sees two chains for this market, ` +
-            `which is the truth (PH-30.4).`,
+            `left by a restart past the catch-up bound. The commitment chain is sealed at ` +
+            `${expected - 1} and resumed at ${sequence} by a link that binds the sealed head, ` +
+            `not bridged; a verifier sees the interval where it is (PH-30.4, Cycle Audit 10).`,
         );
-        this.writer.restartChain(assetId);
+        if (this.seal(assetId)) sealed += 1;
+        this.writer.seamChain(assetId);
         restartedAt = sequence;
         runStart = i;
       }
@@ -175,14 +234,16 @@ export class PublicationService {
       // folded into ends at the record's head; whatever the seam publishes
       // begins a new one.
       this.logger.error(
-        `${assetId}: resumed with a seam; the commitment chain ends at sequence ${from - 1} ` +
-          `and the ticks the seam publishes begin a new chain at an empty root (PH-30.4).`,
+        `${assetId}: resumed with a seam; the commitment chain is sealed at sequence ` +
+          `${from - 1} and the ticks the seam publishes resume it after that, in a link that ` +
+          `binds the sealed head (PH-30.4, Cycle Audit 10).`,
       );
-      this.writer.restartChain(assetId);
-      return { kind: 'seamed', from: resumed.nextSequence, folded, restartedAt };
+      if (this.seal(assetId)) sealed += 1;
+      this.writer.seamChain(assetId);
+      return { kind: 'seamed', from: resumed.nextSequence, folded, restartedAt, sealed };
     }
     if (restartedAt !== null) {
-      return { kind: 'seamed', from: resumed.nextSequence, folded, restartedAt };
+      return { kind: 'seamed', from: resumed.nextSequence, folded, restartedAt, sealed };
     }
     this.logger.log(
       `${assetId}: commitment chain continued from sequence ${resumed.nextSequence}, ` +

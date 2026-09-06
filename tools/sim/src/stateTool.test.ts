@@ -74,6 +74,35 @@ describe('the operator’s state tool', () => {
     expect((await runStateTool(['nonsense'])).code).toBe(2);
   });
 
+  /**
+   * **Cycle Audit 10 (a8-05).** `verify` on a path that does not exist printed
+   * `Assets: none (nothing to resume)` / `Consistent: every file agrees.` and
+   * exited **0** — a mistyped `--dir`, an unmounted volume or a restore that
+   * never landed, all reading as a healthy state directory, and PH-28 cites
+   * `state:verify — exit 0` as evidence of consistency. `backup` refused the
+   * same input. The two commands now agree, and an empty directory that does
+   * exist is still the legal first-boot state it always was.
+   */
+  it('verify refuses a directory that is not there, exactly as backup does', async () => {
+    const missing = path.join(scratch(), 'never-mounted');
+    const verified = await runStateTool(['verify', '--dir', missing]);
+    expect(verified.code).toBe(1);
+    expect(verified.output).toBe(`No state directory at ${missing}.`);
+    const backed = await runStateTool([
+      'backup',
+      '--dir',
+      missing,
+      '--out',
+      path.join(scratch(), 'out'),
+    ]);
+    expect(backed.code).toBe(1);
+    expect(backed.output).toBe(verified.output);
+    // And the other half: nothing to resume is not the same as nowhere to look.
+    const empty = await runStateTool(['verify', '--dir', scratch()]);
+    expect(empty.code).toBe(0);
+    expect(empty.output).toMatch(/Assets: none \(nothing to resume\)[\s\S]*Consistent/);
+  });
+
   it('backup writes a verified copy with its manifest, at the clock it is given', async () => {
     const source = await stateDir(100, 120);
     const out = path.join(scratch(), 'backup');
@@ -88,5 +117,31 @@ describe('the operator’s state tool', () => {
     // A second backup into the same place is refused, not merged.
     writeFileSync(path.join(out, 'keep'), '');
     expect((await runStateTool(['backup', '--dir', source, '--out', out], clock)).code).toBe(1);
+  });
+
+  /**
+   * **Cycle Audit 10 (a7-01).** The documented restore is a directory swap
+   * with the service stopped, and the boot check is what decides. So the check
+   * this test makes is the operator's: `verify` on the directory `backup` just
+   * wrote, unmodified, manifest and all. It refused — `backup.json (backup):
+   * record belongs to asset undefined` — because the manifest the tool writes
+   * into its own copy was read back as a checkpoint. The tool exited 0 while
+   * producing a directory that would not boot, because it verified the copy
+   * *before* writing the manifest into it.
+   */
+  it('writes a copy that its own verify — and therefore the boot check — accepts', async () => {
+    const source = await stateDir(100, 120);
+    const out = path.join(scratch(), 'restore');
+    const clock = new SteppableClock(epochMillis(GENESIS + 99));
+    const written = await runStateTool(['backup', '--dir', source, '--out', out], clock);
+    expect(written.code).toBe(0);
+    const restored = await runStateTool(['verify', '--dir', out]);
+    expect(restored.output).toMatch(/Consistent: every file agrees/);
+    expect(restored.code).toBe(0);
+    expect(restored.output).toMatch(/Assets: 1 — eurusd/);
+    // And a backup of a restored directory does not carry the old manifest in.
+    const second = path.join(scratch(), 'restore-2');
+    expect((await runStateTool(['backup', '--dir', out, '--out', second], clock)).code).toBe(0);
+    expect((await runStateTool(['verify', '--dir', second])).code).toBe(0);
   });
 });

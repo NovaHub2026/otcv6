@@ -86,7 +86,21 @@ export type PublicationProof =
       /** Commitments read before the window was found; a cost the caller may report. */
       readonly linksRead: number;
     }
-  | { readonly kind: 'uncommitted'; readonly committedThrough: number | null }
+  | {
+      readonly kind: 'uncommitted';
+      readonly committedThrough: number | null;
+      /**
+       * Set when the sequence falls in an interval the chain commits nothing
+       * in — a seam, or a record that could not reach the tip.
+       *
+       * **Cycle Audit 10, a6-04.** Without it this answered `committedThrough:
+       * null` both for a sequence in a seam and for one an operator had
+       * deleted the window of, in the same words, for ever. Naming the
+       * interval's two edges lets a broker compare them with what it archived
+       * and with the venue's own `/ticks`.
+       */
+      readonly interval?: { readonly afterSequence: number; readonly fromSequence: number };
+    }
   | { readonly kind: 'not-published' };
 
 /**
@@ -97,7 +111,9 @@ export type PublicationProof =
  * (Issue #19) — and the window's ticks come from its journal. `uncommitted`
  * names the newest committed sequence, so a caller can tell "not yet" from
  * "never": a tick in the open window is published and not archived, a real
- * third state (`PUBLICATION.md`).
+ * third state (`PUBLICATION.md`). Where "never" is an interval the chain
+ * states — a seam — it names that interval's edges too, so the two are not one
+ * answer in one wording (Cycle Audit 10, a6-04).
  */
 export async function proveFromPublication(
   directory: string,
@@ -122,11 +138,17 @@ export async function proveFromPublication(
   for await (const { signed } of readCommitmentsStream(file)) {
     linksRead += 1;
     const { fromSequence, toSequence } = signed.commitment;
+    const previous = committedThrough;
     committedThrough = toSequence;
     if (sequence < fromSequence) {
-      // Before this window and not in an earlier one: a chain that restarted
-      // past it, or a sequence never published. Either way not committed.
-      return { kind: 'uncommitted', committedThrough: null };
+      // Before this window and not in an earlier one: an interval the chain
+      // resumes past, or a sequence never published. Either way not committed
+      // — and where the file states the interval, so does this.
+      return {
+        kind: 'uncommitted',
+        committedThrough: null,
+        ...(previous === null ? {} : { interval: { afterSequence: previous, fromSequence } }),
+      };
     }
     if (sequence > toSequence) continue;
     const journal = readJournalFile(

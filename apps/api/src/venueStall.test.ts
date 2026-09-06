@@ -81,3 +81,57 @@ describe('retiring a market takes what the service remembers about it (CA7-15)',
     await venue.stop();
   });
 });
+
+describe('a stall does not survive the restart that should clear it (Cycle Audit 10)', () => {
+  /**
+   * The wedge an operator met on their own panel while this audit ran.
+   *
+   * The host was suspended and resumed. Every one of thirty markets came back
+   * stalled — `Market is 11326s behind the clock, past the 15s catch-up bound` —
+   * and a clean stop and start did not clear a single one. The reason is one
+   * line: `checkpoint()` wrote `savedAt = now` for every hosted market on every
+   * cadence, including markets that had refused every advance for hours, so the
+   * checkpoint stayed fresh while the market it described stayed stale.
+   * `resumeMarket` chooses between continuing and seaming on exactly that
+   * quantity, chose `resumed`, `HostedMarket` floored on the old
+   * `lastPublished`, and refused again. The only remedy anyone had was to move
+   * the state directory aside, which throws the record away.
+   */
+  it('freezes the checkpoint of a market that is publishing nothing, so the next boot seams', async () => {
+    const clock = new SteppableClock(GENESIS);
+    const store = new MemoryStateStore();
+    const first = new VenueService(store, keyring(), clock, [asset]);
+    await first.start();
+    clock.advance(durationMillis(2_000));
+    await first.tick();
+    await first.checkpoint();
+    const healthy = (await store.load(asset.definition.id))!.savedAt;
+
+    // The suspend: far past the catch-up bound, and long enough that several
+    // checkpoint cadences elapse inside the stall.
+    clock.advance(durationMillis(30_000));
+    await first.tick();
+    expect(first.stalledMarkets.map((m) => m.assetId)).toEqual([asset.definition.id]);
+    clock.advance(durationMillis(10_000));
+    await first.tick();
+    await first.stop();
+
+    expect(
+      (await store.load(asset.definition.id))!.savedAt,
+      'a market that published nothing for 40s still refreshed its checkpoint',
+    ).toBe(healthy);
+
+    // And the consequence, end to end: the restart an operator reaches for
+    // first now works, and it keeps the record rather than discarding it.
+    const second = new VenueService(store, keyring(), clock, [asset]);
+    await second.start();
+    expect(second.recoveryFor(asset.definition.id)?.kind, 'the restart resumed the wedge').toBe(
+      'seam',
+    );
+    clock.advance(durationMillis(2_000));
+    await second.tick();
+    expect(second.stalledMarkets, 'the stall survived a clean restart').toEqual([]);
+    expect(second.lastTick(asset.definition.id)).not.toBeNull();
+    await second.stop();
+  });
+});

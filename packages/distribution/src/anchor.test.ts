@@ -306,3 +306,124 @@ describe('Cycle Audit 5, F-5 and F-7: what summarise and verifyAnchor must refus
     );
   });
 });
+
+/**
+ * Cycle Audit 10, a6-12.
+ *
+ * PH-30.4 made a seam start a new chain at an empty root, and a seam is what
+ * every deploy is: thirty of thirty files in the release run held two chains.
+ * `summarise` checked the whole array with `verifyChain`, which requires every
+ * link after the first to carry a digest, so it threw
+ * `AnchorError: That is not a chain, so it cannot be summarised: Commitment 2
+ * has a previousRoot that is not a digest.` — and with it `buildAnchor` and
+ * `verifyAnchor`. No anchor could be built for any market that had ever been
+ * deployed twice, and the anchor is what makes the chain evidence against the
+ * operator rather than a number the operator serves.
+ */
+describe('an anchor summarises a record that has seamed', () => {
+  /** Eight ticks a window, sealed at `sealAt`, resumed a lease later. */
+  function seamedChain(assetId: string, offset = 0, key = KEY): SignedCommitment[] {
+    const out: SignedCommitment[] = [];
+    let previousRoot = '';
+    for (let index = 0; index < 2; index += 1) {
+      const commitment = commit(assetId, ticks(index * 8 + 1, 8, offset), previousRoot);
+      previousRoot = commitment.root;
+      out.push(signCommitment(commitment, key));
+    }
+    // The seal: a short final window over what was open when the process stopped.
+    const sealed = commit(assetId, ticks(17, 3, offset), previousRoot);
+    out.push(signCommitment(sealed, key));
+    // And the resume, binding it and declaring the interval.
+    let root = sealed.root;
+    for (let index = 0; index < 2; index += 1) {
+      const commitment = commit(
+        assetId,
+        ticks(100_001 + index * 8, 8, offset),
+        root,
+        index === 0 ? 19 : undefined,
+      );
+      root = commitment.root;
+      out.push(signCommitment(commitment, key));
+    }
+    return out;
+  }
+
+  /** The shape PH-30.4 wrote: a second genesis link, bound to nothing. */
+  function unboundChain(assetId: string): SignedCommitment[] {
+    const out = chain(assetId, 2);
+    let previousRoot = '';
+    for (let index = 0; index < 2; index += 1) {
+      const commitment = commit(assetId, ticks(100_001 + index * 8, 8), previousRoot);
+      previousRoot = commitment.root;
+      out.push(signCommitment(commitment, KEY));
+    }
+    return out;
+  }
+
+  it('anchors the whole record and publishes the interval it does not cover', () => {
+    const built = seamedChain('eurusd');
+    const entry = summarise(built);
+    expect(entry.fromSequence).toBe(1);
+    expect(entry.toSequence).toBe(100_016);
+    expect(entry.commitments).toBe(5);
+    expect(entry.headRoot).toBe(built[4]!.commitment.root);
+    expect(entry.breaks).toEqual([{ afterSequence: 19, fromSequence: 100_001, bound: true }]);
+    expect(verifyAnchor(buildAnchor([built], AT), [built])).toBeNull();
+  });
+
+  it('anchors a file the old code wrote, and says its interval is unbound', () => {
+    const built = unboundChain('eurusd');
+    const entry = summarise(built);
+    expect(entry.fromSequence).toBe(1);
+    expect(entry.toSequence).toBe(100_016);
+    expect(entry.commitments).toBe(4);
+    expect(entry.headRoot).toBe(built[3]!.commitment.root);
+    expect(entry.breaks).toEqual([{ afterSequence: 16, fromSequence: 100_001, bound: false }]);
+    expect(verifyAnchor(buildAnchor([built], AT), [built])).toBeNull();
+  });
+
+  it('moves the head root when a window before a bound interval is cut', () => {
+    // The workaround an operator would reach for — anchor only the newest
+    // chain — is exactly a6-04's blindness: with an unbound break that summary
+    // is byte-identical whether or not the earlier chain still has its tail.
+    // With a bound one the cut reaches the head.
+    const built = seamedChain('eurusd');
+    const cut = [...built.slice(0, 2), ...built.slice(3)];
+    expect(() => summarise(cut)).toThrow(AnchorError);
+    const newest = built.slice(3);
+    const alsoNewest = cut.slice(2);
+    expect(alsoNewest.map((l) => l.commitment.root)).toEqual(newest.map((l) => l.commitment.root));
+    // …and the anchor over the record as a whole is what refuses it, because
+    // the head root of the whole binds the window that was removed.
+    expect(verifyAnchor(buildAnchor([built], AT), [cut])).not.toBeNull();
+  });
+
+  it('refuses an anchor that understates the intervals its chain has', () => {
+    const built = seamedChain('eurusd');
+    const anchor = buildAnchor([built], AT);
+    const quiet = {
+      ...anchor,
+      entries: [{ ...anchor.entries[0]!, breaks: [] }],
+    };
+    expect(verifyAnchor(quiet, [built]) ?? 'accepted').toMatch(
+      /how many intervals the record is missing/,
+    );
+  });
+
+  it('refuses a later anchor that has lost an interval the reader was shown', () => {
+    const built = seamedChain('eurusd');
+    const earlier = buildAnchor([built], AT);
+    const later = {
+      ...buildAnchor([built], AT + 1000),
+      entries: [{ ...earlier.entries[0]!, breaks: [] }],
+    };
+    expect(extendsAnchor(earlier, later, [built]) ?? 'accepted').toMatch(/no longer the ones/);
+  });
+
+  it('still refuses an array of two assets, and one that doubles back', () => {
+    const mixed = [...chain('eurusd', 2), ...chain('gbpusd', 2)];
+    expect(() => summarise(mixed)).toThrow(/is not one asset's record/);
+    const backwards = [...chain('eurusd', 2), ...chain('eurusd', 2)];
+    expect(() => summarise(backwards)).toThrow(/is not one record/);
+  });
+});

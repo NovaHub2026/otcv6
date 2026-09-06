@@ -113,6 +113,23 @@ coordinated store's, which already exists and is not hosted.
    second genesis link overlapping the first (PH-28.3, decision log).
 5. **The row costs 32.6 bytes on disk**, so the default record is eight
    megabytes per asset and a quarter of a gigabyte for the thirty (PH-28.1).
+
+> **Corrected 2026-09-06 (Cycle Audit 10, a7-03).** 32.6 bytes was right when it
+> was measured and stopped being right at PH-29.1, which added the
+> `tick_by_instant` index over `(asset_id, instant, sequence)`. Re-measured the
+> same way on 2026-09-06 — one `SqliteTickRecord` on a real file, 20,000
+> consecutive ticks of one asset, `stat().size / 20000` — the row costs **61.2
+> bytes**, and the same table built by hand with and without that index costs
+> 32.6 and 61.2, so the index is the whole of the doubling. At the shipped
+> default of 250,000 ticks one asset's file is 15,941,632 bytes (63.8 bytes a
+> tick, the per-row cost rising with the b-tree's depth): **15.2 MiB per asset
+> and 456 MiB for the thirty**, not eight megabytes and a quarter of a
+> gigabyte. The figure is now the exported constant
+> `MEASURED_RECORD_BYTES_PER_TICK` in `packages/runtime/src/tickRecord.ts`, and
+> `tickRecord.test.ts` holds the measurement to within 20% of it on every run —
+> it previously asserted only a bound of 80, which 61.2 passed as happily as
+> 32.6 did.
+
 6. **Thirty of thirty** on the product, from outside the process (PH-28.4).
 7. **The phase gate's first run failed on the phase's own test**, not the
    venue: the served-record suite's bar window after the kill was one minute

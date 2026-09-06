@@ -48,6 +48,18 @@ export interface PriceInForce extends Published {
   readonly rule: string;
 }
 
+/**
+ * A recorded discontinuity, as the venue lists it: an interval nothing was
+ * published in. The two instants are `settle()`'s `RecordSeam`.
+ */
+export interface RecordedSeam {
+  readonly assetId: string;
+  readonly lastSequence: number;
+  readonly lastInstant: number;
+  readonly resumesAtSequence: number;
+  readonly resumesAtInstant: number;
+}
+
 export interface VerifiedProof {
   readonly assetId: string;
   readonly sequence: number;
@@ -166,12 +178,36 @@ export class VenueClient {
     )) as (Published & { assetId: string }) | Refusal;
   }
 
-  /** The price in force at an instant — the last tick at or before it — or the refusal. */
+  /**
+   * The price in force at an instant — the last tick at or before it — or the
+   * refusal.
+   *
+   * A `409` is a refusal like any other here, and it is the one to read: the
+   * instant falls inside a recorded discontinuity, so there is no price and
+   * there never will be. Settle nothing against that window; take the seams
+   * from {@link VenueClient.seams} and let `settle()` refuse it by name.
+   */
   async priceAt(id: string, at: number): Promise<PriceInForce | Refusal> {
     return (await this.#getOrRefusal(
       'GET /markets/:id/price',
       `/markets/${encodeURIComponent(id)}/price?at=${String(at)}`,
     )) as PriceInForce | Refusal;
+  }
+
+  /**
+   * Every discontinuity the venue's record holds for a market (PH-31).
+   *
+   * What `settle()` wants as its `seams`: take `lastInstant` and
+   * `resumesAtInstant` from each entry. Read them once per settlement run
+   * rather than per contract — a seam costs a restart past the catch-up bound,
+   * so the list is short and changes rarely, and a venue that has never seamed
+   * answers an empty array.
+   */
+  async seams(id: string): Promise<RecordedSeam[] | Refusal> {
+    return (await this.#getOrRefusal(
+      'GET /markets/:id/seams',
+      `/markets/${encodeURIComponent(id)}/seams`,
+    )) as RecordedSeam[] | Refusal;
   }
 
   /**
@@ -234,6 +270,8 @@ export class VenueClient {
     let from = options.from;
     let budget = options.reconnects ?? 5;
     let delivered: number | null = null;
+    /** A gap told with no `resumesAt`: the next tick lands wherever the venue is. */
+    let resumeAnywhere = false;
     for (;;) {
       if (options.signal?.aborted) return 'aborted';
       let closed: string | null = null;
@@ -252,6 +290,18 @@ export class VenueClient {
             ]);
           }
         } else if (frame.kind === 'gap') {
+          // **Cycle Audit 10 (a4-02, a8-02).** A gap is the venue saying what it
+          // no longer has and where its record resumes, so the tick after it is
+          // not `delivered + 1` and the contract never claimed it would be. The
+          // expectation moves to the sequence the gap names; a gap that names
+          // none — the replay budget refused, the feed rejoining live — makes
+          // the next tick acceptable wherever it lands, and contiguity is
+          // required again from there. Without this the first frame after a
+          // told gap read as an untold skip and threw, which is exactly what a
+          // seamed restart or an evicted resume point produces.
+          const { resumesAt } = frame.gap;
+          if (resumesAt === null) resumeAnywhere = true;
+          else if (delivered === null || resumesAt - 1 > delivered) delivered = resumesAt - 1;
           yield { kind: 'gap', gap: frame.gap };
         } else if (frame.kind === 'close') {
           closed = frame.reason;
@@ -259,7 +309,8 @@ export class VenueClient {
           // A repeat after a resume is never yielded twice; a skip is a hole
           // the venue did not tell, and the contract forbids it.
           if (delivered !== null && frame.tick.sequence <= delivered) continue;
-          if (delivered !== null && frame.tick.sequence !== delivered + 1) {
+          if (resumeAnywhere) resumeAnywhere = false;
+          else if (delivered !== null && frame.tick.sequence !== delivered + 1) {
             throw new ContractViolation('GET /markets/:id/stream', [
               `sequence ${String(frame.tick.sequence)} after ${String(delivered)} with no gap told`,
             ]);

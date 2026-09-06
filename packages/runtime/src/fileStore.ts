@@ -41,6 +41,34 @@ function describe(value: unknown): string {
   return typeof value;
 }
 
+/**
+ * The name `backupStateDirectory` writes its manifest under, inside the copy.
+ *
+ * It lives here rather than in `stateDirectory.ts` because the store is what
+ * has to know not to read it as a checkpoint; `stateDirectory.ts` re-exports it
+ * so the public name is unchanged.
+ */
+export const BACKUP_MANIFEST = 'backup.json';
+
+/** What a backup manifest calls itself. A checkpoint has no `kind`. */
+export const BACKUP_MANIFEST_KIND = 'otc-state-backup';
+
+/** Whether this text is a backup manifest rather than a checkpoint. */
+export function isBackupManifestText(text: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  return (
+    typeof parsed === 'object' &&
+    parsed !== null &&
+    !Array.isArray(parsed) &&
+    (parsed as { kind?: unknown }).kind === BACKUP_MANIFEST_KIND
+  );
+}
+
 export class FileStateStore implements StateStore {
   constructor(private readonly directory: string) {}
 
@@ -88,16 +116,51 @@ export class FileStateStore implements StateStore {
     await replaceFileAtomically(this.#pathFor(record.assetId), JSON.stringify(record));
   }
 
+  /**
+   * The assets this directory holds a checkpoint for.
+   *
+   * **Cycle Audit 10 (a7-01).** This used to be "every `*.json`", and
+   * `backupStateDirectory` writes its manifest as `backup.json` *into the copy*
+   * — so every directory the backup tool produced named one extra asset,
+   * `backup`, whose record belonged to asset `undefined`. `verifyStateDirectory`
+   * loaded it as a checkpoint, `stateRefusal` turned that into a refusal, and
+   * the documented restore — swap the directory in, start the service — was
+   * refused by the boot check on a directory the tool had just called
+   * consistent. Deleting one file made it boot.
+   *
+   * The manifest is skipped by what it *says it is* (`kind: 'otc-state-backup'`),
+   * not by its name: `backup` is a legal asset id, and silently skipping a real
+   * checkpoint would restart that market at genesis — the failure `load`
+   * refuses a corrupt file to avoid. Every other `*.json` is still listed, so a
+   * stray file is still refused by name rather than ignored.
+   */
   async list(): Promise<readonly string[]> {
+    let entries: string[];
     try {
-      const entries = await readdir(this.directory);
-      return entries
-        .filter((name) => name.endsWith('.json'))
-        .map((name) => name.slice(0, -'.json'.length))
-        .sort();
+      entries = await readdir(this.directory);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
       throw error;
+    }
+    const ids: string[] = [];
+    for (const name of entries) {
+      if (!name.endsWith('.json')) continue;
+      if (name === BACKUP_MANIFEST && (await this.#holdsBackupManifest())) continue;
+      ids.push(name.slice(0, -'.json'.length));
+    }
+    return ids.sort();
+  }
+
+  /** Whether this directory's `backup.json` is a backup manifest, not a checkpoint. */
+  async #holdsBackupManifest(): Promise<boolean> {
+    try {
+      return isBackupManifestText(
+        await readFile(path.join(this.directory, BACKUP_MANIFEST), 'utf8'),
+      );
+    } catch {
+      // Unreadable or gone between the listing and now: treat it as a
+      // checkpoint, so `load` refuses it by name rather than nothing seeing it.
+      return false;
     }
   }
 }

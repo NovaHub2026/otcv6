@@ -229,10 +229,22 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
       ...(options.signal === undefined ? {} : { signal: options.signal }),
       fetch: doFetch,
     });
+    // The name says *exactly*, and until Cycle Audit 10 it read five ticks and
+    // looked at the first: a venue that answered the right sequence and then
+    // dropped one out of the middle of the resumed run passed. A resume is
+    // contiguous or it is a hole nobody was told about (INV-002), so the whole
+    // run is checked, not its first frame.
+    let resumesExactly = resumed.gaps.length === 0 && resumed.ticks.length > 0;
+    if (resumed.ticks[0]?.sequence !== last.sequence + 1) resumesExactly = false;
+    for (let i = 1; i < resumed.ticks.length; i += 1)
+      if (resumed.ticks[i]!.sequence !== resumed.ticks[i - 1]!.sequence + 1) resumesExactly = false;
     check(
       'stream resumes exactly from M+1',
-      resumed.gaps.length === 0 && resumed.ticks[0]?.sequence === last.sequence + 1,
-      `asked ${String(last.sequence + 1)}, got ${String(resumed.ticks[0]?.sequence)}, ${String(resumed.gaps.length)} gaps`,
+      resumesExactly,
+      `asked ${String(last.sequence + 1)}, got [${resumed.ticks
+        .slice(0, 8)
+        .map((t) => String(t.sequence))
+        .join(', ')}], ${String(resumed.gaps.length)} gaps`,
     );
     const tooFar = await readStream({
       baseUrl: base,
@@ -292,6 +304,65 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
       'price refuses an instant after the newest published',
       future.status === 400,
       `status ${String(future.status)}`,
+    );
+
+    // ---- the market's price is one the record already carries --------------
+    //
+    // **Cycle Audit 10 (a1-03).** A venue draws the next tick before its
+    // instant falls due and holds it. Served inside `/markets/:id`'s own
+    // `price`, `sequence` and `instant`, that tick is the next price of the
+    // market with nothing in the response to give it away — no extra key, no
+    // cursor, no shape to check — and this checklist passed unchanged against
+    // a venue doing exactly that.
+    //
+    // Replay does not separate them: a pending tick's sequence is the newest
+    // published plus one, which is a resume point every feed accepts, and the
+    // tick it then delivers is that same tick. The *record* does separate
+    // them. `/price?at=` is answered from what has been published, and refuses
+    // an instant past the newest — so a market quoting a price its own record
+    // cannot produce at its own instant is quoting one it has not published.
+    //
+    // Several rounds, because a tick that was pending when the market answered
+    // may be published a moment later, and one round could be lucky.
+    const ROUNDS = 5;
+    let carried = 0;
+    let carriedDetail = '';
+    for (let round = 0; round < ROUNDS && carriedDetail === ''; round += 1) {
+      const reported = await get(`/markets/${encodeURIComponent(id)}`);
+      const body = reported.body as {
+        sequence?: unknown;
+        instant?: unknown;
+        price?: unknown;
+      } | null;
+      if (
+        reported.status !== 200 ||
+        typeof body?.sequence !== 'number' ||
+        typeof body.instant !== 'number'
+      ) {
+        carriedDetail = `GET /markets/${id} answered ${String(reported.status)} without a tick`;
+        break;
+      }
+      const atMarket = await get(
+        `/markets/${encodeURIComponent(id)}/price?at=${String(body.instant)}`,
+      );
+      const priced = atMarket.body as { sequence?: unknown; price?: unknown } | null;
+      if (
+        atMarket.status === 200 &&
+        priced?.sequence === body.sequence &&
+        priced.price === body.price
+      ) {
+        carried += 1;
+      } else {
+        carriedDetail =
+          `the market reported sequence ${String(body.sequence)} at instant ` +
+          `${String(body.instant)}, and the record answered ${String(atMarket.status)} ` +
+          `${atMarket.text.slice(0, 160)}`;
+      }
+    }
+    check(
+      'the price the market reports is one the record already carries',
+      carried === ROUNDS,
+      carriedDetail === '' ? `${String(carried)} rounds agree` : carriedDetail,
     );
 
     // ---- a proof, when the venue publishes ----------------------------------

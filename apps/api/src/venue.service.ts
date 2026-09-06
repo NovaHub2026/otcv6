@@ -20,6 +20,7 @@ import {
   Venue,
   type AssetBatch,
   type HostedMarket,
+  type RecordedSeam,
   type RecoveryOutcome,
   type SignSourceFactory,
   type StateStore,
@@ -53,6 +54,40 @@ import { PublicationService } from './publication.service.js';
  * intervals, and costs four passes a second instead of eight hundred.
  */
 const STALLED_BACKOFF_MS = 250;
+
+/**
+ * Consecutive failed passes before this venue stops calling itself ready
+ * (Cycle Audit 10: a3-06, a6-05).
+ *
+ * Not one, and not never. A pass that throws once — an `EIO` on a checkpoint,
+ * a transient the next pass clears — should not pull a single-node venue out
+ * of an orchestrator's rotation; a pass that has thrown three times running is
+ * a process that is not completing a pass at all, is writing no checkpoint,
+ * and cannot say which market is affected because the failure is not
+ * asset-scoped. At four passes a second that is under a second of blindness,
+ * where the measured failure lasted for the life of the process.
+ *
+ * A publish failure that *is* asset-scoped never waits for this: it goes
+ * through `stalled`, which makes the venue unready on the first one.
+ */
+const FAILED_PASSES_BEFORE_UNREADY = 3;
+
+/**
+ * What this service needs from the state directory's writer lock.
+ *
+ * Structural rather than `StateDirectoryLock` itself, so a test can hand the
+ * venue a lock that loses on demand without a filesystem — and narrow on
+ * purpose: `renew()` is the whole contract. The lock's own `lost` flag is not
+ * read here, because `lease.ts` is right about what it means (`false` is "no
+ * refusal has been seen yet", not "we lead"), and a refused renewal is the only
+ * evidence this service acts on.
+ */
+interface WriterLock {
+  /** Who this process claims to be, for the log line and the refusal. */
+  readonly holder: string;
+  /** Beat the heart. False means another process holds the directory now. */
+  renew(): Promise<boolean>;
+}
 
 @Injectable()
 export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
@@ -102,6 +137,26 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
   private ticksPublished = 0;
   /** The venue clock's reading when `start()` finished, for uptime. */
   private startedAt: EpochMillis | null = null;
+  /**
+   * Passes that threw: every one since boot, and the run of them ending now.
+   *
+   * `total` is what `/metrics` exports and never goes down; `consecutive` is
+   * what readiness reads and is cleared by the first pass that completes.
+   */
+  private readonly passFailures = { total: 0, consecutive: 0 };
+  /** The message of the last pass that threw, or null when the last one completed. */
+  private lastPassError: string | null = null;
+  /** The `name` of that error, so the log line is written once per kind. */
+  private lastPassErrorKind: string | null = null;
+  /**
+   * The state directory's writer lock, once `holdWriterLock` has been given one.
+   *
+   * Structural rather than the class from `@otc/runtime`, so a test can hand
+   * this a lock that loses on demand without a filesystem.
+   */
+  private writerLock: WriterLock | null = null;
+  /** Why this process is no longer the directory's writer, or null. */
+  private lostDirectory: string | null = null;
 
   constructor(
     private readonly store: StateStore,
@@ -281,17 +336,73 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
    * and not ready — and from `/health`'s `status`, which a human reads.
    */
   get isReady(): boolean {
-    return this.ready && !this.stopping && this.stalled.size === 0;
+    return this.notReadyReason === null;
+  }
+
+  /**
+   * Whether `start()` has returned — every market resumed and the scheduler
+   * running — regardless of what has happened since.
+   *
+   * **Cycle Audit 10 (a5-02).** The HTTP listener now opens *before* this, so
+   * that liveness can answer during a backfill. That puts the administrative
+   * surface within reach of a boot for the first time, and `start()` reads
+   * `this.assets` across an `await` per market: an asset hosted underneath that
+   * loop is resumed twice or dropped from the venue being built, and a
+   * retirement finds nothing hosted yet and fails with a `RangeError`. So the
+   * write routes refuse until this is true. It is deliberately *not*
+   * {@link VenueService.isReady}: a stalled market makes a venue unready, and
+   * retiring a stalled market is exactly the administrative act an operator
+   * needs then (CA7-15).
+   */
+  get started(): boolean {
+    return this.ready;
   }
 
   /** Why the venue is not ready, or null when it is. */
   get notReadyReason(): string | null {
     if (!this.ready) return 'the markets have not finished resuming';
     if (this.stopping) return 'the venue is shutting down';
+    // Before the stalls, because it subsumes them: a process that is not the
+    // directory's writer must not be routed to at all (Cycle Audit 10: a6-05).
+    if (this.lostDirectory !== null) return this.lostDirectory;
     if (this.stalled.size > 0) {
       return `stalled: ${[...this.stalled.keys()].join(', ')}`;
     }
+    if (this.passFailures.consecutive >= FAILED_PASSES_BEFORE_UNREADY) {
+      return (
+        `${String(this.passFailures.consecutive)} consecutive publish passes have failed; ` +
+        `the last said: ${this.lastPassError ?? 'nothing'}`
+      );
+    }
     return null;
+  }
+
+  /**
+   * The message of the last pass that threw, or null when the last one
+   * completed (Cycle Audit 10: a3-06). What makes `/health` say `degraded` on
+   * the first one.
+   */
+  get lastFailedPass(): string | null {
+    return this.lastPassError;
+  }
+
+  /** Why this process stopped being the writer, or null (Cycle Audit 10: a6-05). */
+  get lostWriterLock(): string | null {
+    return this.lostDirectory;
+  }
+
+  /**
+   * Take the state directory's writer lock (Cycle Audit 10: a3-07, a6-05).
+   *
+   * Given by `main.ts` after the lock is acquired and before `start()`, rather
+   * than through `AppModule.register()`: production registers the module bare
+   * and `composition.test.ts` holds it to that. The venue renews the lock on
+   * its checkpoint cadence — five seconds against a fifteen-second term, the
+   * lease's three-attempts-per-term — and stops publishing the moment a renewal
+   * is refused.
+   */
+  holdWriterLock(lock: WriterLock): void {
+    this.writerLock = lock;
   }
 
   /** What `/metrics` reads, from what this service already counts (PH-30.1). */
@@ -299,6 +410,7 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     readonly ticksPublished: number;
     readonly uptimeMs: number;
     readonly subscribers: number;
+    readonly failedPasses: number;
   } {
     let subscribers = 0;
     for (const id of this.assetIds) subscribers += this.feed.subscriberCount(id);
@@ -306,6 +418,7 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       ticksPublished: this.ticksPublished,
       uptimeMs: this.startedAt === null ? 0 : this.clock.now() - this.startedAt,
       subscribers,
+      failedPasses: this.passFailures.total,
     };
   }
 
@@ -387,7 +500,16 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     return this.stop();
   }
 
-  /** Stop publishing and write a final checkpoint. */
+  /**
+   * Stop publishing, write a final checkpoint, and seal the commitment chains.
+   *
+   * **Cycle Audit 10, a6-03.** The open commitment window used to go with the
+   * process. Its ticks had been served, could have settled contracts, were in
+   * the record — and were in no committed window, for ever, because the next
+   * boot's chain resumed past them at a seam. The release run left 5,749 of
+   * them across thirty markets in one deploy. Sealing here closes the window
+   * short, so the chain ends exactly where the record does.
+   */
   async stop(): Promise<void> {
     this.stopping = true;
     // Wait for a tick that is already running before checkpointing on top of it.
@@ -401,6 +523,9 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       this.timer = null;
     }
     await this.checkpoint();
+    // After the checkpoint and after the last advance, so what is sealed is
+    // exactly what the record holds.
+    this.publication.sealAll();
   }
 
   get assetIds(): readonly string[] {
@@ -476,8 +601,11 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     }
     await this.inFlight;
     // A final checkpoint before it leaves, so the last tick it published is the
-    // last tick its record holds.
+    // last tick its record holds — and the chain sealed on top of it, so the
+    // last tick it published is also the last tick it committed to (a6-03).
+    // Retirement is final: nothing will ever fill this market's open window.
     await this.checkpoint();
+    this.publication.seal(assetId);
     this.venue?.unhost(assetId);
     this.retired.add(assetId);
     // **Cycle Audit 7, CA7-15.** Everything this service remembers *about* a
@@ -626,6 +754,25 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     return this.record.atOrBefore(assetId, instant);
   }
 
+  /**
+   * Every discontinuity the record holds for an asset, oldest first (PH-31).
+   *
+   * From the record, not from `recoveryFor`: `recovery` is this boot's outcome
+   * in this process's memory, and a broker settling a contract from last
+   * month needs the seam a deploy three restarts ago left behind. The record is
+   * the only thing that remembers those.
+   */
+  seams(assetId: string): Promise<readonly RecordedSeam[]> {
+    if (this.record === null) return Promise.resolve([]);
+    return this.record.seams(assetId);
+  }
+
+  /** The recorded seam whose interval contains an instant, or null (PH-31). */
+  seamAt(assetId: string, instant: number): Promise<RecordedSeam | null> {
+    if (this.record === null) return Promise.resolve(null);
+    return this.record.seamAt(assetId, instant);
+  }
+
   /** The proof of a published sequence from the publication archive (PH-29.1). */
   proofFor(assetId: string, sequence: number): Promise<PublicationProof> {
     return this.publication.proofFor(assetId, sequence);
@@ -645,9 +792,64 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     return [...this.stalled].map(([assetId, reason]) => ({ assetId, reason }));
   }
 
-  /** Publish everything due, then persist if the cadence has elapsed. */
+  /**
+   * Publish everything due, then persist if the cadence has elapsed.
+   *
+   * The accounting wrapper, and it is the finding (Cycle Audit 10: a3-06,
+   * a6-05). `schedule()` caught whatever this rejected with, wrote
+   * `tick failed: ...` and dropped
+   * it — so a venue whose every pass threw for minutes answered
+   * `{"status":"ok","stalled":[],"ready":true}` with `otc_markets_stalled` 0
+   * and a climbing tick counter, while every subscriber received nothing.
+   * Measured on the release build: 900+ ticks recorded, zero bytes served in
+   * eight seconds, 6,795 failed passes, green throughout.
+   *
+   * A pass that throws is now a fact the process carries: `/health` is
+   * `degraded` on the first one, `/health/ready` refuses after
+   * {@link FAILED_PASSES_BEFORE_UNREADY} consecutive ones, and
+   * `otc_tick_pass_failures_total` counts every one of them. The rejection is
+   * still a rejection — `stop()` and any direct caller see it — it simply is
+   * not the only trace any more.
+   */
   async tick(): Promise<void> {
+    try {
+      await this.#pass();
+    } catch (error) {
+      this.#passFailed(error);
+      throw error;
+    }
+    this.passFailures.consecutive = 0;
+    this.lastPassError = null;
+    this.lastPassErrorKind = null;
+  }
+
+  /**
+   * Record a failed pass where the operator surface can see it.
+   *
+   * The log line is deduped on the error's *kind*, for the reason the stall
+   * line is: an auditor counted 6,795 identical `tick failed` lines in 45
+   * seconds, and the one that mattered was the first. The count that was lost
+   * with them is in `/metrics`.
+   */
+  #passFailed(error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    const kind = error instanceof Error ? error.name : 'unknown';
+    this.passFailures.total += 1;
+    this.passFailures.consecutive += 1;
+    this.lastPassError = message;
+    if (this.lastPassErrorKind !== kind) {
+      this.lastPassErrorKind = kind;
+      this.logger.error(
+        `tick failed: ${message} (logged once per ${kind}; the count is in ` +
+          `otc_tick_pass_failures_total and the state is in /health)`,
+      );
+    }
+  }
+
+  async #pass(): Promise<void> {
     if (this.venue === null) return;
+    // Not the writer any more: publish nothing, record nothing (Cycle Audit 10: a6-05).
+    if (this.lostDirectory !== null) return;
     // `advanceDetailed`, not `advance`. **Cycle Audit 6, CA6-33:** `advance()`
     // returns `advanceDetailed(now).published` and drops the failures, and this
     // service called only that. A market past its catch-up bound therefore
@@ -692,18 +894,79 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       const last = generated[generated.length - 1];
       if (last !== undefined) this.latest.set(assetId, last);
       if (ticks.length === 0) continue;
-      this.ticksPublished += ticks.length;
-      this.feed.publish(assetId, ticks);
-      // After publication, never before: the publisher sees the record, it does
-      // not participate in producing it (INV-001). The same is true of the
-      // history: a chart is a view of what happened, and a view that could
-      // influence what happens next would be the whole product broken.
-      this.publication.observe(assetId, ticks);
-      this.history?.observe(assetId, ticks);
+      // **Isolated per asset, and unrecoverable in this process (Cycle Audit 10:
+      // a3-06).**
+      // `advanceDetailed` above is isolated for CA6-33's reason; this loop was
+      // not, so one asset's throw abandoned every asset after it in the pass —
+      // ticks already in the record, never offered to the feed, the chain or
+      // the history, and never offerable again because `append` is a comparing
+      // append and returns a recorded tick as "not fresh" for ever.
+      //
+      // **There is no honest retry from inside the pass.** `append` compares:
+      // a sequence it already holds is not returned as fresh again, ever
+      // (`tickRecord.ts`, "Ticks the record already holds are not returned as
+      // fresh"). So offering the same batch a second time yields nothing, and
+      // the only way to move those ticks onward would be to read them back out
+      // of the record and hand them to the feed directly.
+      //
+      // That machinery exists — `feed.forget` then `#primeFromRecord`, which
+      // is exactly what a boot does — and it is deliberately **not** wired
+      // here, for three reasons. It evicts every subscriber of that market on
+      // every occurrence. The refusal is itself evidence that the record moved
+      // without this process's feed seeing it — in the measured case a second
+      // writer on the state directory — so healing it silently hides the
+      // writer and leaves two engines interleaving one id, which is INV-002
+      // broken where nobody can see it. And because the other writer keeps
+      // appending, the heal would repeat every pass: a market that drops its
+      // subscribers four times a second while `/health` says `ok` is worse
+      // than one that stops and says so.
+      //
+      // So the market is marked unserving, exactly as a record refusal marks
+      // one: stalled by name, unhosted so it stops generating what it cannot
+      // serve, `/health` degraded, `/health/ready` refusing, and
+      // `otc_markets_stalled` counting it. The recovery is a restart, where
+      // `#primeFromRecord` reconciles the feed, the chain and the history with
+      // the record in the one place that knows how — and the state directory's
+      // writer lock is what stops the second writer causing it again.
+      try {
+        this.feed.publish(assetId, ticks);
+        // The counter after the publish, never before (Cycle Audit 10: a6-05): it read
+        // `otc_ticks_published_total` climbing past a thousand on a process
+        // whose feed had not accepted a tick in minutes.
+        this.ticksPublished += ticks.length;
+        // After publication, never before: the publisher sees the record, it does
+        // not participate in producing it (INV-001). The same is true of the
+        // history: a chart is a view of what happened, and a view that could
+        // influence what happens next would be the whole product broken.
+        this.publication.observe(assetId, ticks);
+        this.history?.observe(assetId, ticks);
+      } catch (error) {
+        this.#publishRefused(assetId, error);
+      }
     }
     if (this.clock.now() - this.lastCheckpointAt >= this.checkpointEveryMs) {
       await this.checkpoint();
     }
+  }
+
+  /**
+   * A market whose publish path refused: unserving, by name, until a restart.
+   *
+   * The same treatment a record refusal gets, because it is the same class of
+   * fact — this process cannot serve what it recorded. Unhosting stops the
+   * engine advancing a market nobody receives; the stall is what `/health`,
+   * `/health/ready` and `otc_markets_stalled` read.
+   */
+  #publishRefused(assetId: string, error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    this.stalled.set(assetId, `refused by the publish path — ${message}`);
+    this.stalledLogged.set(assetId, 'PublishRefusal');
+    this.venue?.unhost(assetId);
+    this.logger.error(
+      `${assetId}: REFUSED BY THE PUBLISH PATH and unhosted — ${message} ` +
+        `(the ticks are in the record and cannot be offered to the feed again; ` +
+        `a restart primes the feed from the record)`,
+    );
   }
 
   /**
@@ -748,10 +1011,76 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     }
   }
 
+  /**
+   * Renew the writer lock, and say whether this process still leads.
+   *
+   * True when no lock was given — a test, or a deployment that has not been
+   * pointed at a directory. False once a renewal has been refused, and false
+   * for ever after: the venue stops publishing, `/health` goes `degraded` and
+   * `/health/ready` refuses, which is what an orchestrator needs to stop
+   * routing to a process whose directory belongs to somebody else.
+   */
+  async #stillTheWriter(): Promise<boolean> {
+    if (this.writerLock === null) return true;
+    if (this.lostDirectory !== null) return false;
+    if (await this.writerLock.renew()) return true;
+    this.lostDirectory =
+      `the state directory's writer lock was lost by ${this.writerLock.holder}; ` +
+      `another process holds it, so this one has stopped publishing`;
+    this.logger.error(
+      `LOST THE STATE DIRECTORY — ${this.lostDirectory}. Nothing further is published, ` +
+        `checkpointed or recorded by this process.`,
+    );
+    if (this.timer !== null) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    return false;
+  }
+
+  /**
+   * Persist every market that is actually publishing, and renew the lock.
+   *
+   * Two things are deliberately *not* checkpointed: a market that is stalled
+   * (see below), and anything at all once this process has lost the state
+   * directory's writer lock.
+   */
   async checkpoint(): Promise<void> {
     if (this.venue === null) return;
+    // The heartbeat, and the check, before anything is written (Cycle Audit 10:
+    // a6-05). A process that has lost the state directory must not write a
+    // checkpoint, trim the record or flush a bar into it: whoever holds the lock
+    // now is the writer, and two writers on one directory is the failure this
+    // exists to prevent.
+    if (!(await this.#stillTheWriter())) return;
     const now = this.clock.now();
     for (const assetId of this.venue.assetIds) {
+      // **A stalled market's checkpoint is not refreshed (Cycle Audit 10:
+      // ops-observed).** `resumeMarket` decides between continuing and seaming
+      // on `clock.now() - record.savedAt`, and this loop was writing `savedAt =
+      // now` for every hosted market on every cadence — including one that had
+      // refused every advance for hours. So the checkpoint stayed *fresh* while
+      // the market it described stayed *stale*, the next boot chose `resumed`,
+      // `HostedMarket` floored on the old `lastPublished` and refused again,
+      // and the stall survived every restart. Measured on the operator's own
+      // panel after the host was suspended: thirty markets stalled with
+      // "Market is 11326s behind the clock", a clean restart changed nothing,
+      // and the only remedy anyone had was to move the state directory aside —
+      // which throws the record away.
+      //
+      // This is CA7-09's wedge with a different way in, and the same answer: a
+      // checkpoint is a claim that this market was here at this instant, and a
+      // market that published nothing because it is past its catch-up bound was
+      // not. Leaving its last true checkpoint alone means the next boot sees a
+      // checkpoint older than the bound and takes the seam ADR-0010 already
+      // decided on — visible, recorded, and keeping every tick. A restart
+      // becomes the remedy it always looked like.
+      //
+      // Nothing else is skipped by omission: `trim` is bounded maintenance on a
+      // market that is producing nothing, and `checkpointTaken` is skipped with
+      // the save it belongs to, which leaves the control mark set — the
+      // conservative direction, since the mark makes the next boot seam.
+      if (this.stalled.has(assetId)) continue;
       // The mark goes into the record before it is cleared, so a checkpoint
       // taken mid-push carries it and the next boot seams rather than
       // regenerating ticks the keystream would sign differently.
@@ -817,13 +1146,20 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
   }
 
   private schedule(waitMs: number = this.nextWaitMs()): void {
-    if (this.stopping || this.venue === null) return;
+    if (this.stopping || this.venue === null || this.lostDirectory !== null) return;
     this.timer = setTimeout(() => {
       // Kept so `stop()` can wait for it rather than checkpointing on top of
       // an advance that is still writing.
       this.inFlight = this.tick()
-        .catch((error: unknown) => {
-          this.logger.error(`tick failed: ${String(error)}`);
+        .catch(() => {
+          // **Swallowed here, but no longer swallowed (Cycle Audit 10: a3-06).**
+          // This used to
+          // be the only trace a failed pass left: a log line, and a health
+          // surface that went on saying `ok` with an empty `stalled` list
+          // while the venue served nothing for the life of the process.
+          // `tick()` has already counted it, logged it once per kind, and put
+          // it where `/health`, `/health/ready` and `/metrics` read it. The
+          // rejection is absorbed only so the scheduler's chain continues.
         })
         .finally(() => {
           this.schedule();

@@ -1,5 +1,8 @@
 // Invariant evidence: INV-010 (private generator state) — the operator surface carries counters, never state.
-import { ServiceUnavailableException } from '@nestjs/common';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 import { durationMillis, epochMillis, MasterKeyring, SteppableClock } from '@otc/core';
 import { ASSET_CATALOGUE } from '@otc/engine';
@@ -31,6 +34,18 @@ function venue(): { venue: VenueService; clock: SteppableClock; controller: Mark
   return { venue: service, clock, controller: new MarketController(service) };
 }
 
+/** Every sample of a Prometheus body, keyed by name and labels. */
+function samplesOf(text: string): Map<string, number> {
+  const samples = new Map<string, number>();
+  for (const line of text.split('\n')) {
+    if (line.length === 0 || line.startsWith('#')) continue;
+    const m = /^([a-z_]+)(\{[^}]*\})? (-?\d+(?:\.\d+)?)$/.exec(line);
+    expect(m, `malformed sample: ${line}`).not.toBeNull();
+    samples.set(m![1]! + (m![2] ?? ''), Number(m![3]));
+  }
+  return samples;
+}
+
 describe('liveness and readiness (PH-30.1)', () => {
   it('is live before it is ready, ready once the markets resumed, and not ready while one is stalled', async () => {
     const { venue: service, clock, controller } = venue();
@@ -55,6 +70,80 @@ describe('liveness and readiness (PH-30.1)', () => {
   });
 });
 
+/**
+ * **Cycle Audit 10 (a5-02).** The controller answered liveness before
+ * readiness; the *process* did not. `bootstrap()` resumed every market and
+ * generated the backfill before `app.listen()`, so the socket refused
+ * connections for the whole boot and liveness and readiness first answered at
+ * the same instant — measured 14.4 s apart from nothing, with a one-day
+ * backfill. PH-30.1 §1 promises an orchestrator can point its restart at
+ * `/health/live`, and a restart pointed at a port that refuses connections
+ * kills the venue every time the backfill is longer than the probe allows.
+ *
+ * Composition is text here for the same reason it is in `composition.test.ts`:
+ * what is under test is the order of two awaits in the entrypoint, and no unit
+ * test can reach it without booting the service.
+ */
+describe('the process serves before it starts the markets (a5-02)', () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const main = readFileSync(path.join(here, 'main.ts'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+
+  it('listens before it resumes a market, so liveness answers during a backfill', () => {
+    const listen = main.indexOf('app.listen(');
+    const start = main.indexOf('venue.start()');
+    const overlays = main.indexOf('venue.applyOverlays(');
+    expect(listen, 'main.ts never listens').toBeGreaterThan(-1);
+    expect(start, 'main.ts never starts the venue').toBeGreaterThan(-1);
+    expect(overlays, 'main.ts never applies the overlays').toBeGreaterThan(-1);
+    expect(
+      listen,
+      'main.ts starts the venue before it serves HTTP: /health/live cannot answer until every market has resumed',
+    ).toBeLessThan(start);
+    expect(
+      listen,
+      'main.ts reads the overlays before it serves HTTP: liveness waits on the registry',
+    ).toBeLessThan(overlays);
+  });
+
+  /**
+   * The other side of the ordering change. Opening the listener first puts the
+   * administrative surface within reach of a boot for the first time, and
+   * `start()` walks `this.assets` across an `await` per market: an asset hosted
+   * underneath that loop is resumed twice or missing from the venue being
+   * built, and a retirement finds nothing hosted and throws a `RangeError`
+   * (a 500). Reads are honest in that window because an unresumed market is
+   * not hosted; writes are refused with the reason readiness already gives.
+   */
+  it('refuses an administrative write until the markets have resumed', async () => {
+    const { venue: service, controller } = venue();
+    expect(() => controller.createAsset({ id: 'x' })).toThrow(ServiceUnavailableException);
+    await expect(controller.retireAsset(asset.definition.id)).rejects.toThrow(
+      ServiceUnavailableException,
+    );
+    await expect(controller.editAsset(asset.definition.id, {})).rejects.toThrow(
+      ServiceUnavailableException,
+    );
+    await service.start();
+    // Once it has started, a write is refused for what this deployment is —
+    // no registry, no registration service — and not for the boot.
+    expect(() => controller.createAsset({ id: 'x' })).toThrow(NotFoundException);
+    await expect(controller.retireAsset(asset.definition.id)).rejects.toThrow(NotFoundException);
+    await service.stop();
+  });
+
+  it('never reports ready from anything but the venue', () => {
+    // The other half of the promise: liveness moving earlier must not move
+    // readiness with it. `/health/ready` reads the venue and nothing else.
+    expect(main).not.toMatch(/ready\s*[:=]/);
+    const { venue: service, controller } = venue();
+    expect(controller.live()).toEqual({ live: true });
+    expect(() => controller.ready()).toThrow(ServiceUnavailableException);
+    expect(service.notReadyReason).toMatch(/not finished resuming/);
+  });
+});
+
 describe('metrics (PH-30.1)', () => {
   it('is Prometheus text whose numbers are the ones /health reports', async () => {
     const { venue: service, clock, controller } = venue();
@@ -65,13 +154,7 @@ describe('metrics (PH-30.1)', () => {
     }
     service.feed.subscribe(asset.definition.id, { deliver: () => true, close: () => undefined });
     const text = await controller.metrics();
-    const samples = new Map<string, number>();
-    for (const line of text.split('\n')) {
-      if (line.length === 0 || line.startsWith('#')) continue;
-      const m = /^([a-z_]+)(\{[^}]*\})? (-?\d+(?:\.\d+)?)$/.exec(line);
-      expect(m, `malformed sample: ${line}`).not.toBeNull();
-      samples.set(m![1]! + (m![2] ?? ''), Number(m![3]));
-    }
+    const samples = samplesOf(text);
     const health = controller.health() as { assets: number; stalled: unknown[] };
     expect(samples.get('otc_markets_hosted')).toBe(health.assets);
     expect(samples.get('otc_markets_stalled')).toBe(health.stalled.length);
@@ -87,5 +170,52 @@ describe('metrics (PH-30.1)', () => {
     expect(samples.get('otc_process_resident_bytes')).toBeGreaterThan(1_000_000);
     expect(text).toMatch(/# TYPE otc_ticks_published_total counter/);
     await service.stop();
+  });
+
+  /**
+   * **Cycle Audit 10 (a5-05).** PH-30.1 §3 criterion 2 asks the counters to
+   * agree with `/health`, and the test above only ever asks a venue that has
+   * just started and ticked ten times — where `stalled` is 0 and `ready` is 1.
+   * Both assertions are satisfied by constants, and they were: planting
+   * `otc_markets_stalled 0` and `otc_ready 1` as literals passed 48 files and
+   * 392 tests, exit 0. Two samples that only ever read one value are two
+   * samples an operator's alert can never fire on — which is the whole reason
+   * a deployment scrapes them.
+   *
+   * So this asks the same two counters in the states they exist for: a market
+   * past its catch-up bound, and a venue that is shutting down.
+   */
+  it('reports a stalled market and an unready venue, and agrees with /health there too (a5-05)', async () => {
+    const { venue: service, clock, controller } = venue();
+    await service.start();
+    for (let i = 0; i < 10; i += 1) {
+      clock.advance(durationMillis(1_000));
+      await service.tick();
+    }
+    const healthy = samplesOf(await controller.metrics());
+    expect(healthy.get('otc_markets_stalled')).toBe(0);
+    expect(healthy.get('otc_ready')).toBe(1);
+
+    // Past the catch-up bound: the market stalls and the venue is degraded.
+    clock.advance(durationMillis(60_000));
+    await service.tick();
+    expect(service.stalledMarkets, 'the market did not stall').toHaveLength(1);
+    const degraded = samplesOf(await controller.metrics());
+    const health = controller.health() as { ready: boolean; stalled: unknown[] };
+    expect(health.stalled).toHaveLength(1);
+    expect(
+      degraded.get('otc_markets_stalled'),
+      'otc_markets_stalled does not count the stalled market /health reports',
+    ).toBe(health.stalled.length);
+    expect(degraded.get('otc_markets_stalled')).toBe(1);
+    expect(degraded.get('otc_ready'), 'otc_ready is 1 for a venue /health calls unready').toBe(0);
+    expect(health.ready).toBe(false);
+
+    // And shutting down is the other way to be unready: `/health/ready` refuses,
+    // so the scraped counter must say so as well.
+    await service.stop();
+    expect(() => controller.ready()).toThrow(ServiceUnavailableException);
+    const stopped = samplesOf(await controller.metrics());
+    expect(stopped.get('otc_ready'), 'otc_ready is 1 for a venue that has stopped').toBe(0);
   });
 });

@@ -1,7 +1,12 @@
 import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { STATE_RECORD_VERSION, type AssetRegistry } from '@otc/runtime';
+import {
+  DirectoryLockedError,
+  StateDirectoryLock,
+  STATE_RECORD_VERSION,
+  type AssetRegistry,
+} from '@otc/runtime';
 import { bindAddressFromEnvironment, isExposedBind } from '../bind.js';
 import { markLabState } from '../labState.js';
 import { VenueService } from '../venue.service.js';
@@ -46,6 +51,34 @@ async function bootstrap(): Promise<void> {
     `state-record/${String(STATE_RECORD_VERSION)}`,
   );
   logger.log(`this state directory is a simulation's: ${marker}`);
+
+  // One writer here too (Cycle Audit 10: a3-07, a6-05). This process runs the
+  // same `VenueService` against the same kind of directory, so it has the same
+  // failure: two Labs on one directory each prime a feed from a record the
+  // other is also appending to, and both then serve nothing while reporting
+  // healthy. The operator's own panel is a Lab, which makes this the *likelier*
+  // of the two accidents, not the rarer one.
+  let lock: StateDirectoryLock;
+  try {
+    lock = await StateDirectoryLock.acquire(stateDir, { now: () => venue.now() });
+  } catch (error) {
+    if (error instanceof DirectoryLockedError) {
+      logger.error(error.message);
+      process.exit(1);
+    }
+    throw error;
+  }
+  if (lock.tookOverFrom !== null) {
+    logger.warn(
+      `took the state directory over from ${lock.tookOverFrom.holder} ` +
+        `(pid ${String(lock.tookOverFrom.pid)} on ${lock.tookOverFrom.host}): its lock was ` +
+        `abandoned. If that process is still running, stop it now.`,
+    );
+  }
+  process.on('exit', () => {
+    lock.releaseSync();
+  });
+  venue.holdWriterLock(lock);
 
   venue.applyOverlays(await app.get<AssetRegistry>('ASSET_REGISTRY').overlays());
   await venue.start();

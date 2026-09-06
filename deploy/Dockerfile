@@ -9,12 +9,23 @@ COPY packages ./packages
 COPY apps/api ./apps/api
 COPY tools/sim ./tools/sim
 RUN npm ci --no-audit --no-fund && npm run build
+# The operational scripts run *from this image* (Cycle Audit 10, a5-04). The
+# compose file's backup service used to bind-mount the host's checkout and run
+# `deploy/backup.sh` out of it, which meant running `tools/sim/dist/` — a
+# directory `.gitignore` excludes — so on a fresh clone it never wrote a
+# backup. After the build, not before: nothing here is an input to it, and a
+# change to a shell script should not re-run `npm ci`.
+COPY deploy ./deploy
 
 FROM node:24-slim
 ENV NODE_ENV=production PORT=3000 OTC_BIND=0.0.0.0 OTC_STATE_DIR=/var/lib/otc
 WORKDIR /opt/otc
 COPY --from=build /src /opt/otc
-RUN useradd --system --home /opt/otc otc && mkdir -p /var/lib/otc && chown -R otc /var/lib/otc
+# /backups too: a fresh named volume takes its ownership from the image, so the
+# backup service can write into it as this user without running as root.
+RUN useradd --system --home /opt/otc otc \
+  && mkdir -p /var/lib/otc /backups \
+  && chown -R otc /var/lib/otc /backups
 USER otc
 VOLUME ["/var/lib/otc"]
 EXPOSE 3000

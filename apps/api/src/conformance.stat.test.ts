@@ -51,11 +51,13 @@ async function boot(port: number): Promise<{ base: string; output: () => string 
       throw new Error(`service exited (${child.exitCode}):\n${output.slice(-2_000)}`);
     try {
       const response = await fetch(`http://127.0.0.1:${port}/health`);
-      if (
-        response.ok &&
-        ((await response.json()) as { bootNonce: string | null }).bootNonce === nonce
-      ) {
-        return { base: `http://127.0.0.1:${port}`, output: () => output };
+      if (response.ok) {
+        // Ready, not merely answering: the listener opens before the markets
+        // resume (a5-02), so `/health` answers while the venue is still booting.
+        const health = (await response.json()) as { bootNonce: string | null; ready: boolean };
+        if (health.bootNonce === nonce && health.ready) {
+          return { base: `http://127.0.0.1:${port}`, output: () => output };
+        }
       }
     } catch {
       /* not up yet */

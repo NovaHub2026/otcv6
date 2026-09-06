@@ -22,6 +22,10 @@ Environment=PORT=3000
 Environment=OTC_BIND=127.0.0.1
 Environment=OTC_STATE_DIR=/var/lib/otc
 Environment=OTC_PUBLICATION_DIR=/var/lib/otc/publication
+# The unit binds loopback and nginx.conf sits in front of it, forwarding the
+# client in X-Forwarded-For. Without this the rate limit sees only nginx and
+# every client shares one bucket (Cycle Audit 10).
+Environment=OTC_TRUSTED_PROXIES=1
 EnvironmentFile=/etc/otc/secrets.env
 ExecStart=/usr/bin/node /opt/otc/apps/api/dist/main.js
 Restart=always

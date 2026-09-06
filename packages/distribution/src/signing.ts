@@ -92,7 +92,7 @@ function canonicalEncoding(commitment: Commitment): Buffer {
     out.writeBigUInt64BE(BigInt(value));
     return out;
   };
-  return Buffer.concat([
+  const fields = [
     framed('otc-commitment-v2'),
     framed(commitment.assetId),
     u64(commitment.fromSequence),
@@ -100,7 +100,16 @@ function canonicalEncoding(commitment: Commitment): Buffer {
     u64(commitment.count),
     framed(commitment.previousRoot),
     framed(commitment.root),
-  ]);
+  ];
+  // A resume link's declaration is attested too. Appended rather than
+  // interleaved, and only when present, so an ordinary link encodes byte for
+  // byte as it did before resume links existed and every signature already
+  // published still verifies. Nothing is ambiguous: every field before this is
+  // length-prefixed or fixed width, so the two shapes are read apart by length
+  // alone — and the root, which is inside this encoding, already binds
+  // `resumesAfter` under its own tag.
+  if (commitment.resumesAfter !== undefined) fields.push(u64(commitment.resumesAfter));
+  return Buffer.concat(fields);
 }
 
 /** Ed25519 private key from a 32-byte hex seed. */

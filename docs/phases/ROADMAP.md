@@ -4,7 +4,7 @@ Type: SUPPORTING DOCUMENTATION (living)
 Status: Dynamic — phases may be split, merged, reordered or replaced as
 implementation reveals information (`GOVERNANCE.md` §13). Approved phases are
 never rewritten as though they had not happened.
-Last revised: 2026-09-05 (Cycle 9 complete — PH-26, PH-25, PH-27; Cycle Audit 9 in progress; the likely Cycle 10 is IMPROVEMENT-REPORT-001 §4)
+Last revised: 2026-09-06 (Cycle 10 complete — PH-28, PH-29, PH-30; Cycle Audit 10 closed; the release that stands is `v2.0.0`)
 
 ---
 
@@ -807,12 +807,12 @@ improvement report's ranking (`../reports/IMPROVEMENT-REPORT-001.md` §4) is
 followed where it serves that end and departed from where it does not, and the
 departure is recorded ([decision](../decisions/DECISION-LOG.md), 2026-09-05).
 
-| Phase | Title                                                       | State        |
-| ----- | ----------------------------------------------------------- | ------------ |
-| PH-28 | The durable venue: the record outlives the process          | **APPROVED** |
-| PH-29 | The integration boundary: what a broker's settlement needs  | **APPROVED** |
-| PH-30 | Release 1.0: the engine as a broker integrates it           | APPROVED     |
-| —     | **Cycle Audit 10** — the closing audit, adversarial as ever | PLANNED      |
+| Phase | Title                                                       | State                                                                                                                                        |
+| ----- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| PH-28 | The durable venue: the record outlives the process          | **APPROVED**                                                                                                                                 |
+| PH-29 | The integration boundary: what a broker's settlement needs  | **APPROVED**                                                                                                                                 |
+| PH-30 | Release 1.0: the engine as a broker integrates it           | APPROVED                                                                                                                                     |
+| —     | **Cycle Audit 10** — the closing audit, adversarial as ever | **APPROVED** — [record](../audits/CYCLE-AUDIT-010.md): 98 claims, 86 confirmed, 12 partial, 0 refuted; 45 plants, 23 survived and are closed |
 
 **What "finished" means here, and what it does not.** The product is the
 engine; the broker is somebody else's. At the end of Cycle 10 a broker runs the
