@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { Express } from 'express';
 import { stateRefusal, verifyStateDirectory, type AssetRegistry } from '@otc/runtime';
 import { ADMIN_TOKEN } from './adminAuth.guard.js';
 import { AppModule } from './app.module.js';
@@ -100,7 +101,11 @@ async function bootstrap(): Promise<void> {
   // other way — so this is 0 unless the deployment says otherwise.
   const trustedProxies = trustedProxiesFromEnvironment(process.env);
   if (trustedProxies > 0) {
-    app.getHttpAdapter().getInstance().set('trust proxy', trustedProxies);
+    // Typed, because `getInstance()` is `any` by default and the type-aware
+    // lint refuses a call on one (the hop count arrived in Cycle Audit 10 and
+    // took `npm run lint` red with it).
+    const express = app.getHttpAdapter().getInstance() as Express;
+    express.set('trust proxy', trustedProxies);
   }
 
   const origins = process.env.OTC_CORS_ORIGIN;

@@ -31,6 +31,18 @@ function venue(): { venue: VenueService; clock: SteppableClock; controller: Mark
   return { venue: service, clock, controller: new MarketController(service) };
 }
 
+/** Every sample of a Prometheus body, keyed by name and labels. */
+function samplesOf(text: string): Map<string, number> {
+  const samples = new Map<string, number>();
+  for (const line of text.split('\n')) {
+    if (line.length === 0 || line.startsWith('#')) continue;
+    const m = /^([a-z_]+)(\{[^}]*\})? (-?\d+(?:\.\d+)?)$/.exec(line);
+    expect(m, `malformed sample: ${line}`).not.toBeNull();
+    samples.set(m![1]! + (m![2] ?? ''), Number(m![3]));
+  }
+  return samples;
+}
+
 describe('liveness and readiness (PH-30.1)', () => {
   it('is live before it is ready, ready once the markets resumed, and not ready while one is stalled', async () => {
     const { venue: service, clock, controller } = venue();
@@ -65,13 +77,7 @@ describe('metrics (PH-30.1)', () => {
     }
     service.feed.subscribe(asset.definition.id, { deliver: () => true, close: () => undefined });
     const text = await controller.metrics();
-    const samples = new Map<string, number>();
-    for (const line of text.split('\n')) {
-      if (line.length === 0 || line.startsWith('#')) continue;
-      const m = /^([a-z_]+)(\{[^}]*\})? (-?\d+(?:\.\d+)?)$/.exec(line);
-      expect(m, `malformed sample: ${line}`).not.toBeNull();
-      samples.set(m![1]! + (m![2] ?? ''), Number(m![3]));
-    }
+    const samples = samplesOf(text);
     const health = controller.health() as { assets: number; stalled: unknown[] };
     expect(samples.get('otc_markets_hosted')).toBe(health.assets);
     expect(samples.get('otc_markets_stalled')).toBe(health.stalled.length);
@@ -87,5 +93,52 @@ describe('metrics (PH-30.1)', () => {
     expect(samples.get('otc_process_resident_bytes')).toBeGreaterThan(1_000_000);
     expect(text).toMatch(/# TYPE otc_ticks_published_total counter/);
     await service.stop();
+  });
+
+  /**
+   * **Cycle Audit 10 (a5-05).** PH-30.1 §3 criterion 2 asks the counters to
+   * agree with `/health`, and the test above only ever asks a venue that has
+   * just started and ticked ten times — where `stalled` is 0 and `ready` is 1.
+   * Both assertions are satisfied by constants, and they were: planting
+   * `otc_markets_stalled 0` and `otc_ready 1` as literals passed 48 files and
+   * 392 tests, exit 0. Two samples that only ever read one value are two
+   * samples an operator's alert can never fire on — which is the whole reason
+   * a deployment scrapes them.
+   *
+   * So this asks the same two counters in the states they exist for: a market
+   * past its catch-up bound, and a venue that is shutting down.
+   */
+  it('reports a stalled market and an unready venue, and agrees with /health there too (a5-05)', async () => {
+    const { venue: service, clock, controller } = venue();
+    await service.start();
+    for (let i = 0; i < 10; i += 1) {
+      clock.advance(durationMillis(1_000));
+      await service.tick();
+    }
+    const healthy = samplesOf(await controller.metrics());
+    expect(healthy.get('otc_markets_stalled')).toBe(0);
+    expect(healthy.get('otc_ready')).toBe(1);
+
+    // Past the catch-up bound: the market stalls and the venue is degraded.
+    clock.advance(durationMillis(60_000));
+    await service.tick();
+    expect(service.stalledMarkets, 'the market did not stall').toHaveLength(1);
+    const degraded = samplesOf(await controller.metrics());
+    const health = controller.health() as { ready: boolean; stalled: unknown[] };
+    expect(health.stalled).toHaveLength(1);
+    expect(
+      degraded.get('otc_markets_stalled'),
+      'otc_markets_stalled does not count the stalled market /health reports',
+    ).toBe(health.stalled.length);
+    expect(degraded.get('otc_markets_stalled')).toBe(1);
+    expect(degraded.get('otc_ready'), 'otc_ready is 1 for a venue /health calls unready').toBe(0);
+    expect(health.ready).toBe(false);
+
+    // And shutting down is the other way to be unready: `/health/ready` refuses,
+    // so the scraped counter must say so as well.
+    await service.stop();
+    expect(() => controller.ready()).toThrow(ServiceUnavailableException);
+    const stopped = samplesOf(await controller.metrics());
+    expect(stopped.get('otc_ready'), 'otc_ready is 1 for a venue that has stopped').toBe(0);
   });
 });

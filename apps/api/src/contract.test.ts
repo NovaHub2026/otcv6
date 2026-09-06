@@ -7,6 +7,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Request, Response } from 'express';
 import { afterAll, describe, expect, it } from 'vitest';
 import { durationMillis, epochMillis, MasterKeyring, SteppableClock } from '@otc/core';
 import { ASSET_CATALOGUE } from '@otc/engine';
@@ -113,6 +114,100 @@ function checkShape(
     }
   }
   return problems;
+}
+
+/** A booted production venue and a controller over it, for the walks below. */
+async function booted(
+  prefix: string,
+  secret: number,
+): Promise<{
+  venue: VenueService;
+  controller: MarketController;
+  clock: SteppableClock;
+}> {
+  const publicationDir = mkdtempSync(path.join(tmpdir(), prefix));
+  scratch.push(publicationDir);
+  const clock = new SteppableClock(GENESIS);
+  const venue = new VenueService(
+    new MemoryStateStore(),
+    MasterKeyring.fromSecret('contract-spec', new Uint8Array(32).fill(secret)),
+    clock,
+    [asset],
+    5_000,
+    new PublicationService([asset], 20, {
+      OTC_PUBLICATION_DIR: publicationDir,
+      OTC_PUBLISHING_KEY: '78'.repeat(32),
+    }),
+    null,
+    GENESIS,
+    0,
+    null,
+    null,
+    null,
+    new MemoryTickRecord(),
+  );
+  started.push(venue);
+  await venue.start();
+  for (let i = 0; i < 12; i += 1) {
+    clock.advance(durationMillis(10_000));
+    await venue.tick();
+  }
+  return { venue, controller: new MarketController(venue), clock };
+}
+
+/** A response that records the frames a stream writes to it. */
+function recording(): { res: Response; body: () => string } {
+  let ended = false;
+  const chunks: string[] = [];
+  const res = {
+    writeHead: () => res,
+    write: (chunk: string) => {
+      chunks.push(chunk);
+      return true;
+    },
+    end: () => {
+      ended = true;
+    },
+    get writableEnded() {
+      return ended;
+    },
+    on: () => undefined,
+    once: (event: string, handler: () => void) => {
+      if (event === 'drain') handler();
+      return res;
+    },
+    get writableNeedDrain() {
+      return false;
+    },
+    get writableLength() {
+      return 0;
+    },
+  } as unknown as Response;
+  return { res, body: () => chunks.join('') };
+}
+
+const request = (): Request => ({ headers: {} }) as Request;
+
+/** Split a server-sent-event body into `{event, data}`, keeping what it cannot read. */
+function frames(body: string): { parsed: { event: string; data: unknown }[]; malformed: string[] } {
+  const parsed: { event: string; data: unknown }[] = [];
+  const malformed: string[] = [];
+  for (const block of body.split('\n\n')) {
+    if (block.length === 0) continue;
+    let event = 'message';
+    let data: string | null = null;
+    for (const line of block.split('\n')) {
+      if (line.startsWith('event: ')) event = line.slice('event: '.length);
+      else if (line.startsWith('data: ')) data = line.slice('data: '.length);
+      else if (!line.startsWith('id: ')) malformed.push(line);
+    }
+    if (data === null) {
+      malformed.push(block);
+      continue;
+    }
+    parsed.push({ event, data: JSON.parse(data) as unknown });
+  }
+  return { parsed, malformed };
 }
 
 describe('the API is a contract (PH-29.2)', () => {
@@ -252,6 +347,79 @@ describe('the API is a contract (PH-29.2)', () => {
     }
     expect(exercised.length, exercised.join(', ')).toBeGreaterThanOrEqual(8);
     expect(problems).toEqual([]);
+  }, 60_000);
+
+  /**
+   * **Cycle Audit 10 (a4-07).** The contract describes the streams' frames —
+   * `route.stream[event]` — and until this test nothing read one. The shape
+   * walk above starts `if (route.response === undefined) continue`, and both
+   * stream routes answer by writing to the response rather than returning, so
+   * every frame the venue writes was outside every guard: a key added to the
+   * `gap` frame survived 38 files and 328 tests, exit 0. `adminSurface.test.ts`
+   * does drive these handlers, but asserts frames with `toMatchObject`, which
+   * permits extra keys by design.
+   *
+   * So: one real production venue, both stream routes, every event name the
+   * contract declares, checked key-by-key and type-by-type with the same
+   * {@link checkShape} the JSON responses get. Real ticks, not synthesised
+   * ones — a field added to `Tick` reaches the wire through `JSON.stringify`
+   * and must fail here too.
+   */
+  it('every stream frame has exactly the keys and types the contract names (a4-07)', async () => {
+    const { venue, controller } = await booted('otc-contract-stream-', 47);
+    // The venue is fresh, so the record starts at 1 and the feed (50 000 ticks)
+    // still holds every tick `booted` published.
+    const retained = venue.feed.since(id, 1);
+    expect(retained.length, 'the venue published nothing to stream').toBeGreaterThan(5);
+    const oldest = retained[0]!.sequence;
+    const seen = new Map<string, Set<string>>();
+    const problems: string[] = [];
+
+    /** Every frame of one body, held to the contract of the route that wrote it. */
+    const check = (route: string, body: string): void => {
+      const contract = API_ROUTES.find((r) => r.path === route)!.stream!;
+      const { parsed, malformed } = frames(body);
+      for (const line of malformed) problems.push(`${route}: unreadable frame line ${line}`);
+      for (const { event, data } of parsed) {
+        const shape = contract[event];
+        if (shape === undefined) {
+          problems.push(`${route}: an event named ${event}, which the contract does not declare`);
+          continue;
+        }
+        seen.set(route, (seen.get(route) ?? new Set()).add(event));
+        problems.push(...checkShape(`${route} ${event}`, data, shape));
+      }
+    };
+
+    // `message`: the replay of what the venue really published, one frame a tick.
+    const replay = recording();
+    controller.stream(id, replay.res, request(), String(oldest));
+    // `gap`: a sequence that was never published, with the policy that asks to
+    // be told rather than refused.
+    const gap = recording();
+    controller.stream(id, gap.res, request(), '99999', 'live');
+    // The same two on the multiplexed route, whose frames each name their asset.
+    const many = recording();
+    controller.multiplexed(many.res, request(), id, `${id}:${String(oldest)}`);
+    const manyGap = recording();
+    controller.multiplexed(manyGap.res, request(), id, `${id}:99999`, 'live');
+    // `close`: the frame every open stream is given when the process leaves.
+    await controller.beforeApplicationShutdown();
+
+    check('/markets/:id/stream', replay.body());
+    check('/markets/:id/stream', gap.body());
+    check('/markets/stream', many.body());
+    check('/markets/stream', manyGap.body());
+
+    expect(problems, 'a stream frame does not match the contract').toEqual([]);
+    // Every event name the contract declares was actually written by one of the
+    // four connections above, so this cannot quietly become a walk over nothing.
+    for (const route of ['/markets/:id/stream', '/markets/stream']) {
+      const declared = Object.keys(API_ROUTES.find((r) => r.path === route)!.stream!).sort();
+      expect([...(seen.get(route) ?? [])].sort(), `${route}: an event nothing wrote`).toEqual(
+        declared,
+      );
+    }
   }, 60_000);
 
   it('the shape check sees what it is for', () => {

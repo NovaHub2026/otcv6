@@ -37,6 +37,11 @@ export interface Faults {
   wrongRule?: boolean;
   badProof?: boolean;
   noProof?: boolean;
+  /**
+   * Answer `/markets/:id` with the tick after the newest published one — the
+   * tick a venue has drawn and not yet served (Cycle Audit 10, a1-03).
+   */
+  futureMarket?: boolean;
 }
 
 const servers: Server[] = [];
@@ -52,10 +57,10 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
     id: 'eurusd',
     displayName: 'EUR/USD',
     family: 'fx',
-    price: TICKS[59]!.price,
+    price: TICKS[59]!.price + (faults.futureMarket ? 3 : 0),
     displayPrice: '1.10000',
-    sequence: 60,
-    instant: TICKS[59]!.instant,
+    sequence: faults.futureMarket ? 61 : 60,
+    instant: TICKS[59]!.instant + (faults.futureMarket ? 400 : 0),
     recovery: null,
     ...(faults.extraKey ? { engineVersion: 1 } : {}),
   };
@@ -207,6 +212,11 @@ describe('the conformance suite (PH-29.3)', () => {
       'a proof that does not verify',
       { badProof: true },
       'proof verifies against the publisher key and agrees with the stream',
+    ],
+    [
+      'a market serving the tick it has drawn but not published (a1-03)',
+      { futureMarket: true },
+      'the price the market reports is one the record already carries',
     ],
   ] as const)('fails a venue with %s, naming the check', async (_what, faults, name) => {
     const report = await conformance({ baseUrl: await fakeVenue(faults), ticks: 40 });

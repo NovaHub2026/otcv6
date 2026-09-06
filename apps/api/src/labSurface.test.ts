@@ -21,6 +21,18 @@ const src = path.dirname(fileURLToPath(import.meta.url));
 const read = (file: string): string => readFileSync(path.join(src, file), 'utf8');
 
 /**
+ * A source with its comments removed, for the guards that scan for a property
+ * access rather than for a word.
+ *
+ * Prose is not a leak. `venue.service.ts` explains what a *pending tick* is
+ * twice, in comments, and a guard that fired on those sentences would be
+ * deleted the first time it was inconvenient — the same reasoning as the `lab`
+ * string in the composition test below.
+ */
+const withoutComments = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+
+/**
  * Every production source file: everything under `apps/api/src` except the Lab.
  *
  * **Recursive since Cycle Audit 8 (a1, a4).** It listed the top level only, so
@@ -203,6 +215,74 @@ describe('the production composition cannot reach the Lab', () => {
       .map(({ file }) => file);
     expect(offenders).toEqual([]);
     expect(read('engineAccess.ts')).toMatch(/snapshotEngine\(\)/);
+  });
+
+  /**
+   * **Cycle Audit 10 (a1-03, a1-04).** Two doors out of the venue that no
+   * guard named, and both were planted through with the whole suite green.
+   *
+   * The first is `HostedMarket.pending`: the tick the engine has **drawn but
+   * not published**, held until its instant is due. In production nothing
+   * chooses signs, so the pending tick *is* the next published tick — measured
+   * at 99/99 across five assets — and `VenueService` already reaches every
+   * hosted market through `marketFor`. A three-line `peek()` served inside
+   * `/markets/:id`'s own `price`/`sequence`/`instant` keys passed every unit
+   * file, the guardrails, the contract-shape guard and the broker's
+   * conformance suite. INV-010 is about future prices, and that is one.
+   *
+   * The second is `checkpointMarket(...)`, which `venue.service.ts` and
+   * `history.service.ts` import legitimately to persist a market: the record it
+   * returns carries `snapshot: EngineSnapshot` **and** `pending: Tick | null`,
+   * so `return rec.snapshot` reaches the whole latent state and the cursors
+   * without matching any regex above. The record may be saved; it may not be
+   * unwrapped.
+   *
+   * Comments are stripped first. A guard that fires on the sentence explaining
+   * the rule is a guard somebody deletes — the same lesson as the `lab` string
+   * three tests up.
+   */
+  it('no production source reads the tick the engine has drawn but not published (a1-03)', () => {
+    const offenders = productionSources()
+      .filter(({ source }) =>
+        /\.pending\b|nextInstant|retractPending/.test(withoutComments(source)),
+      )
+      .map(({ file }) => file);
+    expect(
+      offenders,
+      'a production source reaches the pending tick — the next published price — or the instant ' +
+        'it falls due; those belong to the Lab, behind EngineAccess (INV-010)',
+    ).toEqual([]);
+    // The Lab may, and does, so the guard has a subject.
+    expect(read('lab/lab.controller.ts')).toMatch(/\.pending\b/);
+    expect(read('lab/lab.controller.ts')).toMatch(/nextInstant/);
+  });
+
+  it('a checkpoint record is saved whole and never unwrapped (a1-04)', () => {
+    const unwrapped = productionSources()
+      .filter(
+        ({ file, source }) =>
+          file !== 'engineAccess.ts' && /\.snapshot\b/.test(withoutComments(source)),
+      )
+      .map(({ file }) => file);
+    expect(
+      unwrapped,
+      'a production source takes the snapshot off a state record; it carries the keystream ' +
+        'cursors and the latent state (INV-010)',
+    ).toEqual([]);
+    // Only the two services that persist a market may build one at all.
+    const builders = productionSources()
+      .filter(({ source }) => /checkpointMarket\(/.test(withoutComments(source)))
+      .map(({ file }) => file)
+      .sort();
+    expect(builders, 'a production source builds a checkpoint record').toEqual([
+      'history.service.ts',
+      'venue.service.ts',
+    ]);
+    // The subject: the record really does carry both doors, so this is not a
+    // guard against a field that no longer exists.
+    const state = readFileSync(path.resolve(src, '../../../packages/runtime/src/state.ts'), 'utf8');
+    expect(state).toMatch(/readonly snapshot: EngineSnapshot;/);
+    expect(state).toMatch(/readonly pending: Tick \| null;/);
   });
 
   it('every Lab response says what it is', () => {
