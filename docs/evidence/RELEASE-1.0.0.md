@@ -2,7 +2,7 @@
 
 Type: EVIDENCE (the release record)
 Recorded: 2026-09-06
-Tag: `v1.0.0` — the commit named in §4, the one the PH-30 phase gate passed and hosted CI corroborated
+Tag: `v1.0.0` — the commit named in §4, the one the PH-30 phase gate passed locally. **Hosted CI on that push went red**: the Quality Gate green, the Statistical Gate failed on one browser test of the Lab (§7)
 Package: `tools/sim/scripts/integration-package.sh v1.0.0 <dir>` — `git archive` of the tag minus the process documents, the guide and the examples at the top
 
 ---
@@ -61,7 +61,7 @@ record (INV-009), and private generator state never served (INV-010).
 | Release commit               | the PH-30 merge commit on `main` (`git rev-parse v1.0.0`) on `main`, the PH-30 merge, tagged `v1.0.0`                                                                                                                                                                            |
 | Closing tree the gate ran on | `6f1efa9` (`feature/ph-30-release`)                                                                                                                                                                                                                                              |
 | `npm run gate`               | `GATE_EXIT=0`, 14:27–15:50Z on 2026-09-06, 83 minutes: format, build, both typechecks, lint, unit, coverage, statistical (serial, 4,798 s); the approval commit that fills this record is documents only and re-ran `state:check` and the documentation guards on the final tree |
-| Hosted CI on the merge       | recorded in `CURRENT_STATE.md` § "Hosted CI, honestly" when it lands                                                                                                                                                                                                             |
+| Hosted CI on the merge       | Quality Gate green; Statistical Gate **red** on `apps/web/src/lab.stat.test.ts` (§7)                                                                                                                                                                                             |
 | Contract                     | `1.1.0`, digest `1f9fc7c84b19c58c` (`docs/architecture/API_CONTRACT.md`)                                                                                                                                                                                                         |
 | Package                      | `tools/sim/scripts/integration-package.sh` from the closing tree `6f1efa9`: 158 files, `npm ci` + `npm run build` + the unit suite standalone, **158 files / 2,816 tests passed**, exit 0; regenerated from `v1.0.0` after the tag as the deliverable                            |
 
@@ -83,3 +83,30 @@ seconds is what every deploy is, and the release evidence includes one.
 - The engine's next stylised facts, jumps and volume: the Cycle 10 plan
   deferred them; the calibrated personalities ship as measured.
 - The two Governance amendments (Issues #3, #14): the Human Owner's.
+
+## 7. Hosted CI on the tag went red, and what that means
+
+The tag was pushed at 15:54Z on 2026-09-06 and the Statistical Gate on that
+push failed at 17:57Z. One browser test of the **Lab** — the operator's
+testing panel, which production composition does not serve — disagreed with
+itself: a position armed to win by the minimum lattice distance settled as a
+tie at the armed price (`empate 1.1599862 · neto 0 — NO COINCIDE`). The
+Quality Gate was green, and so was the full local phase gate on the same code.
+
+Three things are true and none is comfortable.
+
+- **The tagged code is the gated code.** No source differs between `6f1efa9`,
+  which passed the local gate, and the merge commit; the merge added the
+  approval documents.
+- **This record claimed corroboration before it had it.** The claim was
+  written while the run was still in flight. Cycle Audit 10 found the claim
+  independently, and the sentence is corrected above rather than removed.
+- **A red hosted run on a green local gate is a finding about the gate**, not
+  a flake to wave through. It belongs to Cycle Audit 10, which was already
+  running when the result landed, and the audit record carries the
+  investigation and what was done about it.
+
+What it does **not** touch: the price path, the record, the settlement
+contract or the API. The failing assertion is inside the Lab panel's own close
+control, whose disagreement with the engine is exactly what that test exists
+to surface.
