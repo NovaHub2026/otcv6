@@ -8,6 +8,7 @@ import {
   ServedRecordError,
   yieldToLoop,
   type ServedRecord,
+  joinServedRecords,
 } from '@otc/lab';
 import {
   parse,
@@ -80,13 +81,7 @@ async function longestRecord(
   let from = startFor(newest, maxTicks);
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const record = await readServedRecord({
-        baseUrl: base,
-        assetId,
-        from,
-        stopAfter: { sequence: newest },
-        signal: AbortSignal.timeout(300_000),
-      });
+      const record = await readAcrossCaps(base, assetId, from, newest);
       // The whole window, or nothing (Cycle Audit 9, a1-02/a4-01/a8-03): a read
       // the venue closed — its 1 MB replay cap says "fell behind" — or that the
       // timeout cut, or that ended short, is not the retained window, and a
@@ -116,6 +111,54 @@ async function longestRecord(
     }
   }
   throw new Error('unreachable');
+}
+
+/** The venue's own close when a replay hits its per-connection cap, and where to resume. */
+const CAP_CLOSE = /^replay capped at \d+ bytes after sequence (\d+); resume from (\d+)$/;
+
+/**
+ * One window read in as many connections as the venue's replay cap needs.
+ *
+ * PH-30.4's hour on the thirty found the standing job failing ten assets: the
+ * record outlives the process now (PH-28), so a fast asset's retained window
+ * is tens of thousands of ticks, and the stream's 1 MB per-connection replay
+ * cap closes a single read at about fourteen thousand — with a `close` that
+ * names the sequence to resume from (Cycle Audit 9, a4-09), which is what the
+ * frame is for. The job resumes from it, and the pieces are joined as one
+ * record with the cap closes dropped, since each was answered. Any other
+ * close, or a cap close that does not name the next sequence, is still the
+ * fragment the caller refuses.
+ */
+async function readAcrossCaps(
+  base: string,
+  assetId: string,
+  from: number,
+  newest: number,
+): Promise<ServedRecord> {
+  let joined: ServedRecord | null = null;
+  let next = from;
+  for (let piece = 0; piece < 64; piece += 1) {
+    const read = await readServedRecord({
+      baseUrl: base,
+      assetId,
+      from: next,
+      stopAfter: { sequence: newest },
+      signal: AbortSignal.timeout(300_000),
+    });
+    const capped =
+      read.endedBy === 'close' && read.closes.length === 1
+        ? CAP_CLOSE.exec(read.closes[0]!.reason)
+        : null;
+    const last = read.ticks[read.ticks.length - 1];
+    if (capped === null || last === undefined || Number(capped[1]) !== last.sequence) {
+      return joined === null ? read : joinServedRecords(joined, read);
+    }
+    // A cap the venue told, answered: the close is not a hole and is not kept.
+    const resumed: ServedRecord = { ...read, closes: [], endedBy: 'rule' };
+    joined = joined === null ? resumed : joinServedRecords(joined, resumed);
+    next = Number(capped[2]);
+  }
+  throw new Error(`${assetId}: more than 64 replay caps in one window; giving up.`);
 }
 
 /** What the venue says it is: its health, and whether it is the Lab composition. */
