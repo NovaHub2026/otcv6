@@ -54,7 +54,7 @@ const contract: Contract = {
   id: 'ticket-1001',
   assetId: 'eurusd-otc',
   direction: 'up', // 'up' | 'down'
-  stake: 100, // unidades de cuenta; de quién son, es cosa tuya
+  stake: 10_000, // ENTERO en tu unidad menor (céntimos, satoshis…); de quién son, es cosa tuya
   entryInstant,
   horizonMs: durationMillis(60_000), // expiración fija
   payoutRatio: 0.85, // beneficio por unidad apostada si gana
