@@ -25,6 +25,20 @@ export const TICKS: Tick[] = Array.from({ length: 60 }, (_, i) => ({
 }));
 const WINDOW = TICKS.slice(0, 20);
 const SIGNED = signCommitment(commit('eurusd', WINDOW), KEY);
+/**
+ * A second key nobody authorised, and the same window signed with it.
+ *
+ * **Cycle Audit 10 (a2-02).** The suite already had a venue that names a key
+ * the client did not expect, which any client catches by comparing two hex
+ * strings. It had nothing for the venue that names the **expected** key and
+ * signs with another — the only shape in which a forgery is worth attempting,
+ * and the one a client that skipped `verifyCommitment` would accept. A refuter
+ * built it and measured the consequence: with that check disabled the
+ * reference client returned a fabricated tick as `verified: true`, with every
+ * one of its tests green.
+ */
+const FORGER = publishingKeyFromSeed('99'.repeat(32));
+const FORGED = signCommitment(commit('eurusd', WINDOW), FORGER);
 
 export interface Faults {
   version?: string;
@@ -46,6 +60,8 @@ export interface Faults {
   skipSequence?: boolean;
   wrongRule?: boolean;
   badProof?: boolean;
+  /** Names the expected publisher key and signs the commitment with another (a2-02). */
+  forgedSignature?: boolean;
   noProof?: boolean;
   /**
    * Answer `/markets/:id` with the tick after the newest published one — the
@@ -173,7 +189,7 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
         assetId: 'eurusd',
         sequence,
         publisherPublicKey: HEX,
-        commitment: SIGNED,
+        commitment: faults.forgedSignature ? FORGED : SIGNED,
         proof: faults.badProof ? { ...proof, price: proof.price + 1 } : proof,
         linksRead: 1,
       });
@@ -250,6 +266,11 @@ describe('the conformance suite (PH-29.3)', () => {
     [
       'a proof that does not verify',
       { badProof: true },
+      'proof verifies against the publisher key and agrees with the stream',
+    ],
+    [
+      'a commitment signed by a key that is not the one it names (a2-02)',
+      { forgedSignature: true },
       'proof verifies against the publisher key and agrees with the stream',
     ],
     [

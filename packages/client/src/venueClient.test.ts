@@ -66,6 +66,17 @@ describe('the reference client (PH-29.4)', () => {
       publisherPublicKey: 'ab'.repeat(32),
     });
     await expect(otherKey.proof('eurusd', 7)).rejects.toThrow(/another publisher key|not signed/);
+    // **The forgery that is worth attempting (Cycle Audit 10, a2-02).** The
+    // venue above names a key the client did not expect, which is caught by
+    // comparing two strings. This one names the key the client *does* expect
+    // and signs with another: only checking the signature refuses it, and a
+    // refuter measured that a client which skipped that check returned the
+    // fabricated tick as `verified: true` with every test green.
+    const forged = new VenueClient({
+      baseUrl: await fakeVenue({ forgedSignature: true }),
+      publisherPublicKey: HEX,
+    });
+    await expect(forged.proof('eurusd', 7)).rejects.toThrow(ContractViolation);
   });
 
   it('throws a ContractViolation naming the route and the departure', async () => {
