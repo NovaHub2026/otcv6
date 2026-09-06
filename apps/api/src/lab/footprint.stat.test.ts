@@ -6,6 +6,8 @@ import { ASSET_CATALOGUE, selectClose } from '@otc/engine';
 import { MemoryStateStore } from '@otc/runtime';
 import { PublicationService } from '../publication.service.js';
 import { VenueService } from '../venue.service.js';
+import { EngineHandle } from './engineHandle.js';
+import type { EngineAccess } from '../engineAccess.js';
 import { medianCandleRange } from './distance.js';
 import { measureFootprint, type Footprint, type Intervention } from './footprint.js';
 import { ArrivalSelector } from './selectableArrival.js';
@@ -28,10 +30,11 @@ const id = asset.definition.id;
 const GENESIS = epochMillis(1_776_000_000_000);
 const HORIZON = 5_000;
 
-async function labVenue(): Promise<VenueService> {
+async function labVenue(): Promise<{ venue: VenueService; engine: EngineAccess }> {
   const clock = new SteppableClock(GENESIS);
   const selector = new SignSelector();
   const arrivals = new ArrivalSelector();
+  const engine = new EngineHandle();
   const venue = new VenueService(
     new MemoryStateStore(),
     MasterKeyring.fromSecret('footprint-spec', new Uint8Array(32).fill(23)),
@@ -44,6 +47,10 @@ async function labVenue(): Promise<VenueService> {
     0,
     (keystream, assetId) => selector.wrap(keystream, assetId),
     (keystream, assetId) => arrivals.wrap(keystream, assetId),
+    null,
+    null,
+    undefined,
+    engine.hand,
   );
   await venue.start();
   let left = 3_600_000;
@@ -53,7 +60,7 @@ async function labVenue(): Promise<VenueService> {
     left -= 10_000;
     if (left % 600_000 === 0) await yieldToLoop();
   }
-  return venue;
+  return { venue, engine: engine.get() };
 }
 
 function row(kind: string, f: Footprint): string {
@@ -69,7 +76,7 @@ function row(kind: string, f: Footprint): string {
 
 describe('the footprint of a Lab intervention (PH-27.4)', () => {
   it('a push, a close and a sustained direction each move the level and nothing else', async () => {
-    const venue = await labVenue();
+    const { venue, engine } = await labVenue();
     const ticks = [...venue.feed.since(id, 1)];
     const { range } = medianCandleRange(ticks);
     const random = MasterKeyring.forTesting('footprint-lab').derive({
@@ -83,7 +90,7 @@ describe('the footprint of a Lab intervention (PH-27.4)', () => {
     // magnitudes of the next 40 ticks on a target six steps up (or seven, when
     // parity says six cannot be reached) — `selectClose` is what the close
     // route runs, on the same kind of fork.
-    const preview = measureFootprint(venue, id, { kind: 'script', signs: [1] }, 39, null)!;
+    const preview = measureFootprint(engine, id, { kind: 'script', signs: [1] }, 39, null)!;
     const steps = preview.natural.map((t, i) =>
       Math.abs(t.price - (i === 0 ? preview.startPrice : preview.natural[i - 1]!.price)),
     );
@@ -110,7 +117,13 @@ describe('the footprint of a Lab intervention (PH-27.4)', () => {
     const lines: string[] = [];
     for (const { name, intervention } of kinds) {
       await yieldToLoop();
-      const measured = measureFootprint(venue, id, intervention, HORIZON, range > 0 ? range : null);
+      const measured = measureFootprint(
+        engine,
+        id,
+        intervention,
+        HORIZON,
+        range > 0 ? range : null,
+      );
       expect(measured, name).not.toBeNull();
       const { footprint } = measured!;
       lines.push(row(name, footprint));

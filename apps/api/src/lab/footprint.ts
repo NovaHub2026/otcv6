@@ -1,5 +1,5 @@
 import type { RandomSource, Tick } from '@otc/core';
-import type { VenueService } from '../venue.service.js';
+import type { EngineAccess } from '../engineAccess.js';
 import { SelectableSigns } from './selectableSigns.js';
 
 /**
@@ -146,7 +146,7 @@ export type Intervention =
  * to announce a landing.
  */
 export function measureFootprint(
-  venue: VenueService,
+  engine: EngineAccess,
   assetId: string,
   intervention: Intervention,
   horizonTicks: number,
@@ -155,11 +155,11 @@ export function measureFootprint(
   const controlledTicks =
     intervention.kind === 'script' ? intervention.signs.length : intervention.ticks;
   let armed: SelectableSigns | null = null;
-  const controlledFork = venue.labFork(assetId, (keystream) => {
+  const controlledFork = engine.labFork(assetId, (keystream) => {
     armed = new SelectableSigns(keystream, assetId);
     return armed;
   });
-  const naturalFork = venue.labFork(assetId);
+  const naturalFork = engine.labFork(assetId);
   if (controlledFork === null || naturalFork === null || armed === null) return null;
   const wrapper = armed as SelectableSigns;
   const total = controlledTicks + horizonTicks;

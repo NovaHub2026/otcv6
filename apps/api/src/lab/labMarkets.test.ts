@@ -3,6 +3,9 @@ import { MasterKeyring, SteppableClock, epochMillis } from '@otc/core';
 import { ASSET_CATALOGUE } from '@otc/engine';
 import { MemoryStateStore } from '@otc/runtime';
 import { VenueService } from '../venue.service.js';
+import { PublicationService } from '../publication.service.js';
+import { EngineHandle } from './engineHandle.js';
+import type { EngineAccess } from '../engineAccess.js';
 import { LabController } from './lab.controller.js';
 import { SignSelector } from './selectableSigns.js';
 import { LabSession } from './session.js';
@@ -25,15 +28,27 @@ const GENESIS = epochMillis(1_776_000_000_000);
 const keyring = (): MasterKeyring =>
   MasterKeyring.fromSecret('lab-markets-spec', new Uint8Array(32).fill(9));
 
-async function labVenue(): Promise<VenueService> {
+async function labVenue(): Promise<{ venue: VenueService; engine: EngineAccess }> {
+  const engine = new EngineHandle();
   const venue = new VenueService(
     new MemoryStateStore(),
     keyring(),
     new SteppableClock(GENESIS),
     ASSET_CATALOGUE.slice(0, 3),
+    5_000,
+    new PublicationService(ASSET_CATALOGUE.slice(0, 3)),
+    null,
+    null,
+    0,
+    null,
+    null,
+    null,
+    null,
+    undefined,
+    engine.hand,
   );
   await venue.start();
-  return venue;
+  return { venue, engine: engine.get() };
 }
 
 interface MarketsBody {
@@ -43,9 +58,10 @@ interface MarketsBody {
 
 describe('the Lab lists the markets it hosts', () => {
   it('returns every hosted asset, named, and says where it is', async () => {
-    const venue = await labVenue();
+    const { venue, engine } = await labVenue();
     const body = new LabController(
       venue,
+      engine,
       new SignSelector(),
       new LabSession(),
     ).markets() as MarketsBody;
@@ -61,11 +77,12 @@ describe('the Lab lists the markets it hosts', () => {
     // Retirement is the case that separates "the catalogue" from "what is
     // hosted". A retired asset is still registered and is no longer a market,
     // and offering it in the Lab would offer a control over nothing.
-    const venue = await labVenue();
+    const { venue, engine } = await labVenue();
     const retired = ASSET_CATALOGUE[1]!.definition.id;
     await venue.retire(retired);
     const body = new LabController(
       venue,
+      engine,
       new SignSelector(),
       new LabSession(),
     ).markets() as MarketsBody;
@@ -101,11 +118,13 @@ describe('a bounded battery run says what it could not see', () => {
    * | 1,000,000 |    378 |
    */
   it('calls a sample too thin to test inconclusive, not clean', async () => {
-    const venue = await labVenue();
-    const body = (await new LabController(venue, new SignSelector(), new LabSession()).quality(
-      ASSET_CATALOGUE[0]!.definition.id,
-      '40000',
-    )) as QualityBody;
+    const { venue, engine } = await labVenue();
+    const body = (await new LabController(
+      venue,
+      engine,
+      new SignSelector(),
+      new LabSession(),
+    ).quality(ASSET_CATALOGUE[0]!.definition.id, '40000')) as QualityBody;
     expect(body.predictability.hypothesesTested).toBeLessThan(100);
     expect(body.predictability.verdict, 'two hypotheses read as a clean verdict').toBe(
       'inconclusive',
@@ -127,11 +146,13 @@ describe('a bounded battery run says what it could not see', () => {
    * would be called clean.
    */
   it('holds the floor at a sample that tests some hypotheses but not enough (a8)', async () => {
-    const venue = await labVenue();
-    const body = (await new LabController(venue, new SignSelector(), new LabSession()).quality(
-      ASSET_CATALOGUE[0]!.definition.id,
-      '400000',
-    )) as QualityBody;
+    const { venue, engine } = await labVenue();
+    const body = (await new LabController(
+      venue,
+      engine,
+      new SignSelector(),
+      new LabSession(),
+    ).quality(ASSET_CATALOGUE[0]!.definition.id, '400000')) as QualityBody;
     const tested = body.predictability.hypothesesTested;
     expect(tested, 'the sample tests nothing, so it pins no floor').toBeGreaterThan(0);
     expect(tested, 'the sample clears the floor, so it pins nothing either').toBeLessThan(100);
@@ -148,8 +169,8 @@ describe('a bounded battery run says what it could not see', () => {
     // 40,000-tick sample tested two hypotheses then and none now. A table
     // nothing re-measures is a table that describes an engine the project no
     // longer runs, and this one is the argument for the floor beneath it.
-    const venue = await labVenue();
-    const controller = new LabController(venue, new SignSelector(), new LabSession());
+    const { venue, engine } = await labVenue();
+    const controller = new LabController(venue, engine, new SignSelector(), new LabSession());
     const measured: [number, number][] = [];
     for (const ticks of [40_000, 400_000, 1_000_000]) {
       const body = (await controller.quality(
@@ -167,8 +188,8 @@ describe('a bounded battery run says what it could not see', () => {
   }, 600_000);
 
   it('refuses a sample size outside the stated bounds', async () => {
-    const venue = await labVenue();
-    const controller = new LabController(venue, new SignSelector(), new LabSession());
+    const { venue, engine } = await labVenue();
+    const controller = new LabController(venue, engine, new SignSelector(), new LabSession());
     await expect(
       controller.quality(ASSET_CATALOGUE[0]!.definition.id, '10'),
     ).rejects.toBeInstanceOf(BadRequestException);

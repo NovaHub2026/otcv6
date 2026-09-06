@@ -4,6 +4,8 @@ import { ASSET_CATALOGUE } from '@otc/engine';
 import { yieldToLoop } from '@otc/lab';
 import { MemoryStateStore } from '@otc/runtime';
 import { VenueService } from '../venue.service.js';
+import { PublicationService } from '../publication.service.js';
+import { EngineHandle } from './engineHandle.js';
 import { LabController } from './lab.controller.js';
 import { SignSelector } from './selectableSigns.js';
 import { LabSession } from './session.js';
@@ -35,17 +37,32 @@ interface QualityBody {
 
 describe('the default sample supports a verdict', () => {
   it('tests enough hypotheses, and states the resolution it holds at', async () => {
+    const engine = new EngineHandle();
     const venue = new VenueService(
       new MemoryStateStore(),
       MasterKeyring.fromSecret('lab-quality-spec', new Uint8Array(32).fill(9)),
       new SteppableClock(GENESIS),
       [ASSET_CATALOGUE[0]!],
+      5_000,
+      new PublicationService([ASSET_CATALOGUE[0]!]),
+      null,
+      null,
+      0,
+      null,
+      null,
+      null,
+      null,
+      undefined,
+      engine.hand,
     );
     await venue.start();
     await yieldToLoop();
-    const body = (await new LabController(venue, new SignSelector(), new LabSession()).quality(
-      ASSET_CATALOGUE[0]!.definition.id,
-    )) as QualityBody;
+    const body = (await new LabController(
+      venue,
+      engine.get(),
+      new SignSelector(),
+      new LabSession(),
+    ).quality(ASSET_CATALOGUE[0]!.definition.id)) as QualityBody;
     // PH-24.17: the default is a span — sixteen days, what a million ticks were on
     // EUR/USD before the grain changed — in the asset's own ticks.
     const expected = Math.round((1_000_000 * 1_380) / ASSET_CATALOGUE[0]!.evidence.meanIntervalMs);

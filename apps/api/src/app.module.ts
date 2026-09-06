@@ -18,6 +18,7 @@ import type { RegisteredAsset } from '@otc/engine';
 import { ADMIN_TOKEN, AdminWriteGuard, MIN_ADMIN_TOKEN_LENGTH } from './adminAuth.guard.js';
 import { RegistrationService } from './registration.service.js';
 import { HistoryService } from './history.service.js';
+import type { EngineAccess } from './engineAccess.js';
 import { BOOT_NONCE, MarketController } from './market.controller.js';
 import { PublicationService } from './publication.service.js';
 import { VenueService } from './venue.service.js';
@@ -59,6 +60,12 @@ export interface AppModuleOptions {
     readonly controlledSince: (assetId: string) => boolean;
     readonly checkpointTaken: (assetId: string) => void;
   };
+  /**
+   * Where the venue hands its engine-touching surface (PH-28.2). Absent in
+   * production, so no object that can snapshot the engine exists; the Lab
+   * passes a handle and provides what it receives.
+   */
+  readonly engineAccess?: (access: EngineAccess) => void;
 }
 
 @Module({})
@@ -191,6 +198,7 @@ export class AppModule {
               options.control ?? null,
               record,
               recordTicksFromEnvironment(),
+              options.engineAccess ?? null,
             ),
         },
         {

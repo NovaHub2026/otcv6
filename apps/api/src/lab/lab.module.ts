@@ -8,6 +8,8 @@ import { LabSession } from './session.js';
 import { LabPositions } from './positions.js';
 import { EngineEventObserver } from './engineEvents.js';
 import { VenueService } from '../venue.service.js';
+import { EngineAccess } from '../engineAccess.js';
+import { EngineHandle } from './engineHandle.js';
 
 /**
  * The Lab, composed **on top of** the application rather than inside it.
@@ -24,6 +26,7 @@ import { VenueService } from '../venue.service.js';
  */
 const selector = new SignSelector();
 const arrivals = new ArrivalSelector();
+const engine = new EngineHandle();
 
 @Module({
   imports: [
@@ -41,11 +44,15 @@ const arrivals = new ArrivalSelector();
           selector.for(assetId)?.checkpointTaken();
         },
       },
+      // The engine-touching surface, handed here and nowhere else (PH-28.2).
+      engineAccess: engine.hand,
     }),
   ],
   controllers: [LabController],
   providers: [
     { provide: SignSelector, useValue: selector },
+    // Read after the venue is built — the inject says so — never before.
+    { provide: EngineAccess, inject: [VenueService], useFactory: (): EngineAccess => engine.get() },
     { provide: ArrivalSelector, useValue: arrivals },
     // PH-24.18: the distance units' cache. Every constructor parameter of the
     // controller must be a provider here — the browser suite boots the real
@@ -61,9 +68,12 @@ const arrivals = new ArrivalSelector();
       // Feeds the engine's timeline by watching the engine (PH-24.5 §4). Started
       // by `lab.main.ts` once the venue runs; stopped with the module.
       provide: EngineEventObserver,
-      inject: [VenueService, LabSession],
-      useFactory: (venue: VenueService, session: LabSession): EngineEventObserver =>
-        new EngineEventObserver(venue, session),
+      inject: [VenueService, EngineAccess, LabSession],
+      useFactory: (
+        venue: VenueService,
+        access: EngineAccess,
+        session: LabSession,
+      ): EngineEventObserver => new EngineEventObserver(venue, access, session),
     },
   ],
 })

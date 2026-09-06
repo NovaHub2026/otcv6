@@ -4,6 +4,7 @@ import { ASSET_CATALOGUE } from '@otc/engine';
 import { MemoryStateStore } from '@otc/runtime';
 import { PublicationService } from '../publication.service.js';
 import { VenueService } from '../venue.service.js';
+import { EngineHandle } from './engineHandle.js';
 import { LabController } from './lab.controller.js';
 import { LabPositions } from './positions.js';
 import { ArrivalSelector } from './selectableArrival.js';
@@ -25,6 +26,7 @@ async function labVenue(withSelector = true) {
   const selector = new SignSelector();
   const arrivals = new ArrivalSelector();
   const session = new LabSession();
+  const engine = new EngineHandle();
   const venue = new VenueService(
     new MemoryStateStore(),
     keyring(),
@@ -37,10 +39,21 @@ async function labVenue(withSelector = true) {
     0,
     withSelector ? (keystream, assetId) => selector.wrap(keystream, assetId) : null,
     withSelector ? (keystream, assetId) => arrivals.wrap(keystream, assetId) : null,
+    null,
+    null,
+    undefined,
+    engine.hand,
   );
   await venue.start();
-  const controller = new LabController(venue, selector, session, new LabPositions(), arrivals);
-  return { venue, clock, controller, selector, session };
+  const controller = new LabController(
+    venue,
+    engine.get(),
+    selector,
+    session,
+    new LabPositions(),
+    arrivals,
+  );
+  return { venue, engine: engine.get(), clock, controller, selector, session };
 }
 
 async function advance(venue: VenueService, clock: SteppableClock, ms: number): Promise<void> {
@@ -347,7 +360,7 @@ describe('PH-24.16 — sube / baja', () => {
 
     // The cap is not optional, and not zero.
     const wrapper = lab.selector.for(id)!;
-    const random = lab.venue.labRandom(id);
+    const random = lab.engine.labRandom(id);
     const now = (): number => lab.venue.now();
     expect(() => wrapper.setBias(1, random, { min: 2, max: 6 }, { at: now(), now })).toThrow(
       /must expire/,
