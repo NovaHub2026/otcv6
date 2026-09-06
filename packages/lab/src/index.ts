@@ -97,6 +97,7 @@ export {
 export {
   assertIndependentFamilies,
   DEFAULT_STANDING_CADENCE_MS,
+  horizonStanding,
   isStandingRunDue,
   PRODUCT_MARGIN_PP,
   runStandingAssurance,

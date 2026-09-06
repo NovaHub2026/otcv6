@@ -1,3 +1,4 @@
+import { payoutMinor } from './contract.js';
 import type { Contract } from './contract.js';
 import { eventKey, exposureByEvent, type EntryResolver, type EventExposure } from './exposure.js';
 
@@ -224,7 +225,7 @@ export class ExposureBook {
     const key = ExposureBook.keyOf(contract, this.#resolve);
     const call = this.#call.get(key) ?? 0;
     const put = this.#put.get(key) ?? 0;
-    const obligation = contract.stake * contract.payoutRatio;
+    const obligation = payoutMinor(contract.stake, contract.payoutRatio);
     const before = Math.abs(call - put);
     const after =
       contract.direction === 'up'
@@ -250,7 +251,7 @@ export class ExposureBook {
   /** Record an accepted contract. */
   add(contract: Contract): void {
     const key = ExposureBook.keyOf(contract, this.#resolve);
-    const obligation = contract.stake * contract.payoutRatio;
+    const obligation = payoutMinor(contract.stake, contract.payoutRatio);
     if (contract.direction === 'up') this.#call.set(key, (this.#call.get(key) ?? 0) + obligation);
     else this.#put.set(key, (this.#put.get(key) ?? 0) + obligation);
     this.#contracts += 1;

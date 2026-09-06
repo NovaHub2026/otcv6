@@ -22,6 +22,9 @@
       "path": "../../packages/distribution"
     },
     {
+      "path": "../../packages/client"
+    },
+    {
       "path": "../../packages/chart"
     },
     {

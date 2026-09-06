@@ -13,6 +13,7 @@
     { "path": "../../packages/lab" },
     { "path": "../../packages/runtime" },
     { "path": "../../packages/trading" },
-    { "path": "../../packages/distribution" }
+    { "path": "../../packages/distribution" },
+    { "path": "../../packages/client" }
   ]
 }

@@ -35,6 +35,7 @@ import {
   backfillDaysFromEnvironment,
   MAX_BACKFILL_DAYS,
 } from './app.module.js';
+import { API_VERSION } from './contract.js';
 import { HistoryService } from './history.service.js';
 import {
   MarketController,
@@ -107,6 +108,7 @@ describe('health says whether the venue is publishing, not merely running', () =
       assets: 1,
       stalled: [],
       bootNonce: null,
+      apiVersion: API_VERSION,
     });
   });
 
@@ -121,6 +123,7 @@ describe('health says whether the venue is publishing, not merely running', () =
       assets: 2,
       stalled,
       bootNonce: null,
+      apiVersion: API_VERSION,
     });
   });
 

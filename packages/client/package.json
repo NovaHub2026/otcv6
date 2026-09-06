@@ -1,0 +1,25 @@
+{
+  "name": "@otc/client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "What a broker embeds: the venue's API contract, a conformance suite against a live venue, and a reference client",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@otc/core": "*",
+    "@otc/distribution": "*"
+  }
+}

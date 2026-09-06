@@ -100,6 +100,8 @@ const INTERNAL: Record<string, readonly string[]> = {
     // PH-28.3: the operator's verify/backup tool for the state directory, a
     // binary entry point like the job above it.
     'stateTool.ts',
+    // PH-29.3: the conformance suite's command, a binary entry point.
+    'conformanceTool.ts',
     'servedAssuranceRun.ts',
   ],
 };

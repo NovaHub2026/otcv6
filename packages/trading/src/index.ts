@@ -1,5 +1,7 @@
 export {
   assertContract,
+  payoutMinor,
+  PAYOUT_RATIO_SCALE,
   DEFAULT_AT_MONEY_POLICY,
   type AtMoneyPolicy,
   type Contract,

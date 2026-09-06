@@ -1,9 +1,11 @@
 import { Logger } from '@nestjs/common';
 import type { Tick } from '@otc/core';
 import {
+  proveFromPublication,
   PublicationWriter,
   publishingKeyFromEnvironment,
   type ChainResumption,
+  type PublicationProof,
 } from '@otc/distribution';
 import { ASSET_CATALOGUE, type RegisteredAsset } from '@otc/engine';
 import type { TickRecord } from '@otc/runtime';
@@ -31,6 +33,7 @@ const PRIME_PAGE = 100_000;
 export class PublicationService {
   private readonly logger = new Logger(PublicationService.name);
   private readonly writer: PublicationWriter | null;
+  private readonly directory: string | null;
 
   constructor(
     assets: readonly RegisteredAsset[] = ASSET_CATALOGUE,
@@ -40,8 +43,10 @@ export class PublicationService {
     const directory = env.OTC_PUBLICATION_DIR;
     if (directory === undefined || directory.length === 0) {
       this.writer = null;
+      this.directory = null;
       return;
     }
+    this.directory = directory;
     this.writer = new PublicationWriter({
       directory,
       windowTicks,
@@ -65,6 +70,18 @@ export class PublicationService {
 
   observe(assetId: string, ticks: readonly Tick[]): void {
     this.writer?.observe(assetId, ticks);
+  }
+
+  /**
+   * The inclusion proof for a published sequence, from the archive (PH-29.1).
+   *
+   * Read from the directory, never from the writer's memory: what a
+   * counterparty can verify is what was written, and a proof built from an
+   * open window would prove a commitment nobody has signed yet.
+   */
+  proofFor(assetId: string, sequence: number): Promise<PublicationProof> {
+    if (this.directory === null) return Promise.resolve({ kind: 'not-published' });
+    return proveFromPublication(this.directory, assetId, sequence);
   }
 
   /** How the writer took over an asset's chain, or null when not publishing. */

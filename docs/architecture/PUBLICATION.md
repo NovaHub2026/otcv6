@@ -113,6 +113,15 @@ verification unit are the same thing.
 Ticks in the open window are **published but not archived**. That is a real third
 state, the chain reports it, and the feed still delivers them live.
 
+**And a proof is served, not only written** (PH-29.1). `GET
+/markets/:id/proof/:sequence` finds the window by streaming the commitments
+file (`proveFromPublication`), reads its journal back with the same rules the
+lab's reader applies, and answers with the signed commitment, the Merkle path
+and the publisher's key; the open window is a `409` naming how far the chain
+reaches. The archived tick is compared with the tick record on the way out. A
+counterparty verifies with nothing but the response and the key it was told
+out of band (`CATALOGUE_AND_PANEL.md` §5.3).
+
 ## Where it lives, and why
 
 `@otc/distribution`, not `@otc/lab` where the journal format is defined.

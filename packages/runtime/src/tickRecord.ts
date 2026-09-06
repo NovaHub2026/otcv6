@@ -63,6 +63,12 @@ export interface TickRecord {
   tail(assetId: string, limit: number): Promise<readonly Tick[]>;
   /** Ticks at or after `fromSequence`, oldest first, at most `limit`. */
   since(assetId: string, fromSequence: number, limit: number): Promise<readonly Tick[]>;
+  /**
+   * The last tick at or before `instant`, or null when the record starts after
+   * it (PH-29.1). The rule a settlement uses — `settle()`'s `priceAtOrBefore`
+   * and the charts' — asked of the record rather than of a copy of it.
+   */
+  atOrBefore(assetId: string, instant: number): Promise<Tick | null>;
   /** The newest recorded sequence, or null when nothing is recorded. */
   head(assetId: string): Promise<number | null>;
   /** The oldest retained sequence, or null when nothing is recorded. */
@@ -100,6 +106,7 @@ export class SqliteTickRecord implements TickRecord {
   readonly #readAt: StatementSync;
   readonly #readSince: StatementSync;
   readonly #readNewest: StatementSync;
+  readonly #readAtOrBefore: StatementSync;
   readonly #headOf: StatementSync;
   readonly #oldestOf: StatementSync;
   readonly #countOf: StatementSync;
@@ -130,6 +137,12 @@ export class SqliteTickRecord implements TickRecord {
         PRIMARY KEY (asset_id, sequence)
       ) WITHOUT ROWID
     `);
+    // By instant as well as by sequence (PH-29.1): the settlement query asks
+    // for the last tick at or before an instant. Additive, so a file from
+    // before the index gains it on open; the schema version does not move.
+    this.#db.exec(
+      'CREATE INDEX IF NOT EXISTS tick_by_instant ON tick (asset_id, instant, sequence)',
+    );
     stampSchemaVersion(this.#db, RECORD_SCHEMA_VERSION);
     this.#insert = this.#db.prepare(
       'INSERT INTO tick (asset_id, sequence, instant, price) VALUES (?, ?, ?, ?)',
@@ -144,6 +157,10 @@ export class SqliteTickRecord implements TickRecord {
     this.#readNewest = this.#db.prepare(
       'SELECT sequence, instant, price FROM tick WHERE asset_id = ? ' +
         'ORDER BY sequence DESC LIMIT ?',
+    );
+    this.#readAtOrBefore = this.#db.prepare(
+      'SELECT sequence, instant, price FROM tick WHERE asset_id = ? AND instant <= ? ' +
+        'ORDER BY instant DESC, sequence DESC LIMIT 1',
     );
     this.#headOf = this.#db.prepare('SELECT MAX(sequence) AS head FROM tick WHERE asset_id = ?');
     this.#oldestOf = this.#db.prepare(
@@ -227,6 +244,16 @@ export class SqliteTickRecord implements TickRecord {
     const bad = badLimit(limit) ?? badSequence(fromSequence);
     if (bad !== null) return Promise.reject(bad);
     return Promise.resolve(this.#readSince.all(assetId, fromSequence, limit).map(toTick));
+  }
+
+  atOrBefore(assetId: string, instant: number): Promise<Tick | null> {
+    if (!Number.isSafeInteger(instant)) {
+      return Promise.reject(
+        new RangeError(`An instant must be a safe integer, received ${instant}.`),
+      );
+    }
+    const row = this.#readAtOrBefore.get(assetId, instant);
+    return Promise.resolve(row === undefined ? null : toTick(row));
   }
 
   head(assetId: string): Promise<number | null> {
@@ -317,6 +344,21 @@ export class MemoryTickRecord implements TickRecord {
     if (bad !== null) return Promise.reject(bad);
     const held = this.#ticks.get(assetId) ?? [];
     return Promise.resolve(held.filter((tick) => tick.sequence >= fromSequence).slice(0, limit));
+  }
+
+  atOrBefore(assetId: string, instant: number): Promise<Tick | null> {
+    if (!Number.isSafeInteger(instant)) {
+      return Promise.reject(
+        new RangeError(`An instant must be a safe integer, received ${instant}.`),
+      );
+    }
+    const held = this.#ticks.get(assetId) ?? [];
+    let found: Tick | null = null;
+    for (const tick of held) {
+      if (tick.instant <= instant) found = tick;
+      else break;
+    }
+    return Promise.resolve(found);
   }
 
   head(assetId: string): Promise<number | null> {

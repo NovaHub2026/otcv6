@@ -112,6 +112,15 @@ export interface HorizonStanding {
    * test for its numeric value, and read by nothing. It is read here now.
    */
   readonly sufficientForProductMargin: boolean;
+  /**
+   * The gate's own floor (PH-29.5, Issue #10): the edge at which the largest
+   * bucket tested at this horizon reaches both the corrected threshold and
+   * the held-out confirmation, at 50% power — the smallest edge the gate could
+   * have turned on. `sufficientForProductMargin` is judged on this figure;
+   * `detectionFloorPp` stays beside it because the `unconditional` family can
+   * see a uniform edge at the sample the single test assumes.
+   */
+  readonly gateDetectionFloorPp: number;
 }
 
 /** A finding the battery judged both significant and economically material. */
@@ -306,13 +315,7 @@ export async function runStandingAssurance(options: StandingRunOptions): Promise
     ...(options.horizons === undefined ? {} : { horizons: options.horizons }),
   });
 
-  const horizons: HorizonStanding[] = verdict.sensitivity.map((sensitivity) => ({
-    horizon: sensitivity.horizon,
-    samples: sensitivity.samples,
-    detectionFloorPp: sensitivity.minimumDetectableEffectPoints,
-    sufficientForPayout: sensitivity.sufficientForPayout,
-    sufficientForProductMargin: sensitivity.minimumDetectableEffectPoints < PRODUCT_MARGIN_PP,
-  }));
+  const horizons: HorizonStanding[] = verdict.sensitivity.map(horizonStanding);
 
   return {
     assetId: options.assetId,
@@ -359,6 +362,29 @@ export async function runStandingAssurance(options: StandingRunOptions): Promise
  * families were withheld from tuning; a clean result from two of them is a
  * weaker claim, and reporting it under the same word would overstate it.
  */
+/**
+ * One horizon's standing from the battery's sensitivity: both floors, and
+ * sufficiency judged on the gate's (PH-29.5, Issue #10) — a verdict a broker
+ * reads says what the battery could have seen, not what one test of the whole
+ * sample would have.
+ */
+export function horizonStanding(sensitivity: {
+  readonly horizon: string;
+  readonly samples: number;
+  readonly minimumDetectableEffectPoints: number;
+  readonly sufficientForPayout: boolean;
+  readonly gateMinimumDetectableEffectPoints: number;
+}): HorizonStanding {
+  return {
+    horizon: sensitivity.horizon,
+    samples: sensitivity.samples,
+    detectionFloorPp: sensitivity.minimumDetectableEffectPoints,
+    sufficientForPayout: sensitivity.sufficientForPayout,
+    sufficientForProductMargin: sensitivity.gateMinimumDetectableEffectPoints < PRODUCT_MARGIN_PP,
+    gateDetectionFloorPp: sensitivity.gateMinimumDetectableEffectPoints,
+  };
+}
+
 export function classifyStanding(
   verdict: { readonly clean: boolean; readonly exploitable: { readonly length: number } },
   horizons: readonly HorizonStanding[],

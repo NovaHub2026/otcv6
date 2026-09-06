@@ -676,3 +676,50 @@ happened and what the file should say. Asserted in `venueRecord.test.ts`.
 of a process that will not boot, and a restore is a directory swap with the
 service stopped anyway. `npm run state:verify` and `npm run state:backup` work
 on the directory, with or without a venue running on it.
+
+## 2026-09-06 — Settlement money is an integer in the broker's minor unit, and the payout is computed exactly (Issue #11, PH-29.4)
+
+**Decision.** `Contract.stake` is an integer count of the broker's minor unit
+(cents, satoshis — the broker's, and the library does not know which);
+`payoutRatio` is a decimal with at most four places; a winning contract
+returns `stake + floor(stake × payoutRatio × 10 000 / 10 000)` computed in
+integer arithmetic, so `returned` and `net` are integers and `tally` sums
+integers. Truncation, not rounding: the fraction of a minor unit a payout
+cannot carry stays with the operator, deterministically, and never exceeds one
+minor unit per contract.
+
+**Why this shape.** The out-of-band audit measured 124 of 100 000 cent stakes
+disagreeing with exact arithmetic under `stake × (1 + payout)` in floating
+point (a5-08). Changing the contract's fields — a `stakeMinor`, a rational
+payout — would have reached twenty files including the Lab's positions and
+screen for a library the broker embeds and the venue never routes; keeping the
+fields and fixing their meaning and arithmetic reaches the library and its
+tests. A stake that is not an integer, or a payout with more than four places,
+is refused by name.
+
+**What it does not decide.** The currency, the payout ratio itself and the
+at-the-money policy remain the broker's (ADR-0007 for the default refund).
+
+## 2026-09-06 — The standing verdict grades sufficiency on the gate's figure and reports both (Issue #10, PH-29.5)
+
+**Decision.** Every horizon of a standing verdict carries two floors: the
+single-test sensitivity (`detectionFloorPp`, one test of the whole decided
+sample at 80% power) and the gate's own (`gateDetectionFloorPp`, the edge at
+which the largest tested bucket reaches both the corrected threshold and the
+held-out confirmation, at 50% power). `sufficientForProductMargin` — the flag
+`classifyStanding` reads — is judged on the **gate's** figure from now on.
+
+**Why.** A verdict a broker reads says what the battery could have seen. The
+single-test figure is for a test the battery does not run; the out-of-band
+audit re-signed a control at a realised 0.23pp — "detectable" by that figure —
+and the gate turned nothing on (a4-01). Grading on the gate's figure makes a
+venue `undecided` at sizes where the single-test figure said `clean`, and the
+record then carries the floor that says why, which is the truth about the size.
+The single-test figure stays in the record because it is what the
+`unconditional` family can see at that size, and a reader comparing records
+across the change should not lose it.
+
+**What changes downstream.** The served-assurance record prints both floors
+per horizon; `PH-25-SERVED-VERDICT.md` and `PH-28-DURABLE-VENUE.md` were
+graded before this and say so in their tables' provenance. The tripwire
+`gateSensitivity.stat.test.ts` stays as it is.

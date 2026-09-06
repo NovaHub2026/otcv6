@@ -128,6 +128,19 @@ battery samples with.
 
 A tie is refunded ([ADR-0007](../decisions/ADR-0007-at-the-money-settlement.md)).
 
+**Money is an integer in the broker's minor unit** (PH-29.4, Issue #11): a
+stake is a positive safe integer, a payout ratio a decimal with at most four
+places, and a winning contract returns `stake + floor(stake × ratio)` computed
+in integer arithmetic — `payoutMinor` — so `returned`, `net` and every ledger
+sum are integers. The audit had measured the floating-point form returning a
+fraction of a minor unit for 95 000 of 100 000 cent stakes. The exposure book
+and the limiter charge the same exact obligation.
+
+**And the venue answers the two prices a settlement needs** (PH-29.1): the
+price in force at an instant, by this rule, and the proof that it is in the
+signed record; `@otc/client`'s `VenueClient` asks for them and `settle()` over
+the ticks it subscribed to agrees (`conformance.stat.test.ts`).
+
 ## Where economic blindness is actually enforced
 
 Three mechanisms, and Cycle Audit 2 showed the first two were not enough on their

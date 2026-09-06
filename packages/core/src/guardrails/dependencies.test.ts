@@ -36,6 +36,10 @@ const ALLOWED: Record<string, readonly string[]> = {
   '@otc/trading': ['@otc/core'],
   '@otc/distribution': ['@otc/core'],
   '@otc/chart': ['@otc/core'],
+  // PH-29.3: what a broker embeds — the contract, the conformance suite, the
+  // reference client. Verification needs the distribution package; nothing
+  // that generates is reachable from it.
+  '@otc/client': ['@otc/core', '@otc/distribution'],
   /**
    * `@otc/lab` was added for the OTC Market Lab (PH-23.3), under
    * `ADR-0015` §1: a rule that a new, legitimate subsystem cannot satisfy has
@@ -65,6 +69,7 @@ const ALLOWED: Record<string, readonly string[]> = {
     // composition calls it; `composition.test.ts` and `labSurface.test.ts` keep
     // the Lab's files out of that composition.
     '@otc/trading',
+    '@otc/client',
   ],
   // The browser bundle. `@otc/lab` and `@otc/fixtures` must never appear here:
   // one carries the attack battery, the other the planted-defect corpus.
@@ -78,6 +83,7 @@ const ALLOWED: Record<string, readonly string[]> = {
     '@otc/trading',
     '@otc/distribution',
     '@otc/chart',
+    '@otc/client',
   ],
 };
 

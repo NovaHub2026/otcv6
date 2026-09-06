@@ -1,7 +1,7 @@
 // Invariant evidence: INV-009 (reproducible settlement), INV-001 (economic independence).
 import { describe, expect, it } from 'vitest';
 import { durationMillis, epochMillis } from '@otc/core';
-import { DEFAULT_AT_MONEY_POLICY, type Contract } from './contract.js';
+import { DEFAULT_AT_MONEY_POLICY, payoutMinor, type Contract } from './contract.js';
 import { NotSettleableError, settle, tally, type TickRecord } from './settle.js';
 
 /** A record with ticks every second, at the prices given. */
@@ -108,7 +108,13 @@ describe('settlement refuses rather than guesses', () => {
   });
 
   it('rejects malformed contracts', () => {
-    expect(() => settle(contract({ stake: 0 }), ticks)).toThrow(/Stake must be positive/);
+    expect(() => settle(contract({ stake: 0 }), ticks)).toThrow(/Stake must be a positive integer/);
+    expect(() => settle(contract({ stake: 12.5 }), ticks)).toThrow(
+      /positive integer in the broker's minor unit/,
+    );
+    expect(() => settle(contract({ payoutRatio: 0.85001 }), ticks)).toThrow(
+      /at most four decimal places/,
+    );
     expect(() => settle(contract({ payoutRatio: -1 }), ticks)).toThrow(/Payout ratio/);
     expect(() => settle(contract({ horizonMs: durationMillis(1) }), ticks)).not.toThrow();
   });
@@ -389,5 +395,40 @@ describe('Cycle Audit 5: settlement refuses a window that touches a seam', () =>
           ? 'loss'
           : 'refund',
     );
+  });
+});
+
+describe('money is exact in the minor unit (PH-29.4, Issue #11)', () => {
+  const ticks = record([0, 10, 20, 30, 40, 50]);
+  it('agrees with exact rational arithmetic for a hundred thousand cent stakes, where floating point did not', () => {
+    const ratio = 0.85;
+    let fractional = 0;
+    let exactDisagreements = 0;
+    for (let stake = 1; stake <= 100_000; stake += 1) {
+      const exact = Number((BigInt(stake) * 8_500n) / 10_000n);
+      if (payoutMinor(stake, ratio) !== exact) exactDisagreements += 1;
+      // The formula this replaced returned `stake × (1 + ratio)`: a number
+      // with a fraction of a minor unit in it for most stakes, which no ledger
+      // can hold, and off by a floating-point ulp even when it should not be.
+      if (!Number.isInteger(stake * (1 + ratio))) fractional += 1;
+    }
+    expect(exactDisagreements).toBe(0);
+    expect(fractional).toBeGreaterThan(50_000);
+    console.info(
+      `[money] the replaced formula returned a fraction of a minor unit for ${String(fractional)} of 100 000 stakes; exact arithmetic disagrees with the rational 0 times`,
+    );
+  });
+
+  it('settles a win to an integer: stake plus the truncated payout', () => {
+    const won = settle(contract({ stake: 7, payoutRatio: 0.85 }), ticks);
+    // 7 × 0.85 = 5.95: five minor units, the fraction stays with the operator.
+    expect(won.outcome).toBe('win');
+    expect(won.returned).toBe(12);
+    expect(won.net).toBe(5);
+    expect(Number.isInteger(won.returned)).toBe(true);
+  });
+
+  it('refuses a stake whose exact product would leave the safe integer range', () => {
+    expect(() => payoutMinor(2 ** 52, 0.85)).toThrow(/exact integer range/);
   });
 });

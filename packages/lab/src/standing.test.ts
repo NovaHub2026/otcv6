@@ -13,6 +13,7 @@ import {
   PRODUCT_MARGIN_PP,
   runStandingAssurance,
   StandingAssuranceError,
+  horizonStanding,
 } from './standing.js';
 
 const GENESIS = 1_776_000_000_000;
@@ -232,6 +233,11 @@ describe('the detection floor is the battery own, and it moves with the history'
       expect(horizon.samples).toBeGreaterThanOrEqual(0);
       expect(typeof horizon.sufficientForPayout).toBe('boolean');
       expect(typeof horizon.sufficientForProductMargin).toBe('boolean');
+      // PH-29.5 (Issue #10): both floors, and sufficiency graded on the gate's.
+      expect(horizon.gateDetectionFloorPp).toBeGreaterThanOrEqual(horizon.detectionFloorPp);
+      expect(horizon.sufficientForProductMargin).toBe(
+        horizon.gateDetectionFloorPp < PRODUCT_MARGIN_PP,
+      );
     }
   });
 
@@ -253,6 +259,38 @@ describe('the detection floor is the battery own, and it moves with the history'
     const floorAt = (v: typeof short, label: string): number =>
       v.horizons.find((h) => h.horizon === label)!.detectionFloorPp;
     expect(floorAt(long, '30s')).toBeLessThan(floorAt(short, '30s'));
+  });
+
+  it('judges sufficiency on the gate floor, not the single-test one (PH-29.5, Issue #10)', () => {
+    const base = { horizon: '30s', samples: 100_000, sufficientForPayout: true };
+    // Fine by the single test, coarse by the gate: not sufficient.
+    expect(
+      horizonStanding({
+        ...base,
+        minimumDetectableEffectPoints: 0.1,
+        gateMinimumDetectableEffectPoints: 0.5,
+      }),
+    ).toMatchObject({
+      sufficientForProductMargin: false,
+      detectionFloorPp: 0.1,
+      gateDetectionFloorPp: 0.5,
+    });
+    // Fine by both: sufficient.
+    expect(
+      horizonStanding({
+        ...base,
+        minimumDetectableEffectPoints: 0.1,
+        gateMinimumDetectableEffectPoints: 0.2,
+      }),
+    ).toMatchObject({ sufficientForProductMargin: true });
+    // Never finer than the margin by the gate while coarser by the single test.
+    expect(
+      horizonStanding({
+        ...base,
+        minimumDetectableEffectPoints: 0.4,
+        gateMinimumDetectableEffectPoints: 0.2,
+      }),
+    ).toMatchObject({ sufficientForProductMargin: true });
   });
 
   it('states the margin it is judging against', () => {
@@ -358,6 +396,7 @@ describe('each rule of the classifier, on its own', () => {
       detectionFloorPp: 0.05,
       sufficientForPayout: true,
       sufficientForProductMargin: true,
+      gateDetectionFloorPp: 0.1,
     },
     {
       horizon: '15m',
@@ -365,6 +404,7 @@ describe('each rule of the classifier, on its own', () => {
       detectionFloorPp: 0.2,
       sufficientForPayout: true,
       sufficientForProductMargin: true,
+      gateDetectionFloorPp: 0.1,
     },
   ];
   const weak = [
@@ -374,6 +414,7 @@ describe('each rule of the classifier, on its own', () => {
       detectionFloorPp: 12,
       sufficientForPayout: false,
       sufficientForProductMargin: false,
+      gateDetectionFloorPp: 0.5,
     },
   ];
 
@@ -393,6 +434,7 @@ describe('each rule of the classifier, on its own', () => {
       detectionFloorPp: 4.04,
       sufficientForPayout: true,
       sufficientForProductMargin: false,
+      gateDetectionFloorPp: 0.5,
     },
   ];
   const oneFinding = { length: 1 };

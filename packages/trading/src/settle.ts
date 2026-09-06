@@ -6,6 +6,7 @@ import {
   type Contract,
   type Outcome,
   type Settlement,
+  payoutMinor,
 } from './contract.js';
 
 /**
@@ -107,9 +108,12 @@ export function settle(
   }
 
   const outcome = resolve(contract.direction, entry.price, expiry.price, policy);
+  // Exact, in the stake's minor unit (PH-29.4, Issue #11): the audit measured
+  // 124 of 100 000 cent stakes disagreeing with exact arithmetic under the
+  // floating-point `stake × (1 + payout)` this replaced.
   const returned =
     outcome === 'win'
-      ? contract.stake * (1 + contract.payoutRatio)
+      ? contract.stake + payoutMinor(contract.stake, contract.payoutRatio)
       : outcome === 'refund'
         ? contract.stake
         : 0;

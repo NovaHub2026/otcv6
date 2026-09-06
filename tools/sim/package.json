@@ -11,12 +11,13 @@
     "build": "tsc -b"
   },
   "dependencies": {
+    "@otc/client": "*",
     "@otc/core": "*",
+    "@otc/distribution": "*",
     "@otc/engine": "*",
     "@otc/fixtures": "*",
     "@otc/lab": "*",
-    "@otc/trading": "*",
     "@otc/runtime": "*",
-    "@otc/distribution": "*"
+    "@otc/trading": "*"
   }
 }

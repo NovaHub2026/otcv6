@@ -19,6 +19,7 @@ const alias = {
   '@otc/trading': path.resolve(root, 'packages/trading/src/index.ts'),
   '@otc/distribution': path.resolve(root, 'packages/distribution/src/index.ts'),
   '@otc/chart': path.resolve(root, 'packages/chart/src/index.ts'),
+  '@otc/client': path.resolve(root, 'packages/client/src/index.ts'),
 };
 
 const commonExclude = ['**/node_modules/**', '**/dist/**', '**/artifacts/**'];
@@ -250,6 +251,7 @@ export default defineConfig({
        */
       thresholds: {
         'packages/chart/src/**': { lines: 94 }, // measured 99.3
+        'packages/client/src/**': { lines: 80 }, // measured 86.5 (PH-29.3)
         'packages/core/src/**': { lines: 96 }, // measured 99.0
         'packages/distribution/src/**': { lines: 88 }, // measured 90.5
         'packages/engine/src/**': { lines: 95 }, // measured 97.1

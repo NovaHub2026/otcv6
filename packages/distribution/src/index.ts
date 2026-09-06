@@ -38,6 +38,13 @@ export {
   type PublicationWriterOptions,
 } from './publicationWriter.js';
 export {
+  JournalFileError,
+  proveFromPublication,
+  readJournalFile,
+  type JournalFile,
+  type PublicationProof,
+} from './journalFile.js';
+export {
   chainTipOf,
   IncrementalChainVerifier,
   readCommitmentsStream,

@@ -117,6 +117,24 @@ describe.each(implementations)('%s', (_name, open) => {
     expect(await record.assets()).toEqual(['a', 'b']);
   });
 
+  it('answers the last tick at or before an instant — the settlement rule (PH-29.1)', async () => {
+    const record = await open();
+    // Two ticks in one millisecond: the later sequence is the one in force.
+    const twin: Tick = { ...tick(4), sequence: 5 };
+    await record.append([
+      { assetId: 'a', ticks: [tick(1), tick(2), tick(3), tick(4), twin, tick(6)] },
+    ]);
+    expect(await record.atOrBefore('a', tick(1).instant - 1), 'before the record').toBeNull();
+    expect(await record.atOrBefore('a', tick(1).instant), 'exactly on the first').toEqual(tick(1));
+    expect(await record.atOrBefore('a', tick(2).instant + 1), 'between ticks').toEqual(tick(2));
+    expect(await record.atOrBefore('a', tick(4).instant), 'two at one instant').toEqual(twin);
+    expect(await record.atOrBefore('a', tick(6).instant + 1_000_000), 'after the newest').toEqual(
+      tick(6),
+    );
+    expect(await record.atOrBefore('b', tick(6).instant), 'an asset with nothing').toBeNull();
+    await expect(record.atOrBefore('a', 1.5)).rejects.toThrow(/safe integer/);
+  });
+
   it('validates limits and sequences before touching anything', async () => {
     const record = await open();
     await expect(record.tail('a', 0)).rejects.toThrow(/positive integer/);

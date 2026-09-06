@@ -12,3 +12,6 @@ docs/integration/CATALOGUE.md
 
 # Not ours; see .gitignore.
 _shot.mjs
+
+# Generated from apps/api/src/contract.ts by `npm run contract:render`; held byte for byte by contract.test.ts (PH-29.2).
+docs/architecture/API_CONTRACT.md
