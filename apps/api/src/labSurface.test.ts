@@ -153,6 +153,58 @@ describe('the production composition cannot reach the Lab', () => {
     expect(read('lab/lab.controller.ts')).toMatch(/snapshotEngine\(\)/);
   });
 
+  /**
+   * **PH-28.2.** `VenueService` used to carry `hostedMarket()`, `labFork()`
+   * and the rest, so every production controller held the object that could
+   * snapshot the engine (Cycle Audit 9, a1-01). They live on `EngineAccess`
+   * now, built by the venue and handed **once** to the callback its
+   * composition passes; production passes none. These three guards are about
+   * the source, the way `composition.test.ts` is about the sign source: what
+   * is composed, not what a flag says.
+   */
+  it('VenueService declares no public path to a market, a snapshot or a fork (PH-28.2)', () => {
+    const venue = read('venue.service.ts');
+    expect(venue, 'the engine surface is back on the venue').not.toMatch(
+      /snapshotEngine|labFork|labTicksAhead|labStepsAhead|labRandom|createMarketEngine/,
+    );
+    // A public method — no `#` — whose signature returns a HostedMarket.
+    const publicMarket =
+      venue.match(
+        /^ {2}(?:async\s+)?(?:get\s+)?[A-Za-z]\w*\([^)]*\)\s*:\s*[^{;]*\bHostedMarket\b/gm,
+      ) ?? [];
+    expect(publicMarket, 'a public method of VenueService returns a HostedMarket').toEqual([]);
+    // The subject exists: the private port the access object is built on.
+    expect(venue).toMatch(/#marketOrNull\(assetId: string\): HostedMarket \| null/);
+    expect(venue).toMatch(/new EngineAccess\(/);
+  });
+
+  it('EngineAccess is constructed in venue.service.ts and named by no other production source (PH-28.2)', () => {
+    const everything = [...productionSources(), ...productionSources(path.join(src, 'lab'), 'lab')];
+    const constructions = everything
+      .filter(({ source }) => /new EngineAccess\(/.test(source))
+      .map(({ file }) => file);
+    expect(constructions).toEqual(['venue.service.ts']);
+    const naming = productionSources()
+      .filter(
+        ({ file, source }) =>
+          !['venue.service.ts', 'app.module.ts', 'engineAccess.ts'].includes(file) &&
+          /EngineAccess|EngineHandle|engineAccess/.test(source),
+      )
+      .map(({ file }) => file);
+    expect(naming, 'a production source reaches for the engine access').toEqual([]);
+    expect(read('main.ts')).not.toMatch(/engineAccess|EngineAccess|EngineHandle/);
+    // And the Lab does receive it, so the guard has a subject.
+    expect(read('lab/lab.module.ts')).toMatch(/engineAccess: engine\.hand/);
+  });
+
+  it('snapshotEngine is reachable in production only through engineAccess.ts (PH-28.2)', () => {
+    const offenders = productionSources()
+      .filter(({ file, source }) => file !== 'engineAccess.ts' && /snapshotEngine/.test(source))
+      .map(({ file }) => file);
+    expect(offenders).toEqual([]);
+    expect(read('engineAccess.ts')).toMatch(/snapshotEngine\(\)/);
+  });
+
   it('every Lab response says what it is', () => {
     // §3 of the specification: a screenshot of the Lab must not be mistakable
     // for one of the market.

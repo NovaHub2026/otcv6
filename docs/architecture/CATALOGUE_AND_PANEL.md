@@ -121,8 +121,11 @@ rather than by lifetime.
 
 A recorder never stores a bucket it did not see from its start: its first bucket
 is stored only when its first tick immediately follows the newest stored bar, or
-is sequence 1. A restart therefore leaves a visible one-minute hole rather than
-a short bar labelled whole; the backfill hands its own recorder to the live path
+is sequence 1. A restart used to leave a visible one-minute hole rather than
+a short bar labelled whole — since PH-28.1 the recorder is primed from the
+persisted tick record before any live tick, so the minute is seen from its start
+and stored, and the hole appears only where the record itself does not reach
+the stored head (a seam, a trim); the backfill hands its own recorder to the live path
 so the join minute is whole (out-of-band audit, a5-01 — Cycle Audit 6 had fixed
 the same defect one tier up, CA6-06). The first bar of any coarser read, and the
 first hour ever rolled up, is withheld unless the series covers it from its start
@@ -223,8 +226,11 @@ That refusal is right, and for one client it was ruinous. **The panel resumes
 from where the _record_ stops, not from where it was last delivered** — it has
 just loaded history, and the sequence after the newest stored candle is where
 its own account ends. But the feed keeps a bounded window of ticks (50 000 by
-default) and a restart empties it, so that sequence is routinely older than
-anything the feed still holds, through no fault of the client. Refused, the
+default) and, until PH-28.1, a restart emptied it, so that sequence was
+routinely older than anything the feed still held, through no fault of the
+client. The feed is now primed from the persisted record at boot
+(`RUNTIME_AND_TRADING.md`), so a restart no longer moves the window; a sequence
+older than the record's bound still is. Refused, the
 panel fell back to drawing no live bar at all: the price line moved and the
 newest candle stood still for up to an hour on the default one-hour chart.
 Reported twice by the Human Owner on 2026-09-02, and reproduced by hosted CI

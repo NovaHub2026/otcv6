@@ -632,3 +632,47 @@ record needs the record to survive a restart.
 
 **What is now explicitly out of scope.** Accounts, positions, payout, money,
 risk, and the trader's user interface — all the broker's.
+
+## 2026-09-05 — The engine's handle is a composition callback, not a branded token (PH-28.2)
+
+**Decision.** The engine-touching surface (`hostedMarket`, the forks, the
+lookaheads, the Lab's randomness) moved off `VenueService` onto
+`EngineAccess`, an object the venue constructs and hands **once** to the
+callback the composition passes as `AppModuleOptions.engineAccess`. Production
+passes none. The Lab passes `EngineHandle.hand` and provides what it receives.
+
+**Why a callback rather than the branded handle Cycle Audit 9 named.** A
+branded handle — a token only the Lab can unwrap — still leaves an unwrap method
+on the venue's type, and a method on the type is a thing a production
+controller can call with a token it should not have. A callback leaves nothing
+on the type: in a process whose composition passed no callback the object is
+never created, which is the same shape as ADR-0015 §3's "a missing module is
+not a flag". The guards are about the source, the way `composition.test.ts`
+already was: no public method of the venue returns a market, `snapshotEngine`
+appears in production only in `engineAccess.ts`, and only `venue.service.ts`
+constructs the access.
+
+**What it cost.** Every Lab test that built a venue now captures the handle
+through the same callback; the constructor's positional shape grew by one
+trailing parameter. The Lab's controller, observer and footprint take
+`EngineAccess` where they took the venue for engine reads.
+
+## 2026-09-05 — A chain the record cannot reach is restarted, never bridged (PH-28.3)
+
+**Decision.** When the commitment chain's tip is ahead of what the tick record
+holds — a lost `record.db`, a trim past the tip — the writer starts a new chain
+at an empty root for that asset and logs an error; it does not commit a window
+whose `previousRoot` binds a tip its ticks do not follow.
+
+**Why.** A bridged window verifies structurally and is a lie about continuity;
+a second genesis link is a break a verifier can see and place. A restart over
+a lost record also republishes the ticks after the checkpoint — the record
+that would have deduplicated them is the thing that was lost — so the second
+chain begins at the resume point and overlaps the first, which is what
+happened and what the file should say. Asserted in `venueRecord.test.ts`.
+
+**And the operator's tool is a command, not a route.** PH-28.3 planned
+`POST /admin/backup`; a backup that needs the process to be up cannot be taken
+of a process that will not boot, and a restore is a directory swap with the
+service stopped anyway. `npm run state:verify` and `npm run state:backup` work
+on the directory, with or without a venue running on it.

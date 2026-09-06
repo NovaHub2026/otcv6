@@ -88,6 +88,28 @@ export {
 } from './follower.js';
 export { SqliteCoordinatedStore, STORE_SCHEMA_VERSION } from './sqliteStore.js';
 export { HISTORY_SCHEMA_VERSION, SqliteCandleHistory } from './sqliteHistory.js';
+export {
+  backupStateDirectory,
+  BACKUP_MANIFEST,
+  HISTORY_DB,
+  LAB_MARKER,
+  RECORD_DB,
+  REGISTRY_DIR,
+  stateRefusal,
+  verifyStateDirectory,
+  type AssetHeads,
+  type BackupManifest,
+  type StateDirectoryReport,
+  type StateProblem,
+} from './stateDirectory.js';
+export {
+  DEFAULT_RECORD_TICKS,
+  MemoryTickRecord,
+  RECORD_SCHEMA_VERSION,
+  SqliteTickRecord,
+  type AssetBatch,
+  type TickRecord,
+} from './tickRecord.js';
 export { DEFAULT_BUSY_TIMEOUT_MS } from './sqlite.js';
 export {
   FIRST_SEQUENCE,

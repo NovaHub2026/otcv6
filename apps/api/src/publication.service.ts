@@ -1,7 +1,21 @@
 import { Logger } from '@nestjs/common';
 import type { Tick } from '@otc/core';
-import { PublicationWriter, publishingKeyFromEnvironment } from '@otc/distribution';
+import {
+  PublicationWriter,
+  publishingKeyFromEnvironment,
+  type ChainResumption,
+} from '@otc/distribution';
 import { ASSET_CATALOGUE, type RegisteredAsset } from '@otc/engine';
+import type { TickRecord } from '@otc/runtime';
+
+/** How a chain stood at boot and what priming from the record did about it (PH-28.3). */
+export type ChainPriming =
+  | { readonly kind: 'fresh' }
+  | { readonly kind: 'continued'; readonly from: number; readonly folded: number }
+  | { readonly kind: 'broken'; readonly from: number; readonly recordStartsAt: number | null };
+
+/** Ticks read from the record per page while priming; a page is one await. */
+const PRIME_PAGE = 100_000;
 
 /**
  * Wiring only. The record-writing lives in `@otc/distribution`'s
@@ -51,6 +65,58 @@ export class PublicationService {
 
   observe(assetId: string, ticks: readonly Tick[]): void {
     this.writer?.observe(assetId, ticks);
+  }
+
+  /** How the writer took over an asset's chain, or null when not publishing. */
+  resumption(assetId: string): ChainResumption | null {
+    return this.writer?.resumption(assetId) ?? null;
+  }
+
+  /**
+   * Continue the chain across the process boundary (PH-28.3).
+   *
+   * The writer resumes at the tip of the file; the ticks between that tip and
+   * the previous process's death were published, recorded, and never
+   * committed. They are read back from the record and observed here, before
+   * any live tick, so the chain a broker verifies is one chain per market
+   * rather than one per boot. Where the record does not reach the tip — a
+   * trim, a seam — the chain cannot be continued honestly and is **not**
+   * bridged: the asset's chain is reported broken, logged as an error, and
+   * the writer is told to start a new chain at an empty root so the live
+   * ticks are still committed to. A break a verifier can see beats a hole
+   * that looks like tampering.
+   */
+  async prime(assetId: string, record: TickRecord): Promise<ChainPriming> {
+    if (this.writer === null) return { kind: 'fresh' };
+    const resumed = this.writer.resumption(assetId);
+    if (resumed === null || resumed.kind !== 'continued') return { kind: 'fresh' };
+    let from = resumed.nextSequence;
+    const first = await record.since(assetId, from, 1);
+    if (first.length === 0 || first[0]!.sequence !== from) {
+      const recordStartsAt = first[0]?.sequence ?? null;
+      this.logger.error(
+        `${assetId}: the commitment chain ends at sequence ${from - 1} and the record ` +
+          (recordStartsAt === null ? 'holds nothing after it' : `resumes at ${recordStartsAt}`) +
+          ` — the chain cannot be continued and is restarted at an empty root; a verifier ` +
+          `will see two chains for this market, which is the truth (PH-28.3).`,
+      );
+      this.writer.restartChain(assetId);
+      return { kind: 'broken', from, recordStartsAt };
+    }
+    let folded = 0;
+    for (;;) {
+      const page = await record.since(assetId, from, PRIME_PAGE);
+      if (page.length === 0) break;
+      this.writer.observe(assetId, page);
+      folded += page.length;
+      from = page[page.length - 1]!.sequence + 1;
+      if (page.length < PRIME_PAGE) break;
+    }
+    this.logger.log(
+      `${assetId}: commitment chain continued from sequence ${resumed.nextSequence}, ` +
+        `${folded} recorded tick(s) folded`,
+    );
+    return { kind: 'continued', from: resumed.nextSequence, folded };
   }
 
   /** Begin publishing an asset registered while the service was running. */

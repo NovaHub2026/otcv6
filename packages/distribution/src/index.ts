@@ -34,8 +34,16 @@ export {
   PublicationWriter,
   readCommitments,
   type AssetPublicationSpec,
+  type ChainResumption,
   type PublicationWriterOptions,
 } from './publicationWriter.js';
+export {
+  chainTipOf,
+  IncrementalChainVerifier,
+  readCommitmentsStream,
+  verifyCommitmentsFile,
+  type CommitmentsFileVerdict,
+} from './commitmentsFile.js';
 export {
   authorisedKeys,
   RotationError,

@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import type { AssetRegistry } from '@otc/runtime';
+import { stateRefusal, verifyStateDirectory, type AssetRegistry } from '@otc/runtime';
 import { ADMIN_TOKEN } from './adminAuth.guard.js';
 import { AppModule } from './app.module.js';
 import { VenueService } from './venue.service.js';
@@ -44,6 +44,23 @@ async function bootstrap(): Promise<void> {
   const refusal = refuseLabState(process.env.OTC_STATE_DIR ?? './.otc-state');
   if (refusal !== null) {
     logger.error(refusal);
+    process.exit(1);
+  }
+  // PH-28.3: the directory's files must agree with one another before any
+  // market resumes. A record restored beside a newer checkpoint, a history
+  // ahead of the record, a database from newer code — each boots a venue that
+  // serves something observers did not see, and each is refused here by name.
+  // A warning is a seam a resume will take and say so; it is logged, not fatal.
+  const stateDir = process.env.OTC_STATE_DIR ?? './.otc-state';
+  const report = await verifyStateDirectory(stateDir);
+  for (const warning of report.warnings) {
+    logger.warn(
+      `${warning.file}${warning.assetId === null ? '' : ` (${warning.assetId})`}: ${warning.detail}`,
+    );
+  }
+  const inconsistent = stateRefusal(report);
+  if (inconsistent !== null) {
+    logger.error(inconsistent);
     process.exit(1);
   }
   // Bare: production registers no sign source (PH-24.1, `composition.test.ts`).

@@ -4,6 +4,8 @@ import { ASSET_CATALOGUE } from '@otc/engine';
 import { MemoryStateStore } from '@otc/runtime';
 import { PublicationService } from '../publication.service.js';
 import { VenueService } from '../venue.service.js';
+import { EngineHandle } from './engineHandle.js';
+import type { EngineAccess } from '../engineAccess.js';
 import { EngineEventObserver } from './engineEvents.js';
 import { LabSession } from './session.js';
 
@@ -16,6 +18,7 @@ const GENESIS = epochMillis(1_776_000_000_000);
 
 async function venueAndSession() {
   const clock = new SteppableClock(GENESIS);
+  const engine = new EngineHandle();
   const venue = new VenueService(
     new MemoryStateStore(),
     MasterKeyring.fromSecret('engine-events-spec', new Uint8Array(32).fill(19)),
@@ -23,10 +26,25 @@ async function venueAndSession() {
     [asset],
     5_000,
     new PublicationService([asset]),
+    null,
+    null,
+    0,
+    null,
+    null,
+    null,
+    null,
+    undefined,
+    engine.hand,
   );
   await venue.start();
   const session = new LabSession();
-  return { venue, clock, session, observer: new EngineEventObserver(venue, session) };
+  return {
+    venue,
+    engine: engine.get(),
+    clock,
+    session,
+    observer: new EngineEventObserver(venue, engine.get(), session),
+  };
 }
 
 /**
@@ -39,6 +57,7 @@ async function venueAndSession() {
  */
 function drivenVenue(): {
   venue: VenueService;
+  engine: EngineAccess;
   set: (next: Partial<{ regime: string; phase: string; stalled: boolean }>) => void;
 } {
   let state = { regime: 'normal', phase: 'neutral', stalled: false };
@@ -49,14 +68,17 @@ function drivenVenue(): {
     get stalledMarkets(): readonly { assetId: string; reason: string }[] {
       return state.stalled ? [{ assetId: 'eurusd', reason: 'catch-up bound' }] : [];
     },
+  } as unknown as VenueService;
+  const engine = {
     hostedMarket: () => ({
       snapshotEngine: () => ({
         magnitudeState: { modulators: [{ regime: state.regime }, { phase: state.phase }] },
       }),
     }),
-  } as unknown as VenueService;
+  } as unknown as EngineAccess;
   return {
     venue,
+    engine,
     set: (next) => {
       state = { ...state, ...next };
     },
@@ -100,9 +122,9 @@ describe('the engine-event observer', () => {
   }, 60_000);
 
   it('records each kind of change once, and only on the pass that changed it', () => {
-    const { venue, set } = drivenVenue();
+    const { venue, engine, set } = drivenVenue();
     const session = new LabSession();
-    const observer = new EngineEventObserver(venue, session);
+    const observer = new EngineEventObserver(venue, engine, session);
     const details = (): string[] => session.engineEvents.map((e) => `${e.kind}: ${e.detail}`);
 
     observer.observe(GENESIS);

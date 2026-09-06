@@ -67,15 +67,25 @@ async function boot(stateDir: string, port: number): Promise<Running> {
   let output = '';
   child.stdout?.on('data', (chunk: Buffer) => (output += chunk.toString()));
   child.stderr?.on('data', (chunk: Buffer) => (output += chunk.toString()));
-  await waitForHealth(port, child, nonce);
+  await waitForHealth(port, child, nonce, () => output);
   return { child, port, output: () => output };
 }
 
-async function waitForHealth(port: number, child: ChildProcess, nonce: string): Promise<void> {
+async function waitForHealth(
+  port: number,
+  child: ChildProcess,
+  nonce: string,
+  output: () => string = () => '',
+): Promise<void> {
   const deadline = Date.now() + 30_000;
   let lastError = 'never responded';
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`service exited early (${child.exitCode})`);
+    // With what the child said (PH-28.3): a targeted gate saw this exit and
+    // the error named the code and nothing else, so the cause — a port held
+    // by a leftover process, a boot refusal — could not be told apart.
+    if (child.exitCode !== null) {
+      throw new Error(`service exited early (${child.exitCode}):\n${output().slice(-2_000)}`);
+    }
     try {
       const response = await fetch(`http://127.0.0.1:${port}/health`);
       if (response.ok) {

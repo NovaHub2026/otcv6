@@ -1,5 +1,6 @@
 import type { OnModuleDestroy } from '@nestjs/common';
 import type { EpochMillis } from '@otc/core';
+import type { EngineAccess } from '../engineAccess.js';
 import type { VenueService } from '../venue.service.js';
 import type { LabSession } from './session.js';
 
@@ -26,6 +27,7 @@ export class EngineEventObserver implements OnModuleDestroy {
 
   constructor(
     private readonly venue: VenueService,
+    private readonly engine: EngineAccess,
     private readonly session: LabSession,
     private readonly everyMs = 1_000,
   ) {}
@@ -51,7 +53,7 @@ export class EngineEventObserver implements OnModuleDestroy {
   observe(now: EpochMillis = this.venue.now()): void {
     const stalled = new Set(this.venue.stalledMarkets.map((m) => m.assetId));
     for (const assetId of this.venue.assetIds) {
-      const market = this.venue.hostedMarket(assetId);
+      const market = this.engine.hostedMarket(assetId);
       if (market === null) continue;
       const snapshot = market.snapshotEngine() as {
         magnitudeState?: { modulators?: ({ regime?: string; phase?: string } | null)[] };

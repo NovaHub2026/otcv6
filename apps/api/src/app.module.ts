@@ -3,18 +3,22 @@ import { APP_GUARD } from '@nestjs/core';
 import { MasterKeyring, SystemClock } from '@otc/core';
 import { ASSET_CATALOGUE } from '@otc/engine';
 import {
+  DEFAULT_RECORD_TICKS,
   FileAssetRegistry,
   FileStateStore,
   SqliteCandleHistory,
+  SqliteTickRecord,
   type AssetRegistry,
   type CandleHistory,
   type SignSourceFactory,
   type StateStore,
+  type TickRecord,
 } from '@otc/runtime';
 import type { RegisteredAsset } from '@otc/engine';
 import { ADMIN_TOKEN, AdminWriteGuard, MIN_ADMIN_TOKEN_LENGTH } from './adminAuth.guard.js';
 import { RegistrationService } from './registration.service.js';
 import { HistoryService } from './history.service.js';
+import type { EngineAccess } from './engineAccess.js';
 import { BOOT_NONCE, MarketController } from './market.controller.js';
 import { PublicationService } from './publication.service.js';
 import { VenueService } from './venue.service.js';
@@ -56,6 +60,12 @@ export interface AppModuleOptions {
     readonly controlledSince: (assetId: string) => boolean;
     readonly checkpointTaken: (assetId: string) => void;
   };
+  /**
+   * Where the venue hands its engine-touching surface (PH-28.2). Absent in
+   * production, so no object that can snapshot the engine exists; the Lab
+   * passes a handle and provides what it receives.
+   */
+  readonly engineAccess?: (access: EngineAccess) => void;
 }
 
 @Module({})
@@ -80,6 +90,19 @@ export class AppModule {
             new SqliteCandleHistory(
               process.env.OTC_HISTORY_DB ??
                 `${process.env.OTC_STATE_DIR ?? './.otc-state'}/history.db`,
+            ),
+        },
+        {
+          provide: 'TICK_RECORD',
+          // The published record, beside the checkpoints and the history, for
+          // the same reason those two live there (PH-28.1): a deployment that
+          // moves its state means to move all of it, and a record left behind
+          // would be the served ticks of a market whose checkpoints went
+          // elsewhere.
+          useFactory: (): TickRecord =>
+            new SqliteTickRecord(
+              process.env.OTC_RECORD_DB ??
+                `${process.env.OTC_STATE_DIR ?? './.otc-state'}/record.db`,
             ),
         },
         {
@@ -153,11 +176,12 @@ export class AppModule {
         },
         {
           provide: VenueService,
-          inject: ['STATE_STORE', HistoryService, 'ASSETS'],
+          inject: ['STATE_STORE', HistoryService, 'ASSETS', 'TICK_RECORD'],
           useFactory: (
             store: StateStore,
             history: HistoryService,
             assets: RegisteredAsset[],
+            record: TickRecord,
           ): VenueService =>
             new VenueService(
               store,
@@ -172,6 +196,9 @@ export class AppModule {
               options.signSource ?? null,
               options.arrivalSource ?? null,
               options.control ?? null,
+              record,
+              recordTicksFromEnvironment(),
+              options.engineAccess ?? null,
             ),
         },
         {
@@ -237,6 +264,36 @@ export function backfillDaysFromEnvironment(env: NodeJS.ProcessEnv = process.env
     );
   }
   return days;
+}
+
+/** The fewest ticks a deployment may keep per asset; below the feed's window a resume across a restart is refused inside it. */
+export const MIN_RECORD_TICKS = 50_000;
+
+/**
+ * Ticks the record keeps per asset, from `OTC_RECORD_TICKS` (PH-28.1).
+ *
+ * Whole ticks written as digits, at least the feed's own window: a bound below
+ * it would let the record forget a sequence the feed still retains, and a
+ * restart would then refuse a resume the process before it honoured. Read the
+ * way the backfill is (a6-15): no exponent, no sign, no fraction.
+ */
+export function recordTicksFromEnvironment(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.OTC_RECORD_TICKS;
+  if (raw === undefined || raw.trim().length === 0) return DEFAULT_RECORD_TICKS;
+  if (!/^\d+$/.test(raw.trim())) {
+    throw new Error(
+      `OTC_RECORD_TICKS must be a whole number of ticks written as digits, got ${raw}.`,
+    );
+  }
+  const ticks = Number(raw.trim());
+  if (ticks < MIN_RECORD_TICKS) {
+    throw new Error(
+      `OTC_RECORD_TICKS is ${ticks}; the record keeps at least ${MIN_RECORD_TICKS} per asset, ` +
+        `the feed's own replay window, or a restart would refuse a resume the process before ` +
+        `it honoured.`,
+    );
+  }
+  return ticks;
 }
 
 /**

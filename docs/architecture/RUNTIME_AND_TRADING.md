@@ -85,6 +85,40 @@ unrecorded, and after three consecutive refusals it releases the lease (a5-03).
 The multi-node design is described in
 [`MULTI_NODE_AND_OPERATIONS.md`](MULTI_NODE_AND_OPERATIONS.md).
 
+## The published record outlives the process (PH-28.1)
+
+A checkpoint is what a market needs to _continue_; it says nothing about what
+was _published_. PH-25.1 measured the cost across a `SIGKILL`: the feed's
+replay window was process-local, so a client holding a sequence from before
+the resume point was refused as evicted though nothing had been evicted, and
+the minute the kill fell in was withheld by the resumed recorder because it
+saw that minute from inside.
+
+`SqliteTickRecord` (`packages/runtime/src/tickRecord.ts`) is the published
+record persisted: sequence, instant and price per tick — what a `tick` frame
+carries and nothing of the engine (INV-010) — in one database in the state
+directory (`OTC_RECORD_DB`, default `<state dir>/record.db`), bounded per asset
+(`OTC_RECORD_TICKS`, default 250 000, at least the feed's own window). The
+venue appends every pass to it in one transaction **before** the feed, the
+publisher and the history see the batch, and what comes back is which ticks
+were new: a resumed market's republication of the ticks between its checkpoint
+and the kill is compared with the record and returned as nothing, so no tick
+is served twice; a held sequence offered with a different instant or price is a
+fork — two streams claiming one id, INV-002 broken — and the market is unhosted
+and stalled by name rather than published over the record. At boot the feed's
+window is primed from the record's newest contiguous run and the history
+recorder is handed the record's ticks after the newest stored minute before any
+live tick, so a resume across a restart is honoured and the minute a kill fell
+in is stored whole. Asserted in-process in `venueRecord.test.ts` and over the
+socket, against a spawned service killed with `SIGKILL`, in
+`servedRecord.stat.test.ts`. Nothing reaches the engine from any of it
+(INV-001).
+
+The directory those files live in is verified as one thing before any market
+resumes and can be backed up consistently while the venue runs; the
+commitment chain continues across a restart from the same record
+(`MULTI_NODE_AND_OPERATIONS.md` §5, PH-28.3).
+
 ## Settlement reads the record, never the engine
 
 `settle()` is a pure function of the published ticks and a contract. No keys, no

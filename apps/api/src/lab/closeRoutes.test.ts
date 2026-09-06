@@ -13,6 +13,8 @@ import { ASSET_CATALOGUE } from '@otc/engine';
 import { MemoryStateStore } from '@otc/runtime';
 import { PublicationService } from '../publication.service.js';
 import { VenueService } from '../venue.service.js';
+import { EngineHandle } from './engineHandle.js';
+import type { EngineAccess } from '../engineAccess.js';
 import { closeInstant, readWindow, resolveTarget } from './closeControl.js';
 import { LabController } from './lab.controller.js';
 import { SignSelector } from './selectableSigns.js';
@@ -44,6 +46,7 @@ interface Applied {
 async function labVenue(withSelector = true) {
   const clock = new SteppableClock(GENESIS);
   const selector = new SignSelector();
+  const engine = new EngineHandle();
   const venue = new VenueService(
     new MemoryStateStore(),
     keyring(),
@@ -55,10 +58,15 @@ async function labVenue(withSelector = true) {
     null,
     0,
     withSelector ? (keystream, assetId) => selector.wrap(keystream, assetId) : null,
+    null,
+    null,
+    null,
+    undefined,
+    engine.hand,
   );
   await venue.start();
-  const controller = new LabController(venue, selector, new LabSession());
-  return { venue, clock, controller, selector };
+  const controller = new LabController(venue, engine.get(), selector, new LabSession());
+  return { venue, engine: engine.get(), clock, controller, selector };
 }
 
 /** Advance in steps inside the catch-up bound. */
@@ -84,10 +92,10 @@ function inForceAt(venue: VenueService, instant: EpochMillis): Tick | null {
 
 /** A target any sign vector reaches: the alternating assignment over the window's steps. */
 function reachableTarget(
-  venue: VenueService,
+  engine: EngineAccess,
   instant: EpochMillis,
 ): { level: number; price: string; ticks: number } {
-  const window = readWindow(venue.labFork(id)!, instant);
+  const window = readWindow(engine.labFork(id)!, instant);
   const sum = window.steps.reduce((acc, step, i) => acc + (i % 2 === 0 ? step : -step), 0);
   const level = window.fromPrice + sum;
   return {
@@ -99,11 +107,11 @@ function reachableTarget(
 
 describe('Candle Close Control on a real candle (PH-24.2)', () => {
   it('1. closes the current candle exactly where it was told to', async () => {
-    const { venue, clock, controller } = await labVenue();
+    const { venue, engine, clock, controller } = await labVenue();
     await advance(venue, clock, 20_000);
     const now = venue.now();
     const instant = closeInstant(now, '1m', 'current');
-    const target = reachableTarget(venue, instant);
+    const target = reachableTarget(engine, instant);
     expect(target.ticks).toBeGreaterThan(3);
 
     const applied = (await controller.applyClose(id, target.price, 'current', '1m')) as Applied;
@@ -127,11 +135,11 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
   }, 60_000);
 
   it('2. closes the next candle exactly where it was told to', async () => {
-    const { venue, clock, controller } = await labVenue();
+    const { venue, engine, clock, controller } = await labVenue();
     await advance(venue, clock, 20_000);
     const now = venue.now();
     const instant = closeInstant(now, '1m', 'next');
-    const target = reachableTarget(venue, instant);
+    const target = reachableTarget(engine, instant);
     const applied = (await controller.applyClose(id, target.price, 'next', '1m')) as Applied;
     expect(applied.armed).toBe(true);
     await advance(venue, clock, instant - now + 5_000);
@@ -140,10 +148,10 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
   }, 60_000);
 
   it('3. refuses a price between levels with both neighbours, and arms nothing', async () => {
-    const { venue, clock, controller, selector } = await labVenue();
+    const { venue, engine, clock, controller, selector } = await labVenue();
     await advance(venue, clock, 5_000);
-    const below = toDisplayPrice(spec, logPrice(venue.labFork(id)!.price));
-    const above = toDisplayPrice(spec, logPrice(venue.labFork(id)!.price + 1));
+    const below = toDisplayPrice(spec, logPrice(engine.labFork(id)!.price));
+    const above = toDisplayPrice(spec, logPrice(engine.labFork(id)!.price + 1));
     const between = ((below + above) / 2).toFixed(spec.displayPrecision);
     await expect(controller.applyClose(id, between, 'current', '1m')).rejects.toMatchObject({
       status: 409,
@@ -158,7 +166,7 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     await advance(lab.venue, lab.clock, 20_000);
     await advance(plain.venue, plain.clock, 20_000);
     const instant = closeInstant(lab.venue.now(), '1m', 'next');
-    const target = reachableTarget(lab.venue, instant);
+    const target = reachableTarget(lab.engine, instant);
     const applied = (await lab.controller.applyClose(id, target.price, 'next', '1m')) as Applied;
     expect(applied.armed).toBe(true);
     await advance(lab.venue, lab.clock, 20_000);
@@ -172,19 +180,19 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     expect(released.armed).toBe(false);
     // Lockstep: the cursors agree, so what follows is the keystream's — same
     // instants and same signed steps as a venue that was never armed.
-    expect(lab.venue.hostedMarket(id)!.snapshotEngine().cursors).toEqual(
-      plain.venue.hostedMarket(id)!.snapshotEngine().cursors,
+    expect(lab.engine.hostedMarket(id)!.snapshotEngine().cursors).toEqual(
+      plain.engine.hostedMarket(id)!.snapshotEngine().cursors,
     );
     // A tick already drawn when the release happened is published as drawn —
     // its coin was tossed under the script, and nothing un-tosses a coin. The
     // keystream resumes with the *next draw*, which is where the comparison
     // starts. The route says so (`pendingTick`), because an operator watching
     // the chart would otherwise see one more scripted tick and call it a bug.
-    const fromLab = (lab.venue.hostedMarket(id)!.pending ??
-      lab.venue.hostedMarket(id)!.lastPublished)!;
-    const fromPlain = (plain.venue.hostedMarket(id)!.pending ??
-      plain.venue.hostedMarket(id)!.lastPublished)!;
-    expect(released.pendingTick).toBe(lab.venue.hostedMarket(id)!.pending?.sequence ?? null);
+    const fromLab = (lab.engine.hostedMarket(id)!.pending ??
+      lab.engine.hostedMarket(id)!.lastPublished)!;
+    const fromPlain = (plain.engine.hostedMarket(id)!.pending ??
+      plain.engine.hostedMarket(id)!.lastPublished)!;
+    expect(released.pendingTick).toBe(lab.engine.hostedMarket(id)!.pending?.sequence ?? null);
     await advance(lab.venue, lab.clock, 60_000);
     await advance(plain.venue, plain.clock, 60_000);
     const a = lab.venue.feed.since(id, fromLab.sequence + 1);
@@ -204,10 +212,10 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
   }, 60_000);
 
   it('6. records every apply and release in the Lab timeline, with §78 fields, and nothing in the engine one', async () => {
-    const { venue, clock, controller } = await labVenue();
+    const { venue, engine, clock, controller } = await labVenue();
     await advance(venue, clock, 20_000);
     const instant = closeInstant(venue.now(), '1m', 'next');
-    const target = reachableTarget(venue, instant);
+    const target = reachableTarget(engine, instant);
     await controller.applyClose(id, target.price, 'next', '1m');
     controller.release(id);
     const timelines = controller.sessionTimelines() as {
@@ -238,10 +246,10 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
   }, 60_000);
 
   it('says what it is in every response (§3)', async () => {
-    const { venue, clock, controller } = await labVenue();
+    const { venue, engine, clock, controller } = await labVenue();
     await advance(venue, clock, 20_000);
     const instant = closeInstant(venue.now(), '1m', 'next');
-    const target = reachableTarget(venue, instant);
+    const target = reachableTarget(engine, instant);
     const responses: unknown[] = [
       controller.closePreview(id, target.price, 'next', '1m'),
       await controller.applyClose(id, target.price, 'next', '1m'),
@@ -359,9 +367,9 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
   });
 
   it('PH-24.6: a relative close — N lattice steps from where the market stands — is a close like any other', async () => {
-    const { venue, clock, controller } = await labVenue();
+    const { venue, engine, clock, controller } = await labVenue();
     await advance(venue, clock, 20_000);
-    const from = venue.hostedMarket(id)!.snapshotEngine().price;
+    const from = engine.hostedMarket(id)!.snapshotEngine().price;
     // Preview at +2 and -2: the target is the engine's price plus the delta, and
     // one of the two parities is reachable in any window with ticks in it.
     const up = controller.closePreview(
@@ -424,9 +432,9 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     // exactly on it, and the chart's candle would show that tick as the next
     // candle's open. The target is the fork's own price there, so the close is
     // reachable in one draw. A second close expiring between ticks is not marked.
-    const { venue, clock, controller } = await labVenue();
+    const { venue, engine, clock, controller } = await labVenue();
     await advance(venue, clock, 20_000);
-    const fork = venue.labFork(id)!;
+    const fork = engine.labFork(id)!;
     const upcoming = [fork.next()!, fork.next()!, fork.next()!];
     const third = upcoming[2]!;
     const applied = (await controller.applyClose(
@@ -450,7 +458,7 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     );
 
     // Between two ticks: settled on the tick before, not on the boundary.
-    const fork2 = venue.labFork(id)!;
+    const fork2 = engine.labFork(id)!;
     const a = fork2.next()!;
     const b = fork2.next()!;
     const between = Math.floor((a.instant + b.instant) / 2);
@@ -478,6 +486,7 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     const two = ASSET_CATALOGUE.slice(0, 2);
     const clock = new SteppableClock(GENESIS);
     const selector = new SignSelector();
+    const engine = new EngineHandle();
     const venue = new VenueService(
       new MemoryStateStore(),
       keyring(),
@@ -489,9 +498,14 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
       null,
       0,
       (keystream, assetId) => selector.wrap(keystream, assetId),
+      null,
+      null,
+      null,
+      undefined,
+      engine.hand,
     );
     await venue.start();
-    const controller = new LabController(venue, selector, new LabSession());
+    const controller = new LabController(venue, engine.get(), selector, new LabSession());
     await advance(venue, clock, 20_000);
     const ids = two.map((a) => a.definition.id);
     for (const assetId of ids) {

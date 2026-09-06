@@ -614,6 +614,17 @@ describe('a document that names a test names one that exists', () => {
     // Without history a historical document cannot be held to it, and is not
     // held to the disk either: that would call every retired test a lie.
     try {
+      // A shallow clone has a `.git` and almost no history: hosted CI checks
+      // out one commit, asked `git log` for every test file ever added, was
+      // told about none of the retired ones, and failed the Cycle Audit 9
+      // merge on four historical documents that name `recalibration.test.ts`
+      // (PH-28.3). No history is no history, however it came to be missing.
+      const shallow = execFileSync('git', ['rev-parse', '--is-shallow-repository'], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+      if (shallow === 'true') return null;
       const out = execFileSync(
         'git',
         ['log', '--all', '--diff-filter=A', '--name-only', '--pretty=format:', '--', '*.test.ts'],

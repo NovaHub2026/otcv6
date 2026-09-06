@@ -1,28 +1,33 @@
-import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  type OnApplicationShutdown,
+  type OnModuleDestroy,
+} from '@nestjs/common';
 import {
   epochMillis,
-  logPrice,
   SystemClock,
   type Clock,
   type EpochMillis,
-  type LogPrice,
   type MasterKeyring,
-  type RandomSource,
   type Tick,
-  yieldToLoop,
 } from '@otc/core';
-import { ASSET_CATALOGUE, configFor, createMarketEngine, type RegisteredAsset } from '@otc/engine';
+import { ASSET_CATALOGUE, type RegisteredAsset } from '@otc/engine';
 import {
   checkpointMarket,
+  DEFAULT_RECORD_TICKS,
   resumeMarket,
   Venue,
+  type AssetBatch,
   type HostedMarket,
   type RecoveryOutcome,
   type SignSourceFactory,
   type StateStore,
   type AssetOverlay,
+  type TickRecord,
 } from '@otc/runtime';
-import { TickFeed } from '@otc/distribution';
+import { DEFAULT_RETAIN_TICKS, TickFeed } from '@otc/distribution';
+import { EngineAccess } from './engineAccess.js';
 import { HistoryService } from './history.service.js';
 import { PublicationService } from './publication.service.js';
 
@@ -50,7 +55,7 @@ import { PublicationService } from './publication.service.js';
 const STALLED_BACKOFF_MS = 250;
 
 @Injectable()
-export class VenueService implements OnModuleDestroy {
+export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
   private readonly logger = new Logger(VenueService.name);
   private venue: Venue | null = null;
   private timer: NodeJS.Timeout | null = null;
@@ -150,7 +155,51 @@ export class VenueService implements OnModuleDestroy {
       readonly controlledSince: (assetId: string) => boolean;
       readonly checkpointTaken: (assetId: string) => void;
     } | null = null,
-  ) {}
+    /**
+     * The persisted published record, or null when this deployment keeps none
+     * (PH-28.1).
+     *
+     * Written in `tick()` before the feed, the publisher and the history see a
+     * batch, and read at `start()` to prime the feed's window and the history
+     * recorder — so a client's resume sequence is honoured across a restart and
+     * the minute a kill fell in is stored whole. Optional for the reason the
+     * history is: the venue published a market for nine phases before the record
+     * outlived the process, and a test that wants neither should not have to
+     * build one.
+     */
+    private readonly record: TickRecord | null = null,
+    /** Ticks the record keeps per asset; trimmed on the checkpoint cadence. */
+    private readonly recordTicks = DEFAULT_RECORD_TICKS,
+    /**
+     * Where the engine-touching surface goes, or null (PH-28.2).
+     *
+     * The market, fork and lookahead methods lived on this class, and every
+     * production controller held them. They live on `EngineAccess` now, which
+     * this constructor builds and hands to the callback **once**; nothing on
+     * this class returns a market, a snapshot or a fork. Null in production —
+     * `main.ts` registers bare — and the Lab's composition passes a handle
+     * (`composition.test.ts`, `labSurface.test.ts` assert both).
+     */
+    engineAccess: ((access: EngineAccess) => void) | null = null,
+  ) {
+    engineAccess?.(
+      new EngineAccess({
+        marketFor: (assetId) => this.#marketOrNull(assetId),
+        assetFor: (assetId) => this.assetFor(assetId),
+        keyring: this.keyring,
+      }),
+    );
+  }
+
+  /** The hosted market, or null when the asset is not hosted. Reachable only through `EngineAccess`. */
+  #marketOrNull(assetId: string): HostedMarket | null {
+    if (this.venue === null || !this.assetIds.includes(assetId)) return null;
+    try {
+      return this.venue.marketFor(assetId);
+    } catch {
+      return null;
+    }
+  }
 
   /** Resume every asset, then begin publishing. */
   async start(): Promise<void> {
@@ -210,8 +259,60 @@ export class VenueService implements OnModuleDestroy {
     }
     this.venue = new Venue({ clock: this.clock, markets });
     this.venue.prime();
+    // The record before the first pass: what the previous process served is
+    // what this one's feed resumes from, and what its recorder folds first.
+    for (const { asset } of markets) await this.#primeFromRecord(asset.definition.id);
     this.lastCheckpointAt = this.clock.now();
     this.schedule();
+  }
+
+  /**
+   * Close the record, last (PH-28.1).
+   *
+   * `onApplicationShutdown`, not `onModuleDestroy`, for the reason the history
+   * closes there (a6-09): the venue's own destroy hook is the final checkpoint
+   * and it trims the record, and Nest runs a module's destroy hooks
+   * concurrently. This runs after every destroy hook has resolved.
+   */
+  onApplicationShutdown(): void {
+    if (this.record !== null && isClosable(this.record)) {
+      this.record.close();
+      this.logger.log('tick record closed');
+    }
+  }
+
+  /**
+   * Hand a market what the record holds for it, before it publishes here.
+   *
+   * Two readers, both of the same tail. The **feed** takes the newest contiguous
+   * run up to its own window, so a client holding a sequence the previous
+   * process served resumes from it rather than being refused as evicted
+   * (PH-25.1 finding a). The **history recorder** takes every tick after the
+   * newest stored minute bar, so its first tick is the one that follows the
+   * stored head and the minute the previous process died inside is seen from
+   * its start and stored whole (finding c). Neither reaches the engine: this is
+   * the published record read back, and INV-001 is untouched.
+   */
+  async #primeFromRecord(assetId: string): Promise<void> {
+    if (this.record === null) return;
+    const tail = await this.record.tail(assetId, DEFAULT_RETAIN_TICKS);
+    if (tail.length > 0) {
+      this.feed.publish(assetId, tail);
+      const newest = tail[tail.length - 1]!;
+      const known = this.latest.get(assetId);
+      if (known === undefined || newest.sequence > known.sequence) this.latest.set(assetId, newest);
+    }
+    const folded = await this.history?.prime(assetId, this.record);
+    // And the commitment chain, which the record lets continue across the
+    // boundary rather than restart at every boot (PH-28.3).
+    await this.publication.prime(assetId, this.record);
+    const head = tail.length > 0 ? tail[tail.length - 1]!.sequence : null;
+    this.logger.log(
+      head === null
+        ? `${assetId}: no published record to prime from`
+        : `${assetId}: feed primed from the record through sequence ${head} ` +
+            `(${tail.length} ticks); ${folded ?? 0} folded into the open minute`,
+    );
   }
 
   onModuleDestroy(): Promise<void> {
@@ -352,180 +453,6 @@ export class VenueService implements OnModuleDestroy {
     }
   }
 
-  /**
-   * The hosted market for an asset, or null.
-   *
-   * Exposed for the Lab, which reads engine state the product never publishes.
-   * The boundary that makes that safe is composition — `AppModule` does not
-   * import `LabModule` — rather than a check here, because a check here would
-   * be a flag (ADR-0015 §3).
-   */
-  hostedMarket(assetId: string): HostedMarket | null {
-    if (this.venue === null || !this.assetIds.includes(assetId)) return null;
-    try {
-      return this.venue.marketFor(assetId);
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * The unsigned step sizes the next `spanMs` of this market will produce.
-   *
-   * Read from a **fork**: the engine is snapshotted and a copy is run forward,
-   * so the live market is not advanced and no keystream position is consumed
-   * twice. The steps are the same whatever signs are drawn — that is ADR-0003's
-   * theorem, and `stepIndependence.test.ts` verifies it on the shipped engine —
-   * which is what makes an exact close cost two milliseconds instead of minutes.
-   */
-  labStepsAhead(assetId: string, spanMs: number): number[] {
-    const market = this.hostedMarket(assetId);
-    const asset = this.assetFor(assetId);
-    if (market === null || asset === null) return [];
-    const snapshot = market.snapshotEngine();
-    const fork = createMarketEngine({
-      config: configFor(asset),
-      keyring: this.keyring,
-      environment: 'production',
-      start: { instant: epochMillis(snapshot.instant), price: logPrice(snapshot.price) },
-    });
-    fork.restore(snapshot);
-    const steps: number[] = [];
-    let price = snapshot.price;
-    const until = snapshot.instant + spanMs;
-    for (;;) {
-      const tick = fork.next();
-      if (tick === null || tick.instant > until) break;
-      steps.push(Math.abs(tick.price - price));
-      price = tick.price;
-    }
-    return steps;
-  }
-
-  /**
-   * The next `count` ticks this market will produce, from a fork.
-   *
-   * Same fork discipline as {@link VenueService.labStepsAhead}: the live engine
-   * is snapshotted and a copy run forward, so the market is not advanced and no
-   * keystream position is consumed twice. The Lab reads the future; it does not
-   * spend it.
-   */
-  /**
-   * `labTicksAhead`, yielding to the event loop every `chunk` ticks (PH-24.17).
-   *
-   * The quality sample is a span in the asset's own ticks — millions at the
-   * finer grain — and a synchronous walk of that length held the process for
-   * seconds: the panel's polls answered 502 and the screen read the Lab as
-   * gone. The venue keeps ticking between chunks.
-   */
-  async labTicksAheadAsync(assetId: string, count: number, chunk = 250_000): Promise<Tick[]> {
-    const market = this.hostedMarket(assetId);
-    const asset = this.assetFor(assetId);
-    if (market === null || asset === null) return [];
-    const snapshot = market.snapshotEngine();
-    const fork = createMarketEngine({
-      config: configFor(asset),
-      keyring: this.keyring,
-      environment: 'production',
-      start: { instant: epochMillis(snapshot.instant), price: logPrice(snapshot.price) },
-    });
-    fork.restore(snapshot);
-    const ticks: Tick[] = [];
-    for (let i = 0; i < count; i += 1) {
-      const tick = fork.next();
-      if (tick === null) break;
-      ticks.push(tick);
-      if (ticks.length % chunk === 0) await yieldToLoop();
-    }
-    return ticks;
-  }
-
-  labTicksAhead(assetId: string, count: number): Tick[] {
-    const market = this.hostedMarket(assetId);
-    const asset = this.assetFor(assetId);
-    if (market === null || asset === null) return [];
-    const snapshot = market.snapshotEngine();
-    const fork = createMarketEngine({
-      config: configFor(asset),
-      keyring: this.keyring,
-      environment: 'production',
-      start: { instant: epochMillis(snapshot.instant), price: logPrice(snapshot.price) },
-    });
-    fork.restore(snapshot);
-    const ticks: Tick[] = [];
-    for (let i = 0; i < count; i += 1) {
-      const tick = fork.next();
-      if (tick === null) break;
-      ticks.push(tick);
-    }
-    return ticks;
-  }
-
-  /**
-   * A fork of a hosted market, positioned where the live engine stands.
-   *
-   * Same discipline as {@link VenueService.labStepsAhead}: snapshot, copy,
-   * restore — the live market is not advanced and no keystream position is
-   * spent twice. The fork stands at the engine's current price, which is the
-   * pending tick's when one is drawn (the snapshot is taken after that draw),
-   * and its first `next()` is the tick the live engine will draw next. That is
-   * exactly the alignment PH-24.2 needs for an armed vector to begin on the
-   * right tick.
-   */
-  labFork(
-    assetId: string,
-    wrapSign?: (keystream: RandomSource) => RandomSource,
-    wrapArrival?: (keystream: RandomSource) => RandomSource,
-  ): {
-    readonly price: LogPrice;
-    readonly instant: EpochMillis;
-    next(): Tick | null;
-  } | null {
-    const market = this.hostedMarket(assetId);
-    const asset = this.assetFor(assetId);
-    if (market === null || asset === null) return null;
-    const snapshot = market.snapshotEngine();
-    const config = configFor(asset);
-    // PH-24.10: a fork whose signs the Lab chooses — the landing of a push is
-    // the engine's own magnitudes under the pushed signs. Only the sign stream
-    // is substituted, as the mirror harness does; `restore` seeks it, so a
-    // wrapper that releases on seek must be armed after this returns.
-    const derive = (purpose: 'sign' | 'arrival'): RandomSource =>
-      this.keyring.derive({ env: 'production', asset: config.instrument.id, purpose, keyEpoch: 0 });
-    const streams =
-      wrapSign === undefined && wrapArrival === undefined
-        ? {}
-        : {
-            streams: {
-              ...(wrapSign === undefined ? {} : { sign: wrapSign(derive('sign')) }),
-              ...(wrapArrival === undefined ? {} : { arrival: wrapArrival(derive('arrival')) }),
-            },
-          };
-    const fork = createMarketEngine({
-      config,
-      keyring: this.keyring,
-      environment: 'production',
-      start: { instant: epochMillis(snapshot.instant), price: logPrice(snapshot.price) },
-      ...streams,
-    });
-    fork.restore(snapshot);
-    return {
-      price: snapshot.price,
-      instant: epochMillis(snapshot.instant),
-      next: () => fork.next(),
-    };
-  }
-
-  /** A Lab-only randomness stream: never a market one. */
-  labRandom(assetId: string): RandomSource {
-    return this.keyring.derive({
-      env: 'simulation',
-      asset: assetId,
-      purpose: 'lab-close-selection',
-      keyEpoch: 0,
-    });
-  }
-
   assetFor(id: string): RegisteredAsset | null {
     return this.assets.find((asset) => asset.definition.id === id) ?? null;
   }
@@ -581,6 +508,7 @@ export class VenueService implements OnModuleDestroy {
     this.recovery.set(id, outcome);
     market.prime();
     this.venue?.host(asset, market);
+    await this.#primeFromRecord(id);
     this.publication.register(asset);
     this.logger.log(`${id}: hosted at runtime — ${outcome.kind}`);
   }
@@ -639,13 +567,22 @@ export class VenueService implements OnModuleDestroy {
         );
       }
     }
-    for (const { assetId, ticks } of published) {
+    // The record first (PH-28.1). What comes back is which ticks were new:
+    // a resumed market republishes the ticks between its checkpoint and the
+    // kill, the record verifies them against what it served and returns
+    // nothing for them, and the feed, the publisher and the history never see
+    // a tick twice. A tick the record refuses is not published at all.
+    const fresh = await this.#recordPass(published);
+    for (const { assetId, ticks: generated } of published) {
+      const ticks = fresh.get(assetId);
+      if (ticks === undefined) continue; // Refused by the record; stalled by name.
       if (this.stalled.delete(assetId)) {
         this.stalledLogged.delete(assetId);
         this.logger.log(`${assetId}: publishing again`);
       }
-      const last = ticks[ticks.length - 1];
+      const last = generated[generated.length - 1];
       if (last !== undefined) this.latest.set(assetId, last);
+      if (ticks.length === 0) continue;
       this.feed.publish(assetId, ticks);
       // After publication, never before: the publisher sees the record, it does
       // not participate in producing it (INV-001). The same is true of the
@@ -656,6 +593,48 @@ export class VenueService implements OnModuleDestroy {
     }
     if (this.clock.now() - this.lastCheckpointAt >= this.checkpointEveryMs) {
       await this.checkpoint();
+    }
+  }
+
+  /**
+   * Append a pass to the record and say, per asset, what was new.
+   *
+   * One transaction for the pass; if it is refused, each asset is appended on
+   * its own so the refusal is isolated to the market that caused it. A
+   * refusal — a fork, or a sequence the record cannot compare — means this
+   * market's stream disagrees with the record it published under this id.
+   * It is unhosted and stalled by name: `/health` reports it, nothing is
+   * published for it, and an operator decides. Publishing over the record
+   * would be a second market under one id, which is INV-002 broken where a
+   * client cannot see it.
+   */
+  async #recordPass(
+    published: readonly { assetId: string; ticks: readonly Tick[] }[],
+  ): Promise<ReadonlyMap<string, readonly Tick[]>> {
+    if (this.record === null) {
+      return new Map(published.map(({ assetId, ticks }) => [assetId, ticks]));
+    }
+    const batches: AssetBatch[] = published.map(({ assetId, ticks }) => ({ assetId, ticks }));
+    try {
+      return await this.record.append(batches);
+    } catch {
+      const fresh = new Map<string, readonly Tick[]>();
+      for (const batch of batches) {
+        try {
+          const one = await this.record.append([batch]);
+          fresh.set(batch.assetId, one.get(batch.assetId) ?? []);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.stalled.set(batch.assetId, `refused by the record — ${message}`);
+          this.stalledLogged.set(batch.assetId, 'RecordRefusal');
+          this.venue?.unhost(batch.assetId);
+          this.logger.error(
+            `${batch.assetId}: REFUSED BY THE RECORD and unhosted — ${message} ` +
+              `(nothing was published for it; the record was not modified)`,
+          );
+        }
+      }
+      return fresh;
     }
   }
 
@@ -671,6 +650,9 @@ export class VenueService implements OnModuleDestroy {
         checkpointMarket(this.venue.marketFor(assetId), assetId, now, undefined, controlled),
       );
       this.control?.checkpointTaken(assetId);
+      // The record's bound, on the same cadence: a handful of rows past the
+      // window every five seconds, never a sweep.
+      await this.record?.trim(assetId, this.recordTicks);
     }
     // Bars that closed since the last checkpoint. On the same cadence because a
     // minute bar closes at most once a minute: flushing per tick would be
@@ -739,4 +721,8 @@ export class VenueService implements OnModuleDestroy {
       void this.inFlight;
     }, waitMs);
   }
+}
+
+function isClosable(value: object): value is { close(): void } {
+  return 'close' in value && typeof value.close === 'function';
 }

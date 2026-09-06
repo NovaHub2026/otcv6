@@ -155,6 +155,10 @@ const AMBIENT_STATE_ALLOWLIST = [
    */
   'tools/sim/src/catalogueScale.ts',
   'tools/sim/src/cli.ts',
+  // PH-28.3's operator tool for the state directory: an entry point that reads
+  // its arguments and writes its report; it verifies and copies files and
+  // never reaches a draw.
+  'tools/sim/src/stateTool.ts',
   'tools/sim/src/dispersionEvidence.ts',
   'tools/sim/src/horizonEvidence.ts',
   /**

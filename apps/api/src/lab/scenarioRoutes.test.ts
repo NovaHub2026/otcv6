@@ -4,6 +4,7 @@ import { ASSET_CATALOGUE } from '@otc/engine';
 import { MemoryStateStore } from '@otc/runtime';
 import { PublicationService } from '../publication.service.js';
 import { VenueService } from '../venue.service.js';
+import { EngineHandle } from './engineHandle.js';
 import { LabController } from './lab.controller.js';
 import { SignSelector } from './selectableSigns.js';
 import { LabSession } from './session.js';
@@ -19,6 +20,7 @@ const GENESIS = epochMillis(1_776_000_000_000);
 async function labVenue() {
   const clock = new SteppableClock(GENESIS);
   const selector = new SignSelector();
+  const engine = new EngineHandle();
   const venue = new VenueService(
     new MemoryStateStore(),
     MasterKeyring.fromSecret('scenario-routes-spec', new Uint8Array(32).fill(17)),
@@ -30,12 +32,18 @@ async function labVenue() {
     null,
     0,
     (keystream, assetId) => selector.wrap(keystream, assetId),
+    null,
+    null,
+    null,
+    undefined,
+    engine.hand,
   );
   await venue.start();
   return {
     venue,
+    engine: engine.get(),
     clock,
-    controller: new LabController(venue, selector, new LabSession()),
+    controller: new LabController(venue, engine.get(), selector, new LabSession()),
     selector,
   };
 }
@@ -110,9 +118,9 @@ describe('scenarios on a real Lab-composed venue', () => {
   });
 
   it('4. a bullish trend applied over the window is what the market then publishes', async () => {
-    const { venue, clock, controller } = await labVenue();
+    const { venue, engine, clock, controller } = await labVenue();
     await advance(venue, clock, 20_000);
-    const from = venue.hostedMarket(id)!.snapshotEngine();
+    const from = engine.hostedMarket(id)!.snapshotEngine();
     const result = (await controller.applyScenario(id, {
       name: 'bullish-trend',
       window: '60000',
@@ -156,9 +164,9 @@ describe('scenarios on a real Lab-composed venue', () => {
   }, 60_000);
 
   it('PH-24.7: Target Price reaches a level with no terminal condition, by price or by steps', async () => {
-    const { venue, clock, controller } = await labVenue();
+    const { venue, engine, clock, controller } = await labVenue();
     await advance(venue, clock, 20_000);
-    const from = venue.hostedMarket(id)!.snapshotEngine().price;
+    const from = engine.hostedMarket(id)!.snapshotEngine().price;
     const byLevel = (await controller.applyScenario(id, {
       name: 'target-price',
       window: '60000',
@@ -185,7 +193,7 @@ describe('scenarios on a real Lab-composed venue', () => {
       window: '60000',
       price,
     }) as Applied & { targetLevel: number | null };
-    expect(byPrice.targetLevel).toBe(venue.hostedMarket(id)!.snapshotEngine().price - 3);
+    expect(byPrice.targetLevel).toBe(engine.hostedMarket(id)!.snapshotEngine().price - 3);
     expect(byPrice.armed).toBe(false);
     await venue.stop();
   }, 60_000);

@@ -160,12 +160,33 @@ describe('the job as a scheduler runs it', () => {
   it('runs a build that is not older than its source (CA9 a8-05)', async () => {
     // These tests spawn `dist/`; a source edit without a build passed the
     // exit-code plant and failed it after `tsc -b`. A stale build is named.
-    const { statSync } = await import('node:fs');
-    const source = statSync(path.resolve(here, 'servedAssuranceJob.ts')).mtimeMs;
-    const built = statSync(entry).mtimeMs;
-    expect(built, `dist is older than source: run npx tsc -b tools/sim`).toBeGreaterThanOrEqual(
-      source,
-    );
+    //
+    // Asked of `tsc` itself rather than of file times (PH-28.1). The first
+    // version compared the source's mtime with `dist`'s, and a `git checkout`
+    // that rewrites an unchanged file bumps the source's mtime while the
+    // incremental build, seeing the same content hash, rightly emits nothing:
+    // a clean tree, a current build, and this guard red on the first gate
+    // after a merge. `tsc -b --dry` reports what the build would do from its
+    // own bookkeeping — content, not timestamps — in a third of a second.
+    const { existsSync } = await import('node:fs');
+    expect(existsSync(entry), `no build at ${entry}: run npx tsc -b tools/sim`).toBe(true);
+    const tsc = path.resolve(here, '../../../node_modules/typescript/bin/tsc');
+    const report = await new Promise<string>((resolve) => {
+      const child = spawn(process.execPath, [tsc, '-b', path.resolve(here, '..'), '--dry'], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let out = '';
+      child.stdout.on('data', (chunk: Buffer) => (out += chunk.toString()));
+      child.stderr.on('data', (chunk: Buffer) => (out += chunk.toString()));
+      // `close`, not `exit`: the pipes drain after the process ends.
+      child.on('close', () => {
+        resolve(out);
+      });
+    });
+    expect(
+      report,
+      `dist is stale by tsc's own account: run npx tsc -b tools/sim — ${report}`,
+    ).toMatch(/tools\/sim\/tsconfig\.json' is up to date/);
   });
 
   it('exits 2 and writes **exploitable** for a venue serving a leak', async () => {

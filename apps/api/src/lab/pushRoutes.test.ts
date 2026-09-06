@@ -13,6 +13,7 @@ import { ASSET_CATALOGUE } from '@otc/engine';
 import { MemoryStateStore } from '@otc/runtime';
 import { PublicationService } from '../publication.service.js';
 import { VenueService } from '../venue.service.js';
+import { EngineHandle } from './engineHandle.js';
 import { LabController } from './lab.controller.js';
 import { SignSelector } from './selectableSigns.js';
 import { ArrivalSelector, paceIntervalMs } from './selectableArrival.js';
@@ -53,6 +54,7 @@ async function labVenue(withSelector = true) {
   const selector = new SignSelector();
   const arrivals = new ArrivalSelector();
   const session = new LabSession();
+  const engine = new EngineHandle();
   const venue = new VenueService(
     new MemoryStateStore(),
     keyring(),
@@ -65,10 +67,21 @@ async function labVenue(withSelector = true) {
     0,
     withSelector ? (keystream, assetId) => selector.wrap(keystream, assetId) : null,
     withSelector ? (keystream, assetId) => arrivals.wrap(keystream, assetId) : null,
+    null,
+    null,
+    undefined,
+    engine.hand,
   );
   await venue.start();
-  const controller = new LabController(venue, selector, session, new LabPositions(), arrivals);
-  return { venue, clock, controller, selector, arrivals, session };
+  const controller = new LabController(
+    venue,
+    engine.get(),
+    selector,
+    session,
+    new LabPositions(),
+    arrivals,
+  );
+  return { venue, engine: engine.get(), clock, controller, selector, arrivals, session };
 }
 
 async function advance(venue: VenueService, clock: SteppableClock, ms: number): Promise<void> {
@@ -97,11 +110,11 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     const lastPublished = before[before.length - 1]!;
     // The hosted market holds one drawn tick; PH-24.13 retracts it, so the push
     // begins with that very sequence.
-    const pending = lab.venue.hostedMarket(id)!.pending!;
+    const pending = lab.engine.hostedMarket(id)!.pending!;
     expect(pending.sequence).toBe(lastPublished.sequence + 1);
 
     const gap = lab.clock.now() - lastPublished.instant;
-    const bare = lab.venue.labFork(id)!;
+    const bare = lab.engine.labFork(id)!;
     const bareTicks: Tick[] = [];
     for (let i = 0; i < 50; i += 1) bareTicks.push(bare.next()!);
     // Before any natural tick has printed, the market is where the record left
@@ -123,7 +136,7 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     expect(pushed.pushing).toEqual({ direction: 1, requested: 3, remaining: 3, pace: 'rapido' });
     expect(pushed.pace).toBe('rapido');
     expect(pushed.landing.afterTicks).toBe(3);
-    expect(lab.venue.hostedMarket(id)!.pending).toBeNull();
+    expect(lab.engine.hostedMarket(id)!.pending).toBeNull();
 
     // One second on, one pass: the burst's instants are already due.
     await advance(lab.venue, lab.clock, 1_000);

@@ -32,6 +32,7 @@ import {
   type Continuation,
 } from '@otc/engine';
 import { STATE_RECORD_VERSION } from '@otc/runtime';
+import { EngineAccess } from '../engineAccess.js';
 import { VenueService } from '../venue.service.js';
 import {
   closeInstant,
@@ -196,6 +197,7 @@ const PUSH_RUNNING =
 export class LabController {
   constructor(
     private readonly venue: VenueService,
+    private readonly engine: EngineAccess,
     private readonly signs: SignSelector,
     private readonly session: LabSession,
     private readonly positions: LabPositions = new LabPositions(),
@@ -249,7 +251,7 @@ export class LabController {
 
   @Get('markets/:id/state')
   state(@Param('id') id: string): unknown {
-    const market = this.venue.hostedMarket(id);
+    const market = this.engine.hostedMarket(id);
     if (market === null) throw new NotFoundException(`Asset ${id} is not hosted.`);
     const asset = this.venue.catalogue.find((entry) => entry.definition.id === id)!;
     const snapshot = market.snapshotEngine();
@@ -343,14 +345,14 @@ export class LabController {
    */
   @Get('markets/:id/quality')
   async quality(@Param('id') id: string, @Query('ticks') requested?: string): Promise<unknown> {
-    const market = this.venue.hostedMarket(id);
+    const market = this.engine.hostedMarket(id);
     const asset = this.venue.assetFor(id);
     if (market === null || asset === null)
       throw new NotFoundException(`Asset ${id} is not hosted.`);
 
     const sample = sampleSize(requested, asset.evidence.meanIntervalMs);
     // PH-24.17: yielding — a span at the finer grain is millions of ticks.
-    const ticks = await this.venue.labTicksAheadAsync(id, sample);
+    const ticks = await this.engine.labTicksAheadAsync(id, sample);
     let at = 0;
     const dataset = await buildObserverDataset({
       source: { instrument: asset.instrument, next: () => ticks[at++] ?? null },
@@ -451,16 +453,16 @@ export class LabController {
    */
   @Get('markets/:id/reachable/:delta')
   reachable(@Param('id') id: string, @Param('delta') delta: string): unknown {
-    const market = this.venue.hostedMarket(id);
+    const market = this.engine.hostedMarket(id);
     if (market === null) throw new NotFoundException(`Asset ${id} is not hosted.`);
     if (!/^-?\d+$/.test(delta)) {
       throw new BadRequestException(`delta must be a whole number of lattice steps, got ${delta}.`);
     }
-    const steps = this.venue.labStepsAhead(id, 60_000);
+    const steps = this.engine.labStepsAhead(id, 60_000);
     const selection = selectClose({
       steps,
       delta: Number.parseInt(delta, 10),
-      random: this.venue.labRandom(id),
+      random: this.engine.labRandom(id),
       maxAttempts: 200_000,
     });
     return {
@@ -732,7 +734,7 @@ export class LabController {
       // PH-24.13: the drawn, unpublished tick is retracted so the push begins at
       // the instant of the click. A retract restores the engine, and a restore
       // seeks, and a seek releases — so the scripts are read before and armed after.
-      const market = this.venue.hostedMarket(id)!;
+      const market = this.engine.hostedMarket(id)!;
       const carried: (1 | -1)[] = extended ? [...wrapper.remainingScript()] : [];
       const arrival = this.arrivals.for(id);
       const carriedDraws: (number | null)[] =
@@ -762,7 +764,7 @@ export class LabController {
       ): { level: number; landingInstant: EpochMillis; walked: number; startLevel: number } => {
         let forkSigns: SelectableSigns | null = null;
         let forkArrival: SelectableArrival | null = null;
-        const fork = this.venue.labFork(
+        const fork = this.engine.labFork(
           id,
           (keystream) => {
             forkSigns = new SelectableSigns(keystream, id);
@@ -806,7 +808,7 @@ export class LabController {
       // Walking the bare fork to the landing instant compares the same market
       // time; the count it needed is recorded beside the level.
       const naturalAt = (instant: number): { level: number; ticks: number } => {
-        const bare = this.venue.labFork(id)!;
+        const bare = this.engine.labFork(id)!;
         let level = bare.price;
         let ticks = 0;
         for (;;) {
@@ -863,7 +865,7 @@ export class LabController {
         this.pushLandings.delete(id);
       }
       // The fork started at the snapshot's sequence; the landing is script.length ticks on.
-      const sequence = this.venue.hostedMarket(id)!.snapshotEngine().sequence + script.length;
+      const sequence = this.engine.hostedMarket(id)!.snapshotEngine().sequence + script.length;
       const natural = script.length > 0 ? naturalAt(landingInstant) : { level, ticks: 0 };
       const naturalLevel = natural.level;
       return {
@@ -1015,14 +1017,14 @@ export class LabController {
     const ticks =
       record.length > 0
         ? record
-        : this.venue.labTicksAhead(
+        : this.engine.labTicksAhead(
             id,
             Math.min(
               50_000,
               Math.max(2_000, Math.round(MEASUREMENT_SPAN_MS / asset.evidence.meanIntervalMs)),
             ),
           );
-    const level = this.venue.hostedMarket(id)!.snapshotEngine().price;
+    const level = this.engine.hostedMarket(id)!.snapshotEngine().price;
     return this.distances.remember(id, distanceUnitFrom(asset, level, ticks, now));
   }
 
@@ -1041,7 +1043,7 @@ export class LabController {
     const asset = this.venue.assetFor(id)!;
     const firstIntervalWith = (draw: number | null): number => {
       let armed: SelectableArrival | null = null;
-      const fork = this.venue.labFork(id, undefined, (keystream) => {
+      const fork = this.engine.labFork(id, undefined, (keystream) => {
         armed = new SelectableArrival(keystream, id);
         return armed;
       })!;
@@ -1051,7 +1053,7 @@ export class LabController {
     };
     const paceMs = paceIntervalMs(pace, asset.evidence.meanIntervalMs);
     const own = paceMs === null ? firstIntervalWith(null) : paceMs;
-    const snapshot = this.venue.hostedMarket(id)!.snapshotEngine();
+    const snapshot = this.engine.hostedMarket(id)!.snapshotEngine();
     const gap = Math.max(0, at - snapshot.instant);
     const target = gap + own;
     // The interval grows with the draw: bisect until it is within a millisecond.
@@ -1083,7 +1085,7 @@ export class LabController {
     if (target === null) return null;
     const intervalWith = (draw: number): number => {
       let armed: SelectableArrival | null = null;
-      const fork = this.venue.labFork(id, undefined, (keystream) => {
+      const fork = this.engine.labFork(id, undefined, (keystream) => {
         armed = new SelectableArrival(keystream, id);
         return armed;
       })!;
@@ -1128,7 +1130,7 @@ export class LabController {
       } else {
         wrapper.setBias(
           direction === 'up' ? 1 : -1,
-          this.venue.labRandom(id),
+          this.engine.labRandom(id),
           this.biasRuns(id),
           // PH-24.24: two minutes on the venue's clock, injected, never ambient.
           { at: this.venue.now() + BIAS_MAX_MS, now: () => this.venue.now() },
@@ -1211,7 +1213,7 @@ export class LabController {
   release(@Param('id') id: string): unknown {
     const wrapper = this.wrapperFor(id);
     const before = this.controlState(id);
-    const pendingTick = this.venue.hostedMarket(id)?.pending?.sequence ?? null;
+    const pendingTick = this.engine.hostedMarket(id)?.pending?.sequence ?? null;
     // PH-24.24: an expiry already run is recorded first; then the note goes,
     // because `release` clearing a bias is a request, not an expiry.
     this.noticeBias(id);
@@ -1257,7 +1259,7 @@ export class LabController {
       environment: LAB,
       markets: this.venue.assetIds.map((id) => {
         const asset = this.venue.assetFor(id)!;
-        const snapshot = this.venue.hostedMarket(id)?.snapshotEngine();
+        const snapshot = this.engine.hostedMarket(id)?.snapshotEngine();
         const modulators =
           (snapshot?.magnitudeState as { modulators?: ({ regime?: string } | null)[] } | undefined)
             ?.modulators ?? [];
@@ -1297,7 +1299,7 @@ export class LabController {
       if (wrapper !== null) this.noticeBiasExpiry(id, wrapper);
       if (wrapper === null || (!wrapper.armed && wrapper.bias === null)) continue;
       const before = this.controlState(id);
-      const pendingTick = this.venue.hostedMarket(id)?.pending?.sequence ?? null;
+      const pendingTick = this.engine.hostedMarket(id)?.pending?.sequence ?? null;
       this.biasNoted.delete(id);
       const discarded = wrapper.release();
       this.arrivals.for(id)?.release();
@@ -1448,7 +1450,7 @@ export class LabController {
     @Query('stake') stake?: string,
     @Query('horizonMs') horizonMs?: string,
   ): unknown {
-    if (this.venue.hostedMarket(id) === null)
+    if (this.engine.hostedMarket(id) === null)
       throw new NotFoundException(`Asset ${id} is not hosted.`);
     if (direction !== 'up' && direction !== 'down') {
       throw new BadRequestException("direction must be 'up' (CALL) or 'down' (PUT).");
@@ -1481,7 +1483,7 @@ export class LabController {
   /** Every position on this market, with what it is expected to be and what it was. */
   @Get('markets/:id/positions')
   listPositions(@Param('id') id: string): unknown {
-    if (this.venue.hostedMarket(id) === null)
+    if (this.engine.hostedMarket(id) === null)
       throw new NotFoundException(`Asset ${id} is not hosted.`);
     return {
       environment: LAB,
@@ -1573,7 +1575,7 @@ export class LabController {
     const closeLevel: LogPrice =
       basis === 'armed-target'
         ? logPrice(armed!.target)
-        : (this.venue.hostedMarket(position.contract.assetId)?.snapshotEngine().price ??
+        : (this.engine.hostedMarket(position.contract.assetId)?.snapshotEngine().price ??
           position.entryPrice);
     const expected = LabPositions.expected(position, closeLevel, basis);
     /**
@@ -1712,7 +1714,7 @@ export class LabController {
     params: Readonly<Record<string, number>>;
     absoluteLevel?: number;
   } {
-    if (this.venue.hostedMarket(id) === null)
+    if (this.engine.hostedMarket(id) === null)
       throw new NotFoundException(`Asset ${id} is not hosted.`);
     const name = query['name'];
     if (name === undefined)
@@ -1799,7 +1801,7 @@ export class LabController {
     targetPrice: string | null;
   } {
     const instant = epochMillis(this.venue.now() + request.windowMs);
-    const window = readWindow(this.venue.labFork(id)!, instant);
+    const window = readWindow(this.engine.labFork(id)!, instant);
     if (window.truncated) throw new BadRequestException(WINDOW_TOO_LONG);
     // Target Price: the level to touch, as a distance from where the market
     // stands now (the window's start), whichever way it was addressed.
@@ -1868,7 +1870,7 @@ export class LabController {
     }
     const result = selectContinuation({
       steps: window.steps,
-      random: this.venue.labRandom(id),
+      random: this.engine.labRandom(id),
       criterion,
       maxAttempts: 20_000,
     });
@@ -2009,7 +2011,7 @@ export class LabController {
   }
 
   private wrapperFor(id: string): SelectableSigns {
-    if (this.venue.hostedMarket(id) === null)
+    if (this.engine.hostedMarket(id) === null)
       throw new NotFoundException(`Asset ${id} is not hosted.`);
     const wrapper = this.signs.for(id);
     if (wrapper === null) {
@@ -2040,7 +2042,7 @@ export class LabController {
     lastApplied: ReturnType<LabController['outcomeFor']>;
   } {
     const wrapper = this.signs.for(id);
-    const market = this.venue.hostedMarket(id);
+    const market = this.engine.hostedMarket(id);
     // A push that played out is over; the wrapper is the truth, the map a memo.
     if (wrapper !== null && !wrapper.armed) this.pushes.delete(id);
     const push = this.pushes.get(id);
@@ -2089,7 +2091,7 @@ export class LabController {
     timeframe: string;
     condition: CloseCondition;
   } {
-    if (this.venue.hostedMarket(id) === null)
+    if (this.engine.hostedMarket(id) === null)
       throw new NotFoundException(`Asset ${id} is not hosted.`);
     if (
       (price === undefined || price.trim().length === 0) &&
@@ -2171,7 +2173,7 @@ export class LabController {
     selection: readonly (1 | -1)[] | null;
   } {
     const asset = this.venue.assetFor(id)!;
-    const fork = this.venue.labFork(id)!;
+    const fork = this.engine.labFork(id)!;
     let resolved;
     if (delta !== null) {
       // Relative: N lattice steps from where the market stands as the plan is
@@ -2213,7 +2215,7 @@ export class LabController {
         edge.level,
         condition,
         window,
-        this.venue.labRandom(id),
+        this.engine.labRandom(id),
       );
       return {
         environment: LAB,
@@ -2249,7 +2251,7 @@ export class LabController {
     }
     const window = readWindow(fork, instant);
     if (window.truncated) throw new BadRequestException(WINDOW_TOO_LONG);
-    const plan = planClose(asset.instrument, resolved.level, window, this.venue.labRandom(id));
+    const plan = planClose(asset.instrument, resolved.level, window, this.engine.labRandom(id));
     return {
       environment: LAB,
       asset: id,

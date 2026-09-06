@@ -14,21 +14,21 @@ Last synchronized: 2026-09-05
 
 | Field                            | Value                                                                                                                                                      |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 10 — **0 of 3** phases approved; planned as the closing cycle (PH-28, PH-29, PH-30), Cycle 9 audited and closed                                      |
-| Approved phases in current cycle | **0 of 3** — PH-28, PH-29, PH-30 planned; none active yet                                                                                                  |
+| Active development cycle         | Cycle 10 — **1 of 3** phases approved (PH-28); the closing cycle (PH-29, PH-30 next)                                                                       |
+| Approved phases in current cycle | **1 of 3** — PH-28                                                                                                                                         |
 | Cycle Audit state                | **009 closed** — 64 claims, 62 confirmed, 61 resolved with a guard each, one carried (a8-12)                                                               |
 | Last Cycle Audit                 | [Cycle Audit 009](docs/audits/CYCLE-AUDIT-009.md) — 2026-09-05, eight independent auditors, one worktree each, every finding refuted independently; closed |
 
 ## Phase and subphase
 
-| Field                  | Value                                               |
-| ---------------------- | --------------------------------------------------- |
-| Active phase           | none                                                |
-| Phase lifecycle        | none                                                |
-| Active subphase        | none                                                |
-| Subphase lifecycle     | none                                                |
-| Last approved phase    | PH-27 — Review and improvement of the whole project |
-| Last approved subphase | PH-27.5 — the improvement report                    |
+| Field                  | Value                                                      |
+| ---------------------- | ---------------------------------------------------------- |
+| Active phase           | none                                                       |
+| Phase lifecycle        | none                                                       |
+| Active subphase        | none                                                       |
+| Subphase lifecycle     | none                                                       |
+| Last approved phase    | PH-28 — The durable venue: the record outlives the process |
+| Last approved subphase | PH-28.4 — The served verdict across a kill and a restart   |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
@@ -117,16 +117,18 @@ PH-10 was conditional on a previous build's `dist/` being present.
 
 Found while closing Cycle Audit 8, and carried forward by nobody until then:
 
-| Commit    | What it was              | Hosted CI                                                                                                                                                                                                                      |
-| --------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `8f62e4b` | PH-23 approved           | green — the last phase approval CI has corroborated                                                                                                                                                                            |
-| `d1aa02c` | **PH-24 merge, audited** | **red** — Quality Gate failed on unit; Statistical cancelled at its ceiling                                                                                                                                                    |
-| `9e44ffb` | audit fix                | **red** — the meta-audit's own mutation anchor had gone missing from `vitest.config.ts`, so one of its mutations was a no-op                                                                                                   |
-| `fa362e4` | audit fix                | green                                                                                                                                                                                                                          |
-| `c4757c5` | **PH-26 merge**          | **red** — Quality Gate on one unit test (`seats.test.ts`, 26.7 s hosted against a 20 s ceiling); Statistical Gate green, 88 min                                                                                                |
-| `7f03abe` | **PH-25 merge**          | **red on both** — Quality Gate on the same test; Statistical Gate on `guardrailMetaAudit`, because the merged state documents already failed `stateConsistency` (the handoff named PH-25 active after the roadmap approved it) |
-| `f2bab68` | PH-25 state fix          | Quality **red** (same test); Statistical **green**, 88 min                                                                                                                                                                     |
-| `e8ed2ae` | **PH-27 merge, audited** | **green on both** — Quality Gate 3 min (with the `seats.test.ts` fix), Statistical Gate 112 min; the first phase-approval commit hosted CI has corroborated since PH-23                                                        |
+| Commit    | What it was              | Hosted CI                                                                                                                                                                                                                                                                                                                                   |
+| --------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `8f62e4b` | PH-23 approved           | green — the last phase approval CI has corroborated                                                                                                                                                                                                                                                                                         |
+| `d1aa02c` | **PH-24 merge, audited** | **red** — Quality Gate failed on unit; Statistical cancelled at its ceiling                                                                                                                                                                                                                                                                 |
+| `9e44ffb` | audit fix                | **red** — the meta-audit's own mutation anchor had gone missing from `vitest.config.ts`, so one of its mutations was a no-op                                                                                                                                                                                                                |
+| `fa362e4` | audit fix                | green                                                                                                                                                                                                                                                                                                                                       |
+| `c4757c5` | **PH-26 merge**          | **red** — Quality Gate on one unit test (`seats.test.ts`, 26.7 s hosted against a 20 s ceiling); Statistical Gate green, 88 min                                                                                                                                                                                                             |
+| `7f03abe` | **PH-25 merge**          | **red on both** — Quality Gate on the same test; Statistical Gate on `guardrailMetaAudit`, because the merged state documents already failed `stateConsistency` (the handoff named PH-25 active after the roadmap approved it)                                                                                                              |
+| `f2bab68` | PH-25 state fix          | Quality **red** (same test); Statistical **green**, 88 min                                                                                                                                                                                                                                                                                  |
+| `e8ed2ae` | **PH-27 merge, audited** | **green on both** — Quality Gate 3 min (with the `seats.test.ts` fix), Statistical Gate 112 min; the first phase-approval commit hosted CI has corroborated since PH-23                                                                                                                                                                     |
+| `45187d9` | **Cycle Audit 9 merge**  | Quality **red** on one guard — `documentation.test.ts` holds historical documents to git's history and hosted CI checks out one commit, so four documents naming a retired test file failed on a clean tree; Statistical **green**, 120 min. Fixed in PH-28.3: the guard reads a shallow clone as no history, and CI checks out the history |
+| `669661e` | Cycle 10 plan (docs)     | the same **red** Quality Gate, the same guard; nothing else ran differently                                                                                                                                                                                                                                                                 |
 
 Two things follow, and neither is comfortable. **No commit carrying a phase
 approval has been corroborated by hosted CI since PH-23.** And the `9e44ffb`
@@ -192,7 +194,7 @@ on `audit/ca9-fixes`; that run replaces this block when it passes.
 
 ## EXACT NEXT LEGAL ACTION
 
-**Create the PH-28 Phase Context Document (`docs/phases/PH-28.md`, the durable venue) and activate PH-28.1, per the Cycle 10 plan in `docs/phases/ROADMAP.md`; hosted CI on the Cycle Audit 9 merge (`45187d9`) is recorded in the table above when it lands.**
+**Merge PH-28 to `main`, then create the PH-29 Phase Context Document (the integration boundary) and activate PH-29.1, per the Cycle 10 plan in `docs/phases/ROADMAP.md`; hosted CI on the PH-28 merge is recorded in the table above when it lands.**
 
 PH-27 is approved on its integrated phase verification (`GATE_EXIT=0` first
 attempt, 45 statistical files in 4,472 s) and is being merged. Cycle 9 is

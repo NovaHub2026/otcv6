@@ -88,6 +88,19 @@ from a subdirectory the scan did not recurse into, and a cursor served under a
 word the scan did not look for — and both were widened in response. When the Lab
 grows, that is the layer to strengthen.
 
+**And the engine is not on the venue's type** (PH-28.2). Until Cycle 10,
+`VenueService` — injected into every production controller — carried the
+methods that snapshot and fork a hosted engine, so the only thing between a
+production route and the keystream cursors was a guard on the response's value
+(Cycle Audit 9, a1-01). Those methods live on
+[`EngineAccess`](../../apps/api/src/engineAccess.ts) now, an object the venue
+builds and hands **once** to the callback its composition passes
+(`AppModuleOptions.engineAccess`); `main.ts` passes none, so in production the
+object never exists, and the Lab's module passes a handle and provides what it
+receives. `labSurface.test.ts` holds it at the source: no public method of the
+venue returns a market, `snapshotEngine` is reachable in production only
+through that one file, and only `venue.service.ts` constructs the access.
+
 **The record has the same boundary, and it did not until that audit.** A
 Lab-composed process marks its state directory before it publishes a tick
 (`lab/composed-by-lab.json`, [`labState.ts`](../../apps/api/src/labState.ts)) and

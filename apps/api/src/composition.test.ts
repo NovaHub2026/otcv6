@@ -50,6 +50,18 @@ describe('production registers no sign source (PH-24.1, ADR-0015 §3)', () => {
     ).toHaveLength(2);
     expect(app).toMatch(/readonly arrivalSource\?: SignSourceFactory/);
     expect(app).toMatch(/options\.arrivalSource \?\? null/);
+    // PH-28.2: the engine access callback, the same way — declared, passed, nothing else.
+    // Not the import path `./engineAccess.js`: the option, and the pass-through.
+    const access = app.match(/(?<![/\w])engineAccess\b/g) ?? [];
+    expect(
+      access,
+      'app.module.ts does more with engineAccess than declare and pass it',
+    ).toHaveLength(2);
+    expect(app).toMatch(/readonly engineAccess\?: \(access: EngineAccess\) => void/);
+    expect(app).toMatch(/options\.engineAccess \?\? null/);
+    expect(app, 'app.module.ts builds an engine access itself').not.toMatch(
+      /new EngineAccess\(|EngineHandle/,
+    );
     expect(app, 'app.module.ts constructs a sign source itself').not.toMatch(
       /SelectableSigns|SignSelector|new .*Signs\(/,
     );
