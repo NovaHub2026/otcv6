@@ -2,7 +2,7 @@
 
 Type: CURRENT STATE
 Status: Authoritative record of current project state
-Last synchronized: 2026-09-05
+Last synchronized: 2026-09-06
 
 > This document is not a diary. It records where the project is **now** and what
 > the **exact next legal action** is. History lives in Git, phase documents and
@@ -16,7 +16,7 @@ Last synchronized: 2026-09-05
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Active development cycle         | Cycle 10 — **3 of 3** phases approved (PH-28, PH-29, PH-30); the closing cycle (Cycle Audit 10)                                                            |
 | Approved phases in current cycle | **3 of 3** — PH-28, PH-29, PH-30                                                                                                                           |
-| Cycle Audit state                | **009 closed** — 64 claims, 62 confirmed, 61 resolved with a guard each, one carried (a8-12)                                                               |
+| Cycle Audit state                | **010 OPEN** — the closing cycle's audit: eight independent auditors, every finding put to an independent refuter, fixes on `audit/ca10-fixes`             |
 | Last Cycle Audit                 | [Cycle Audit 009](docs/audits/CYCLE-AUDIT-009.md) — 2026-09-05, eight independent auditors, one worktree each, every finding refuted independently; closed |
 
 ## Phase and subphase
@@ -151,9 +151,9 @@ the record should say that the audited commit itself was never green.
 
 ## Verification state
 
-Executed on `feature/ph-27-review` at `fe1550f`, 2026-09-05, with
-`OTC_REQUIRE_BROWSER=1` and the browser prefix — the PH-27 phase gate,
-recorded in PH-27 §7:
+Executed on `feature/ph-30-release` at `6f1efa9`, 2026-09-06, with
+`OTC_REQUIRE_BROWSER=1` and the browser prefix — the PH-30 phase gate,
+recorded in PH-30 §9:
 
 ```
 npm run gate  ->  GATE_EXIT=0
@@ -162,44 +162,51 @@ npm run gate  ->  GATE_EXIT=0
   typecheck:web    0
   typecheck:config 0
   lint             0
-  unit         142 files, 2,995 tests         110.9s
-  coverage     142 files, 2,995 tests           (floors enforced)
-  statistical   45 files,   396 tests       4,472.0s
+  unit         161 files, 3,244 tests          33.3s
+  coverage     161 files, 3,244 tests         117.7s   (floors enforced)
+  statistical   47 files,   402 tests       4,797.8s
 GATE COMPLETE: unit, coverage floors and statistical suites all ran, with a real browser
 ```
 
-The statistical suite is 4,472 s — 74.5 minutes — against 4,352 s at the
-PH-25 gate the same day and 4,326 s at the Cycle Audit 8 closure; the heavy
-suites sample six assets since Cycle Audit 9 (one per archetype, a2-01) and
-the next gate measures what that costs. Cycle Audit 9's fixes are being gated
-on `audit/ca9-fixes`; that run replaces this block when it passes.
+The statistical suite is 4,798 s — 80 minutes — against 4,472 s at the PH-27
+gate and 4,352 s at PH-25: it grew with the release's own suites, not with the
+engine. Three earlier attempts were refused before a test ran (a document
+Prettier had not seen, the guide's examples under the type-aware lint, a file
+name inside a finding) and a machine reboot killed a fourth at its 85th
+minute; PH-30.5 §5 records them.
+
+**Hosted CI on the merge that carries this gate went red**, on one browser
+test of the Lab, and the cause was a real defect in the Lab's position
+opening rather than a flake — see the table above and Cycle Audit 10. The
+fixes for it and for the audit's other findings are being gated on
+`audit/ca10-fixes`; that run replaces this block when it passes.
 
 ## Relevant records
 
-| Kind     | Reference                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| ADR-0001 | Repository, toolchain and package architecture (APPROVED)                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ADR-0002 | Deterministic entropy architecture (APPROVED)                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ADR-0003 | Conditional sign symmetry as the anti-predictability architecture (APPROVED)                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ADR-0004 | Canonical price representation: an integer log lattice (APPROVED)                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ADR-0005 | A multifractal cascade as the volatility process (APPROVED)                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ADR-0006 | A layered sign-blind market model (APPROVED)                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ADR-0007 | At-the-money settlement: a tie is refunded (APPROVED, Human Owner)                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ADR-0008 | Full delegation: automatic audits, autonomous decisions (APPROVED)                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ADR-0009 | Hosted CI reinstated after the repository was made public (APPROVED)                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| ADR-0010 | The catch-up bound: no unobserved burst may span a contract (APPROVED)                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ADR-0011 | Subagents are an engineering decision; audits use independent ones (APPROVED)                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ADR-0012 | Generation is single-writer per asset; leadership is a fenced lease (APPROVED)                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ADR-0013 | Governance says what is true (PROPOSED — the Human Owner's to apply, Issue #14)                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ADR-0014 | Chart library and repository licence: Lightweight Charts, Apache-2.0 (APPROVED)                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ADR-0015 | The Lab may amend the rules that describe the system, not the guarantees it validates (APPROVED, Human Owner)                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ADR-0016 | Server-sent events stay; the cost is a syscall and every transport pays it (APPROVED)                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ADR-0017 | The expiry price is the tick at or before expiry; a candle is half-open; settlement is authoritative (APPROVED)                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ADR-0018 | One engine per deployment; a Lab-composed process is the engine in simulation mode; production is never Lab-composed (APPROVED)                                                                                                                                                                                                                                                                                                                                                                                    |
-| Backlog  | [GitHub Issues](https://github.com/NovaHub2026/otcv6/issues) #1–#22; closed: #1, #2, #5, #6, #13, #15, #17, #18, #21, #22. Two remain the Human Owner's: #3 and #14; the rest are referenced from `docs/reports/IMPROVEMENT-REPORT-001.md`                                                                                                                                                                                                                                                                         |
-| Roadmap  | `docs/phases/ROADMAP.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Branch   | `audit/ca9-fixes` off `main` at the PH-27 merge `e8ed2ae` (Cycle 9 complete); before it the PH-25 merge `7f03abe` and its state fix `f2bab68`; before it the PH-26 merge `c4757c5`; before it the PH-24 merge `d1aa02c` and the Cycle Audit 8 fixes after it; before it PH-23 at `8f62e4b`, Cycle Audit 7 and PH-22.1 at `f07e71d`, PH-21 at `3e4ec7e`. PH-21.1 sits under two hashes (`3a5f0a5`, `36bbf89`) because the branch was merged rather than rebased; both are ancestors and the duplication is cosmetic |
-| Audit    | [`CYCLE-AUDIT-009.md`](docs/audits/CYCLE-AUDIT-009.md) — 64 claims, 62 confirmed, 61 resolved with a guard each, one carried (a8-12), eight independent auditors. Before it, [`CYCLE-AUDIT-008.md`](docs/audits/CYCLE-AUDIT-008.md) — 86 claims, 60 confirmed, all resolved                                                                                                                                                                                                                                        |
+| Kind     | Reference                                                                                                                                                                                                                                                                                                                        |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ADR-0001 | Repository, toolchain and package architecture (APPROVED)                                                                                                                                                                                                                                                                        |
+| ADR-0002 | Deterministic entropy architecture (APPROVED)                                                                                                                                                                                                                                                                                    |
+| ADR-0003 | Conditional sign symmetry as the anti-predictability architecture (APPROVED)                                                                                                                                                                                                                                                     |
+| ADR-0004 | Canonical price representation: an integer log lattice (APPROVED)                                                                                                                                                                                                                                                                |
+| ADR-0005 | A multifractal cascade as the volatility process (APPROVED)                                                                                                                                                                                                                                                                      |
+| ADR-0006 | A layered sign-blind market model (APPROVED)                                                                                                                                                                                                                                                                                     |
+| ADR-0007 | At-the-money settlement: a tie is refunded (APPROVED, Human Owner)                                                                                                                                                                                                                                                               |
+| ADR-0008 | Full delegation: automatic audits, autonomous decisions (APPROVED)                                                                                                                                                                                                                                                               |
+| ADR-0009 | Hosted CI reinstated after the repository was made public (APPROVED)                                                                                                                                                                                                                                                             |
+| ADR-0010 | The catch-up bound: no unobserved burst may span a contract (APPROVED)                                                                                                                                                                                                                                                           |
+| ADR-0011 | Subagents are an engineering decision; audits use independent ones (APPROVED)                                                                                                                                                                                                                                                    |
+| ADR-0012 | Generation is single-writer per asset; leadership is a fenced lease (APPROVED)                                                                                                                                                                                                                                                   |
+| ADR-0013 | Governance says what is true (PROPOSED — the Human Owner's to apply, Issue #14)                                                                                                                                                                                                                                                  |
+| ADR-0014 | Chart library and repository licence: Lightweight Charts, Apache-2.0 (APPROVED)                                                                                                                                                                                                                                                  |
+| ADR-0015 | The Lab may amend the rules that describe the system, not the guarantees it validates (APPROVED, Human Owner)                                                                                                                                                                                                                    |
+| ADR-0016 | Server-sent events stay; the cost is a syscall and every transport pays it (APPROVED)                                                                                                                                                                                                                                            |
+| ADR-0017 | The expiry price is the tick at or before expiry; a candle is half-open; settlement is authoritative (APPROVED)                                                                                                                                                                                                                  |
+| ADR-0018 | One engine per deployment; a Lab-composed process is the engine in simulation mode; production is never Lab-composed (APPROVED)                                                                                                                                                                                                  |
+| Backlog  | [GitHub Issues](https://github.com/NovaHub2026/otcv6/issues) #1–#22; closed: #1, #2, #4, #5, #6, #7, #8, #10, #11, #12, #13, #15, #16, #17, #18, #19, #20, #21, #22. #9 (the multi-node composition) is deferred by the Cycle 10 plan; #3 and #14 are the Human Owner's (Governance amendments). `docs/BACKLOG.md` mirrors them. |
+| Roadmap  | `docs/phases/ROADMAP.md`                                                                                                                                                                                                                                                                                                         |
+| Branch   | `audit/ca10-fixes` off `main` at the PH-30 merge `353f101` (tagged `v1.0.0`, Cycle 10 complete); before it the PH-29 merge `668efa9`, the PH-28 merge `fd17ec0` and the PH-27 merge `e8ed2ae` (Cycle 9 complete)                                                                                                                 |
+| Audit    | [`CYCLE-AUDIT-010.md`](docs/audits/CYCLE-AUDIT-010.md) — the closing cycle's audit, eight independent auditors in a worktree each, every finding put to an independent refuter; [`CYCLE-AUDIT-009.md`](docs/audits/CYCLE-AUDIT-009.md) before it (64 claims, 62 confirmed, 61 resolved, one carried)                             |
 
 ---
 
@@ -207,17 +214,20 @@ on `audit/ca9-fixes`; that run replaces this block when it passes.
 
 **Run Cycle Audit 10 (GOVERNANCE §28): three phases are approved, normal development stops, and the merge of the third phase — tagged `v1.0.0`, with `RELEASE-1.0.0.md` as the release record — is pushed before the auditors' worktrees are cut from it (`tools/sim/scripts/cycle-audit-worktrees.sh <merge>` with `OTC_AUDIT_ROOT=~/.otc-audit10`; briefs under `~/.otc-audit10/prompts`). Hosted CI on the merge is recorded in the table below when it lands.**
 
-PH-27 is approved on its integrated phase verification (`GATE_EXIT=0` first
-attempt, 45 statistical files in 4,472 s) and is being merged. Cycle 9 is
-complete: PH-26 (the catalogue of thirty), PH-25 (the battery against a
-production venue's own record), PH-27 (review and improvement, closing with
-`docs/reports/IMPROVEMENT-REPORT-001.md`). Cycle Audit 9 has run: eight
-independent auditors, one worktree each (B-020), 64 claims, 62 confirmed by
-independent refuters — one critical, 22 material, 39 minor — 61 resolved with
-a guard watched failing each and one carried by name
-(`docs/audits/CYCLE-AUDIT-009.md`). The fixes are on `audit/ca9-fixes`; the
-full gate on that branch, the merge and hosted CI close the audit, and Cycle
-10 opens from the improvement report's ranked page.
+Cycle 10 is complete and it was the closing cycle: PH-28 (the durable venue),
+PH-29 (the integration boundary), PH-30 (release 1.0). The third merge is
+`353f101`, tagged `v1.0.0`, with `docs/evidence/RELEASE-1.0.0.md` as the
+release record and the integration package regenerated from the tag.
+
+Cycle Audit 10 is running as this is written: eight independent auditors, one
+detached worktree each (B-020), every finding put to an independent refuter in
+a worktree that is not the finding's own. Its fixes are on `audit/ca10-fixes`,
+and the audit record is `docs/audits/CYCLE-AUDIT-010.md`. **Hosted CI on the
+release merge went red** — one browser test of the Lab, a real defect in how a
+position's entry price was read, fixed on that branch — so `v1.0.0` does not
+yet satisfy PH-30 §3's own rule that the tag is the commit hosted CI
+corroborated. The full gate on `audit/ca10-fixes`, the merge, a green hosted
+run and then the tag settle it.
 
 **Hosted CI on this cycle's merges — corrected by Cycle Audit 9 (a7-01,
 a2-03).** The PH-26 merge `c4757c5` was red on the Quality Gate (one unit
