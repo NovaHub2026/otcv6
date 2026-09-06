@@ -753,6 +753,34 @@ location /otc/ {
 a Internet. O los cortas en el proxy, o dejas el motor en loopback y expones solo
 el panel detrás de tu autenticación.
 
+### Los ficheros de despliegue (`deploy/`)
+
+Desde PH-30.1 el repositorio trae lo que un despliegue arranca:
+
+- `deploy/otc-engine.service` — la unidad de systemd (SIGTERM, `Restart=always`,
+  el directorio de estado, el fichero de secretos).
+- `deploy/Dockerfile` y `deploy/docker-compose.yml` — la imagen y el compose
+  del motor con un volumen para el estado, `healthcheck` sobre `/health/ready`,
+  y un servicio `backup` que ejecuta `deploy/backup.sh` cada seis horas.
+- `deploy/nginx.conf` — el proxy con el stream sin búfer, las rutas de escritura
+  cortadas, `/metrics` y `/health/ready` solo para tu red, y la dirección del
+  cliente reenviada (el límite de peticiones la usa).
+- `deploy/backup.sh` — `npm run state:backup` en bucle, conservando las últimas N.
+
+### Operación: vivo, listo, métricas, límite
+
+- `GET /health/live` responde en cuanto el proceso sirve HTTP; `GET /health/ready`
+  responde `200` cuando todos los mercados han reanudado y ninguno está parado, y
+  `503` con el motivo si no. Apunta tu orquestador a `ready` y tu reinicio a `live`.
+- `GET /metrics` sirve los contadores en formato Prometheus: mercados, parados,
+  `otc_ready`, ticks publicados, suscriptores del stream, presupuesto de replay,
+  uptime, memoria residente y la cabeza del registro por activo.
+- **Límite de peticiones**: `OTC_RATE_LIMIT_PER_MINUTE` (600 por defecto, `0` lo
+  desactiva) por dirección de cliente; el exceso recibe `429` con `Retry-After`.
+  Una conexión de stream cuenta una vez; sus tramas no.
+- La credencial de administración es `OTC_ADMIN_TOKEN` (a6-01): sin ella toda
+  escritura se rechaza; el proxy corta las rutas además, no en su lugar.
+
 ### systemd
 
 ```ini

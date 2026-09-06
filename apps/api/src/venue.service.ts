@@ -96,6 +96,12 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
   private inFlight: Promise<void> = Promise.resolve();
   /** Assets an operator has retired. Read at `start`, never hosted. */
   private readonly retired = new Set<string>();
+  /** Set once every market has resumed and primed (PH-30.1): what `/health/ready` reads. */
+  private ready = false;
+  /** Ticks published by this process, every asset, for `/metrics` (PH-30.1). */
+  private ticksPublished = 0;
+  /** The venue clock's reading when `start()` finished, for uptime. */
+  private startedAt: EpochMillis | null = null;
 
   constructor(
     private readonly store: StateStore,
@@ -263,7 +269,55 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     // what this one's feed resumes from, and what its recorder folds first.
     for (const { asset } of markets) await this.#primeFromRecord(asset.definition.id);
     this.lastCheckpointAt = this.clock.now();
+    this.startedAt = epochMillis(this.clock.now());
+    this.ready = true;
     this.schedule();
+  }
+
+  /**
+   * Whether an orchestrator may route traffic here (PH-30.1): every market
+   * resumed and primed, the scheduler running, nothing stalled. Distinct from
+   * liveness — a process that answers HTTP while a market is stalled is alive
+   * and not ready — and from `/health`'s `status`, which a human reads.
+   */
+  get isReady(): boolean {
+    return this.ready && !this.stopping && this.stalled.size === 0;
+  }
+
+  /** Why the venue is not ready, or null when it is. */
+  get notReadyReason(): string | null {
+    if (!this.ready) return 'the markets have not finished resuming';
+    if (this.stopping) return 'the venue is shutting down';
+    if (this.stalled.size > 0) {
+      return `stalled: ${[...this.stalled.keys()].join(', ')}`;
+    }
+    return null;
+  }
+
+  /** What `/metrics` reads, from what this service already counts (PH-30.1). */
+  get counters(): {
+    readonly ticksPublished: number;
+    readonly uptimeMs: number;
+    readonly subscribers: number;
+  } {
+    let subscribers = 0;
+    for (const id of this.assetIds) subscribers += this.feed.subscriberCount(id);
+    return {
+      ticksPublished: this.ticksPublished,
+      uptimeMs: this.startedAt === null ? 0 : this.clock.now() - this.startedAt,
+      subscribers,
+    };
+  }
+
+  /** The record's head per hosted asset, for `/metrics`; empty without a record. */
+  async recordHeads(): Promise<ReadonlyMap<string, number>> {
+    const heads = new Map<string, number>();
+    if (this.record === null) return heads;
+    for (const id of this.assetIds) {
+      const head = await this.record.head(id);
+      if (head !== null) heads.set(id, head);
+    }
+    return heads;
   }
 
   /**
@@ -624,6 +678,7 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       const last = generated[generated.length - 1];
       if (last !== undefined) this.latest.set(assetId, last);
       if (ticks.length === 0) continue;
+      this.ticksPublished += ticks.length;
       this.feed.publish(assetId, ticks);
       // After publication, never before: the publisher sees the record, it does
       // not participate in producing it (INV-001). The same is true of the

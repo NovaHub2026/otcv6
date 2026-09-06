@@ -16,6 +16,11 @@ import {
 } from '@otc/runtime';
 import type { RegisteredAsset } from '@otc/engine';
 import { ADMIN_TOKEN, AdminWriteGuard, MIN_ADMIN_TOKEN_LENGTH } from './adminAuth.guard.js';
+import {
+  DEFAULT_RATE_LIMIT_PER_MINUTE,
+  RATE_LIMIT_PER_MINUTE,
+  RateLimitGuard,
+} from './rateLimit.guard.js';
 import { RegistrationService } from './registration.service.js';
 import { HistoryService } from './history.service.js';
 import type { EngineAccess } from './engineAccess.js';
@@ -143,6 +148,16 @@ export class AppModule {
           // Global, so no write route can be added without the credential check.
           provide: APP_GUARD,
           useClass: AdminWriteGuard,
+        },
+        {
+          // Global too (PH-30.1): a flood from one address is refused before any
+          // handler, on every route; zero disables it.
+          provide: APP_GUARD,
+          useClass: RateLimitGuard,
+        },
+        {
+          provide: RATE_LIMIT_PER_MINUTE,
+          useFactory: (): number => rateLimitFromEnvironment(),
         },
         {
           // The catalogue this process hosts: the five compiled assets plus every
@@ -294,6 +309,21 @@ export function recordTicksFromEnvironment(env: NodeJS.ProcessEnv = process.env)
     );
   }
   return ticks;
+}
+
+/**
+ * Requests a client address may make a minute, from `OTC_RATE_LIMIT_PER_MINUTE`
+ * (PH-30.1). Whole, written as digits; zero disables the limit.
+ */
+export function rateLimitFromEnvironment(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.OTC_RATE_LIMIT_PER_MINUTE;
+  if (raw === undefined || raw.trim().length === 0) return DEFAULT_RATE_LIMIT_PER_MINUTE;
+  if (!/^\d+$/.test(raw.trim())) {
+    throw new Error(
+      `OTC_RATE_LIMIT_PER_MINUTE must be a whole number written as digits, got ${raw}.`,
+    );
+  }
+  return Number(raw.trim());
 }
 
 /**

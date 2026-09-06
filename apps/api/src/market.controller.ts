@@ -14,6 +14,8 @@ import {
   Query,
   Res,
   type BeforeApplicationShutdown,
+  Header,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { EvictedError, UnknownSequenceError, type FeedSink } from '@otc/distribution';
@@ -146,7 +148,78 @@ export class MarketController implements BeforeApplicationShutdown {
       stalled,
       bootNonce: this.bootNonce,
       apiVersion: API_VERSION,
+      ready: this.venue.isReady,
     };
+  }
+
+  /**
+   * Liveness (PH-30.1): the process serves HTTP. Nothing about the markets —
+   * an orchestrator restarts on this, and a stalled market is not a reason to
+   * restart a process that is otherwise serving its record.
+   */
+  @Get('health/live')
+  live(): unknown {
+    return { live: true };
+  }
+
+  /**
+   * Readiness (PH-30.1): every market resumed and primed, nothing stalled.
+   * `503` with the reason until then, so a load balancer routes nothing to a
+   * venue that would answer with a market that has not caught up.
+   */
+  @Get('health/ready')
+  ready(): unknown {
+    const reason = this.venue.notReadyReason;
+    if (reason !== null) throw new ServiceUnavailableException({ ready: false, reason });
+    return { ready: true };
+  }
+
+  /**
+   * The operator's counters in the Prometheus text format (PH-30.1), from
+   * what the service already holds — nothing is counted for this route that
+   * `/health` does not already know, so the two cannot disagree.
+   */
+  @Get('metrics')
+  @Header('content-type', 'text/plain; version=0.0.4; charset=utf-8')
+  async metrics(): Promise<string> {
+    const counters = this.venue.counters;
+    const stalled = this.venue.stalledMarkets;
+    const heads = await this.venue.recordHeads();
+    const memory = process.memoryUsage();
+    const lines: string[] = [
+      '# HELP otc_markets_hosted Markets this process hosts.',
+      '# TYPE otc_markets_hosted gauge',
+      `otc_markets_hosted ${String(this.venue.assetIds.length)}`,
+      '# HELP otc_markets_stalled Markets that failed their last advance.',
+      '# TYPE otc_markets_stalled gauge',
+      `otc_markets_stalled ${String(stalled.length)}`,
+      '# HELP otc_ready Whether the venue is ready to serve (1) or not (0).',
+      '# TYPE otc_ready gauge',
+      `otc_ready ${this.venue.isReady ? '1' : '0'}`,
+      '# HELP otc_ticks_published_total Ticks published by this process, every market.',
+      '# TYPE otc_ticks_published_total counter',
+      `otc_ticks_published_total ${String(counters.ticksPublished)}`,
+      '# HELP otc_stream_subscribers Open stream subscriptions, every market.',
+      '# TYPE otc_stream_subscribers gauge',
+      `otc_stream_subscribers ${String(counters.subscribers)}`,
+      '# HELP otc_replay_bytes_in_use Bytes of stream replay in flight against the process budget.',
+      '# TYPE otc_replay_bytes_in_use gauge',
+      `otc_replay_bytes_in_use ${String(replayBytesInUse())}`,
+      '# HELP otc_replay_budget_bytes The process replay budget.',
+      '# TYPE otc_replay_budget_bytes gauge',
+      `otc_replay_budget_bytes ${String(this.replayBudgetBytes)}`,
+      '# HELP otc_uptime_seconds Seconds since every market resumed, by the venue clock.',
+      '# TYPE otc_uptime_seconds gauge',
+      `otc_uptime_seconds ${String(Math.floor(counters.uptimeMs / 1000))}`,
+      '# HELP otc_process_resident_bytes Resident set size of the process.',
+      '# TYPE otc_process_resident_bytes gauge',
+      `otc_process_resident_bytes ${String(memory.rss)}`,
+      '# HELP otc_record_head_sequence The newest recorded sequence per market.',
+      '# TYPE otc_record_head_sequence gauge',
+    ];
+    for (const [id, head] of heads)
+      lines.push(`otc_record_head_sequence{asset="${id}"} ${String(head)}`);
+    return `${lines.join('\n')}\n`;
   }
 
   /** The API as a contract, with its version and digest (PH-29.2). */
@@ -1188,6 +1261,11 @@ const MAX_TOTAL_REPLAY_BYTES = 64_000_000;
  * `writableLength`, and which is the thing a storm actually grows.
  */
 let replayBudgetInUse = 0;
+
+/** What `/metrics` reports for the replay budget (PH-30.1). */
+export function replayBytesInUse(): number {
+  return replayBudgetInUse;
+}
 
 /**
  * Charge a response's undrained bytes to the process, and release them when the

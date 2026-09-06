@@ -68,14 +68,23 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://x');
     const p = url.pathname;
-    if (p === '/health')
+    if (p === '/health') {
       return json(response, 200, {
         status: 'ok',
         assets: 1,
         stalled: [],
         bootNonce: null,
         apiVersion: faults.version ?? API_VERSION,
+        ready: true,
       });
+    }
+    if (p === '/health/live') return json(response, 200, { live: true });
+    if (p === '/health/ready') return json(response, 200, { ready: true });
+    if (p === '/metrics') {
+      response.writeHead(200, { 'content-type': 'text/plain; version=0.0.4' });
+      response.end('# TYPE otc_markets_hosted gauge\notc_markets_hosted 1\notc_ready 1\n');
+      return;
+    }
     if (p === '/contract')
       return json(response, 200, { version: API_VERSION, digest: contractDigest(), routes: [] });
     if (p === '/markets') return json(response, 200, [market]);

@@ -299,7 +299,11 @@ export class VenueClient {
       body = null;
     }
     if (response.status !== 200) {
-      const listed = route.refusals !== undefined && String(response.status) in route.refusals;
+      // 429 is the rate limit and may answer any route (PH-30.1); the contract
+      // lists it once, in the guide, rather than on every row.
+      const listed =
+        response.status === 429 ||
+        (route.refusals !== undefined && String(response.status) in route.refusals);
       if (!listed)
         throw new ContractViolation(key, [
           `answered ${String(response.status)}, which the contract does not list: ${text.slice(0, 200)}`,
