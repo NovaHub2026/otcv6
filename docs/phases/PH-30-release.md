@@ -76,3 +76,50 @@ commit the phase gate passed.
 Multi-node hosting (Issue #9), the engine's next stylised facts and jumps and
 volume — the three the Cycle 10 plan deferred by name — and the two
 Governance amendments (Issues #3, #14), which are the Human Owner's.
+
+## 8. What the phase found
+
+1. **Readiness is not the absence of a crash** (PH-30.1): ready means every
+   market resumed, primed and unstalled; a stalled market is alive and not
+   ready, which is the difference an orchestrator acts on.
+2. **Every chart the panel ever opened stayed subscribed on the engine**
+   (PH-30.2): the proxy did not pass the browser's abort to its upstream
+   fetch; the new `otc_stream_connections` metric read sixteen for a board of
+   eight. One line, and observable since.
+3. **Ten thousand observers are refused by one event loop, not by memory**
+   (PH-30.3): five thousand held whole at p99 211 ms and 355 MB; 7,700–8,750
+   established at the larger target with the rest denied a first byte. The
+   ceiling is a number a broker plans against, and its cause is named.
+4. **A deploy-length restart left the durable venue serving nothing, and the
+   boot after it died** (PH-30.4): the feed primed with the record's pre-seam
+   tail refused every post-seam tick; the chain writer folded the record
+   across the seam's jump and the publisher refused it; and the chain restart
+   PH-28.3 promised produced a file the project's own verifier refused. Found
+   by the release run's restart, not by any suite; fixed in `e0c87cd` with a
+   three-boot guard and a two-chain guard, both watched failing first; the
+   hour re-run with the restart inside it (`PH-30-RELEASE-RUN.md`).
+5. **The standing job died on the stream's 1 MB replay cap** (PH-30.4): ten of
+   thirty records on the first hour; it resumes across the cap now, with a
+   test that closes the replay on a fake cap.
+6. **An hour decides nothing about the margin, and the record says so**
+   (PH-30.4): thirty `undecided` with floors around twenty points; the verdict
+   accrues with the venue's life, which is what PH-29.5's grading is for.
+7. **Every open Issue is closed with a fix, closed with a recorded decision,
+   or open by name with its owner** (PH-30.5): #4, #7, #8, #12 by decision;
+   #10, #11, #19, #20 fixed; #16 at this merge; #9 deferred by the Cycle 10
+   plan; #3 and #14 the Human Owner's.
+
+## 9. Integrated phase verification
+
+| Check                                                                                         | Result                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Every subphase document APPROVED and the roadmap agrees                                       | `documentation.test.ts`, `stateConsistency.test.ts` green at `state:check` before the approval commit                                                     |
+| The venue's operational surface holds its contract (PH-30.1)                                  | `operations.test.ts`, `rateLimit.guard.test.ts`, `deploy.test.ts`, `contract.test.ts`                                                                     |
+| One connection carries a page's charts, and the engine counts what it holds (PH-30.2)         | `panelSurface.stat.test.ts` (one connection, eight subscriptions; the bounded hole across a lost record), `marketStream.test.ts`                          |
+| The observer ceiling measured from several processes (PH-30.3)                                | `PH-30-TEN-THOUSAND-OBSERVERS.md`; the single-process driver's `observerLoad.test.ts`; the fleet driver has no unit test and is held by its recorded runs |
+| The release build serves the thirty whole, fresh and across a deploy-length restart (PH-30.4) | `PH-30-RELEASE-RUN.md`; the served verdict and the conformance record, twice each; thirty chains verified with the break named                            |
+| A seam restarts the feed and the chain, never the venue's silence (INV-002, INV-009)          | `venueRecord.test.ts` three boots; `commitmentsFile.test.ts` two chains; both watched failing                                                             |
+| Money and sufficiency as PH-29 left them; the price core untouched (INV-001)                  | no diff under `packages/engine` in the phase; `guardrails.test.ts`, `dependencies.test.ts`                                                                |
+| Every guard watched failing                                                                   | PH-30.1 two plants, PH-30.2 two, PH-30.3 one, PH-30.4 two, PH-30.5 none (documents and a script)                                                          |
+| Phase quality gate `npm run gate` with the browser prefix                                     | **GATE**                                                                                                                                                  |
+| Hosted CI on the merge commit                                                                 | _recorded in `CURRENT_STATE.md` § "Hosted CI, honestly" when it lands_                                                                                    |

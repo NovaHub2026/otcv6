@@ -17,6 +17,11 @@ export default tseslint.config(
       // them and aborted on heap exhaustion (exit 134). `.gitignore` does not
       // reach ESLint; this does.
       '**/.claude/**',
+      // The integration guide's examples (PH-30.5): a broker's starting points,
+      // written against the published package and run outside this workspace's
+      // project graph, which is why the type-aware rules cannot resolve them.
+      // The package script ships them beside the guide; they are not built here.
+      'docs/integration/examples/**',
       // Next.js generates these and lints the web app itself during `next build`
       // with its own ruleset. Linting a generated declaration file here only
       // produces noise about a triple-slash reference the framework requires.
