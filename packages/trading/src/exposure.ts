@@ -1,3 +1,4 @@
+import { payoutMinor } from './contract.js';
 import type { Contract } from './contract.js';
 
 /**
@@ -164,7 +165,7 @@ export function exposureByEvent(
     };
     // Exposure is the operator's payout obligation, not the stake: a winning
     // contract costs `stake * payoutRatio` and a losing one earns `stake`.
-    const obligation = contract.stake * contract.payoutRatio;
+    const obligation = payoutMinor(contract.stake, contract.payoutRatio);
     if (contract.direction === 'up') existing.call += obligation;
     else existing.put += obligation;
 

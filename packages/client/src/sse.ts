@@ -90,16 +90,36 @@ function isInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value);
 }
 
+/** What the stream yields as it arrives: the opening status, then frames. */
+export type StreamFrame =
+  | { readonly kind: 'open'; readonly status: number; readonly refusal: string | null }
+  | { readonly kind: 'tick'; readonly tick: Tick }
+  | { readonly kind: 'gap'; readonly gap: GapFrame }
+  | { readonly kind: 'close'; readonly reason: string };
+
+export interface StreamOptions {
+  readonly baseUrl: string;
+  readonly assetId: string;
+  readonly from?: number;
+  readonly onGap?: 'live';
+  readonly signal?: AbortSignal;
+  readonly fetch?: typeof fetch;
+}
+
 /**
- * Read one market's stream until `ticks` ticks have arrived.
+ * One market's stream, frame by frame as it arrives.
  *
- * What the venue's stream contract promises, held exactly: a `message` frame
- * is a tick with three integer fields; a `gap` frame is a hole the client is
- * told about and must not fill; a `close` frame ends the read. A refusal — a
- * status other than 200 — is returned with its body rather than thrown, so a
- * conformance check can assert on it.
+ * The first frame is always `open`, with the status: a refusal — a status
+ * other than 200 — is yielded with its body rather than thrown, so a
+ * conformance check can assert on it, and nothing follows it. Then every
+ * `message` frame is a tick with three integer fields, a `gap` frame is a
+ * hole the client is told about and must not fill, and a `close` frame ends
+ * the stream with the venue's reason. The generator ends when the venue
+ * closes the socket or the caller aborts.
  */
-export async function readStream(options: StreamReadOptions): Promise<StreamRead> {
+export async function* streamFrames(
+  options: StreamOptions,
+): AsyncGenerator<StreamFrame, void, void> {
   const doFetch = options.fetch ?? fetch;
   const query = new URLSearchParams();
   if (options.from !== undefined) query.set('from', String(options.from));
@@ -109,63 +129,95 @@ export async function readStream(options: StreamReadOptions): Promise<StreamRead
   const controller = new AbortController();
   const onAbort = (): void => controller.abort();
   options.signal?.addEventListener('abort', onAbort, { once: true });
-  const ticks: Tick[] = [];
-  const gaps: GapFrame[] = [];
-  const closes: string[] = [];
-  let endedBy: StreamRead['endedBy'] = 'abort';
   try {
     const response = await doFetch(url, {
       headers: { accept: 'text/event-stream' },
       signal: controller.signal,
     });
     if (response.status !== 200 || response.body === null) {
-      return {
-        ticks,
-        gaps,
-        closes,
-        endedBy: 'close',
-        status: response.status,
-        refusal: await response.text(),
-      };
+      yield { kind: 'open', status: response.status, refusal: await response.text() };
+      return;
     }
+    yield { kind: 'open', status: 200, refusal: null };
     const parser = new SseParser();
     const reader = (response.body as ReadableStream<Uint8Array>).getReader();
     const decoder = new TextDecoder();
-    read: for (;;) {
-      const { value, done } = await reader.read();
-      if (done) {
-        endedBy = 'close';
-        break;
+    for (;;) {
+      let chunk: Awaited<ReturnType<typeof reader.read>>;
+      try {
+        chunk = await reader.read();
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        throw error;
       }
-      for (const event of parser.push(decoder.decode(value, { stream: true }))) {
+      if (chunk.done) return;
+      for (const event of parser.push(decoder.decode(chunk.value, { stream: true }))) {
         if (event.event === 'gap') {
           const gap = JSON.parse(event.data) as GapFrame;
-          gaps.push({ requested: gap.requested, reason: gap.reason, resumesAt: gap.resumesAt });
+          yield {
+            kind: 'gap',
+            gap: { requested: gap.requested, reason: gap.reason, resumesAt: gap.resumesAt },
+          };
         } else if (event.event === 'close') {
-          closes.push((JSON.parse(event.data) as { reason: string }).reason);
-          endedBy = 'close';
-          break read;
+          yield { kind: 'close', reason: (JSON.parse(event.data) as { reason: string }).reason };
+          return;
         } else if (event.event === null) {
           const row = JSON.parse(event.data) as Partial<Record<keyof Tick, unknown>>;
           if (!isInteger(row.sequence) || !isInteger(row.instant) || !isInteger(row.price)) {
             throw new Error(`a tick frame without three integer fields: ${event.data}`);
           }
-          ticks.push({
-            sequence: row.sequence,
-            instant: row.instant as Tick['instant'],
-            price: row.price as Tick['price'],
-          });
-          if (ticks.length >= options.ticks) {
-            endedBy = 'rule';
-            break read;
-          }
+          yield {
+            kind: 'tick',
+            tick: {
+              sequence: row.sequence,
+              instant: row.instant as Tick['instant'],
+              price: row.price as Tick['price'],
+            },
+          };
         }
       }
     }
-    controller.abort();
-    return { ticks, gaps, closes, endedBy, status: 200, refusal: null };
   } finally {
     options.signal?.removeEventListener('abort', onAbort);
     controller.abort();
   }
+}
+
+/**
+ * Read one market's stream until `ticks` ticks have arrived — the frames
+ * above, collected. A refusal is returned with its body rather than thrown.
+ */
+export async function readStream(options: StreamReadOptions): Promise<StreamRead> {
+  const ticks: Tick[] = [];
+  const gaps: GapFrame[] = [];
+  const closes: string[] = [];
+  let endedBy: StreamRead['endedBy'] = 'abort';
+  let status = 0;
+  let refusal: string | null = null;
+  const { ticks: wanted, ...rest } = options;
+  for await (const frame of streamFrames(rest)) {
+    if (frame.kind === 'open') {
+      status = frame.status;
+      refusal = frame.refusal;
+      if (frame.status !== 200) {
+        endedBy = 'close';
+        break;
+      }
+    } else if (frame.kind === 'gap') {
+      gaps.push(frame.gap);
+    } else if (frame.kind === 'close') {
+      closes.push(frame.reason);
+      endedBy = 'close';
+      break;
+    } else {
+      ticks.push(frame.tick);
+      if (ticks.length >= wanted) {
+        endedBy = 'rule';
+        break;
+      }
+    }
+  }
+  if (endedBy === 'abort' && status === 200 && !(options.signal?.aborted ?? false))
+    endedBy = 'close';
+  return { ticks, gaps, closes, endedBy, status, refusal };
 }

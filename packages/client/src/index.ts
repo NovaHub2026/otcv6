@@ -11,10 +11,13 @@ export {
 } from './contract.js';
 export { conforms, shapeProblems } from './shape.js';
 export {
-  readStream,
-  SseParser,
   type GapFrame,
+  readStream,
   type SseEvent,
+  SseParser,
+  type StreamFrame,
+  streamFrames,
+  type StreamOptions,
   type StreamRead,
   type StreamReadOptions,
 } from './sse.js';
@@ -25,3 +28,16 @@ export {
   type ConformanceOptions,
   type ConformanceReport,
 } from './conformance.js';
+export {
+  ContractViolation,
+  isRefusal,
+  VenueClient,
+  type Market,
+  type PriceInForce,
+  type Published,
+  type Refusal,
+  type StreamEvent,
+  type SubscribeOptions,
+  type VenueClientOptions,
+  type VerifiedProof,
+} from './venueClient.js';

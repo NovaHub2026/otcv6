@@ -17,8 +17,8 @@ import { API_VERSION, contractDigest } from './contract.js';
  * suite is only worth having if each check fails for the reason it names.
  */
 const KEY = publishingKeyFromSeed('88'.repeat(32));
-const HEX = publicKeyHex(KEY);
-const TICKS: Tick[] = Array.from({ length: 60 }, (_, i) => ({
+export const HEX = publicKeyHex(KEY);
+export const TICKS: Tick[] = Array.from({ length: 60 }, (_, i) => ({
   sequence: i + 1,
   instant: epochMillis(1_776_000_000_000 + (i + 1) * 400),
   price: logPrice(1000 + ((i * 7) % 11)),
@@ -26,8 +26,12 @@ const TICKS: Tick[] = Array.from({ length: 60 }, (_, i) => ({
 const WINDOW = TICKS.slice(0, 20);
 const SIGNED = signCommitment(commit('eurusd', WINDOW), KEY);
 
-interface Faults {
+export interface Faults {
   version?: string;
+  /** End the response after this many ticks without a close frame: a dropped connection. */
+  dropAfter?: number;
+  /** On a resume, replay the tick before `from` as well: a venue that repeats itself. */
+  repeatOnResume?: boolean;
   extraKey?: boolean;
   skipSequence?: boolean;
   wrongRule?: boolean;
@@ -40,7 +44,7 @@ afterAll(() => {
   for (const server of servers) server.close();
 });
 
-async function fakeVenue(faults: Faults = {}): Promise<string> {
+export async function fakeVenue(faults: Faults = {}): Promise<string> {
   const json = (response: ServerResponse, status: number, body: unknown): void => {
     response.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
   };
@@ -135,15 +139,22 @@ async function fakeVenue(faults: Faults = {}): Promise<string> {
       });
     }
     if (p === '/markets/eurusd/stream') {
-      const from = Number(url.searchParams.get('from') ?? '1');
+      const asked = Number(url.searchParams.get('from') ?? '1');
+      const from = faults.repeatOnResume && asked > 1 ? asked - 1 : asked;
       if (from > 60) {
         response.writeHead(400).end('never published');
         return;
       }
       response.writeHead(200, { 'content-type': 'text/event-stream' });
+      let written = 0;
       for (const t of TICKS.filter((t) => t.sequence >= from)) {
         if (faults.skipSequence && t.sequence === 30) continue;
+        if (faults.dropAfter !== undefined && written >= faults.dropAfter && from < 40) {
+          response.end(); // dropped mid-stream, no close frame
+          return;
+        }
         response.write(`id: ${String(t.sequence)}\ndata: ${JSON.stringify(t)}\n\n`);
+        written += 1;
       }
       response.write('event: close\ndata: {"reason":"end of tape"}\n\n');
       response.end();

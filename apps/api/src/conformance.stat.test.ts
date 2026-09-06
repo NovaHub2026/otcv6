@@ -6,7 +6,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { conformance, renderConformance } from '@otc/client';
+import { durationMillis, epochMillis, type Tick } from '@otc/core';
+import { conformance, isRefusal, renderConformance, VenueClient } from '@otc/client';
+import { settle } from '@otc/trading';
 
 /**
  * PH-29.3: `npm run conformance` against the venue this repository ships,
@@ -80,5 +82,42 @@ describe('the shipped venue conforms to its own contract', () => {
     expect(report.ok).toBe(true);
     expect(report.assets.length).toBe(30);
     console.log(renderConformance(report));
+
+    // PH-29.4: the reference client reads the same venue, and a contract
+    // settled on the prices the client asked for equals the reference
+    // settlement over the ticks the client subscribed to.
+    const client = new VenueClient({ baseUrl: running.base });
+    const id = report.assets[0]!;
+    const ticks: Tick[] = [];
+    const subscription = client.subscribe(id, { from: 1, signal: AbortSignal.timeout(120_000) });
+    for (;;) {
+      const next = await subscription.next();
+      if (next.done) break;
+      if (next.value.kind === 'tick') ticks.push(next.value.tick);
+      if (ticks.length >= 80) break;
+    }
+    expect(ticks.length).toBeGreaterThanOrEqual(80);
+    const entryAt = ticks[20]!.instant + 1;
+    const horizon = ticks[60]!.instant - entryAt;
+    const contract = {
+      id: 'c-1',
+      assetId: id,
+      direction: 'up' as const,
+      stake: 1_000,
+      entryInstant: epochMillis(entryAt),
+      horizonMs: durationMillis(horizon),
+      payoutRatio: 0.85,
+    };
+    const settlement = settle(contract, {
+      instants: Float64Array.from(ticks.map((t) => t.instant)),
+      prices: Int32Array.from(ticks.map((t) => t.price)),
+    });
+    const entry = await client.priceAt(id, entryAt);
+    const expiry = await client.priceAt(id, entryAt + horizon);
+    expect(isRefusal(entry) || isRefusal(expiry)).toBe(false);
+    if (isRefusal(entry) || isRefusal(expiry)) return;
+    expect(entry.price).toBe(settlement.entryPrice);
+    expect(expiry.price).toBe(settlement.expiryPrice);
+    expect(Number.isInteger(settlement.returned)).toBe(true);
   }, 400_000);
 });

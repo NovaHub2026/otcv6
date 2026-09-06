@@ -1,4 +1,5 @@
 // Invariant evidence: INV-001 (economic independence).
+import { payoutMinor } from './contract.js';
 import { describe, expect, it } from 'vitest';
 import { durationMillis, epochMillis, MasterKeyring } from '@otc/core';
 import { assessBookRisk, exposureByEvent } from './exposure.js';
@@ -144,7 +145,7 @@ describe('the risk numbers are what they claim', () => {
         const rose = stream.nextBoolean();
         for (const c of group) {
           const won = (c.direction === 'up') === rose;
-          profit += won ? -c.stake * c.payoutRatio : c.stake;
+          profit += won ? -payoutMinor(c.stake, c.payoutRatio) : c.stake;
         }
       }
       total += profit;

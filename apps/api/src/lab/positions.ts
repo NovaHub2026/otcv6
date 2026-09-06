@@ -113,8 +113,12 @@ export class LabPositions {
   #next = 1;
 
   open(request: PositionRequest, now: EpochMillis, ticks: readonly Tick[]): LabPosition {
-    if (!(request.stake > 0) || !Number.isFinite(request.stake)) {
-      throw new RangeError(`stake must be positive and finite, received ${String(request.stake)}.`);
+    // A whole number in the broker's minor unit, as `settle()` requires since
+    // PH-29.4 (Issue #11); the Lab's positions settle through the same library.
+    if (!Number.isSafeInteger(request.stake) || request.stake <= 0) {
+      throw new RangeError(
+        `stake must be a positive whole number of minor units, received ${String(request.stake)}.`,
+      );
     }
     if (!Number.isSafeInteger(request.horizonMs) || request.horizonMs < 1_000) {
       throw new RangeError(
