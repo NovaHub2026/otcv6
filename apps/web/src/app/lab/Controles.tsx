@@ -212,6 +212,7 @@ export function Controles({
   pace,
   onPace,
   onBias,
+  onStop,
   closeTimeframe,
   bucket,
   onBucket,
@@ -232,6 +233,8 @@ export function Controles({
   pace: Pace;
   onPace: (pace: Pace) => void;
   onBias: (direction: 'up' | 'down' | 'off') => Promise<void>;
+  /** PH-31: stop the running push, leaving a sustained bias standing. */
+  onStop: () => Promise<void>;
   /** The chart's timeframe when the close can address it; null on 30m and wider. */
   closeTimeframe: CloseTimeframe | null;
   bucket: 'current' | 'next' | 'expiry';
@@ -252,6 +255,14 @@ export function Controles({
   const pushing = control?.pushing ?? null;
   // Held only by its own act (PH-24.11): never by a quality run, never by an armed close.
   const held = busy === 'push';
+  // PH-31: the market's own ceiling, as on the advanced strip.
+  const ceiling = state?.pushCeiling;
+  const ceilingMax = ceiling?.max ?? Math.max(...PUSH_SIZES);
+  const capped = (n: number): boolean => n > ceilingMax;
+  const cappedWhy =
+    ceiling === undefined || ceiling.because === null
+      ? undefined
+      : es.lab.push.ceiling.why(ceiling.because, ceiling.regime, ceiling.stretch, ceiling.max);
   const armedClose = (control?.armed ?? false) && pushing === null;
   const now = state?.price;
   // PH-24.21: the direction in force — a push playing, or sube / baja held.
@@ -296,13 +307,20 @@ export function Controles({
         }
       >
         <Windows options={PACES} value={pace} onChange={onPace} testPrefix="lab-pace" />
+        {/* PH-31: the same ceiling the strip shows, and the same stop. */}
+        {ceiling !== undefined && ceiling.because !== null && (
+          <span data-testid="lab-push-ceiling" style={{ color: T.warn, fontSize: 11 }}>
+            {es.lab.push.ceiling.label(ceiling.max)}
+          </span>
+        )}
         <div style={{ display: 'flex', gap: 4 }}>
           {PUSH_SIZES.map((n) => (
             <Key
               key={n}
               side="up"
               testId={`lab-push-+${String(n)}`}
-              disabled={held}
+              disabled={held || capped(n)}
+              title={capped(n) ? cappedWhy : undefined}
               onClick={() => void onPush(n)}
             >
               {`+${String(n)}`}
@@ -322,6 +340,15 @@ export function Controles({
               es.lab.push.bias.up
             )}
           </Key>
+          <Key
+            side="up"
+            testId="lab-push-stop"
+            disabled={held || ((control?.pushing ?? null) === null && !(control?.armed ?? false))}
+            title={es.lab.push.stopInfo}
+            onClick={() => void onStop()}
+          >
+            {es.lab.push.stop}
+          </Key>
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
           {PUSH_SIZES.map((n) => (
@@ -329,7 +356,8 @@ export function Controles({
               key={n}
               side="down"
               testId={`lab-push--${String(n)}`}
-              disabled={held}
+              disabled={held || capped(n)}
+              title={capped(n) ? cappedWhy : undefined}
               onClick={() => void onPush(-n)}
             >
               {`+${String(n)}`}

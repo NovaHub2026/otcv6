@@ -46,7 +46,7 @@ interface Pushed {
   pace: string;
   armed: boolean;
   remaining: number;
-  pushing: { direction: 1 | -1; requested: number; remaining: number } | null;
+  pushing: { direction: 1 | -1; requested: number; remaining: number; pace?: string } | null;
 }
 
 async function labVenue(withSelector = true) {
@@ -124,7 +124,9 @@ describe('PH-24.10 — a push is N natural ticks', () => {
       naturalSeries.filter((t) => t.instant <= instant).at(-1)?.price ?? lastPublished.price;
     const naturalTicksBy = (instant: number): number =>
       naturalSeries.filter((t) => t.instant <= instant).length;
-    const pushed = (await lab.controller.push(id, '+3')) as Pushed;
+    // PH-31: this test is about the fastest pace, so it asks for it. It used
+    // to inherit it from the route's default, which is `normal` now.
+    const pushed = (await lab.controller.push(id, '+3', 'rapido')) as Pushed;
     expect(pushed).toMatchObject({
       direction: 'up',
       ticks: 3,
@@ -192,7 +194,8 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     // second venue from the same keyring — identical intervals, magnitudes negated.
     const mirror = await labVenue();
     await advance(mirror.venue, mirror.clock, 120_000);
-    const mirrored = (await mirror.controller.push(id, '-3')) as Pushed;
+    // PH-31: the same pace as the lab side above, which now has to be asked for.
+    const mirrored = (await mirror.controller.push(id, '-3', 'rapido')) as Pushed;
     expect(mirrored.retracted).toBe(true);
     await advance(mirror.venue, mirror.clock, 1_000);
     const mirrorTicks = after(record(mirror.venue), lastPublished.sequence);
@@ -223,7 +226,7 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     expect(first.remaining).toBe(5);
     const second = (await lab.controller.push(id, '+3')) as Pushed;
     expect(second).toMatchObject({ extended: true, remaining: 8 });
-    expect(second.pushing).toEqual({ direction: 1, requested: 8, remaining: 8, pace: 'rapido' });
+    expect(second.pushing).toEqual({ direction: 1, requested: 8, remaining: 8, pace: 'normal' });
     expect(second.landing.afterTicks).toBe(8);
     const remaining = (): number => (lab.controller.control(id) as { remaining: number }).remaining;
     // Smaller than what remains: the running push is shortened by it and keeps its direction.
@@ -246,7 +249,7 @@ describe('PH-24.10 — a push is N natural ticks', () => {
       netted: { previousRemaining: before, applied: 4 },
       remaining: 4,
     });
-    expect(reversed.pushing).toEqual({ direction: -1, requested: 4, remaining: 4, pace: 'rapido' });
+    expect(reversed.pushing).toEqual({ direction: -1, requested: 4, remaining: 4, pace: 'normal' });
     expect(reversed.landing.afterTicks).toBe(4);
     // Equal: nothing survives and the market is free.
     before = remaining();
@@ -265,6 +268,48 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     expect(released.discarded).toBe(3);
     expect(released.pushing).toBeNull();
     expect(lab.selector.for(id)!.armed).toBe(false);
+  });
+
+  /**
+   * PH-31, asked for in these words: "quiero también agregar un botón de parar
+   * el movimiento, es decir cuando coloco un empuje de +10 y hay varios ticks
+   * en cola, si lo cancelo el motor se comporta normal".
+   *
+   * The button is `scope=push`, and the reason it is not the whole release is
+   * the bias: `release()` is `releaseScript()` **plus** `clearBias()`, and
+   * Cycle Audit 8 (a6) already recorded what it costs when one act quietly
+   * takes down another. A button labelled «parar el empuje» stops the push.
+   */
+  it('stops a running push and leaves a sustained bias standing (PH-31)', async () => {
+    const lab = await labVenue();
+    await advance(lab.venue, lab.clock, 60_000);
+    await lab.controller.bias(id, 'up');
+    const pushed = (await lab.controller.push(id, '8')) as Pushed;
+    expect(pushed.pushing).toMatchObject({ remaining: 8 });
+
+    const stopped = lab.controller.release(id, 'push') as {
+      scope: string;
+      discarded: number;
+      pushing: unknown;
+      bias: number | null;
+    };
+    // The queue is gone, and it says how much of it never played.
+    expect(stopped.scope).toBe('push');
+    expect(stopped.discarded).toBe(8);
+    expect(stopped.pushing).toBeNull();
+    // The bias the operator armed separately is still armed.
+    expect(stopped.bias).toBe(1);
+    expect(lab.selector.for(id)!.bias).toBe(1);
+
+    // And the whole release still takes both, which is what the close tab's
+    // button has always done.
+    const all = lab.controller.release(id) as { scope: string; bias: number | null };
+    expect(all.scope).toBe('all');
+    expect(all.bias).toBeNull();
+    expect(lab.selector.for(id)!.bias).toBeNull();
+
+    // A scope nobody defined is refused rather than silently treated as one.
+    expect(() => lab.controller.release(id, 'everything')).toThrow(/scope must be/);
   });
 
   it('refuses a close while a push runs; a push over an armed close releases it, recorded (PH-24.11)', async () => {
@@ -309,13 +354,69 @@ describe('PH-24.10 — a push is N natural ticks', () => {
       lastApplied: unknown;
     };
     expect(pushed.released).toEqual({ discarded: beforePush.remaining });
-    expect(pushed.pushing).toEqual({ direction: 1, requested: 2, remaining: 2, pace: 'rapido' });
+    expect(pushed.pushing).toEqual({ direction: 1, requested: 2, remaining: 2, pace: 'normal' });
     expect(pushed.lastApplied).toBeNull();
     const lines = lab.session.toLines();
     expect(
       lines.filter((l) => /"succeeded":false/.test(l) && /"refused":"PUSH_RUNNING"/.test(l)).length,
     ).toBe(2);
     expect(lines.some((l) => /"action":"release"/.test(l) && /"by":"push"/.test(l))).toBe(true);
+  });
+
+  /**
+   * PH-31. The default was `rapido`, which is not a word but **one fifth of
+   * this market's own interval**: every push an operator made without touching
+   * the pace played at five times the speed the market moves at, and a large
+   * one then looked like a spike rather than a move. Asserted here rather than
+   * left to the three tests above that happen to read it, so that changing it
+   * back is a decision somebody makes on purpose.
+   */
+  it('plays the market’s own arrivals when no pace is asked for (PH-31)', async () => {
+    const lab = await labVenue();
+    await advance(lab.venue, lab.clock, 120_000);
+    const pushed = (await lab.controller.push(id, '3')) as Pushed;
+    expect(pushed.pace).toBe('normal');
+    expect(pushed.pushing?.pace).toBe('normal');
+    // And a pace that is asked for is still honoured.
+    await lab.controller.release(id);
+    const fast = (await lab.controller.push(id, '3', 'rapido')) as Pushed;
+    expect(fast.pace).toBe('rapido');
+  });
+
+  /**
+   * PH-31. The state route publishes a ceiling so the strip can grey out what
+   * it may not ask for; this route enforces it. They have to be the same
+   * number, and the first version was not: the push route handed `regimeOf`
+   * the whole engine snapshot instead of its `magnitudeState`, so the ceiling
+   * it computed was always the unbound one. The state said «máx +3» and the
+   * route took a `+10`. Nothing in the suite could see it, because no test
+   * asked both.
+   */
+  it('refuses a distance the market’s own ceiling does not allow, and the state agrees (PH-31)', async () => {
+    const lab = await labVenue();
+    await advance(lab.venue, lab.clock, 120_000);
+    const state = (await lab.controller.state(id)) as {
+      pushCeiling: { max: number; because: string | null; regime: string | null };
+    };
+    const max = state.pushCeiling.max;
+    expect(max).toBeGreaterThanOrEqual(1);
+    // Whatever the market's state says, the route holds to it in both
+    // directions — and to nothing tighter.
+    await expect(lab.controller.push(id, undefined, undefined, String(max + 1))).rejects.toThrow(
+      /PUSH_CEILING/,
+    );
+    await expect(lab.controller.push(id, undefined, undefined, String(-(max + 1)))).rejects.toThrow(
+      /PUSH_CEILING/,
+    );
+    const allowed = (await lab.controller.push(id, undefined, undefined, String(max))) as Pushed;
+    expect(allowed.pushing).toMatchObject({ direction: 1 });
+    // The refusal says which of the two bound it, so an operator can tell a
+    // regime they must wait out from a candle that is merely large.
+    if (state.pushCeiling.because !== null) {
+      await expect(lab.controller.push(id, undefined, undefined, String(max + 1))).rejects.toThrow(
+        /volatility regime|longer record/,
+      );
+    }
   });
 
   it('rejects zero, non-integers and more than fifty ticks', async () => {

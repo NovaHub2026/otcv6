@@ -55,6 +55,7 @@ import {
   recordWindow,
   type DistanceUnit,
 } from './distance.js';
+import { candleStretch, pushCeiling, type PushCeiling } from './pushCeiling.js';
 import {
   ArrivalSelector,
   PACES,
@@ -297,6 +298,7 @@ export class LabController {
        */
       netDisplacement: this.netDisplacement(id, snapshot.instant),
       distance: this.distanceUnit(id),
+      pushCeiling: this.ceilingFor(id),
       magnitudeState: snapshot.magnitudeState,
       arrivalState: snapshot.arrivalState,
       /** INV-010: this is the reason this route may not exist in production. */
@@ -670,7 +672,8 @@ export class LabController {
     }
     const ticks =
       units !== null ? Math.sign(units) * PUSH_MAX_TICKS_BY_DISTANCE : Number(ticksText);
-    const pace: Pace = (paceText ?? 'rapido') as Pace;
+    // PH-31: the market's own arrivals unless a pace is asked for.
+    const pace: Pace = (paceText ?? 'normal') as Pace;
     if (!PACES.includes(pace)) {
       throw new BadRequestException(
         `pace must be one of ${PACES.join(', ')}, received ${paceText}.`,
@@ -693,6 +696,28 @@ export class LabController {
     const at = this.venue.now();
     const before = this.controlState(id);
     const direction: 1 | -1 = ticks > 0 ? 1 : -1;
+    // **The ceiling is enforced here, not only greyed out (PH-31).** The strip
+    // disables what it may not ask for, but the strip is a screen and this is
+    // the route; an operator with a stale panel, or anything else holding this
+    // URL, gets the same answer. Only a distance push is bound: `ticks=` is the
+    // API's own way in and is already capped at PUSH_MAX_TICKS.
+    if (units !== null) {
+      const ceiling = this.ceilingFor(id);
+      if (Math.abs(units) > ceiling.max) {
+        throw new ConflictException(
+          `PUSH_CEILING: this market takes at most ${String(ceiling.max)} unit(s) right now, ` +
+            `and ${String(Math.abs(units))} was asked for. ` +
+            (ceiling.because === 'stretch'
+              ? `Its 1m candle over the last half hour is ${String(ceiling.stretch)}x its own ` +
+                `longer record.`
+              : ceiling.because === 'regime'
+                ? `Its volatility regime is ${String(ceiling.regime)}.`
+                : `Its volatility regime is ${String(ceiling.regime)} and its recent candle is ` +
+                  `${String(ceiling.stretch)}x its own longer record.`) +
+            ` Push in smaller steps, or wait for the market to settle.`,
+        );
+      }
+    }
     const unit = units === null ? null : this.distanceUnit(id);
     const targetSteps = units === null || unit === null ? null : Math.abs(units) * unit.unitSteps;
     let count = Math.abs(ticks);
@@ -997,9 +1022,38 @@ export class LabController {
     };
   }
 
+  /** The volatility regime a snapshot's modulators are in, or null. */
+  private regimeOf(magnitudeState: unknown): string | null {
+    const modulators =
+      (magnitudeState as { modulators?: ({ regime?: string } | null)[] } | undefined)?.modulators ??
+      [];
+    return modulators.find((m) => m !== null && 'regime' in m)?.regime ?? null;
+  }
+
   /**
-   * The market's distance unit (PH-24.18): a quarter of the median 1m range,
-   * measured over thirty minutes of a fork of the live market, cached briefly.
+   * The largest push this market will take right now, and what bound it
+   * (PH-31). Published on the state so the strip can grey out what it may not
+   * ask for and say why, and enforced in `push` so the greying is not the only
+   * thing standing between an operator and a `+10` in a stressed minute.
+   */
+  private ceilingFor(id: string): PushCeiling {
+    // **It reads the snapshot itself, and takes no state to be handed.** The
+    // first version took a `magnitudeState: unknown`, and the push route handed
+    // it the whole engine snapshot instead of that field: `regimeOf` found no
+    // modulators, every ceiling came back unbound, and the state route said
+    // «máx +3» while this controller admitted a `+10`. A parameter typed
+    // `unknown` is a parameter that cannot be passed wrongly enough to fail a
+    // build, so there is no parameter now.
+    return pushCeiling(
+      this.regimeOf(this.engine.hostedMarket(id)?.snapshotEngine().magnitudeState),
+      candleStretch(this.recordTicks(id), this.venue.now()),
+    );
+  }
+
+  /**
+   * The market's distance unit (PH-24.18, resized in PH-31): a tenth of the
+   * median 1m range, measured over the last half hour of the record, cached
+   * briefly.
    */
   private distanceUnit(id: string): DistanceUnit {
     const now = this.venue.now();
@@ -1210,15 +1264,30 @@ export class LabController {
    * the next draw. No jump, no invalid state (H5), one tick of latency, named.
    */
   @Post('markets/:id/release')
-  release(@Param('id') id: string): unknown {
+  release(@Param('id') id: string, @Query('scope') scopeText?: string): unknown {
+    // **`scope=push` stops the push and leaves everything else (PH-31).**
+    //
+    // The operator's own words: "cuando coloco un empuje de +10 y hay varios
+    // ticks en cola, si lo cancelo el motor se comporta normal". That is this
+    // route, except that `release()` is `releaseScript()` **plus**
+    // `clearBias()` — so a stop button wired to the whole thing would also take
+    // down a sustained `sube`/`baja` the operator armed separately. Cycle Audit
+    // 8 (a6) already found that conflation once, in the push route, and it is
+    // not being reintroduced in a button whose label says «parar el empuje».
+    //
+    // Anything but `push` is the whole release this route has always been.
+    const scope = scopeText === undefined ? 'all' : scopeText;
+    if (scope !== 'all' && scope !== 'push') {
+      throw new BadRequestException("scope must be 'all' or 'push'.");
+    }
     const wrapper = this.wrapperFor(id);
     const before = this.controlState(id);
     const pendingTick = this.engine.hostedMarket(id)?.pending?.sequence ?? null;
     // PH-24.24: an expiry already run is recorded first; then the note goes,
     // because `release` clearing a bias is a request, not an expiry.
     this.noticeBias(id);
-    this.biasNoted.delete(id);
-    const discarded = wrapper.release();
+    if (scope === 'all') this.biasNoted.delete(id);
+    const discarded = scope === 'push' ? wrapper.releaseScript() : wrapper.release();
     this.arrivals.for(id)?.release();
     this.pushes.delete(id);
     this.session.recordAction({
@@ -1226,7 +1295,7 @@ export class LabController {
       asset: id,
       engineVersion: ENGINE_VERSION,
       action: 'release',
-      parameters: {},
+      parameters: { scope },
       initialState: before,
       resultingState: this.controlState(id),
       succeeded: true,
@@ -1236,6 +1305,7 @@ export class LabController {
       environment: LAB,
       asset: id,
       released: true,
+      scope,
       discarded,
       pendingTick,
       ...this.controlState(id),
@@ -1260,9 +1330,6 @@ export class LabController {
       markets: this.venue.assetIds.map((id) => {
         const asset = this.venue.assetFor(id)!;
         const snapshot = this.engine.hostedMarket(id)?.snapshotEngine();
-        const modulators =
-          (snapshot?.magnitudeState as { modulators?: ({ regime?: string } | null)[] } | undefined)
-            ?.modulators ?? [];
         return {
           id,
           displayName: asset.definition.displayName,
@@ -1274,7 +1341,7 @@ export class LabController {
                   referencePrice: asset.instrument.referencePrice,
                   displayPrecision: asset.instrument.displayPrecision,
                 }).toFixed(asset.instrument.displayPrecision),
-          regime: modulators.find((mm) => mm !== null && 'regime' in mm)?.regime ?? null,
+          regime: this.regimeOf(snapshot?.magnitudeState),
           openPositions: this.positions.list(id).filter((p) => this.venue.now() <= p.expiryInstant)
             .length,
           ...this.controlState(id),

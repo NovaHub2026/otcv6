@@ -219,8 +219,29 @@ export const es = {
       down: 'bajar',
       unit: 'unidades',
       unitInfo: (price: string, range: string) =>
-        `1 unidad = un cuarto del rango mediano de la vela de 1 minuto de este mercado ≈ ${price} (la vela mide ≈ ${range}). Medido sobre la última media hora de este mercado — las velas que estás viendo — y solo sobre una copia de su futuro si el mercado aún no tiene media hora de registro; +10 son unas dos velas y media.`,
-      unitLabel: (price: string) => `1 = ¼ vela ≈ ${price}`,
+        `1 unidad = una décima del rango mediano de la vela de 1 minuto de este mercado ≈ ${price} (la vela mide ≈ ${range}). Medido sobre la última media hora de este mercado — las velas que estás viendo — y solo sobre una copia de su futuro si el mercado aún no tiene media hora de registro; +10 son unas dos velas y media.`,
+      unitLabel: (price: string) => `1 = 1/10 vela ≈ ${price}`,
+      stop: 'parar',
+      stopInfo:
+        'Para el empuje en curso: los ticks que quedaban en cola se descartan y el mercado vuelve ' +
+        'a su propio keystream en el siguiente tick. No toca «sube»/«baja»: eso se quita con su ' +
+        'propio botón.',
+      ceiling: {
+        label: (max: number) => `máx +${String(max)}`,
+        why: (
+          because: 'regime' | 'stretch' | 'both',
+          regime: string | null,
+          stretch: number | null,
+          max: number,
+        ): string =>
+          `Ahora mismo este mercado admite como mucho ${String(max)} unidad(es) por empuje. ` +
+          (because === 'regime'
+            ? `Su régimen de volatilidad es «${String(regime)}».`
+            : because === 'stretch'
+              ? `Su vela de 1m de la última media hora es ${String(stretch)}× la de su propio registro largo.`
+              : `Su régimen es «${String(regime)}» y su vela reciente es ${String(stretch)}× la de su registro largo.`) +
+          ' El techo es el menor de los dos: la etiqueta puede ir por detrás del precio, y la medición no sabe lo que viene.',
+      },
       running: (dir: 'up' | 'down', n: number) =>
         `empujando ${dir === 'up' ? '↑' : '↓'} · ${String(n)} ticks por jugar`,
       idle: 'sin empuje — el mercado sigue su camino',
@@ -310,9 +331,9 @@ export const es = {
       apply: 'Aplicar',
       release: 'Liberar mercado',
       relative: 'cerrar respecto al precio actual:',
-      relativeUnit: 'unidades (¼ de vela de 1m)',
+      relativeUnit: 'unidades (1/10 de vela de 1m)',
       unitsInfo:
-        'Las distancias del Lab se expresan en la unidad del mercado: un cuarto del rango mediano de su vela de 1 minuto, medido sobre la última media hora de este mercado — las velas que ves — y solo sobre una copia de su futuro si aún no tiene media hora de registro. La ruta sigue trabajando en pasos del retículo; la pantalla convierte.',
+        'Las distancias del Lab se expresan en la unidad del mercado: una décima del rango mediano de su vela de 1 minuto, medido sobre la última media hora de este mercado — las velas que ves — y solo sobre una copia de su futuro si aún no tiene media hora de registro. La ruta sigue trabajando en pasos del retículo; la pantalla convierte.',
       releaseInfo:
         'Vuelve al keystream. Un tick ya sorteado se publica tal cual — nada des-sortea una moneda — y el siguiente sorteo ya es del keystream: sin salto, un tick de latencia.',
       source: 'fuente de signos',
@@ -447,7 +468,7 @@ export const es = {
         hold: 'puede ceder como mucho (unidades)',
         changes: 'cambios de dirección ≥',
       } as Record<string, string>,
-      unitNote: (price: string) => `1 unidad = ¼ de la vela de 1m de este mercado ≈ ${price}`,
+      unitNote: (price: string) => `1 unidad = 1/10 de la vela de 1m de este mercado ≈ ${price}`,
       shape: 'forma elegida',
       shapeValue: (net: number, high: number, low: number, range: number, changes: number) =>
         `neto ${String(net)} · máx ${String(high)} · mín ${String(low)} · rango ${String(range)} · ${String(changes)} cambios de dirección`,

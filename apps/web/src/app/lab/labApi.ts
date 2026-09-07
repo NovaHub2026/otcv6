@@ -137,7 +137,18 @@ export interface LabMarket {
 export interface LabState {
   readonly environment: string;
   readonly sequence: number;
-  /** PH-24.18: the market's own distance unit — a quarter of its median 1m range. */
+  /**
+   * PH-31: the largest push this market takes right now, and what bound it —
+   * the lower of its volatility regime's ceiling and what its own recent
+   * candle has been doing.
+   */
+  readonly pushCeiling?: {
+    readonly max: number;
+    readonly because: 'regime' | 'stretch' | 'both' | null;
+    readonly regime: string | null;
+    readonly stretch: number | null;
+  };
+  /** PH-24.18, resized in PH-31: the market's own distance unit — a tenth of its median 1m range. */
   readonly distance?: {
     readonly unitSteps: number;
     readonly unitPrice: string;

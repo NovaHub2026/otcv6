@@ -390,7 +390,10 @@ describe('the Lab is marked wherever it appears', () => {
     }
     expect(strip).toMatch(/p\.pace\.label/);
     const lab = code('lab/Lab.tsx');
-    expect(lab).toMatch(/useState<Pace>\('rapido'\)/);
+    // PH-31: the market's own arrivals by default. `rapido` is one fifth of
+    // this market's interval, so the old default played every untouched push
+    // at five times the speed the market moves at.
+    expect(lab).toMatch(/useState<Pace>\('normal'\)/);
     // PH-24.18: the buttons send distances in the market's unit.
     expect(lab).toMatch(/push\?distance=\$\{String\(ticks\)\}&pace=\$\{pace\}/);
     expect(strip).toMatch(/(data-testid|testId)="lab-push-unit"/);

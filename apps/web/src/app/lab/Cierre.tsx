@@ -62,7 +62,7 @@ export function Cierre({
   notice: BetweenLevels | string | null;
   control: Control | null;
   displayPrecision: number;
-  /** PH-24.18: lattice steps in one unit (¼ of the market's median 1m candle). */
+  /** PH-24.18, resized in PH-31: lattice steps in one unit (1/10 of the market's median 1m candle). */
   unitSteps: number;
 }): ReactElement {
   const armed = control?.armed ?? false;
