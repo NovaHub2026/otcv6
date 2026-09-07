@@ -3,7 +3,14 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { durationMillis, epochMillis, MasterKeyring, SteppableClock, type Tick } from '@otc/core';
+import {
+  durationMillis,
+  epochMillis,
+  logPrice,
+  MasterKeyring,
+  SteppableClock,
+  type Tick,
+} from '@otc/core';
 import { ASSET_CATALOGUE, type PersonalityTraits, type RegisteredAsset } from '@otc/engine';
 import { FileStateStore, MemoryStateStore } from './fileStore.js';
 import { personalityFingerprint } from './personality.js';
@@ -81,6 +88,116 @@ describe('a market with no history starts fresh', () => {
     expect(outcome.kind).toBe('fresh');
     clock.advance(durationMillis(60_000));
     expect(market.advance().length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * **Cycle Audit 10, a6-06 and a6-07.** Two recoveries that no cursor lease can
+ * make safe, because the evidence a lease is written into is either absent or
+ * has been rolled back. Both are answered the same way: the market opens on a
+ * **new key epoch**, which is a different keystream, so no position an earlier
+ * epoch spent can be drawn again whatever the cursors say.
+ */
+describe('a recovery with no trustworthy cursor evidence moves to a new key epoch', () => {
+  it('opens past the record when no checkpoint names the asset, rather than fresh at 1 (a6-06)', async () => {
+    // The shape a SIGKILL inside the first checkpoint interval leaves: ticks in
+    // the published record, no `<id>.json` anywhere. Answering `fresh` gave the
+    // asset a new genesis and sequence 1, the record refused it as a fork, and
+    // the market was unhosted for the life of the process.
+    const clock = new SteppableClock(epochMillis(GENESIS + 600_000));
+    const published: Tick = {
+      sequence: 407,
+      instant: epochMillis(GENESIS + 120_000),
+      price: logPrice(1_234),
+    };
+    const { market, outcome } = await resumeMarket({
+      ...base(new MemoryStateStore(), clock),
+      published,
+    });
+    expect(outcome.kind).toBe('seam');
+    expect(outcome.kind === 'seam' ? outcome.fromSequence : null).toBe(407);
+    expect(outcome.kind === 'seam' ? outcome.reason : '').toMatch(/no checkpoint names this asset/);
+    // Past the record, by a whole sequence lease, and carrying its price.
+    expect(market.lastPublishedState).toMatchObject({ sequence: 407, price: 1_234 });
+    clock.advance(durationMillis(60_000));
+    const after = market.advance();
+    expect(after.length).toBeGreaterThan(0);
+    expect(after[0]!.sequence).toBeGreaterThan(407 + 100_000);
+    expect(after[0]!.instant).toBeGreaterThanOrEqual(GENESIS + 600_000);
+    // And on a keystream the dead process cannot have drawn from.
+    expect(market.keyEpoch).toBe(1);
+  });
+
+  it('starts fresh when the record holds nothing for the asset', async () => {
+    const { outcome } = await resumeMarket({
+      ...base(new MemoryStateStore(), new SteppableClock(GENESIS)),
+      published: null,
+    });
+    expect(outcome.kind).toBe('fresh');
+  });
+
+  it('takes the next key epoch on every seam, and the checkpoint carries it (a6-07)', async () => {
+    // A restore rolls the leases back with everything else, and the process
+    // that is gone consumed past them — measured, 4,057 cascade blocks of
+    // overlap. The cursors cannot see it; a new epoch does not have to.
+    const store = new MemoryStateStore();
+    const clock = new SteppableClock(GENESIS);
+    const first = await resumeMarket(base(store, clock));
+    expect(first.market.keyEpoch, 'a market that has never seamed').toBe(0);
+    clock.advance(durationMillis(600_000));
+    first.market.advance();
+    const checkpoint = checkpointMarket(first.market, asset.definition.id, clock.now());
+    expect(checkpoint.keyEpoch, 'epoch 0 is the absent default; nothing new is written').toBe(
+      undefined,
+    );
+    // Anything that makes the record unusable takes the seam; the reason is not
+    // what this asserts.
+    await store.save({ ...checkpoint, leasedBlocks: {} });
+
+    const secondClock = new SteppableClock(clock.now());
+    const second = await resumeMarket(base(store, secondClock));
+    expect(second.outcome.kind).toBe('seam');
+    expect(second.market.keyEpoch, 'the seam moved off the spent keystream').toBe(1);
+    secondClock.advance(durationMillis(60_000));
+    second.market.advance();
+    const afterSeam = checkpointMarket(second.market, asset.definition.id, secondClock.now());
+    expect(afterSeam.keyEpoch, 'and the checkpoint says which keystream its cursors index').toBe(1);
+    await store.save(afterSeam);
+
+    // The resume that follows must land on the SAME keystream, or the cursors
+    // it restores index into a stream the market never published from.
+    const thirdClock = new SteppableClock(secondClock.now());
+    const third = await resumeMarket(base(store, thirdClock));
+    expect(third.outcome.kind).toBe('resumed');
+    expect(third.market.keyEpoch).toBe(1);
+    thirdClock.advance(durationMillis(60_000));
+    const continued = third.market.advance();
+    // Deterministic continuation: the same clock advance on the market that was
+    // checkpointed produces the same ticks.
+    secondClock.advance(durationMillis(60_000));
+    expect(continued).toEqual(second.market.advance());
+
+    // And a seam from there moves on again rather than back to 1.
+    await store.save({
+      ...checkpointMarket(third.market, asset.definition.id, thirdClock.now()),
+      leasedBlocks: {},
+    });
+    const fourth = await resumeMarket(base(store, new SteppableClock(thirdClock.now())));
+    expect(fourth.outcome.kind).toBe('seam');
+    expect(fourth.market.keyEpoch).toBe(2);
+  });
+
+  it('refuses a record whose key epoch is not a whole number, rather than guessing', async () => {
+    const store = new MemoryStateStore();
+    const clock = new SteppableClock(GENESIS);
+    const first = await resumeMarket(base(store, clock));
+    clock.advance(durationMillis(60_000));
+    first.market.advance();
+    const record = checkpointMarket(first.market, asset.definition.id, clock.now());
+    await store.save({ ...record, keyEpoch: 1.5 });
+    await expect(resumeMarket(base(store, new SteppableClock(clock.now())))).rejects.toThrow(
+      /key epoch 1.5 is not a whole number/,
+    );
   });
 });
 
@@ -216,6 +333,24 @@ describe('staleness is the age of the checkpoint, not the age of the last tick (
     expect(seamed.outcome.kind === 'seam' ? seamed.outcome.fromSequence : null).toBe(
       controlled.lastPublished?.sequence ?? null,
     );
+    // **Cycle Audit 10 (a6-02, a1-06).** Both ends of the seam, stated here
+    // rather than left to be discovered from the first tick: a lease was
+    // granted, so where the market resumes is known before anything is drawn.
+    // Everything downstream that has to describe the hole — the feed's window,
+    // and therefore what a resuming client is told between the boot and the
+    // first tick — reads this number. Reading it off the drawn tick instead
+    // would be a production source reaching into the engine's private state
+    // (INV-010, a1-03).
+    const resumesAt = seamed.outcome.kind === 'seam' ? seamed.outcome.resumesAtSequence : null;
+    expect(resumesAt).toBeGreaterThan(controlled.lastPublished!.sequence);
+    // It is where the market actually resumes, to the tick.
+    let afterTheSeam: readonly Tick[] = [];
+    for (let step = 0; step < 30 && afterTheSeam.length === 0; step += 1) {
+      clock.advance(durationMillis(1_000));
+      afterTheSeam = seamed.market.advance();
+    }
+    expect(afterTheSeam.length).toBeGreaterThan(0);
+    expect(afterTheSeam[0]!.sequence).toBe(resumesAt);
   });
 
   it('does not seam a market whose checkpoint is fresh but whose last tick is not', async () => {

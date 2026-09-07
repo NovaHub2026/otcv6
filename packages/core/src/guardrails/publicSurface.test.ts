@@ -51,6 +51,14 @@ const INTERNAL: Record<string, readonly string[]> = {
     // The guardrails are the repository's own tests. Their lexer and walker are
     // compiled with the kernel because they live under `src/`, and nothing
     // outside this directory is meant to build on them.
+    //
+    // `buildFreshness.ts` is the one exception to "nothing outside", and it is
+    // a deliberate one: the root setup file `vitest.setup.buildFreshness.ts`
+    // imports it by relative path, because a workspace's `rootDir` means a test
+    // helper cannot be shared between `apps/api` and `tools/sim` any other way
+    // and both need this rule (Cycle Audit 10, a2-05 and a2-06). It stays off
+    // the kernel's published surface for the same reason its neighbours do.
+    'guardrails/buildFreshness.ts',
     'guardrails/lifecycle.ts',
     'guardrails/repository.ts',
     'guardrails/sourceScan.ts',

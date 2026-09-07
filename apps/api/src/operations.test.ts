@@ -90,6 +90,35 @@ describe('the process serves before it starts the markets (a5-02)', () => {
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
 
+  /**
+   * **Cycle Audit 10 (a6-07).** The documented restore is a directory swap with
+   * the service stopped, and after one nothing in the directory said a restore
+   * had happened: the venue seamed from the backup's checkpoint and served on
+   * while every tick published after the backup was gone — a sequence an
+   * observer held answering 404, and `/price?at=` answering an instant it had
+   * already answered with a different price. `verifyStateDirectory` reports the
+   * manifest in the copy, and the boot must not swallow it. Text, for the same
+   * reason as the case below: nothing can boot `main.ts` without binding a port.
+   */
+  it('says out loud when it is starting from a backup nothing has run in yet (a6-07)', () => {
+    const started = main.indexOf('venue.start()');
+    const said = main.search(/if \(report\.backup[\s\S]{0,120}logger\.warn\(/);
+    expect(
+      said,
+      'main.ts never turns what the boot check says about a backup copy into a warning',
+    ).toBeGreaterThan(-1);
+    expect(
+      said,
+      'main.ts starts the markets before it says the record was rolled back',
+    ).toBeLessThan(started);
+    expect(main, 'the warning does not say what a restore costs a settled contract').toMatch(
+      /price\?at=[\s\S]{0,400}observers saw/,
+    );
+    // Not a refusal: a restore is sometimes the right thing to do, and refusing
+    // the only remaining copy helps nobody.
+    expect(main).not.toMatch(/report\.backup[\s\S]{0,300}process\.exit\(1\)/);
+  });
+
   it('listens before it resumes a market, so liveness answers during a backfill', () => {
     const listen = main.indexOf('app.listen(');
     const start = main.indexOf('venue.start()');

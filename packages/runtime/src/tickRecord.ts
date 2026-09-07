@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import { epochMillis, logPrice, type EpochMillis, type Tick } from '@otc/core';
-import { malformedBatch, RecordForkError, sameTick } from './replication.js';
+import { malformedBatch, malformedPass, RecordForkError, sameTick } from './replication.js';
 import {
   assertSchemaNotNewer,
   DEFAULT_BUSY_TIMEOUT_MS,
@@ -354,6 +354,10 @@ export class SqliteTickRecord implements TickRecord {
 
   append(batches: readonly AssetBatch[]): Promise<ReadonlyMap<string, readonly Tick[]>> {
     const fresh = new Map<string, readonly Tick[]>();
+    // Before the transaction, so the two stores refuse a repeated asset with
+    // the same words and neither writes (Cycle Audit 10, a2-13).
+    const malformedShape = malformedPass(batches);
+    if (malformedShape !== null) return Promise.reject(malformedShape);
     try {
       // Validated whole before anything is written, and written inside one
       // transaction, so a refusal for one asset leaves every asset's record as
@@ -496,6 +500,8 @@ export class MemoryTickRecord implements TickRecord {
   readonly #seams = new Map<string, RecordedSeam[]>();
 
   append(batches: readonly AssetBatch[]): Promise<ReadonlyMap<string, readonly Tick[]>> {
+    const malformedShape = malformedPass(batches);
+    if (malformedShape !== null) return Promise.reject(malformedShape);
     const fresh = new Map<string, readonly Tick[]>();
     const staged = new Map<string, Tick[]>();
     const stagedSeams = new Map<string, RecordedSeam[]>();
@@ -626,12 +632,33 @@ export class MemoryTickRecord implements TickRecord {
     );
   }
 
-  /** Replace a held tick's price, to plant a fork. */
-  corrupt(assetId: string, sequence: number, price: number): void {
+  /**
+   * Replace a held tick's price, its instant, or both — to plant a fork.
+   *
+   * **Cycle Audit 10, a2-07.** This took a price and nothing else, and every
+   * fork the suite could express was therefore a price fork: both fork sites
+   * in this file could be reduced to `sequence && price` and the whole unit
+   * suite stayed green. A fork is a disagreement about *any* field
+   * `sameTick` compares, and a market republishing the same prices at shifted
+   * instants after a clock repair is the one the settlement query — which keys
+   * on instants — would be hurt by.
+   */
+  corrupt(
+    assetId: string,
+    sequence: number,
+    change: { readonly price?: number; readonly instant?: number },
+  ): void {
     const held = this.#ticks.get(assetId) ?? [];
     const index = held.findIndex((tick) => tick.sequence === sequence);
     if (index < 0) throw new RangeError(`No tick ${sequence} for ${assetId} to corrupt.`);
-    held[index] = { ...held[index]!, price: logPrice(price) };
+    if (change.price === undefined && change.instant === undefined) {
+      throw new RangeError(`Nothing to corrupt in tick ${sequence} of ${assetId}.`);
+    }
+    held[index] = {
+      ...held[index]!,
+      ...(change.price === undefined ? {} : { price: logPrice(change.price) }),
+      ...(change.instant === undefined ? {} : { instant: epochMillis(change.instant) }),
+    };
   }
 }
 

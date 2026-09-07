@@ -79,11 +79,18 @@ that sequence, the window's ticks, and the Merkle path, or `not yet committed`
 while the window is open). The contract is a document and a machine-readable
 schema the venue serves at `/contract`, with a version in `/health`, and a
 guard that fails when a route or a response key changes without the version.
-The conformance suite is `npm run conformance -- --base URL`: every route, the
-stream's resume and gap semantics, the price rule against the stream, a proof
-verified against the publisher's key, one report and an exit code. The
-reference client is what the suite is written with. `packages/trading` takes
-money as integers in a named minor unit with an exact payout rational (#11).
+The conformance suite is `npm run conformance -- --base URL [--key HEX]`: every
+route, the stream's resume and gap semantics, the price rule against the
+stream, a proof verified against the publisher's key, one report and an exit
+code.
+
+> **Corrected 2026-09-06 (Cycle Audit 10, a4-03).** "Verified against the
+> publisher's key" was, until this audit, verified against the key the venue
+> sent in the same response — which any venue chooses freely, so it verified
+> nothing about who published. `--key` is that key, told out of band; without
+> it the suite still runs the check and names it _not independent_. The
+> reference client is what the suite is written with. `packages/trading` takes
+> money as integers in a named minor unit with an exact payout rational (#11).
 
 ## 7. What the phase leaves open, deliberately
 

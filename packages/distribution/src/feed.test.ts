@@ -6,6 +6,7 @@ import { epochMillis, logPrice, type Tick } from '@otc/core';
 import {
   DEFAULT_RETAIN_TICKS,
   EvictedError,
+  FIRST_SEQUENCE,
   MEASURED_BYTES_PER_TICK,
   TickFeed,
   UnknownSequenceError,
@@ -235,6 +236,130 @@ describe('resumption is exact', () => {
 
   it('rejects a nonsensical retention bound', () => {
     expect(() => new TickFeed({ retainTicks: 0 })).toThrow(RangeError);
+  });
+});
+
+/**
+ * **Cycle Audit 10 (a6-02, a1-06).** A restart longer than the catch-up bound
+ * seams a market, and since PH-30.4 a seamed market's feed is not primed from
+ * the record — correctly, because the feed is gapless and priming it made every
+ * post-seam pass a refused gap. What was left was a window, from the boot to the
+ * first tick, in which the feed held nothing and `since` had only its
+ * empty-history branch: a client resuming from the record's head plus one was
+ * told the sequence "has never been published; the newest is 0. A client asking
+ * for it is not behind — it is holding a record this feed did not produce",
+ * every clause of which was false, and `from=1` — what a fresh archiver sends —
+ * was accepted and joined silently at the seam. Measured at 323–1200 ms on the
+ * release build; longer for a slow asset or a stalled scheduler.
+ */
+describe('a market that seamed before this feed published anything', () => {
+  const HEAD = 116;
+  const RESUMES_AT = 100_118;
+  /** What `since` threw, or null when it returned — so a failure names both. */
+  const refusalFor = (feed: TickFeed, from: number): unknown => {
+    try {
+      feed.since('eurusd', from);
+      return null;
+    } catch (error) {
+      return error;
+    }
+  };
+
+  it('answers the window before the first tick as the window after it answers', () => {
+    const feed = new TickFeed();
+    feed.seam('eurusd', { publishedThrough: HEAD, resumesAt: RESUMES_AT });
+
+    // The resume the whole contract is built on: the record's head plus one.
+    // Below the resume point the feed has nothing and says so in the words it
+    // uses for an eviction — which is what this is, from the client's side.
+    for (const from of [1, HEAD, HEAD + 1, RESUMES_AT - 1]) {
+      const refusal = refusalFor(feed, from);
+      expect(refusal, `from=${String(from)}`).toBeInstanceOf(EvictedError);
+      expect((refusal as EvictedError).oldestRetained, `from=${String(from)}`).toBe(RESUMES_AT);
+      expect(String((refusal as EvictedError).message), `from=${String(from)}`).toContain(
+        `older than the retained window, which starts at ${String(RESUMES_AT)}`,
+      );
+    }
+    // The resume point itself is the one honest acceptance: nothing to replay,
+    // and the next tick is what comes.
+    expect(feed.since('eurusd', RESUMES_AT)).toEqual([]);
+    // Above it, a client really is holding ticks nobody published — and the
+    // newest that exists is the record's head, not zero.
+    const beyond = refusalFor(feed, RESUMES_AT + 1);
+    expect(beyond).toBeInstanceOf(UnknownSequenceError);
+    expect((beyond as UnknownSequenceError).newestPublished).toBe(HEAD);
+    expect(String((beyond as UnknownSequenceError).message)).toContain(
+      `has never been published; the newest is ${String(HEAD)}`,
+    );
+
+    // A subscription placed at the resume point receives the first tick when it
+    // lands, and nothing before it.
+    const sink = recorder();
+    feed.subscribe('eurusd', sink, RESUMES_AT);
+    expect(feed.declaredSeam('eurusd')).toEqual({
+      publishedThrough: HEAD,
+      resumesAt: RESUMES_AT,
+    });
+    feed.publish('eurusd', ticks(RESUMES_AT, 3));
+    // The window exists now, so the declaration is spent and dropped rather
+    // than kept for the life of the process saying something no longer true.
+    expect(feed.declaredSeam('eurusd')).toBeNull();
+    expect(sink.received.map((t) => t.sequence)).toEqual([
+      RESUMES_AT,
+      RESUMES_AT + 1,
+      RESUMES_AT + 2,
+    ]);
+
+    // And once the window exists the answers do not move: the same three
+    // requests get the same three answers from the history itself.
+    expect(() => feed.since('eurusd', HEAD + 1)).toThrow(EvictedError);
+    expect(() => feed.since('eurusd', HEAD + 1)).toThrow(
+      new RegExp(`which starts at ${String(RESUMES_AT)}`),
+    );
+    expect(feed.since('eurusd', RESUMES_AT).map((t) => t.sequence)).toEqual([
+      RESUMES_AT,
+      RESUMES_AT + 1,
+      RESUMES_AT + 2,
+    ]);
+    expect(() => feed.since('eurusd', RESUMES_AT + 4)).toThrow(UnknownSequenceError);
+  });
+
+  it('refuses a seam that does not describe a window ahead of what was published', () => {
+    // The declaration is a statement about a window that does not exist yet, so
+    // nothing can check it against a history. A resume point at or below the
+    // record's head would put this feed's window inside the record's, and every
+    // answer above would then be wrong in the direction that hides a gap.
+    const feed = new TickFeed();
+    expect(() => feed.seam('eurusd', { publishedThrough: HEAD, resumesAt: HEAD })).toThrow(
+      RangeError,
+    );
+    expect(() => feed.seam('eurusd', { publishedThrough: HEAD, resumesAt: HEAD - 1 })).toThrow(
+      RangeError,
+    );
+    expect(() => feed.seam('eurusd', { publishedThrough: HEAD, resumesAt: 0 })).toThrow(RangeError);
+    expect(() => feed.seam('eurusd', { publishedThrough: HEAD, resumesAt: 1.5 })).toThrow(
+      RangeError,
+    );
+    expect(() => feed.seam('eurusd', { publishedThrough: Number.NaN, resumesAt: 10 })).toThrow(
+      RangeError,
+    );
+    // Nothing was declared, so the empty feed answers as it always did.
+    expect(() => feed.since('eurusd', 2)).toThrow(UnknownSequenceError);
+    expect(feed.since('eurusd', 1)).toEqual([]);
+    // A market with no record at all seams from before its first sequence.
+    feed.seam('btcusd', { publishedThrough: FIRST_SEQUENCE - 1, resumesAt: FIRST_SEQUENCE });
+    expect(feed.since('btcusd', FIRST_SEQUENCE)).toEqual([]);
+    expect(() => feed.since('btcusd', FIRST_SEQUENCE + 1)).toThrow(UnknownSequenceError);
+  });
+
+  it('forgets the seam with the asset it was declared for (CA7-35)', () => {
+    const feed = new TickFeed();
+    feed.seam('eurusd', { publishedThrough: HEAD, resumesAt: RESUMES_AT });
+    feed.forget('eurusd');
+    expect(feed.declaredSeam('eurusd')).toBeNull();
+    // A retired market's feed keeps nothing about it, the declaration included.
+    expect(() => feed.since('eurusd', HEAD + 1)).toThrow(UnknownSequenceError);
+    expect(feed.since('eurusd', FIRST_SEQUENCE)).toEqual([]);
   });
 });
 

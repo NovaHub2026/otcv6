@@ -8,6 +8,7 @@ import {
   type Environment,
   type MasterKeyring,
   type RandomSource,
+  type Tick,
 } from '@otc/core';
 import {
   configFor,
@@ -39,7 +40,24 @@ export const DEFAULT_LEASE_BLOCKS = 4_096n;
 export type RecoveryOutcome =
   | { readonly kind: 'fresh' }
   | { readonly kind: 'resumed'; readonly fromSequence: number }
-  | { readonly kind: 'seam'; readonly reason: string; readonly fromSequence: number | null };
+  | {
+      readonly kind: 'seam';
+      readonly reason: string;
+      readonly fromSequence: number | null;
+      /**
+       * The first sequence this market will publish after the seam.
+       *
+       * **Cycle Audit 10 (a6-02, a1-06).** A seam restarts the sequence a whole
+       * lease above what was published, and until the first tick lands nothing
+       * downstream could say where the new window begins: the feed, primed with
+       * nothing, refused a client resuming from the record's head as though it
+       * held ticks nobody wrote. The lease is granted here, so the number is
+       * known here — before anything is drawn, and without reading the drawn
+       * tick, which is the engine's private state and belongs to the Lab
+       * (INV-010, a1-03).
+       */
+      readonly resumesAtSequence: number;
+    };
 
 /**
  * A hook on the engine's sign stream, for a composition that may have one.
@@ -69,6 +87,25 @@ export interface ResumeOptions {
   readonly arrivalSource?: SignSourceFactory;
   /** See {@link HostedMarketOptions.retractable}. */
   readonly retractable?: boolean;
+  /**
+   * The newest tick the **published record** holds for this asset, when the
+   * deployment keeps one (PH-28.1). Absent means "not consulted".
+   *
+   * **Cycle Audit 10, a6-06.** The checkpoint is written on a cadence and the
+   * record on every pass, so the record is the more recent evidence of what
+   * observers saw — and in one case it is the *only* evidence. A SIGKILL
+   * before a fresh market's first checkpoint (5 s after `start()`) leaves
+   * ticks in `record.db` and no `<id>.json` anywhere, and this function used
+   * to answer `fresh`: a new genesis, sequence 1, and the record refusing
+   * every tick of the pass as a fork — measured, 29 of 30 assets unhosted and
+   * `/health/ready` 503 for the life of the process, with the operator's
+   * `state:verify` calling the directory consistent and naming no asset.
+   *
+   * It is read, never generated from: nothing here reaches the price path
+   * (INV-001), and what comes back is a sequence, an instant and a price an
+   * observer already held.
+   */
+  readonly published?: Tick | null;
 }
 
 type EpochMillisLike = ReturnType<typeof epochMillis>;
@@ -86,7 +123,10 @@ export interface ResumeResult {
  * wrapper is indistinguishable from no wrapper, and a cursor a caller supplies
  * is applied to the wrapper, which delegates the seek.
  */
-function engineStreams(options: ResumeOptions): {
+function engineStreams(
+  options: ResumeOptions,
+  keyEpoch: number,
+): {
   streams?: Readonly<Partial<Record<string, RandomSource>>>;
 } {
   if (options.signSource === undefined && options.arrivalSource === undefined) return {};
@@ -95,7 +135,11 @@ function engineStreams(options: ResumeOptions): {
       env: options.environment,
       asset: configFor(options.asset).instrument.id,
       purpose,
-      keyEpoch: 0,
+      // The market's own epoch, not 0 (Cycle Audit 10, a6-06). A seam moves
+      // every stream to a new epoch; deriving the hooked streams at 0 while
+      // `createMarketEngine` derives the rest at n would host one market on two
+      // epochs, and the sign stream on positions a previous epoch had spent.
+      keyEpoch,
     });
   const id = options.asset.definition.id;
   return {
@@ -139,11 +183,29 @@ export async function resumeMarket(options: ResumeOptions): Promise<ResumeResult
   const personality = personalityFingerprint(asset);
   const record = await store.load(assetId);
   if (record === null) {
+    const published = options.published ?? null;
+    // **Cycle Audit 10, a6-06.** No checkpoint and a record that holds ticks is
+    // not a fresh market: it is a market whose process died before its first
+    // checkpoint. Starting fresh gave it a new genesis and sequence 1, which
+    // the record then refused as a fork — the asset unhosted, `/health/ready`
+    // 503, and the only documented remedy moving `record.db` aside, throwing
+    // away every tick observers held.
+    //
+    // The record is the evidence of what was served, so the market opens past
+    // it, exactly as a seam does. Nothing is known about the keystream the dead
+    // process consumed — there is no lease and no snapshot anywhere — so this
+    // is the case a cursor floor cannot solve and the key epoch can: epoch 1 is
+    // a different keystream from the epoch 0 it ran on, so no position it spent
+    // is drawn again.
+    if (published !== null) {
+      return seamPastRecord(options, published);
+    }
     return {
       market: freshMarket(options, undefined),
       outcome: { kind: 'fresh' },
     };
   }
+  const keyEpoch = record.keyEpoch ?? 0;
 
   try {
     assertUsableRecord(record, assetId, personality);
@@ -156,7 +218,8 @@ export async function resumeMarket(options: ResumeOptions): Promise<ResumeResult
     config: configFor(asset),
     keyring,
     environment,
-    ...engineStreams(options),
+    keyEpoch,
+    ...engineStreams(options, keyEpoch),
     start: { instant: options.genesisInstant, price: logPrice(0) },
   });
   try {
@@ -172,6 +235,7 @@ export async function resumeMarket(options: ResumeOptions): Promise<ResumeResult
       config: configFor(asset),
       keyring,
       environment,
+      keyEpoch,
       // Not hooked, deliberately. This engine exists to check the record against
       // the snapshot and is discarded; a sign source registered here would be
       // the one a Lab later armed, on an engine nothing hosts.
@@ -271,6 +335,7 @@ export async function resumeMarket(options: ResumeOptions): Promise<ResumeResult
       engine,
       clock,
       personality,
+      keyEpoch,
       resumePending: record.pending,
       resumeLastPublished: record.lastPublished,
       ...(options.maxCatchUpMs === undefined ? {} : { maxCatchUpMs: options.maxCatchUpMs }),
@@ -291,7 +356,7 @@ function freshMarket(
     config: configFor(options.asset),
     keyring: options.keyring,
     environment: options.environment,
-    ...engineStreams(options),
+    ...engineStreams(options, 0),
     start: { instant: options.genesisInstant, price: logPrice(0) },
     ...(cursors === undefined ? {} : { cursors }),
   });
@@ -302,6 +367,61 @@ function freshMarket(
     ...(options.maxCatchUpMs === undefined ? {} : { maxCatchUpMs: options.maxCatchUpMs }),
     ...(options.retractable === undefined ? {} : { retractable: options.retractable }),
   });
+}
+
+/**
+ * Open past the published record when nothing else is left (a6-06).
+ *
+ * The one recovery with no checkpoint behind it: the record holds ticks and no
+ * `<id>.json` names the asset, because the process that served them was killed
+ * inside the first checkpoint interval. There is no lease, no snapshot and no
+ * cursor, so there is no floor to compute — the only safe statement about the
+ * keystream is that epoch 0 is spent to an unknown depth.
+ *
+ * So the market opens on **epoch 1**: a different keystream, in which nothing
+ * has been drawn. The price carries over from the record's newest tick so the
+ * market does not jump, the sequence continues a full lease past it so no
+ * number is published twice, and the instant is the clock — the gap stays a
+ * gap, as on every other seam.
+ */
+function seamPastRecord(options: ResumeOptions, published: Tick): ResumeResult {
+  const keyEpoch = 1;
+  const now = options.clock.now();
+  const engine = createMarketEngine({
+    config: configFor(options.asset),
+    keyring: options.keyring,
+    environment: options.environment,
+    keyEpoch,
+    ...engineStreams(options, keyEpoch),
+    start: {
+      instant: epochMillis(Math.max(options.genesisInstant, now, published.instant)),
+      price: published.price,
+      sequence: published.sequence + DEFAULT_SEQUENCE_LEASE,
+    },
+  });
+  return {
+    market: new HostedMarket({
+      engine,
+      clock: options.clock,
+      personality: personalityFingerprint(options.asset),
+      keyEpoch,
+      resumeLastPublished: published,
+      ...(options.maxCatchUpMs === undefined ? {} : { maxCatchUpMs: options.maxCatchUpMs }),
+      ...(options.retractable === undefined ? {} : { retractable: options.retractable }),
+    }),
+    outcome: {
+      kind: 'seam',
+      reason:
+        `no checkpoint names this asset and the published record holds ticks through sequence ` +
+        `${published.sequence}: the process that served them was killed before its first ` +
+        `checkpoint, so its leases and cursors are unknown. Reopened past the record on a new ` +
+        `key epoch`,
+      fromSequence: published.sequence,
+      // The lease is granted a line above, so the first sequence this market
+      // will publish is known here — which is what a6-02 needs downstream.
+      resumesAtSequence: published.sequence + DEFAULT_SEQUENCE_LEASE + 1,
+    },
+  };
 }
 
 /**
@@ -319,6 +439,23 @@ function seamFrom(
   reason: string,
   leaseBlocks: bigint,
 ): ResumeResult {
+  // **The seam moves to a new key epoch (Cycle Audit 10, a6-07).** The cursor
+  // floors below are computed from the record we have just declared
+  // untrustworthy, and there is a failure that makes them wrong rather than
+  // merely stale: restoring a backup taken before the venue served on rolls the
+  // leases back with everything else, and the process that is gone consumed
+  // past them. Measured on a 3.5-minute run against a 30-second-old backup —
+  // 4,057 cascade blocks of overlap, with the restored venue's own next
+  // checkpoint sitting 651 blocks inside the region the old process had already
+  // published from. The keyring derives a different stream per epoch, so a
+  // position drawn under epoch n cannot be drawn again under n+1 whatever the
+  // cursors say, and the epoch is written into the checkpoint so the resume
+  // that follows indexes into the same keystream.
+  //
+  // It costs nothing a seam has not already spent: a seam restarts the latent
+  // state by definition, and the personality — every statistical property the
+  // asset is — is a property of the config, not of which keystream feeds it.
+  const keyEpoch = (record.keyEpoch ?? 0) + 1;
   const cursors: Record<string, string> = {};
   for (const purpose of ENGINE_STREAM_PURPOSES) {
     // Floored at the record's OWN snapshot cursors, not merely at its leases.
@@ -378,9 +515,14 @@ function seamFrom(
           price: record.lastPublished.price,
           // The reserved number, not the recorded one: the record is stale by
           // construction after an unclean crash.
+          // Past everything anyone is known to have seen: the lease, the
+          // checkpoint's own last published, and — when the deployment keeps a
+          // record — the record's newest tick, which is the more recent of the
+          // two by up to a whole checkpoint interval (a6-06).
           sequence: Math.max(
             record.leasedSequence ?? 0,
             record.lastPublished.sequence + DEFAULT_SEQUENCE_LEASE,
+            (options.published?.sequence ?? 0) + DEFAULT_SEQUENCE_LEASE,
           ),
         };
 
@@ -388,7 +530,8 @@ function seamFrom(
     config: configFor(options.asset),
     keyring: options.keyring,
     environment: options.environment,
-    ...engineStreams(options),
+    keyEpoch,
+    ...engineStreams(options, keyEpoch),
     start,
     cursors,
   });
@@ -397,11 +540,20 @@ function seamFrom(
       engine,
       clock: options.clock,
       personality: personalityFingerprint(options.asset),
+      keyEpoch,
       ...(record.lastPublished === null ? {} : { resumeLastPublished: record.lastPublished }),
       ...(options.maxCatchUpMs === undefined ? {} : { maxCatchUpMs: options.maxCatchUpMs }),
       ...(options.retractable === undefined ? {} : { retractable: options.retractable }),
     }),
-    outcome: { kind: 'seam', reason, fromSequence: record.lastPublished?.sequence ?? null },
+    outcome: {
+      kind: 'seam',
+      reason,
+      fromSequence: record.lastPublished?.sequence ?? null,
+      // The engine counts from the sequence it starts at and emits the next one,
+      // so this is the seam's first published sequence — stated before the tick
+      // exists rather than read off it (INV-010).
+      resumesAtSequence: ('sequence' in start ? start.sequence : 0) + 1,
+    },
   };
 }
 
@@ -450,6 +602,9 @@ export function checkpointMarket(
       last === null ? null : { sequence: last.sequence, instant: last.instant, price: last.price },
     leasedBlocks,
     leasedSequence: highestKnown + DEFAULT_SEQUENCE_LEASE,
+    // Written only once it is not the default, so a deployment that has never
+    // seamed keeps writing byte-identical checkpoints (a6-07). Absent is 0.
+    ...(market.keyEpoch === 0 ? {} : { keyEpoch: market.keyEpoch }),
     ...(controlled ? { controlled: true } : {}),
   };
 }

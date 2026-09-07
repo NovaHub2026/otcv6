@@ -185,6 +185,14 @@ describe('the harness says when the server cut the fleet short (a3)', () => {
     expect(report.closeEvents, 'the close frames were discarded').toBe(4);
     expect(report.gapEvents).toBe(0);
     expect(describeObserverLoad(report)).toMatch(/TRUNCATED/);
+    // **Cycle Audit 10 (a8-03).** The counter above was added by Cycle Audit 8
+    // and `complete` was left as `established === observers`, so every caller
+    // that reads the boolean rather than the text — the fleet driver does —
+    // saw a clean run. Four observers cut off mid-hold is not a complete
+    // observation of anything.
+    expect(report.complete, 'a fleet the server closed mid-hold reported itself complete').toBe(
+      false,
+    );
   });
 
   it('counts a gap frame the same way, and keeps counting the ticks after it', async () => {
@@ -200,6 +208,11 @@ describe('the harness says when the server cut the fleet short (a3)', () => {
     expect(report.closeEvents).toBe(0);
     expect(report.ticksDelivered, 'the ticks around the gap were lost too').toBe(6);
     expect(describeObserverLoad(report)).toMatch(/TRUNCATED/);
+    expect(report.complete, 'a fleet told of a gap reported itself complete').toBe(false);
+    // And the run is incomplete for the *truncation*, not for a refusal: every
+    // observer connected, so the older line must not claim otherwise (a8-03).
+    expect(report.established).toBe(3);
+    expect(describeObserverLoad(report)).not.toMatch(/INCOMPLETE/);
   });
 
   it('says nothing about truncation when the server delivered the whole stream', async () => {
@@ -212,6 +225,7 @@ describe('the harness says when the server cut the fleet short (a3)', () => {
     const report = await load(baseUrl, 2);
     expect(report.gapEvents).toBe(0);
     expect(report.closeEvents).toBe(0);
+    expect(report.complete).toBe(true);
     expect(describeObserverLoad(report)).not.toMatch(/TRUNCATED/);
   });
 });

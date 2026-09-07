@@ -141,7 +141,14 @@ export default defineConfig({
            * 2026-09-04 with every test green and exit 1; the setup file carries
            * the reproduction.
            */
-          setupFiles: [path.resolve(root, 'vitest.setup.unit.ts')],
+          setupFiles: [
+            path.resolve(root, 'vitest.setup.unit.ts'),
+            // A suite that spawns `dist/` refuses to run against a stale one
+            // (Cycle Audit 10, a2-05 and a2-06). Both projects carry it: the
+            // seven suites that spawn the built service are statistical, and
+            // `sqliteConcurrency.test.ts` and `deploy.test.ts` are not.
+            path.resolve(root, 'vitest.setup.buildFreshness.ts'),
+          ],
           testTimeout: unitTimeoutMs,
         },
       },
@@ -176,7 +183,11 @@ export default defineConfig({
            * the quantity that fails the whole run at sixty, with every test
            * passing; the second reports the worst synchronous block per file.
            */
-          setupFiles: [path.resolve(root, 'vitest.setup.statistical.ts')],
+          setupFiles: [
+            path.resolve(root, 'vitest.setup.statistical.ts'),
+            // See the unit project above (Cycle Audit 10, a2-05 and a2-06).
+            path.resolve(root, 'vitest.setup.buildFreshness.ts'),
+          ],
           /**
            * Fifteen minutes until Cycle Audit 8, when two files crossed it on a
            * hosted runner and the whole gate came back red on a green tree.

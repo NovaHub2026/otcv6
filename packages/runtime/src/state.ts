@@ -75,6 +75,32 @@ export interface MarketStateRecord {
    */
   readonly controlled?: boolean;
   /**
+   * The key epoch this market's streams are derived at. Absent means 0.
+   *
+   * **Cycle Audit 10, a6-06 and a6-07.** Cursor leases keep a *continuing*
+   * market off positions it has already spent, and they are trustworthy
+   * because they are written ahead of use. They say nothing when the evidence
+   * itself is gone or has been rolled back:
+   *
+   * - a SIGKILL before a fresh market's first checkpoint leaves ticks in the
+   *   record and no lease anywhere, so the only honest floor is unknown;
+   * - restoring a backup taken before the venue served on rolls the leases
+   *   back with everything else, and the process that is gone consumed past
+   *   them — measured, 4,057 cascade blocks of overlap after three and a half
+   *   minutes.
+   *
+   * A seam therefore moves to a **new key epoch** rather than trying to guess
+   * a floor: `keyring.derive` under epoch n+1 is a different keystream, so no
+   * position any earlier epoch spent can be drawn again, however wrong the
+   * cursors are. The epoch has to be durable — a snapshot's cursors mean
+   * nothing without the stream they index — which is why it is written here,
+   * and why a record whose epoch cannot be read is refused rather than seamed.
+   *
+   * Absent means 0, so every checkpoint written before this field is read
+   * exactly as it was written, and no deployment seams on the upgrade.
+   */
+  readonly keyEpoch?: number;
+  /**
    * Sequence number reserved ahead of use, for the same reason as the keystream.
    *
    * After an unclean crash the record lags what was actually published: it knows
@@ -185,6 +211,20 @@ export function assertUsableRecord(
   }
   if (typeof record.snapshot !== 'object' || record.snapshot === null) {
     reject('no snapshot');
+  }
+  if (
+    record.keyEpoch !== undefined &&
+    !(Number.isSafeInteger(record.keyEpoch) && record.keyEpoch >= 0)
+  ) {
+    // Not a seam (Cycle Audit 10, a6-06). A seam derives the *next* epoch from
+    // this one, so an epoch that is not a number leaves the streams this market
+    // published on unknown, and both branches — continue and seam — would guess.
+    // The same class as a record belonging to another asset.
+    throw new CorruptRecordError(
+      expectedAssetId,
+      `key epoch ${String(record.keyEpoch)} is not a whole number, so the keystreams this ` +
+        `market published on are unknown`,
+    );
   }
   if (expectedPersonality !== undefined) {
     if (record.personality === undefined) {

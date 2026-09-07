@@ -284,8 +284,13 @@ was a copy of the stream. Three read routes answer from the published record
   holding the sequence, the Merkle path and the publisher's key, everything
   `verifyInclusion` and `verifyCommitment` need (INV-009); `409` while the
   window is open, naming how far the chain reaches; `404` when the deployment
-  does not publish. The archived tick is compared with the record's before a
-  proof is served, so an edited journal proves nothing.
+  does not publish; `503` when the chain file is damaged past a named line.
+  The window is recomputed against the root its commitment signs, and the
+  archived tick is compared with the record's, before a proof is served — so
+  an edited journal proves nothing **for any sequence in it**, which is
+  narrower than it sounds: until Cycle Audit 10 (a4-05) only the edited line
+  was refused, and every other sequence in the window was served a `200`
+  carrying an inclusion proof that fails at the reader.
 
 `settlementQuery.test.ts` holds the price route to the rule for a thousand
 instants and to `settle()`'s own entry and expiry prices, and verifies a served
@@ -306,8 +311,13 @@ imports it back), the shape checker, an SSE reader that holds the stream
 contract, and `conformance(baseUrl)` — the integration checklist run against a
 live venue: the version and digest, every contracted JSON route's keys and
 types over HTTP, the stream's order and exact resume and its told gap, the
-price rule over the ticks the stream delivered for a hundred instants, and a
-proof verified against the publisher's key. `npm run conformance -- --base URL`
+price rule over the ticks the stream delivered for a hundred instants, the
+record answering the same ticks it streamed from a market that is not behind
+them, and a proof verified against the publisher's key — **the key the run was
+told**, `--key` on the command line, because a signature checked against the
+key the venue ships beside it proves nothing and the report says so when no key
+was given (Cycle Audit 10, a4-03/a4-04).
+`npm run conformance -- --base URL --key HEX`
 runs it and exits 0 or 1 with a report; `conformance.test.ts` proves each check
 fails for the reason it names against a fake venue with one fault at a time,
 and `conformance.stat.test.ts` runs the suite against the shipped service.

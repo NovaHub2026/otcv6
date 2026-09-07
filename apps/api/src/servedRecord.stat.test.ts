@@ -100,8 +100,14 @@ async function bootOn(stateDir: string, port: number): Promise<Running> {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/health`);
       if (response.ok) {
-        const health = (await response.json()) as { bootNonce: string | null };
-        if (health.bootNonce === nonce) {
+        // **`ready`, not merely an answer (Cycle Audit 10).** The listener
+        // opens before the markets resume now, so that an orchestrator can
+        // point liveness at a booting process (a5-02) — which means `/health`
+        // answering no longer implies there is a market to read. Hosted CI
+        // caught this suite proceeding into a venue that had published one
+        // tick, and every realism metric then failed "over 1 ticks".
+        const health = (await response.json()) as { bootNonce: string | null; ready?: boolean };
+        if (health.bootNonce === nonce && health.ready === true) {
           return { child, port, base: `http://127.0.0.1:${port}`, output: () => output };
         }
       }
@@ -155,6 +161,20 @@ async function storedCandles(running: Running, from: number, to: number): Promis
     throw new Error(`history answered ${response.status}: ${await response.text()}`);
   return ((await response.json()) as { candles: Candle[] }).candles;
 }
+
+describe('the build this suite spawns', () => {
+  it('is not older than the source under test (CA10 a2-06)', () => {
+    // The suite below spawns the built service, and Vitest resolves everything
+    // else from source, so a build made before the last edit is invisible: a
+    // regression planted in `apps/api/src` was reported as a pass, twice, in
+    // two different routes. `vitest.setup.buildFreshness.ts` asks `tsc -b
+    // --dry` before this file runs; this fails if it did not run for this file.
+    expect(
+      (globalThis as { __otcFreshBuilds__?: string[] }).__otcFreshBuilds__,
+      'vitest.setup.buildFreshness.ts did not verify a build for this file',
+    ).toContain('apps/api');
+  });
+});
 
 describe('the served record, read from outside the process', () => {
   it('is the same for two observers, is what the venue stored, and continues across a kill', async () => {

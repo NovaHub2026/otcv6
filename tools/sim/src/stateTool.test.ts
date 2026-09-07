@@ -1,5 +1,14 @@
 // Invariant evidence: INV-009 (reproducible settlement).
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  writeSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -103,6 +112,29 @@ describe('the operator’s state tool', () => {
     expect(empty.output).toMatch(/Assets: none \(nothing to resume\)[\s\S]*Consistent/);
   });
 
+  /**
+   * **Cycle Audit 10 (a6-13).** This is the command the restore runbook names
+   * as its acceptance check, and on a state directory with 8 KB of garbage in
+   * the middle of `record.db` it printed every asset's heads and `Consistent:
+   * every file agrees.`, exit 0. The venue then booted, resumed and seamed the
+   * whole catalogue, and died in `#primeFromRecord` with a raw
+   * `ERR_SQLITE_ERROR` — every two seconds, under `Restart=always`.
+   */
+  it('does not call a damaged record.db consistent', async () => {
+    const directory = await stateDir(100, 4_000);
+    const file = path.join(directory, RECORD_DB);
+    const handle = openSync(file, 'r+');
+    try {
+      writeSync(handle, Buffer.alloc(8_192, 0x5a), 0, 8_192, Math.floor(statSync(file).size / 2));
+    } finally {
+      closeSync(handle);
+    }
+    const verified = await runStateTool(['verify', '--dir', directory]);
+    expect(verified.output).not.toMatch(/Consistent/);
+    expect(verified.output).toMatch(/record\.db: is damaged/);
+    expect(verified.code).toBe(1);
+  });
+
   it('backup writes a verified copy with its manifest, at the clock it is given', async () => {
     const source = await stateDir(100, 120);
     const out = path.join(scratch(), 'backup');
@@ -117,6 +149,27 @@ describe('the operator’s state tool', () => {
     // A second backup into the same place is refused, not merged.
     writeFileSync(path.join(out, 'keep'), '');
     expect((await runStateTool(['backup', '--dir', source, '--out', out], clock)).code).toBe(1);
+  });
+
+  /**
+   * **Cycle Audit 10 (a6-07).** The swap is the documented restore, and after
+   * one nothing said a restore had happened: the venue seamed from the
+   * backup's checkpoint and served on, while every tick published after the
+   * backup was gone from the record — measured, `/ticks/310` answering 404
+   * where an observer held sequence 310, and `/price?at=` answering the
+   * backup-era price for an instant already answered. The manifest the tool
+   * leaves in its own copy is enough to say so before the venue starts.
+   */
+  it('says a directory is a backup nothing has run in yet, and what starting it costs (a6-07)', async () => {
+    const source = await stateDir(100, 120);
+    const out = path.join(scratch(), 'swap');
+    const clock = new SteppableClock(epochMillis(GENESIS + 99));
+    expect((await runStateTool(['backup', '--dir', source, '--out', out], clock)).code).toBe(0);
+    const restored = await runStateTool(['verify', '--dir', out]);
+    expect(restored.code, 'saying so is not refusing').toBe(0);
+    expect(restored.output).toMatch(/backup taken at 1776000000099/);
+    expect(restored.output).toMatch(/nothing has run in it/);
+    expect(restored.output).toMatch(/served after that instant is absent/);
   });
 
   /**

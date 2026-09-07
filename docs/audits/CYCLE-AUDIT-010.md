@@ -1,7 +1,7 @@
 # Cycle Audit 010
 
 Type: CYCLE AUDIT RECORD
-Status: CLOSED — 98 claims, 86 confirmed, 12 partial, 0 refuted; fixed on `audit/ca10-fixes`, gated green (`GATE_EXIT=0`, 970f54b)
+Status: CLOSED — 98 claims, 86 confirmed, 12 partial, 0 refuted; fixed in two waves, both gated green (`GATE_EXIT=0` on 970f54b and 73ae2c9)
 Cycle audited: Cycle 10 (PH-28, PH-29, PH-30) — the closing cycle
 Commit audited: `353f101` (the PH-30 merge, tagged `v1.0.0`)
 Conducted: 2026-09-06
@@ -214,8 +214,38 @@ than a careful reader copies correctly.
 
 The fixes are grouped by what they are about rather than by who found them,
 because several findings are one defect seen from different directions: the
-rate limit was found independently by four auditors, and the seam was found by
-three.
+rate limit was found independently by four auditors (a1-02, a2-03, a5-01,
+a8-01), the seam by three (a4-01, a1-01, a6-01), the unrestorable backup by
+three (a7-01, a6-11, a3-01), the torn commitments file by three (a2-04, a3-08,
+a8-06), and the release record's false corroboration by two (a5-06, a7-02).
+
+### What was fixed, and what is carried
+
+**Every critical and every material finding is fixed.** Seven clean-area
+reports needed nothing — they are findings that the guards they probed did
+hold. What is carried is fourteen minor findings, by name, each because the
+cost of fixing it now is worse than the cost of it standing:
+
+| Carried             | Why                                                                                                                                                                                                                                                                                       |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| a2-10               | The chain verifier's epoch check at a restart is unguarded; the refuter established the scenario only bites in a shape the project does not produce (a rotation naming a head the chain reaches after the restart).                                                                       |
+| a2-14               | `contract.test` exercises 12 of 14 response shapes in process; the other two are covered by the shipped-venue statistical suite.                                                                                                                                                          |
+| a3-14               | An auditor's own conduct note — it swept processes with a pattern its own command contained. Recorded because the same mistake has now cost this project three times, and it belongs in `CLAUDE.md`'s rules rather than in the code.                                                      |
+| a4-10               | `exposure` and the limiter accept fractional stakes that `settle()` refuses. Real, and reached only by a broker that ignores the integer-minor-unit contract PH-29.4 wrote for exactly this.                                                                                              |
+| a5-08               | The rate limit's bucket map is swept in full once it holds ten thousand entries; the refuter measured 0.157 ms and showed the precondition is unreachable in every composition the repository ships.                                                                                      |
+| a5-09, a7-07, a7-08 | Provenance stamps on generated records: a dirty-tree commit hash, a missing boot nonce, a tag object where a commit belongs. Each makes a record harder to tie to its run; none makes one false.                                                                                          |
+| a7-09, a7-11        | The hosted-CI table omits runs and nothing guards it; the evidence records are unguarded copies. Both are the same shape as a7-04, which is fixed, and both want a guard that reads a generated file against its generator — worth doing deliberately rather than at the end of an audit. |
+| a8-08               | The multiplexed client retries a refused resume for ever with the same query. Narrowed by the a5-03 fix that landed here; what remains is the retry's backoff, not its correctness.                                                                                                       |
+| a8-09               | The two journal readers disagree on what instants they accept. The venue's is the strict one, so the lab's is the lenient reader of a file the venue wrote.                                                                                                                               |
+| a8-11               | `engineAccess.ts` builds the same fork four times and carries an orphaned docblock. Duplication in a Lab-only path.                                                                                                                                                                       |
+| a8-12               | Each `/proof` streams the asset's whole commitments file from the top: ~350 ms on a year-sized chain. A real cost at scale, and a change to how proofs are read rather than a defect in what they say.                                                                                    |
+
+Carrying fourteen minor findings is a choice, and the reason it is defensible
+here and was not in Cycle Audit 9 — which carried one — is that this audit
+found ninety-eight things in a codebase that had just been called finished.
+Fixing the four criticals and every material finding took two waves and a
+gate; fixing the tail as well would have meant a third, and the next cycle can
+have them with a clear head.
 
 ## 5. What the plants say about the guards
 
@@ -273,11 +303,17 @@ Named, so the next audit knows where it did not look.
 
 ## 7. Verification
 
-The fixes are on `audit/ca10-fixes`, integrated one at a time with the unit
-suite green after each.
+The fixes came in two waves — the four criticals and the material findings the
+first wave reached, then the seventeen it did not — integrated one at a time
+with the unit suite green after each, and each wave gated in full.
 
 ```
-npm run gate  ->  GATE_EXIT=0        (970f54b, 2026-09-06, 21:27–22:51Z)
+npm run gate  ->  GATE_EXIT=0        (73ae2c9, 2026-09-07, 01:18-02:40Z)
+  unit         165 files, 3,421 tests          31.4s
+  coverage     165 files, 3,421 tests         110.0s   (floors enforced)
+  statistical   47 files,   402 tests       4,744.3s
+
+npm run gate  ->  GATE_EXIT=0        (970f54b, 2026-09-06, 21:27-22:51Z)
   format:check     0
   build            0
   typecheck:web    0
@@ -288,7 +324,8 @@ npm run gate  ->  GATE_EXIT=0        (970f54b, 2026-09-06, 21:27–22:51Z)
   statistical   47 files,   402 tests       4,838.5s
 ```
 
-**The first run of that gate was red, and it was right to be.** A statistical
+**Two runs were red before those, and both were right to be.** The first
+wave's: A statistical
 test booted a second venue on a state directory a live venue still held, and
 the new one-writer lock refused it before the module was constructed, so the
 token refusal it was asserting was never reached. The lock was correct and the
@@ -297,6 +334,17 @@ and the lock's own refusal is now asserted where the sharing was — in two real
 processes, which is the end-to-end form of the a6-05 fix. That is the audit's
 own rule applied to itself: the gate found a fix's consequence that no unit
 test could, which is what the statistical layer is for.
+
+And **hosted CI found one the local gate could not.** The a5-02 fix opens the
+listener before the markets resume, so an orchestrator can point liveness at a
+booting process — which means `/health` answering no longer implies there is a
+market to read. Six spawned-venue suites were corrected for that in the second
+wave; one was missed, and on a slower hosted runner it proceeded into a venue
+that had published a single tick, failing every realism metric with "over 1
+ticks". It waits for `ready` now.
+
+A red hosted run on a green local gate is a finding about the gate — the rule
+this project already had — and it has now paid twice in two days.
 
 Hosted CI on the merge is recorded in `CURRENT_STATE.md` § "Hosted CI,
 honestly". A green hosted run is not optional here: the release tag was cut on

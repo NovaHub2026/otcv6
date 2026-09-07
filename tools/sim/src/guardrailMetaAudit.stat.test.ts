@@ -154,6 +154,36 @@ const MUTATIONS: Mutation[] = [
     defect: 'INV-001: the magnitude path naming an economic quantity',
   },
   {
+    guard: 'economic blindness — economic vocabulary in the path that hosts and publishes',
+    test: guard('guardrails.test.ts'),
+    edits: [
+      {
+        file: 'apps/api/src/rateLimit.guard.ts',
+        find: '    const capacity = this.#perMinute;',
+        replace:
+          '    const capacity = this.#perMinute;\n    const payout = capacity;\n    void payout;',
+      },
+    ],
+    defect:
+      'CA10 a1-05: the scan stopped at the price path, so this exact line — and three more in ' +
+      'the record, the publication service and the venue — survived a full guardrail run while ' +
+      "the controller's docstring said the scan kept that vocabulary out of apps/api/src",
+  },
+  {
+    guard: 'the build a suite spawns — a stale build read as current',
+    test: guard('gate.test.ts'),
+    edits: [
+      {
+        file: `${GUARDRAILS}/buildFreshness.ts`,
+        find: '  return verdict.reported && verdict.wouldBuild.length === 0;',
+        replace: '  return verdict.reported;',
+      },
+    ],
+    defect:
+      'CA10 a2-06: a regression planted in apps/api/src with dist unbuilt was reported as a pass ' +
+      'by the statistical suite written to catch it, twice, in two different routes',
+  },
+  {
     guard: 'economic blindness — contract vocabulary in the price path',
     test: guard('guardrails.test.ts'),
     edits: [

@@ -725,15 +725,62 @@ describe('the panel, in a browser', () => {
         nodes.map((n) => n.getAttribute('data-testid')!.replace('board-card-', '')),
       );
       expect(ids).toHaveLength(8);
-      // Every card prices, from the one stream.
-      await page.waitForFunction(
-        () =>
-          Array.from(document.querySelectorAll('[data-testid^="board-price-"]')).every((n) =>
-            /^-?\d+$/.test(n.textContent ?? ''),
-          ),
-        undefined,
-        { timeout: 60_000 },
-      );
+      // Every card prices — and prices the market, not the lattice.
+      //
+      // **Cycle Audit 10 (a8-04).** This assertion was `/^-?\d+$/` over every
+      // card, a shape the canonical `LogPrice` integer satisfies and a display
+      // price does not: it passed only while the board printed `-65` under
+      // BTC/USDT where the chart beside it read `69992.0`, and would have
+      // failed the moment the board was fixed. So it compares values now, and
+      // against the venue's own answer: `/markets` renders `displayPrice` from
+      // the same integer with the same portable conversion, and a card, a
+      // chart and that JSON are three renderings of one number or the market
+      // is not shared (INV-002).
+      //
+      // A band rather than an equality, because the card is fed by the stream
+      // and this reads `/markets` a moment later — the two are the same market
+      // at slightly different instants. Half a percent is far above any move
+      // in that gap and far below the gulf between a price and a lattice
+      // offset, which is 100% of the price for every asset in the catalogue.
+      const mispriced = async (): Promise<string | null> => {
+        const markets = (await (await fetch(`http://127.0.0.1:${apiPort}/markets`)).json()) as {
+          id: string;
+          displayPrice: string | null;
+        }[];
+        const shown = new Map(
+          await page
+            .locator('[data-testid^="board-price-"]')
+            .evaluateAll((nodes) =>
+              nodes.map(
+                (node) =>
+                  [
+                    node.getAttribute('data-testid')!.replace('board-price-', ''),
+                    (node.textContent ?? '').trim(),
+                  ] as [string, string],
+              ),
+            ),
+        );
+        for (const id of ids) {
+          const text = shown.get(id);
+          if (text === undefined || text === '' || text === '—') return `${id}: no price yet`;
+          const venueText = markets.find((m) => m.id === id)?.displayPrice ?? null;
+          if (venueText === null) return `${id}: the venue reports no price`;
+          const card = Number(text);
+          const venue = Number(venueText);
+          if (!Number.isFinite(card)) return `${id}: the card shows ${text}`;
+          if (Math.abs(card - venue) / Math.abs(venue) > 0.005) {
+            return `${id}: the card shows ${text} where the venue prices ${venueText}`;
+          }
+          // And to the digits the asset settles on: an integer where the venue
+          // renders four decimals is the lattice index whatever its magnitude.
+          const decimals = (value: string): number => (value.split('.')[1] ?? '').length;
+          if (decimals(text) !== decimals(venueText)) {
+            return `${id}: the card shows ${text}, the venue ${venueText} — different precision`;
+          }
+        }
+        return null;
+      };
+      await expect.poll(mispriced, { timeout: 60_000, interval: 1_000 }).toBeNull();
       // Issue #16: one connection for eight charts, eight subscriptions on it.
       let connections: number | null = null;
       let subscribers: number | null = null;

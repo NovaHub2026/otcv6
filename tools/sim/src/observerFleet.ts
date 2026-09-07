@@ -110,6 +110,14 @@ function worker(
   holdMs: number,
   perConnection: number,
   arrivalMs: number,
+  /**
+   * The engine's pid. **Cycle Audit 10 (a8-03).** It was never passed, so
+   * `instrumentBound` — the flag that says the harness outworked the engine
+   * and its latency figures are therefore its own scheduling — was `false` by
+   * construction in every fleet row ever produced, including the ten-thousand
+   * table. A guard that cannot be true is not a guard.
+   */
+  enginePid: number | undefined,
 ): Promise<ObserverLoadReport> {
   return new Promise((resolve, reject) => {
     const child = spawn(
@@ -122,6 +130,7 @@ function worker(
         String(holdMs),
         String(perConnection),
         String(arrivalMs),
+        enginePid === undefined ? '' : String(enginePid),
       ],
       {
         stdio: ['ignore', 'pipe', 'inherit'],
@@ -146,6 +155,18 @@ export interface FleetRow {
   readonly established: number;
   readonly gaps: number;
   readonly duplicates: number;
+  /**
+   * Frames in which the venue said the delivery was short, added up over the
+   * workers (Cycle Audit 8 counted them; Cycle Audit 10, a8-03, carried them
+   * this far). `gapEvents` is the venue saying an asset's history was evicted;
+   * `closeEvents` is the venue cutting an observer off. Either means those
+   * observers did not see the whole stream, and a fleet row that omits them is
+   * a row that cannot show the likeliest failure at ten thousand.
+   */
+  readonly gapEvents: number;
+  readonly closeEvents: number;
+  /** True when any worker outworked the engine: this row's latency is not usable. */
+  readonly instrumentBound: boolean;
   readonly ticksInWindow: number;
   readonly p50Ms: number;
   readonly p99Ms: number;
@@ -154,6 +175,78 @@ export interface FleetRow {
   readonly complete: boolean;
   /** Why observers were not established, added up over the workers. */
   readonly refused: readonly { readonly reason: string; readonly count: number }[];
+}
+
+/**
+ * One row of the table, from the workers' reports.
+ *
+ * Pure, and separate from `main` for one reason: this is where a fleet is
+ * judged complete, and **that judgement had no test at all**. `observerFleet.ts`
+ * was 0 of 266 lines under the unit project — the driver that produced the
+ * release's observer evidence, entirely unmeasured, under a `tools/sim` floor
+ * of 35% that a whole file at zero still satisfies.
+ */
+export function fleetRow(
+  observers: number,
+  reports: readonly ObserverLoadReport[],
+  during: Sample,
+  after: Sample,
+): FleetRow {
+  const established = reports.reduce((sum, r) => sum + r.established, 0);
+  const latencies = reports.map((r) => r.latencyMs);
+  const gapEvents = reports.reduce((sum, r) => sum + r.gapEvents, 0);
+  const closeEvents = reports.reduce((sum, r) => sum + r.closeEvents, 0);
+  return {
+    observers,
+    workers: reports.length,
+    established,
+    gaps: reports.reduce((sum, r) => sum + r.gaps, 0),
+    duplicates: reports.reduce((sum, r) => sum + r.duplicates, 0),
+    gapEvents,
+    closeEvents,
+    instrumentBound: reports.some((r) => r.instrumentBound),
+    ticksInWindow: reports.reduce((sum, r) => sum + r.ticksInWindow, 0),
+    p50Ms: latencies.length === 0 ? Number.NaN : Math.max(...latencies.map((l) => l.p50)),
+    p99Ms: latencies.length === 0 ? Number.NaN : Math.max(...latencies.map((l) => l.p99)),
+    during,
+    after,
+    // Established, held to the end, and told of nothing short. The workers'
+    // own `complete` now carries the second clause too (a8-03); it is repeated
+    // here from the counters so that a row cannot read `yes` over a total that
+    // says otherwise, whichever layer regresses.
+    complete:
+      reports.every((r) => r.complete) &&
+      established === observers &&
+      gapEvents === 0 &&
+      closeEvents === 0,
+    refused: [
+      ...reports
+        .flatMap((r) => r.refused)
+        .reduce(
+          (m, { reason, count }) => m.set(reason, (m.get(reason) ?? 0) + count),
+          new Map<string, number>(),
+        ),
+    ].map(([reason, count]) => ({ reason, count })),
+  };
+}
+
+/** Why a row is not complete, in the words the table prints. */
+function whyIncomplete(row: FleetRow): string {
+  const parts: string[] = [];
+  if (row.established !== row.observers) {
+    parts.push(
+      `${String(row.observers - row.established)} never established` +
+        (row.refused.length === 0
+          ? ''
+          : ` (${row.refused.map((x) => `${String(x.count)} × ${x.reason}`).join('; ')})`),
+    );
+  }
+  if (row.gapEvents > 0 || row.closeEvents > 0) {
+    parts.push(
+      `truncated: the venue told ${String(row.gapEvents)} gaps and cut ${String(row.closeEvents)} observers off`,
+    );
+  }
+  return parts.length === 0 ? 'no reason was recorded' : parts.join('; ');
 }
 
 export function renderFleet(
@@ -171,13 +264,14 @@ export function renderFleet(
     `Machine: ${machine}`,
     `Venue at rest: RSS ${mb(baseline.residentBytes)} MB, ${String(baseline.connections)} connections`,
     '',
-    '| observers | workers | established | connections | subscribers | RSS during (MB) | RSS after (MB) | MB per connection | ticks in window | gaps | duplicates | p50 | p99 | complete |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    // `gap frames`, `closed` and `bound` are Cycle Audit 10's columns (a8-03).
+    // Without them a fleet the venue cut off mid-hold printed as a clean run:
+    // the counters existed one layer down and this table had nowhere to put
+    // them, so ten thousand observers truncated at three ticks each would have
+    // read `complete: yes`, `gaps 0`.
+    '| observers | workers | established | connections | subscribers | RSS during (MB) | RSS after (MB) | MB per connection | ticks in window | gaps | duplicates | gap frames | closed | bound | p50 | p99 | complete |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
     ...rows.map((r) => {
-      const refused =
-        r.refused.length === 0
-          ? ''
-          : ` — refused: ${r.refused.map((x) => `${String(x.count)} × ${x.reason}`).join('; ')}`;
       const perConnection =
         r.during.residentBytes === null ||
         baseline.residentBytes === null ||
@@ -189,7 +283,7 @@ export function renderFleet(
               1_048_576 /
               r.during.connections
             ).toFixed(3);
-      return `| ${String(r.observers)} | ${String(r.workers)} | ${String(r.established)} | ${String(r.during.connections)} | ${String(r.during.subscribers)} | ${mb(r.during.residentBytes)} | ${mb(r.after.residentBytes)} | ${perConnection} | ${String(r.ticksInWindow)} | ${String(r.gaps)} | ${String(r.duplicates)} | ${r.p50Ms.toFixed(0)}ms | ${r.p99Ms.toFixed(0)}ms | ${r.complete ? 'yes' : `**no**${refused}`} |`;
+      return `| ${String(r.observers)} | ${String(r.workers)} | ${String(r.established)} | ${String(r.during.connections)} | ${String(r.during.subscribers)} | ${mb(r.during.residentBytes)} | ${mb(r.after.residentBytes)} | ${perConnection} | ${String(r.ticksInWindow)} | ${String(r.gaps)} | ${String(r.duplicates)} | ${String(r.gapEvents)} | ${String(r.closeEvents)} | ${r.instrumentBound ? '**yes**' : 'no'} | ${r.p50Ms.toFixed(0)}ms | ${r.p99Ms.toFixed(0)}ms | ${r.complete ? 'yes' : `**no** — ${whyIncomplete(r)}`} |`;
     }),
     '',
   ];
@@ -254,7 +348,15 @@ async function main(): Promise<void> {
       const duringAt = Date.now() + share * options.arrivalMs + Math.floor(options.holdMs * 0.6);
       const reports = Promise.all(
         shares.map((n) =>
-          worker(baseUrl, assets, n, options.holdMs, options.perConnection, options.arrivalMs),
+          worker(
+            baseUrl,
+            assets,
+            n,
+            options.holdMs,
+            options.perConnection,
+            options.arrivalMs,
+            engine.pid,
+          ),
         ),
       );
       let during: Sample = baseline;
@@ -265,37 +367,13 @@ async function main(): Promise<void> {
       const done = await reports;
       await sampler;
       const after = await sample(baseUrl);
-      const established = done.reduce((s, r) => s + r.established, 0);
-      const latencies = done.map((r) => r.latencyMs);
-      const row: FleetRow = {
-        observers: size,
-        workers,
-        established,
-        gaps: done.reduce((s, r) => s + r.gaps, 0),
-        duplicates: done.reduce((s, r) => s + r.duplicates, 0),
-        ticksInWindow: done.reduce((s, r) => s + r.ticksInWindow, 0),
-        p50Ms: Math.max(...latencies.map((l) => l.p50)),
-        p99Ms: Math.max(...latencies.map((l) => l.p99)),
-        during,
-        after,
-        complete: done.every((r) => r.complete) && established === size,
-        refused: [
-          ...done
-            .flatMap((r) => r.refused)
-            .reduce(
-              (m, { reason, count }) => m.set(reason, (m.get(reason) ?? 0) + count),
-              new Map<string, number>(),
-            ),
-        ].map(([reason, count]) => ({ reason, count })),
-      };
+      const row = fleetRow(size, done, during, after);
       rows.push(row);
       console.info(
-        `established ${String(established)}/${String(size)}, connections ${String(during.connections)}, RSS ${String(during.residentBytes)}, gaps ${String(row.gaps)}, dups ${String(row.duplicates)}, p99 ${row.p99Ms.toFixed(0)}ms`,
+        `established ${String(row.established)}/${String(size)}, connections ${String(during.connections)}, RSS ${String(during.residentBytes)}, gaps ${String(row.gaps)}, dups ${String(row.duplicates)}, gap frames ${String(row.gapEvents)}, closed ${String(row.closeEvents)}, p99 ${row.p99Ms.toFixed(0)}ms`,
       );
       if (!row.complete) {
-        console.info(
-          `stopping: the fleet could not be established whole — ${row.refused.map((r) => `${String(r.count)} × ${r.reason}`).join('; ') || 'no refusal was recorded'}`,
-        );
+        console.info(`stopping: the fleet was not held whole — ${whyIncomplete(row)}`);
         break;
       }
       await new Promise((r) => setTimeout(r, 3_000));

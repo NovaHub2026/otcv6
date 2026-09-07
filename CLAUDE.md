@@ -108,7 +108,7 @@ npm run format:check   # Prettier check
 npm run typecheck:web     # the Next.js app, which is outside the reference graph
 npm run typecheck:config  # vitest.config.ts and the root setup/reporter files
 
-npm run test:unit      # fast unit suite, ~140 files            (~110s)
+npm run test:unit      # fast unit suite, 163 files             (~35s)
 npm run test:stat      # statistical suite, SERIAL — over an hour, see below
 npm test               # both, in that order
 
@@ -132,17 +132,26 @@ bare command (a7-07).
 
 **Budget the time.** `npm run gate` is dominated by the statistical suite, which
 runs serially by design — that is single-core wall clock, and a bigger machine
-does not shorten it. Measured on 2026-09-05 (the PH-25 phase gate): the
-statistical suite is **72.5 minutes locally** (4,352 s, 44 files / 395 tests,
-the two browser suites included) and was **105 minutes hosted** (6,280 s) the
-day before; PH-24.17 recalibrated the engine to print three to four times as
-many ticks per candle, and every suite that samples in ticks grew with it —
+does not shorten it. Measured on 2026-09-06 (the Cycle Audit 10 gate): the
+statistical suite is **81 minutes locally** (4,838 s, 47 files / 402 tests, the
+two browser suites included), against 72.5 minutes (4,352 s, 44 files / 395
+tests) at the PH-25 gate the day before and **105 minutes hosted** (6,280 s) the
+day before that; PH-24.17 recalibrated the engine to print three to four times
+as many ticks per candle, and every suite that samples in ticks grew with it —
 the catalogue of thirty did not, because the heavy suites sample five assets
-(PH-26.1). The unit suite is the cheap half: 140 files and 2,973 tests in
-about 110 s, same machine, same day (the coverage leg adds another ~105 s). Nothing has hung, but the hosted
-Statistical Gate was **cancelled at its own 90-minute ceiling** on the PH-24
-merge and left that commit with no statistical verdict (Cycle Audit 8, finding
-18; the ceiling is 180 minutes now).
+(PH-26.1). Nothing has hung, but the hosted Statistical Gate was **cancelled at
+its own 90-minute ceiling** on the PH-24 merge and left that commit with no
+statistical verdict (Cycle Audit 8, finding 18; the ceiling is 180 minutes now).
+
+**The unit suite is the cheap half, and it is cheaper than this file said.**
+`npm run test:unit` is **163 files, 3,348 tests, 33 s** (the Cycle Audit 10
+gate, 2026-09-06); the plain leg has been 33–37 s across four consecutive gates.
+The `~110 s` this paragraph gave it for two cycles was `npm run test:cov:unit`
+— the same suite under coverage instrumentation, 113 s at that gate — measured
+correctly and labelled as the wrong leg (Cycle Audit 10, a2-12). The distinction
+matters because the plain leg is the one an agent runs repeatedly during
+subphase work.
+
 Run the gate in the background rather than under a short command timeout, and
 treat a number in this paragraph as a magnitude with a date on it, not an
 invariant — the suite grows with the engine. During subphase work use a
@@ -165,6 +174,22 @@ the statistical gate on every push to `main` (ADR-0009). CI is a _required
 corroborating_ layer — a red CI on a green local gate is a finding about the
 gate.
 
+**The gate needs a browser, and on this machine it needs a library path.** The
+statistical suite runs `apps/web/src/panel.stat.test.ts` and
+`apps/web/src/lab.stat.test.ts` in a real Chromium, and `npm run gate` sets
+`OTC_REQUIRE_BROWSER=1`, so a host where Chromium cannot launch fails the gate
+rather than skipping those files. Chromium here links against libraries that
+are unpacked into a local prefix, so the gate is run as:
+
+```bash
+LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
+```
+
+`SESSION_HANDOFF.md` carries the same line, and the failure message names the
+three packages and the `dpkg-deb -x` recipe at the moment it is needed. It is
+written here too because this is where the gate is budgeted, and because the
+browser suite is the only guard several fixes have (Cycle Audit 10, a2-11).
+
 **Before every approval commit, `npm run state:check`** — the two state
 guards, ten seconds. Cycle 9 merged PH-25 with them red (the handoff named a
 subphase the roadmap had approved) because the gate had run on an earlier
@@ -183,6 +208,18 @@ timeout and stands down one throughput floor. A file exercised solely by
 statistical tests reads as uncovered unless coverage is run over both projects.
 
 ### Test conventions
+
+- **Build before running a suite that spawns `dist/`.** Twelve test files spawn
+  a built entry as a child process — the seven `apps/api` statistical suites,
+  the two browser suites, `sqliteConcurrency.test.ts`, `deploy.test.ts` and
+  `servedAssuranceJob.test.ts`. Vitest resolves everything else from source, so
+  a `dist/` older than the edit under test is invisible: Cycle Audit 10 planted
+  a regression in `apps/api/src`, left `dist/` unbuilt, and the statistical
+  suite written to catch it reported a pass (a2-06). Those files now refuse to
+  run against a build `tsc -b --dry` says is behind, and say so by name
+  (`vitest.setup.buildFreshness.ts`). A test-only edit anywhere in a package
+  counts, because it is still a source file that project compiles — the fix is
+  always `npm run build`, and it is a second on an incremental tree.
 
 - `*.test.ts` co-located in `src/` → the fast `unit` project.
 - `*.stat.test.ts` co-located in `src/` → the slow `statistical` project.

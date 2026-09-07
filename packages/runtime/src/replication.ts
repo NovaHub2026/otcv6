@@ -149,6 +149,44 @@ export function malformedBatch(assetId: string, ticks: readonly Tick[]): RangeEr
   return null;
 }
 
+/**
+ * A pass that no single writer could have produced, or null.
+ *
+ * **Cycle Audit 10, a2-13.** `malformedBatch` above rules one batch; nothing
+ * ruled the *pass*, and the two stores disagreed about what a pass naming one
+ * asset twice means. `MemoryTickRecord` read the asset's held ticks once per
+ * batch and staged the result under the asset id, so the second batch's staging
+ * replaced the first's and the first's ticks were dropped — silently, with the
+ * pass reported successful; `SqliteTickRecord` inserted inside the transaction
+ * and kept them. Measured: `append([{a, 1..5}, {a, 3..8}])` left the memory
+ * record holding 3..8 and the SQLite one holding 1..8.
+ *
+ * The shipped venue passes one batch per asset per pass, so production never
+ * reached it. Two implementations behind one interface answering differently is
+ * the defect on its own: the memory one is what most of the suite composes, so
+ * a divergence here is a divergence between what the tests prove and what the
+ * release does.
+ *
+ * Refused rather than reconciled, for the same reason one batch is: a pass is
+ * one writer's output for a set of assets, and one that names an asset twice is
+ * not that. Checked before anything is compared with the record, so the refusal
+ * is identical on every store.
+ */
+export function malformedPass(batches: readonly { readonly assetId: string }[]): RangeError | null {
+  const seen = new Set<string>();
+  for (const { assetId } of batches) {
+    if (seen.has(assetId)) {
+      return new RangeError(
+        `Cannot append: the pass names ${assetId} twice. One writer produces one ordered stream ` +
+          `per asset, so a pass carrying two batches for one asset is not its output and is ` +
+          `refused whole. The record was not modified.`,
+      );
+    }
+    seen.add(assetId);
+  }
+  return null;
+}
+
 /** Whether two ticks are the same tick. */
 export function sameTick(a: Tick, b: Tick): boolean {
   return a.sequence === b.sequence && a.instant === b.instant && a.price === b.price;

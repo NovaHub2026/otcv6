@@ -268,6 +268,38 @@ describe('the deployment files match the engine (PH-30.1)', () => {
       expect(readdirSync(path.join(out, written))).toContain('backup.json');
     });
 
+    /**
+     * **Cycle Audit 10 (a2-09).** Retention is `head -n -"$keep"`, and
+     * `head -n -0` prints *every* line: `deploy/backup.sh <state> <out> 0` took
+     * a backup, verified it, printed `Consistent: every file agrees.` and then
+     * deleted every backup in the directory including the one it had just
+     * taken — exit 0, no message. A backup script whose job is to keep backups
+     * may not be told to keep none, and the guard is watched here rather than
+     * in the grep above, which reads the retention line and not what it does.
+     */
+    it('refuses keep<1 before it writes anything, rather than deleting every backup', () => {
+      const state = scratch();
+      const out = path.join(scratch(), 'backups');
+      writeFileSync(
+        path.join(state, 'eurusd-otc.json'),
+        JSON.stringify({ version: 1, assetId: 'eurusd-otc' }),
+      );
+      mkdirSync(path.join(out, 'otc-20260101T000000Z'), { recursive: true });
+      for (const keep of ['0', '-1', 'all']) {
+        const refused = run([state, out, keep]);
+        expect(refused.status, `keep=${keep} was accepted`).not.toBe(0);
+        expect(refused.stderr, `keep=${keep}`).toMatch(/keep must be/);
+        expect(readdirSync(out), `keep=${keep} deleted the backups it was asked to keep`).toEqual([
+          'otc-20260101T000000Z',
+        ]);
+      }
+      // And the retention it does accept keeps the newest, not the oldest.
+      expect(run([state, out, '1']).status).toBe(0);
+      const kept = readdirSync(out);
+      expect(kept, 'the newest backup was not the survivor').toHaveLength(1);
+      expect(kept[0]).not.toBe('otc-20260101T000000Z');
+    });
+
     it('fails the first run rather than sleeping on a timer that can never work', () => {
       const out = path.join(scratch(), 'backups');
       mkdirSync(out, { recursive: true });

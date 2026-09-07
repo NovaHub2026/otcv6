@@ -13,11 +13,20 @@ import { readStream } from './sse.js';
  * The integration checklist, executable against a live venue (PH-29.3).
  *
  * A broker ran the guide's checklist by hand; this runs it: every contracted
- * JSON route answers with exactly the contracted keys and types, the stream
- * resumes exactly and tells a gap rather than skipping it, the price route
- * answers by the rule over the ticks the stream delivered, and a proof for a
- * committed sequence verifies against the publisher's key. Pure over `fetch`,
- * so a test can point it at a spawned venue and a broker at its deployment.
+ * JSON route answers with exactly the contracted keys and types, the record
+ * answers the same ticks it streamed, the stream resumes exactly and tells a
+ * gap rather than skipping it, the price route answers by the rule over the
+ * ticks the stream delivered, and a proof for a committed sequence verifies
+ * against the publisher's key — the one told to the run, when it was told
+ * one. Pure over `fetch`, so a test can point it at a spawned venue and a
+ * broker at its deployment.
+ *
+ * **What a PASS is worth** (Cycle Audit 10, a4-03/a4-04). Two of its checks
+ * used to be weaker than their names: the proof was verified against the key
+ * the venue shipped with it, and the routes were read for keys and types
+ * while their content went uncompared. Both are why
+ * {@link ConformanceOptions.publisherPublicKey} exists and why the record is
+ * now asked whether it agrees with its own stream.
  */
 export interface ConformanceCheck {
   readonly name: string;
@@ -32,6 +41,15 @@ export interface ConformanceReport {
   readonly assets: readonly string[];
   readonly checks: readonly ConformanceCheck[];
   readonly ok: boolean;
+  /**
+   * Whether a publisher key was told to this run (Cycle Audit 10, a4-03).
+   *
+   * `false` means the proof check could only verify the signature against the
+   * key the venue shipped beside it, and a PASS says nothing about who signed
+   * the window. The rendered report states it above the table, because it is
+   * the difference between a proof and a claim.
+   */
+  readonly publisherKeyPinned: boolean;
 }
 
 export interface ConformanceOptions {
@@ -40,6 +58,20 @@ export interface ConformanceOptions {
   /** Ticks to read from the stream for the resume and price checks. */
   readonly ticks?: number;
   readonly signal?: AbortSignal;
+  /**
+   * The publisher's key, **told out of band** — the operator's
+   * `publisher.json`, an announcement, a key file the broker was handed.
+   *
+   * **Cycle Audit 10, a4-03.** Without it this suite verified a proof's
+   * signature against the key carried in the same response, and reported that
+   * as "verifies against the publisher key". A venue signing with any key of
+   * its own and naming that key passed: an auditor built exactly that and got
+   * `ok: true`. Told the key, the check is worth its name; not told, it is
+   * still run — an internally consistent proof is better than none — but it
+   * is named and rendered as self-certified, and never as verified against
+   * the publisher.
+   */
+  readonly publisherPublicKey?: string;
 }
 
 interface MarketView {
@@ -61,6 +93,7 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
   const doFetch = options.fetch ?? fetch;
   const base = options.baseUrl.replace(/\/+$/, '');
   const wanted = options.ticks ?? 200;
+  const pinnedKey = options.publisherPublicKey ?? null;
   const checks: ConformanceCheck[] = [];
   const check = (name: string, ok: boolean, detail: string): void => {
     checks.push({ name, ok, detail });
@@ -96,6 +129,7 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
       assets: [],
       checks,
       ok: false,
+      publisherKeyPinned: pinnedKey !== null,
     };
   }
   check('health answers', true, `status ${String((health.body as { status?: unknown }).status)}`);
@@ -139,7 +173,15 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
   const subject = views.find((m) => m.sequence !== null && m.instant !== null) ?? views[0];
   check('a market is hosted', subject !== undefined, `${String(assets.length)} hosted`);
   if (subject === undefined) {
-    return { baseUrl: base, clientVersion: API_VERSION, venueVersion, assets, checks, ok: false };
+    return {
+      baseUrl: base,
+      clientVersion: API_VERSION,
+      venueVersion,
+      assets,
+      checks,
+      ok: false,
+      publisherKeyPinned: pinnedKey !== null,
+    };
   }
   const id = subject.id;
   const newestInstant = subject.instant ?? 0;
@@ -269,6 +311,75 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
         : `gap resumesAt ${String(told.resumesAt)}, first tick ${String(first.ticks[0]?.sequence)}`,
     );
 
+    // ---- the record answers the same ticks it streamed ---------------------
+    //
+    // **Cycle Audit 10 (a4-04).** Every route above was read for its keys and
+    // its types and nothing else, so a venue answering `/ticks/1` with
+    // sequence 1 and another tick's instant and price passed this checklist —
+    // a stale replica, a cache keyed wrongly, a proxy stitching two
+    // deployments together. Content, not shape: the stream just said what
+    // those ticks are, and the record is asked whether it agrees (INV-002,
+    // INV-003).
+    //
+    // Sampled from the **newest** end, plus the oldest tick delivered. A
+    // record evicts from the oldest end, and a venue at its retention edge
+    // evicts while this suite runs — so a `404` on the oldest sample is
+    // reported rather than failed, and everything else is held to the
+    // content the stream just gave.
+    const oldest = first.ticks[0]!;
+    const sampled = [oldest, first.ticks[first.ticks.length - 2] ?? last, last].filter(
+      (tick, index, all) => all.findIndex((t) => t.sequence === tick.sequence) === index,
+    );
+    let sameDetail = '';
+    let evicted = '';
+    for (const tick of sampled) {
+      if (sameDetail !== '') break;
+      const answer = await get(`/markets/${encodeURIComponent(id)}/ticks/${String(tick.sequence)}`);
+      const body = answer.body as {
+        sequence?: unknown;
+        instant?: unknown;
+        price?: unknown;
+      } | null;
+      if (answer.status === 404 && tick.sequence === oldest.sequence) {
+        evicted = `; sequence ${String(tick.sequence)} left the record between the stream and this read`;
+        continue;
+      }
+      if (
+        answer.status !== 200 ||
+        body?.sequence !== tick.sequence ||
+        body.instant !== tick.instant ||
+        body.price !== tick.price
+      ) {
+        sameDetail =
+          `the stream delivered sequence ${String(tick.sequence)} at ${String(tick.instant)} ` +
+          `price ${String(tick.price)}; /ticks/${String(tick.sequence)} answered ` +
+          `${String(answer.status)} ${answer.text.slice(0, 160)}`;
+      }
+    }
+    check(
+      'the record answers the ticks the stream delivered',
+      sameDetail === '',
+      sameDetail === '' ? `${String(sampled.length)} sampled ticks agree${evicted}` : sameDetail,
+    );
+
+    // ---- and the market is not behind its own stream -----------------------
+    //
+    // The other half of a4-04: `/markets/:id` was read for shape only, so a
+    // replica reporting a tick from ten minutes ago as the market's current
+    // price passed. That tick is in the record, so the round-trip through
+    // `/price` below cannot see it; only the stream can, and it has just said
+    // how far the record reaches.
+    const head = await get(`/markets/${encodeURIComponent(id)}`);
+    const headBody = head.body as { sequence?: unknown } | null;
+    check(
+      'the market is not behind the ticks it streamed',
+      head.status === 200 &&
+        typeof headBody?.sequence === 'number' &&
+        headBody.sequence >= last.sequence,
+      `the market reports sequence ${String(headBody?.sequence)}, the stream delivered through ` +
+        `${String(last.sequence)}`,
+    );
+
     // ---- the price rule over what the stream delivered ----------------------
     const start = first.ticks[0]!.instant;
     const span = last.instant - start;
@@ -383,18 +494,31 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
         commitment: SignedCommitment;
         proof: InclusionProof;
       };
-      const signed =
-        body.publisherPublicKey !== null &&
-        verifyCommitment(body.commitment, body.publisherPublicKey);
+      // **Which key** (Cycle Audit 10, a4-03). Told one, the signature is
+      // evidence: only its holder could have signed this window. Not told
+      // one, the only key here came from the same response as the signature,
+      // and a venue that signs with a key of its own and names that key
+      // passes every cryptographic step. That run still reports — an
+      // internally consistent proof is worth more than none — under a name
+      // that says what it checked.
+      const key = pinnedKey ?? body.publisherPublicKey;
+      const signed = key !== null && verifyCommitment(body.commitment, key);
+      const names = pinnedKey === null || body.publisherPublicKey === pinnedKey;
       const included = verifyInclusion(body.commitment.commitment, body.proof);
       const agrees =
         body.proof.sequence === first.ticks[0]!.sequence &&
         body.proof.price === first.ticks[0]!.price &&
         body.proof.instant === first.ticks[0]!.instant;
       check(
-        'proof verifies against the publisher key and agrees with the stream',
-        signed && included && agrees,
-        `signature ${String(signed)}, inclusion ${String(included)}, agrees with the stream ${String(agrees)}`,
+        pinnedKey === null
+          ? 'proof verifies against the key the venue names (not independent) and agrees with the stream'
+          : 'proof verifies against the publisher key and agrees with the stream',
+        signed && names && included && agrees,
+        `signature ${String(signed)}, inclusion ${String(included)}, agrees with the stream ` +
+          `${String(agrees)}` +
+          (pinnedKey === null
+            ? ', against the key the venue names — pass the publisher key to check it independently'
+            : `, names the key it was signed with ${String(names)}`),
       );
     } else {
       check('proof', false, `answered ${proof.status}: ${proof.text.slice(0, 160)}`);
@@ -408,6 +532,7 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
     assets,
     checks,
     ok: checks.every((c) => c.ok),
+    publisherKeyPinned: pinnedKey !== null,
   };
 }
 
@@ -418,6 +543,11 @@ export function renderConformance(report: ConformanceReport): string {
     '',
     `Venue: \`${report.baseUrl}\` (contract ${String(report.venueVersion)}; this client ${report.clientVersion})`,
     `Assets hosted: ${String(report.assets.length)}`,
+    report.publisherKeyPinned
+      ? 'Publisher key: told to this run, so a served proof was checked against it.'
+      : 'Publisher key: **not told to this run**. A served proof was checked against the key ' +
+        'the venue named beside it, which proves nothing about who published the tick. Run ' +
+        'again with the key you were told out of band (`--key`).',
     '',
     '| Check | Result | Detail |',
     '| --- | --- | --- |',

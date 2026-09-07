@@ -121,7 +121,7 @@ Cuatro hechos generales antes de las rutas:
 ```
 GET /health
 → { "status": "ok" | "degraded", "assets": 30, "stalled": [], "bootNonce": null,
-    "apiVersion": "2.0.0", "ready": true }
+    "apiVersion": "2.1.0", "ready": true }
 ```
 
 `degraded` significa que algún mercado dejó de imprimir ticks; `stalled` los nombra.
@@ -274,7 +274,11 @@ que 15 s** — lo que es cualquier despliegue — produce una **costura**: el
 mercado continúa desde el último precio publicado con las secuencias
 adelantadas (saltan del orden de 100.000), el stream empieza en la costura, y un
 `from` anterior recibe el 400 que nombra dónde empieza la ventana (o, con
-`onGap=live`, el `gap` con su `resumesAt`). Lo publicado antes de la costura no
+`onGap=live`, el `gap` con su `resumesAt`). Eso vale **desde que el proceso
+responde**, no sólo desde su primer tick: el arranque le declara al stream la
+secuencia en la que reanudará, así que la ventana de unos cientos de
+milisegundos entre `/health/ready` y el primer tick contesta lo mismo que
+contesta después (Ciclo 10). Lo publicado antes de la costura no
 se pierde: sigue en el registro, por secuencia (`/ticks/:sequence`) y por
 instante (`/price?at=`), y en el histórico de velas — pero el **hueco** no tiene
 precio: un `at` dentro de la costura es `409`, y la costura misma se lee en
@@ -352,9 +356,26 @@ para liquidar.
   compromiso firmado de la ventana que contiene la secuencia, la ruta Merkle y
   la clave pública del publicador. Con eso, `verifyInclusion` y
   `verifyCommitment` de `@otc/distribution` (o `VenueClient.proof`) verifican
-  el tick sin confiar en nadie. `409` mientras la ventana está abierta
-  (publicado, aún no archivado; la respuesta dice hasta dónde llega la cadena);
-  `404` si el despliegue no publica (`OTC_PUBLICATION_DIR` sin definir).
+  el tick. `409` mientras la ventana está abierta (publicado, aún no
+  archivado; la respuesta dice hasta dónde llega la cadena), y también si el
+  archivo contradice al registro o si la ventana archivada ya no corresponde a
+  la raíz que su propio compromiso firma — alguien la cambió después de
+  comprometerla, y ninguna prueba salida de ahí vale (el operador la restaura
+  de una copia); `404` si el despliegue no publica (`OTC_PUBLICATION_DIR` sin
+  definir); `503` si el fichero de la cadena está dañado a partir de una línea
+  que el mensaje nombra.
+
+  > **La clave se fija fuera de banda; la que viene en la respuesta no prueba
+  > nada** (Auditoría de Ciclo 10, a4-03). Quien falsifica una firma elige
+  > también la clave que la acompaña, así que verificar una firma contra la
+  > clave que llega en el mismo cuerpo es verificarla contra su propio autor.
+  > Pide al operador la clave pública de su `publisher.json` por un canal
+  > distinto del motor, anótala y **fíjala**: pásasela a
+  > `new VenueClient({ publisherPublicKey })` y a
+  > `npm run conformance -- --key <hex>`. Sin ella, `VenueClient.proof`
+  > devuelve `keySource: 'self-certified'` y la lista de verificación nombra
+  > esa fila como _no independiente_: lo único comprobado es que la prueba es
+  > consistente consigo misma.
 
 ```
 GET /markets/eurusd-otc/price?at=1788492000000
@@ -375,11 +396,15 @@ GET /markets/eurusd-otc/price?at=1788492000000
   iterador asíncrono que reanuda desde la última secuencia entregada más uno si
   se cae la conexión, entrega un hueco anunciado como evento, nunca repite un
   tick y rechaza un salto que el motor no anunció.
-- **`npm run conformance -- --base http://host:puerto [--out informe.md]`** es la
-  lista de verificación ejecutable: versión y digest del contrato, cada ruta
-  contratada por claves y tipos, orden y reanudación exacta del stream y su hueco
-  anunciado, la regla del precio sobre los ticks entregados, y una prueba
-  verificada contra la clave del publicador. Sale con 0 si todo pasa y 1 si no.
+- **`npm run conformance -- --base http://host:puerto [--key <hex>] [--out informe.md]`**
+  es la lista de verificación ejecutable: versión y digest del contrato, cada
+  ruta contratada por claves y tipos, que el registro devuelva **los mismos
+  ticks** que acaba de entregar por el stream y que el mercado no vaya por
+  detrás de ellos, orden y reanudación exacta del stream y su hueco anunciado,
+  la regla del precio sobre los ticks entregados, y una prueba verificada
+  contra la clave del publicador que le pases en `--key`. Sale con 0 si todo
+  pasa y 1 si no. Sin `--key` la fila de la prueba se llama _«no
+  independiente»_ y el informe lo dice encima de la tabla.
 
 ```ts
 import { VenueClient, isRefusal } from '@otc/client';
@@ -444,6 +469,11 @@ Cada entrada de `GET /catalogue` lleva:
   no se reutilizan.
 - `displayName` puede renombrarse desde el panel (`PATCH /assets/:id`);
   `live`/`retired` cambian con `POST /assets/:id/retire`. Nada más es editable.
+  Retirar es dejar de generar, nunca olvidar: el activo sale de `/markets` y de
+  su stream, y su registro sigue contestando por secuencia
+  (`/ticks/:sequence`), por instante (`/price?at=`, acotado por el último tick
+  grabado) y en `/seams`, que es lo que hace falta para liquidar los contratos
+  que quedaban abiertos.
 - `seat` es `null` para un activo registrado en caliente por un operador: sólo
   los treinta compilados tienen asiento.
 
@@ -842,6 +872,24 @@ Desde PH-30.1 el repositorio trae lo que un despliegue arranca:
   cortadas, `/metrics` y `/health/ready` solo para tu red, y la dirección del
   cliente reenviada (el límite de peticiones la usa).
 - `deploy/backup.sh` — `npm run state:backup` en bucle, conservando las últimas N.
+  **N debe ser 1 o más**: el script rechaza `0` (y cualquier valor no numérico)
+  antes de copiar nada, porque su retención es `head -n -N` y `head -n -0`
+  imprime todas las líneas — con `0` borraba todas las copias, incluida la que
+  acababa de tomar y verificar (Ciclo de Auditoría 10, a2-09).
+
+**Restaurar retrocede el registro publicado, y hay que leerlo antes de arrancar.**
+La restauración es un intercambio de directorio con el servicio parado, así que
+el `record.db` de la copia sustituye al vivo: **todo tick servido después de la
+copia desaparece del registro**. Esas secuencias responden `404`, y
+`GET /markets/:id/price?at=` responde a instantes que los observadores ya tenían
+con el precio en el que termina el registro restaurado — un contrato liquidado
+antes de la restauración se liquida distinto después. Lo que el arranque sí hace
+por su cuenta: cada mercado reabre por delante de lo que el registro restaurado
+contiene y sobre una **época de clave nueva**, de modo que ninguna posición del
+keystream se gasta dos veces y ninguna secuencia se republica. Antes de arrancar,
+`npm run state:verify -- --dir DIR` dice si el directorio es una copia en la que
+todavía no ha corrido nada, cuándo se tomó, y qué cuesta arrancarla; el arranque
+registra lo mismo. **Restaura siempre la copia más reciente.**
 
 ### Operación: vivo, listo, métricas, límite
 
@@ -918,9 +966,15 @@ npm run assurance:served -- --base http://127.0.0.1:3000 --out verdict.md
                      # el trabajo permanente: lee la ventana retenida de cada activo
                      # por el stream, corre la batería anti-predicción sobre lo servido
                      # y escribe un informe; sale con 2 si algo es explotable
-npm run conformance -- --base http://127.0.0.1:3000 --out conformance.md
-                     # la lista de verificación ejecutable contra tu despliegue (0/1)
-npm run state:verify -- --dir ./.otc-state          # el directorio de estado es coherente
+npm run conformance -- --base http://127.0.0.1:3000 --key <hex> --out conformance.md
+                     # la lista de verificación ejecutable contra tu despliegue (0/1);
+                     # --key es la clave del publicador que te dieron fuera de banda:
+                     # sin ella la prueba sólo se verifica contra sí misma
+npm run state:verify -- --dir ./.otc-state          # el directorio de estado es coherente:
+                     # los puntos de control se leen, las cabeceras concuerdan, el registro
+                     # y el histórico pasan `PRAGMA quick_check` — un fichero dañado se
+                     # nombra aquí y no en mitad del arranque (a6-13). Sale 1 si el
+                     # directorio no existe, y 1 si algo no cuadra.
 npm run state:backup -- --dir ./.otc-state --out DIR # copia coherente y verificada
 npm run contract:render                              # regenera docs/architecture/API_CONTRACT.md
 ```
@@ -951,15 +1005,20 @@ Dos avisos que ahorran tiempo:
 - [ ] Cliente consumiendo el stream con `from=<sequence>` y reintentos; un 400 por
       secuencia desalojada se maneja recargando el histórico.
 - [ ] Precios convertidos con `displayPrice`, comparaciones sobre `price` entero.
-- [ ] `npm run conformance -- --base <tu motor>` en verde antes de salir a producción,
-      y en cada actualización del motor (el contrato tiene versión: `/health.apiVersion`).
+- [ ] `npm run conformance -- --base <tu motor> --key <clave del publicador>` en
+      verde antes de salir a producción, y en cada actualización del motor (el
+      contrato tiene versión: `/health.apiVersion`). Sin `--key` la prueba no es
+      independiente y el informe lo dice.
 - [ ] Liquidación sobre `GET /markets/:id/price` (entrada y expiración) y, si
       liquidas tú, con `settle()` y `NotSettleableError` manejado.
 - [ ] `stake` entero en tu unidad menor; `payoutRatio` con cuatro decimales como máximo.
 - [ ] Guardado, por contrato: el propio contrato, las dos respuestas de `/price` y
       las dos pruebas de `/proof` con la clave del publicador.
 - [ ] `OTC_PUBLICATION_DIR` y `OTC_PUBLISHING_KEY` definidos si quieres pruebas
-      (`/proof`); la clave pública del publicador guardada aparte para verificar.
+      (`/proof`); la clave pública del publicador **recibida fuera de banda** y
+      guardada aparte, y fijada en el cliente (`publisherPublicKey`) y en
+      `--key`: una firma verificada contra la clave que la acompaña no prueba
+      nada.
 - [ ] Panel detrás de tu autenticación.
 - [ ] Lab, si lo despliegas, en una red privada y con su propio `OTC_STATE_DIR`.
 - [ ] `/health` en el monitor; alerta si `status` pasa a `degraded`.

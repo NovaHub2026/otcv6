@@ -6,14 +6,17 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { afterAll, describe, expect, it } from 'vitest';
 import { durationMillis, epochMillis, MasterKeyring, SteppableClock, type Tick } from '@otc/core';
 import {
+  commit,
   publicKeyHex,
   publishingKeyFromSeed,
+  readJournalFile,
+  signCommitment,
   verifyCommitment,
   verifyInclusion,
   type InclusionProof,
   type SignedCommitment,
 } from '@otc/distribution';
-import { ASSET_CATALOGUE } from '@otc/engine';
+import { ASSET_CATALOGUE, type RegisteredAsset } from '@otc/engine';
 import { MemoryStateStore, MemoryTickRecord } from '@otc/runtime';
 import { NotSettleableError, settle } from '@otc/trading';
 import { MarketController } from './market.controller.js';
@@ -25,6 +28,16 @@ const asset = [...ASSET_CATALOGUE].sort(
   (a, b) => a.evidence.meanIntervalMs - b.evidence.meanIntervalMs,
 )[0]!;
 const ID = asset.definition.id;
+/**
+ * A second market, so the restart leg has something to host.
+ *
+ * A venue needs at least one market, and the asset under test is retired by
+ * then — a catalogue of one would refuse the boot rather than answer the
+ * question this test asks.
+ */
+const other = [...ASSET_CATALOGUE].sort(
+  (a, b) => a.evidence.meanIntervalMs - b.evidence.meanIntervalMs,
+)[1]!;
 const SEED = '66'.repeat(32);
 const directories: string[] = [];
 afterAll(async () => {
@@ -58,6 +71,10 @@ interface Composition {
   readonly record?: MemoryTickRecord;
   readonly clock?: SteppableClock;
   readonly seconds?: number;
+  /** The catalogue this venue hosts; the fastest asset alone by default. */
+  readonly assets?: readonly RegisteredAsset[];
+  /** Assets an operator retired in an earlier boot, as the overlays carry them. */
+  readonly retired?: readonly string[];
 }
 
 async function venue(
@@ -72,14 +89,15 @@ async function venue(
   const directory = publishing ? await mkdtemp(path.join(tmpdir(), 'otc-query-')) : null;
   if (directory !== null) directories.push(directory);
   const clock = composition.clock ?? new SteppableClock(GENESIS);
+  const catalogue = [...(composition.assets ?? [asset])];
   const service = new VenueService(
     composition.store ?? new MemoryStateStore(),
     MasterKeyring.fromSecret('settlement-query', new Uint8Array(32).fill(29)),
     clock,
-    [asset],
+    catalogue,
     5_000,
     new PublicationService(
-      [asset],
+      catalogue,
       20,
       directory === null ? {} : { OTC_PUBLICATION_DIR: directory, OTC_PUBLISHING_KEY: SEED },
     ),
@@ -91,6 +109,13 @@ async function venue(
     null,
     composition.record ?? new MemoryTickRecord(),
   );
+  // Before `start`, as `main.ts` does it: the decision not to host something has
+  // to be known before the resume loop runs.
+  if (composition.retired !== undefined) {
+    service.applyOverlays(
+      new Map(composition.retired.map((id) => [id, { retiredAt: GENESIS - 1 }])),
+    );
+  }
   await service.start();
   for (let i = 0; i < (composition.seconds ?? 90); i += 1) {
     clock.advance(durationMillis(1_000));
@@ -356,6 +381,87 @@ describe('the settlement query (PH-29.1)', () => {
     });
   });
 
+  /**
+   * **Cycle Audit 10, a4-06 and a6-08.** `POST /assets/:id/retire` is summarised
+   * in the contract as "its record stays readable", and the docstring promises
+   * that the history, the settlements and the journal "remain exactly as they
+   * were". `/markets/:id/ticks/:sequence` kept that promise; `/markets/:id/price`
+   * did not. It bounds the query with `VenueService.lastTick`, whose fallback
+   * was `venue.marketFor(assetId).lastPublishedState` — and `marketFor` throws a
+   * bare `RangeError` for an asset the venue no longer hosts, which is not an
+   * `HttpException`, so a broker settling an open contract on a retired market
+   * got `500 Internal server error`: no message, and nothing that says whether
+   * to retry. The one settlement figure a broker cannot reconstruct without the
+   * sequence was unavailable for exactly the markets whose contracts are
+   * running out.
+   */
+  describe('a retired market (a4-06, a6-08)', () => {
+    it('answers the settlement query from its record, hosted, retired and after a restart', async () => {
+      const store = new MemoryStateStore();
+      const record = new MemoryTickRecord();
+      const first = await venue(false, { store, record, assets: [asset, other], seconds: 90 });
+      const served = await record.since(ID, 1, 1_000_000);
+      expect(served.length).toBeGreaterThan(50);
+      const wanted = served[Math.floor(served.length / 2)]!;
+      const head = served[served.length - 1]!;
+      const answered = (await first.controller.priceAt(ID, String(wanted.instant))) as Published;
+      expect(answered.sequence, 'hosted, the query answers').toBe(wanted.sequence);
+
+      await first.venue.retire(ID);
+      expect(first.venue.isRetired(ID)).toBe(true);
+      expect(first.venue.assetIds, 'no longer hosted').not.toContain(ID);
+      // The record stays readable — the part that already worked.
+      expect(
+        ((await first.controller.recordedTick(ID, String(wanted.sequence))) as Published).price,
+      ).toBe(wanted.price);
+      // And so does the price in force at an instant, which is the part that
+      // answered 500.
+      expect(await first.controller.priceAt(ID, String(wanted.instant))).toMatchObject({
+        assetId: ID,
+        at: wanted.instant,
+        rule: 'last-tick-at-or-before',
+        sequence: wanted.sequence,
+        price: wanted.price,
+      });
+      // Bounded by the record's own head, since there is no live tick to bound
+      // it with: the newest recorded instant answers, one millisecond past it
+      // is the same "not yet" a hosted market gives.
+      expect(
+        ((await first.controller.priceAt(ID, String(head.instant))) as Published).sequence,
+      ).toBe(head.sequence);
+      await expect(first.controller.priceAt(ID, String(head.instant + 1))).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      // Before the record: still the 404 that says the record cannot say.
+      await expect(
+        first.controller.priceAt(ID, String(served[0]!.instant - 1)),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      await first.venue.stop();
+
+      // And after a restart, where the asset is never hosted at all: the
+      // overlay is read before the resume loop, so nothing about it is in
+      // memory beyond the catalogue entry.
+      const second = await venue(false, {
+        store,
+        record,
+        assets: [asset, other],
+        retired: [ID],
+        clock: new SteppableClock(epochMillis(first.clock.now() + 1_000)),
+        seconds: 5,
+      });
+      expect(second.venue.assetIds).toEqual([other.definition.id]);
+      expect(
+        ((await second.controller.recordedTick(ID, String(wanted.sequence))) as Published).price,
+      ).toBe(wanted.price);
+      expect(await second.controller.priceAt(ID, String(wanted.instant))).toMatchObject({
+        rule: 'last-tick-at-or-before',
+        sequence: wanted.sequence,
+        price: wanted.price,
+      });
+      await second.venue.stop();
+    });
+  });
+
   it('serves a proof a counterparty can verify, says "not yet" for the open window, and "no" without publication', async () => {
     const { venue: service, controller, directory } = await venue(true);
     const served = service.feed.since(ID, 1);
@@ -381,13 +487,48 @@ describe('the settlement query (PH-29.1)', () => {
     await expect(controller.proofFor(ID, String(committedThrough + 1))).rejects.toBeInstanceOf(
       ConflictException,
     );
-    // A journal an operator edited disagrees with the record: no proof is served for it.
+    // A journal an operator edited: no proof is served from that window at
+    // all.
+    //
+    // **Cycle Audit 10, a4-05.** This case used to be asserted for the edited
+    // line only, and the route only compared the *requested* tick with the
+    // record — so `/proof/5` after an edit on line 3 was a `200` carrying a
+    // signature that verifies and an inclusion proof that does not, and the
+    // same `200` was served for the edited tick itself once it had left the
+    // record's retention. The window is now checked against the root it is
+    // committed to before anything is served from it.
     const file = path.join(directory!, ID, `1-20.journal`);
-    const lines = (await readFile(file, 'utf8')).split('\n');
+    const original = await readFile(file, 'utf8');
+    const lines = original.split('\n');
     const row = JSON.parse(lines[3]!) as [number, number, number];
+    expect(row[0]).toBe(3);
     lines[3] = JSON.stringify([row[0], row[1], row[2] + 1]);
     await writeFile(file, lines.join('\n'));
+    for (const sequence of ['3', '5', '20']) {
+      await expect(controller.proofFor(ID, sequence)).rejects.toThrow(
+        /does not hash to the root its commitment signs/,
+      );
+      await expect(controller.proofFor(ID, sequence)).rejects.toBeInstanceOf(ConflictException);
+    }
+    // An operator who holds the publishing key and re-signs the window they
+    // edited leaves an archive that is internally consistent and still
+    // contradicts what the venue published. That is the case the record
+    // cross-check is for, and it is the one that keeps it reachable: the
+    // edited tick is refused by comparison with the record, and the chain
+    // that binds this window's root into its successor is broken for anyone
+    // who verifies the file.
+    const chain = path.join(directory!, ID, 'commitments.ndjson');
+    const links = (await readFile(chain, 'utf8')).split('\n');
+    const first = JSON.parse(links[0]!) as SignedCommitment;
+    links[0] = JSON.stringify(
+      signCommitment(
+        commit(ID, readJournalFile(file).ticks, first.commitment.previousRoot),
+        publishingKeyFromSeed(SEED),
+      ),
+    );
+    await writeFile(chain, links.join('\n'));
     await expect(controller.proofFor(ID, '3')).rejects.toThrow(/disagrees with the record/);
+    await expect(controller.proofFor(ID, '3')).rejects.toBeInstanceOf(ConflictException);
     await service.stop();
 
     const plain = await venue(false);

@@ -70,6 +70,11 @@ export class EngineAccess {
       config: configFor(asset),
       keyring: this.ports.keyring,
       environment: 'production',
+      // The market's own epoch, not 0 (Cycle Audit 10, a6-06). A seam moves a
+      // market to a new key epoch, and a fork built at 0 would restore this
+      // snapshot into a keystream the market is no longer on — reading a future
+      // the hosted market will not produce.
+      keyEpoch: market.keyEpoch,
       start: { instant: epochMillis(snapshot.instant), price: logPrice(snapshot.price) },
     });
     fork.restore(snapshot);
@@ -110,6 +115,11 @@ export class EngineAccess {
       config: configFor(asset),
       keyring: this.ports.keyring,
       environment: 'production',
+      // The market's own epoch, not 0 (Cycle Audit 10, a6-06). A seam moves a
+      // market to a new key epoch, and a fork built at 0 would restore this
+      // snapshot into a keystream the market is no longer on — reading a future
+      // the hosted market will not produce.
+      keyEpoch: market.keyEpoch,
       start: { instant: epochMillis(snapshot.instant), price: logPrice(snapshot.price) },
     });
     fork.restore(snapshot);
@@ -132,6 +142,11 @@ export class EngineAccess {
       config: configFor(asset),
       keyring: this.ports.keyring,
       environment: 'production',
+      // The market's own epoch, not 0 (Cycle Audit 10, a6-06). A seam moves a
+      // market to a new key epoch, and a fork built at 0 would restore this
+      // snapshot into a keystream the market is no longer on — reading a future
+      // the hosted market will not produce.
+      keyEpoch: market.keyEpoch,
       start: { instant: epochMillis(snapshot.instant), price: logPrice(snapshot.price) },
     });
     fork.restore(snapshot);
@@ -178,7 +193,8 @@ export class EngineAccess {
         env: 'production',
         asset: config.instrument.id,
         purpose,
-        keyEpoch: 0,
+        // The market's own epoch (Cycle Audit 10, a6-06); see `labStepsAhead`.
+        keyEpoch: market.keyEpoch,
       });
     const streams =
       wrapSign === undefined && wrapArrival === undefined
@@ -193,6 +209,7 @@ export class EngineAccess {
       config,
       keyring: this.ports.keyring,
       environment: 'production',
+      keyEpoch: market.keyEpoch,
       start: { instant: epochMillis(snapshot.instant), price: logPrice(snapshot.price) },
       ...streams,
     });

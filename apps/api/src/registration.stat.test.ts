@@ -160,6 +160,20 @@ async function catalogue(
   }[];
 }
 
+describe('the build this suite spawns', () => {
+  it('is not older than the source under test (CA10 a2-06)', () => {
+    // The suite below spawns the built service, and Vitest resolves everything
+    // else from source, so a build made before the last edit is invisible: a
+    // regression planted in `apps/api/src` was reported as a pass, twice, in
+    // two different routes. `vitest.setup.buildFreshness.ts` asks `tsc -b
+    // --dry` before this file runs; this fails if it did not run for this file.
+    expect(
+      (globalThis as { __otcFreshBuilds__?: string[] }).__otcFreshBuilds__,
+      'vitest.setup.buildFreshness.ts did not verify a build for this file',
+    ).toContain('apps/api');
+  });
+});
+
 describe('an asset created from the panel', () => {
   it('is registered, hosted without a restart, and still there after one', async () => {
     const stateDir = await mkdtemp(path.join(tmpdir(), 'otc-register-'));

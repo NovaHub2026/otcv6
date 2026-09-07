@@ -5,12 +5,20 @@ import { TickWindow } from '@otc/chart';
 import type { CatalogueEntry } from '../../lib/api.js';
 import { es } from '../../lib/es.js';
 import { columnsFor, streamMarkets, type MarketNotice } from '../../lib/marketStream.js';
+import { displayPriceText } from '../../lib/priceFormat.js';
 import { T } from '../ui/kit.js';
 
 const CAPACITY = 5_000;
 const SPAN_MS = 60_000;
 
 interface Card {
+  /**
+   * The canonical integer the record holds, never a price. It is converted for
+   * the screen at the point of rendering, where the card's instrument is in
+   * scope — see `displayPriceText` and Cycle Audit 10 (a8-04), which found this
+   * number printed raw: `-65` under the market's name where the chart beside
+   * it read `69992.0`.
+   */
   readonly price: number | null;
   readonly status: string;
   readonly points: readonly number[];
@@ -128,7 +136,9 @@ export function Board({
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
                 <strong>{entry.displayName}</strong>
-                <span data-testid={`board-price-${entry.id}`}>{card.price ?? '—'}</span>
+                <span data-testid={`board-price-${entry.id}`}>
+                  {card.price === null ? '—' : displayPriceText(card.price, entry)}
+                </span>
               </div>
               <svg width={width} height={height} role="img" aria-label={`${entry.id} sparkline`}>
                 {path.length > 0 && <path d={path} fill="none" stroke={T.ok} strokeWidth={1} />}
