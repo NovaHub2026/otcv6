@@ -118,9 +118,18 @@ state, the chain reports it, and the feed still delivers them live.
 file (`proveFromPublication`), reads its journal back with the same rules the
 lab's reader applies, and answers with the signed commitment, the Merkle path
 and the publisher's key; the open window is a `409` naming how far the chain
-reaches. The archived tick is compared with the tick record on the way out. A
-counterparty verifies with nothing but the response and the key it was told
-out of band (`CATALOGUE_AND_PANEL.md` §5.3).
+reaches. **The window is recomputed against the root its commitment signs
+before anything is served from it** (Cycle Audit 10, a4-05): a journal edited
+after it was committed proves nothing for any sequence in it, not only for the
+line that was edited, and answers `409` rather than a `200` carrying an
+inclusion proof that fails at the reader. The archived tick is then compared
+with the tick record too — the case that survives the root check is an archive
+someone re-signed, which the record still contradicts. A counterparty verifies
+with nothing but the response and the key it was told out of band
+(`CATALOGUE_AND_PANEL.md` §5.3) — **told**, because a signature checked against
+the key shipped beside it proves nothing (a4-03): `VenueClient` reports that
+case as `keySource: 'self-certified'` and the conformance suite names the row
+"not independent" unless it is given the key.
 
 ## Restarts, seams, and the interval a verifier sees
 

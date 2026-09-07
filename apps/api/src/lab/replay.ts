@@ -20,18 +20,25 @@ export function forkFrom(
   keyring: MasterKeyring,
   snapshot: EngineSnapshot,
   wrap?: (keystream: RandomSource) => RandomSource,
+  /**
+   * The key epoch the hosted market runs at (Cycle Audit 10, a6-06). A seam
+   * moves a market to a new epoch, and a fork built at 0 would restore this
+   * snapshot's cursors into a keystream the market is no longer on.
+   */
+  keyEpoch = 0,
 ): MarketEngine {
   const config = configFor(asset);
   const keystream = keyring.derive({
     env: 'production',
     asset: config.instrument.id,
     purpose: 'sign',
-    keyEpoch: 0,
+    keyEpoch,
   });
   const fork = createMarketEngine({
     config,
     keyring,
     environment: 'production',
+    keyEpoch,
     start: { instant: epochMillis(snapshot.instant), price: logPrice(snapshot.price) },
     ...(wrap === undefined ? {} : { streams: { sign: wrap(keystream) } }),
   });

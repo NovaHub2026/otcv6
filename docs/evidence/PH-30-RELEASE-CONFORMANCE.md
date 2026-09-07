@@ -32,3 +32,15 @@ Assets hosted: 30
 | price at an instant is the last tick at or before it                | pass   | 101 instants agree                                                                                                                 |
 | price refuses an instant after the newest published                 | pass   | status 400                                                                                                                         |
 | proof verifies against the publisher key and agrees with the stream | pass   | signature true, inclusion true, agrees with the stream true                                                                        |
+
+---
+
+> **Annotated 2026-09-06 (Cycle Audit 10, a4-03). The recorded run above is
+> unaltered.** The row _"proof verifies against the publisher key"_ named more
+> than the run did: the suite verified the commitment's signature against the
+> `publisherPublicKey` carried in the same proof response, so this PASS says
+> the proof is internally consistent and nothing about who signed it. The
+> suite now takes the key as an input (`--key`, told out of band) and, when it
+> is not given, names that row _"proof verifies against the key the venue
+> names (not independent)"_ and says so above the table. Re-running with the
+> operator's key is what would turn this row into the claim it was read as.

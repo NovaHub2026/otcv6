@@ -38,6 +38,7 @@ const SIGNED = signCommitment(commit('eurusd', WINDOW), KEY);
  * one of its tests green.
  */
 const FORGER = publishingKeyFromSeed('99'.repeat(32));
+export const FORGER_HEX = publicKeyHex(FORGER);
 const FORGED = signCommitment(commit('eurusd', WINDOW), FORGER);
 
 export interface Faults {
@@ -62,6 +63,30 @@ export interface Faults {
   badProof?: boolean;
   /** Names the expected publisher key and signs the commitment with another (a2-02). */
   forgedSignature?: boolean;
+  /**
+   * Signs with a key of its own **and names that key**: the self-certifying
+   * venue (Cycle Audit 10, a4-03). Every cryptographic step inside the
+   * response succeeds; only a key told out of band refuses it.
+   */
+  rogueKey?: boolean;
+  /**
+   * A valid, internally consistent proof — of the wrong tick (a4-04). The
+   * subject the `agrees with the stream` clause never had: `badProof` breaks
+   * inclusion, so removing that clause left the matrix green.
+   */
+  proofForOtherTick?: boolean;
+  /**
+   * `/ticks/:sequence` answers the sequence asked for, carrying another
+   * tick's instant and price: the contracted keys, the contracted types, the
+   * wrong record (a4-04).
+   */
+  wrongTickContent?: boolean;
+  /**
+   * `/markets/:id` reports a tick from far behind the live edge — a stale
+   * replica or a cache. The tick is a real published one, so the record
+   * agrees with it; only the stream says how far behind it is (a4-04).
+   */
+  staleMarket?: boolean;
   noProof?: boolean;
   /**
    * Answer `/markets/:id` with the tick after the newest published one — the
@@ -90,14 +115,17 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
   const json = (response: ServerResponse, status: number, body: unknown): void => {
     response.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(body));
   };
+  const STALE = TICKS[6]!;
   const market = {
     id: 'eurusd',
     displayName: 'EUR/USD',
     family: 'fx',
-    price: TICKS[59]!.price + (faults.futureMarket ? 3 : 0),
+    price: faults.staleMarket ? STALE.price : TICKS[59]!.price + (faults.futureMarket ? 3 : 0),
     displayPrice: '1.10000',
-    sequence: faults.futureMarket ? 61 : 60,
-    instant: TICKS[59]!.instant + (faults.futureMarket ? 400 : 0),
+    sequence: faults.staleMarket ? STALE.sequence : faults.futureMarket ? 61 : 60,
+    instant: faults.staleMarket
+      ? STALE.instant
+      : TICKS[59]!.instant + (faults.futureMarket ? 400 : 0),
     recovery: null,
     ...(faults.extraKey ? { engineVersion: 1 } : {}),
   };
@@ -162,8 +190,19 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
       });
     // A venue that has never seamed: the record holds no discontinuity.
     if (p === '/markets/eurusd/seams') return json(response, 200, faults.seamed ? [SEAM] : []);
-    if (p === '/markets/eurusd/ticks/1')
-      return json(response, 200, { assetId: 'eurusd', ...published(TICKS[0]!) });
+    if (p.startsWith('/markets/eurusd/ticks/')) {
+      const sequence = Number(p.split('/').pop());
+      const tick = TICKS.find((t) => t.sequence === sequence);
+      if (tick === undefined) return json(response, 404, { message: 'not in the record' });
+      // The contracted keys and types either way; the wrong record when asked
+      // for it (a4-04).
+      const answered = faults.wrongTickContent ? TICKS[(sequence + 6) % 60]! : tick;
+      return json(response, 200, {
+        assetId: 'eurusd',
+        ...published(answered),
+        sequence: tick.sequence,
+      });
+    }
     if (p === '/markets/eurusd/price') {
       const at = Number(url.searchParams.get('at'));
       if (at > TICKS[59]!.instant) return json(response, 400, { message: 'future' });
@@ -184,12 +223,15 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
       if (faults.noProof) return json(response, 404, { message: 'not publishing' });
       const sequence = Number(p.split('/').pop());
       if (sequence > 20) return json(response, 409, { message: 'not yet' });
-      const proof = proveInclusion(WINDOW, sequence);
+      const proof = proveInclusion(
+        WINDOW,
+        faults.proofForOtherTick ? (sequence === 20 ? 19 : sequence + 1) : sequence,
+      );
       return json(response, 200, {
         assetId: 'eurusd',
         sequence,
-        publisherPublicKey: HEX,
-        commitment: faults.forgedSignature ? FORGED : SIGNED,
+        publisherPublicKey: faults.rogueKey ? FORGER_HEX : HEX,
+        commitment: faults.forgedSignature || faults.rogueKey ? FORGED : SIGNED,
         proof: faults.badProof ? { ...proof, price: proof.price + 1 } : proof,
         linksRead: 1,
       });
@@ -240,14 +282,58 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
 
 describe('the conformance suite (PH-29.3)', () => {
   it('passes a faithful venue, check by check', async () => {
-    const report = await conformance({ baseUrl: await fakeVenue(), ticks: 40 });
+    const base = await fakeVenue();
+    const report = await conformance({ baseUrl: base, ticks: 40, publisherPublicKey: HEX });
     expect(report.checks.filter((c) => !c.ok)).toEqual([]);
     expect(report.ok).toBe(true);
     expect(report.venueVersion).toBe(API_VERSION);
+    expect(report.publisherKeyPinned).toBe(true);
     expect(report.checks.map((c) => c.name)).toContain(
       'proof verifies against the publisher key and agrees with the stream',
     );
+    expect(report.checks.map((c) => c.name)).toContain(
+      'the record answers the ticks the stream delivered',
+    );
     expect(renderConformance(report)).toMatch(/^# Conformance — PASS/);
+    expect(renderConformance(report)).toContain('Publisher key: told to this run');
+  });
+
+  /**
+   * **Cycle Audit 10, a4-03.** The run a broker actually makes — no key told —
+   * still passes a faithful venue, and must never call what it did there
+   * "verified against the publisher key": the only key it had came from the
+   * same response as the signature. An auditor put a venue behind a proxy
+   * that signed with a key of its own and named it, and got `ok: true` under
+   * that name. The row is named for what it checked, the report says the key
+   * was not told, and the same venue is refused when it is.
+   */
+  it('names a proof it could only check against the venue’s own key, and refuses it when told the key (a4-03)', async () => {
+    const rogue = await fakeVenue({ rogueKey: true });
+    const blind = await conformance({ baseUrl: rogue, ticks: 40 });
+    expect(blind.ok).toBe(true);
+    expect(blind.publisherKeyPinned).toBe(false);
+    expect(blind.checks.map((c) => c.name)).toContain(
+      'proof verifies against the key the venue names (not independent) and agrees with the stream',
+    );
+    expect(blind.checks.map((c) => c.name)).not.toContain(
+      'proof verifies against the publisher key and agrees with the stream',
+    );
+    expect(renderConformance(blind)).toContain('**not told to this run**');
+    const told = await conformance({ baseUrl: rogue, ticks: 40, publisherPublicKey: HEX });
+    expect(told.ok).toBe(false);
+    expect(told.checks.filter((c) => !c.ok).map((c) => c.name)).toEqual([
+      'proof verifies against the publisher key and agrees with the stream',
+    ]);
+    // And a venue that signs with the honest key while naming another is
+    // refused too: the two must be the same key.
+    const mismatch = await conformance({
+      baseUrl: await fakeVenue(),
+      ticks: 40,
+      publisherPublicKey: FORGER_HEX,
+    });
+    expect(mismatch.checks.filter((c) => !c.ok).map((c) => c.name)).toEqual([
+      'proof verifies against the publisher key and agrees with the stream',
+    ]);
   });
 
   it.each([
@@ -266,12 +352,33 @@ describe('the conformance suite (PH-29.3)', () => {
     [
       'a proof that does not verify',
       { badProof: true },
-      'proof verifies against the publisher key and agrees with the stream',
+      'proof verifies against the key the venue names (not independent) and agrees with the stream',
     ],
     [
       'a commitment signed by a key that is not the one it names (a2-02)',
       { forgedSignature: true },
-      'proof verifies against the publisher key and agrees with the stream',
+      'proof verifies against the key the venue names (not independent) and agrees with the stream',
+    ],
+    // **Cycle Audit 10, a4-04.** A valid proof of the wrong tick: the
+    // `agrees with the stream` clause had no fault of its own, and removing
+    // it left this matrix green.
+    [
+      'a valid proof of a tick nobody asked about (a4-04)',
+      { proofForOtherTick: true },
+      'proof verifies against the key the venue names (not independent) and agrees with the stream',
+    ],
+    // The record contradicting its own stream, in the two shapes a proxy, a
+    // cache or a stale replica produces it (a4-04). Both answered exactly the
+    // contracted keys and types, and both passed until content was compared.
+    [
+      'a record answering one sequence with another tick’s price (a4-04)',
+      { wrongTickContent: true },
+      'the record answers the ticks the stream delivered',
+    ],
+    [
+      'a market reporting a tick from far behind its own stream (a4-04)',
+      { staleMarket: true },
+      'the market is not behind the ticks it streamed',
     ],
     [
       'a market serving the tick it has drawn but not published (a1-03)',

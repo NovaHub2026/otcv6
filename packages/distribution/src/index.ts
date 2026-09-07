@@ -4,6 +4,7 @@ export {
   FIRST_SEQUENCE,
   UnknownSequenceError,
   TickFeed,
+  type FeedSeam,
   type FeedSink,
   type Subscription,
   type TickFeedOptions,

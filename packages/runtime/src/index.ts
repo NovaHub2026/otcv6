@@ -99,6 +99,7 @@ export {
   verifyStateDirectory,
   type AssetHeads,
   type BackupManifest,
+  type BackupOrigin,
   type StateDirectoryReport,
   type StateProblem,
 } from './stateDirectory.js';

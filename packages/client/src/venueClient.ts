@@ -68,6 +68,22 @@ export interface VerifiedProof {
   readonly proof: InclusionProof;
   /** Both checks passed: the signature under the key, the tick under the root. */
   readonly verified: true;
+  /**
+   * **Which key the signature was checked against, and it is the whole
+   * question** (Cycle Audit 10, a4-03).
+   *
+   * `pinned` — the key this client was told out of band, through
+   * {@link VenueClientOptions.publisherPublicKey}. The proof then attests
+   * something: only the holder of that key could have signed the window.
+   *
+   * `self-certified` — no key was told, so the only one available was the one
+   * the venue shipped in the same response. A forger supplies both, so the
+   * signature attests nothing about who published the tick; what remains true
+   * is that the tick is under the root of *that* commitment, which is an
+   * internal consistency check, not evidence. `signing.ts` says the same
+   * thing where the signature is verified. Pin the key.
+   */
+  readonly keySource: 'pinned' | 'self-certified';
 }
 
 export interface Market {
@@ -98,7 +114,16 @@ export interface SubscribeOptions {
 export interface VenueClientOptions {
   readonly baseUrl: string;
   readonly fetch?: typeof fetch;
-  /** The publisher's key, told out of band; a proof is verified against it when given. */
+  /**
+   * The publisher's key, **told out of band** — from the operator's
+   * `publisher.json`, an announcement, a key file the broker was handed —
+   * never read from this venue's own answers.
+   *
+   * Without it a proof can only be checked against the key the venue names
+   * beside it, which proves nothing (Cycle Audit 10, a4-03); the result then
+   * carries `keySource: 'self-certified'` and a broker settling real money on
+   * it is trusting the venue exactly as much as it would with no proof at all.
+   */
   readonly publisherPublicKey?: string;
 }
 
@@ -215,7 +240,14 @@ export class VenueClient {
    * under the publisher's key (the one this client was told, else the one the
    * venue names) and the tick under the commitment's root. A proof that does
    * not verify is a `ContractViolation`; a refusal (not yet committed, not
-   * publishing) is returned as one.
+   * publishing, an archive an operator must repair) is returned as one.
+   *
+   * **Read `keySource` on the answer** (Cycle Audit 10, a4-03). A client
+   * constructed without `publisherPublicKey` verifies the signature against
+   * the key carried in the same response, which any venue — or anything
+   * between it and here — can choose freely. That answer comes back
+   * `keySource: 'self-certified'`, and it is not evidence of publication; a
+   * pinned key makes it one.
    */
   async proof(id: string, sequence: number): Promise<VerifiedProof | Refusal> {
     const answer = await this.#getOrRefusal(
@@ -251,6 +283,7 @@ export class VenueClient {
       commitment: body.commitment,
       proof: body.proof,
       verified: true,
+      keySource: this.#publisherKey === null ? 'self-certified' : 'pinned',
     };
   }
 

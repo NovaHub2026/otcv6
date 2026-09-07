@@ -6,6 +6,7 @@ import { Logger } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import {
   EvictedError,
+  UnknownSequenceError,
   proveFromPublication,
   publicKeyHex,
   publishingKeyFromSeed,
@@ -241,6 +242,54 @@ describe('the record outlives the process (PH-28.1)', () => {
     await first.stop();
   });
 
+  /**
+   * **Cycle Audit 10, a6-06.** The first checkpoint falls 5 s after `start()`,
+   * and the record is written on every pass, so a `SIGKILL` inside that window
+   * leaves ticks in `record.db` and no `<id>.json` anywhere. The next boot read
+   * "no checkpoint" as "fresh market": a new genesis, sequence 1, and the
+   * record refusing every tick of the pass as a fork. Re-executed by the
+   * refuter on the audited commit — 29 of 30 assets unhosted, `/health/ready`
+   * 503 on every probe for the life of the process, `/markets/eurusd-otc` 404,
+   * and the only recovery moving `record.db` aside by hand, which throws away
+   * every tick observers held.
+   */
+  it('a kill before the first checkpoint reopens past the record, not fresh at 1 (a6-06)', async () => {
+    const record = new MemoryTickRecord();
+    const clock = new SteppableClock(GENESIS);
+    const store = new MemoryStateStore();
+    const history = new InMemoryCandleHistory();
+    const first = venue(store, clock, history, record);
+    await first.start();
+    // Served, recorded, and killed before the checkpoint cadence comes round.
+    await run(first, clock, 3);
+    const served = first.feed.since(ID, 1);
+    expect(served.length).toBeGreaterThan(3);
+    expect(await store.list(), 'no checkpoint was written').toEqual([]);
+    const head = served[served.length - 1]!.sequence;
+    expect(await record.head(ID)).toBe(head);
+
+    const clock2 = new SteppableClock(clock.now());
+    const second = venue(store, clock2, history, record);
+    await second.start();
+    expect(second.recoveryFor(ID)?.kind).toBe('seam');
+    expect(second.recoveryFor(ID)).toMatchObject({ fromSequence: head });
+    await run(second, clock2, 5);
+    // Hosted, publishing, and nothing refused: the record is the evidence of
+    // what was served, and the market reopened past it.
+    expect(second.stalledMarkets, 'nothing was refused by the record').toEqual([]);
+    expect(second.assetIds).toEqual([ID]);
+    const after = await record.since(ID, head + 1, 5);
+    expect(after.length).toBeGreaterThan(0);
+    expect(after[0]!.sequence, 'reopened past the record by a sequence lease').toBeGreaterThan(
+      head + 100_000,
+    );
+    expect(second.lastTick(ID)?.sequence).toBe(await record.head(ID));
+    // And the ticks observers already held are still exactly where they were.
+    expect(await record.since(ID, 1, served.length)).toEqual(served);
+    await first.stop();
+    await second.stop();
+  });
+
   it('a recorded tick the market republishes differently is a fork: refused, unhosted, nothing served', async () => {
     const record = new MemoryTickRecord();
     const { first, clock, storeAtCheckpoint, historyAtCheckpoint, served } =
@@ -248,7 +297,9 @@ describe('the record outlives the process (PH-28.1)', () => {
     const checkpointSequence = (await storeAtCheckpoint.load(ID))!.lastPublished!.sequence;
     const head = served[served.length - 1]!.sequence;
     // Plant: a tick between the checkpoint and the kill, held at another price.
-    record.corrupt(ID, checkpointSequence + 2, served[checkpointSequence + 1]!.price + 7);
+    record.corrupt(ID, checkpointSequence + 2, {
+      price: served[checkpointSequence + 1]!.price + 7,
+    });
 
     const clock2 = new SteppableClock(clock.now());
     const second = venue(storeAtCheckpoint, clock2, historyAtCheckpoint, record);
@@ -260,6 +311,41 @@ describe('the record outlives the process (PH-28.1)', () => {
     expect(stalled[0]!.reason).toMatch(/Fork in the record/);
     expect(second.assetIds, 'unhosted').toEqual([]);
     expect(second.feed.retained(ID)?.newest, 'nothing served past the record').toBe(head);
+    expect(await record.head(ID), 'the record was not modified').toBe(head);
+    await first.stop();
+    await second.stop();
+  });
+
+  /**
+   * **Cycle Audit 10, a2-07.** The case above plants its fork on the price, and
+   * so did every other fork this suite could express: both fork sites in
+   * `tickRecord.ts` could be reduced to `sequence && price` with 3,244 unit
+   * tests green. A clock repaired between two boots republishes the same prices
+   * at shifted instants, and `GET /markets/:id/price?at=` — which is what a
+   * contract settles against — keys on the instant.
+   */
+  it('a recorded tick the market republishes at another instant is a fork too (a2-07)', async () => {
+    const record = new MemoryTickRecord();
+    const { first, clock, storeAtCheckpoint, historyAtCheckpoint, served } =
+      await firstProcess(record);
+    const checkpointSequence = (await storeAtCheckpoint.load(ID))!.lastPublished!.sequence;
+    const head = served[served.length - 1]!.sequence;
+    // Plant: a tick between the checkpoint and the kill, held at the price it
+    // was published at and one millisecond away from the instant it was
+    // published at.
+    record.corrupt(ID, checkpointSequence + 2, {
+      instant: served[checkpointSequence + 1]!.instant + 1,
+    });
+
+    const clock2 = new SteppableClock(clock.now());
+    const second = venue(storeAtCheckpoint, clock2, historyAtCheckpoint, record);
+    await second.start();
+    await run(second, clock2, 5);
+    const stalled = second.stalledMarkets;
+    expect(stalled.map((m) => m.assetId)).toEqual([ID]);
+    expect(stalled[0]!.reason).toMatch(/refused by the record/);
+    expect(stalled[0]!.reason).toMatch(/Fork in the record/);
+    expect(second.assetIds, 'unhosted').toEqual([]);
     expect(await record.head(ID), 'the record was not modified').toBe(head);
     await first.stop();
     await second.stop();
@@ -490,6 +576,52 @@ describe('a restart past the catch-up bound seams the record (PH-30.4)', () => {
     const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     await second.start();
     expect(second.recoveryFor(ID)?.kind).toBe('seam');
+
+    // **The boot window (Cycle Audit 10: a6-02, a1-06).** Between here and the
+    // first post-seam pass the feed holds nothing at all, and it used to answer
+    // every resume in that window out of `since`'s empty-history branch:
+    // `UnknownSequenceError`, "has never been published; the newest is 0. A
+    // client asking for it is not behind — it is holding a record this feed did
+    // not produce" — said of a sequence the record does hold and
+    // `/markets/:id/ticks/:sequence` serves, to a client that is behind, about a
+    // record this venue wrote. `from=1` was worse: accepted, with an empty
+    // replay and no gap frame, and then joined silently at the seam. Measured
+    // at 323–1200 ms on the release build, and a stalled scheduler makes it
+    // longer.
+    //
+    // The priming declares the seam to the feed, so the window answers what the
+    // window after it answers: everything below the resume point is an
+    // eviction naming that point, the resume point itself is accepted, and only
+    // a sequence above it is a client holding ticks nobody published.
+    const refused = ((): unknown => {
+      try {
+        second.feed.since(ID, firstHead + 1);
+        return null;
+      } catch (error) {
+        return error;
+      }
+    })();
+    expect(refused, 'a resume from the record head is refused, not accepted').toBeInstanceOf(
+      EvictedError,
+    );
+    const resumesAt = (refused as EvictedError).oldestRetained;
+    expect(resumesAt).toBeGreaterThan(firstHead);
+    for (const from of [1, firstHead, firstHead + 1, resumesAt - 1]) {
+      expect(() => second.feed.since(ID, from), `from=${String(from)}`).toThrow(EvictedError);
+      expect(() => second.feed.since(ID, from), `from=${String(from)}`).toThrow(
+        new RegExp(`older than the retained window, which starts at ${String(resumesAt)}`),
+      );
+    }
+    // The resume point itself: nothing to replay, and the next tick is what
+    // comes. That is the one request this window can honestly accept.
+    expect(second.feed.since(ID, resumesAt)).toEqual([]);
+    // Above it, the refusal that was wrongly given to everything — and its
+    // "newest published" is the record's head, not zero.
+    expect(() => second.feed.since(ID, resumesAt + 1)).toThrow(UnknownSequenceError);
+    expect(() => second.feed.since(ID, resumesAt + 1)).toThrow(
+      new RegExp(`has never been published; the newest is ${String(firstHead)}`),
+    );
+
     await run(second, clock2, 2);
     const failed = errors.mock.calls.map((c) => String(c[0])).filter((m) => /tick failed/.test(m));
     expect(failed, failed[0]).toEqual([]);
@@ -500,6 +632,9 @@ describe('a restart past the catch-up bound seams the record (PH-30.4)', () => {
     expect(retained!.oldest).toBeGreaterThan(firstHead);
     expect(retained!.newest).toBeGreaterThan(retained!.oldest);
     const seam = retained!.oldest;
+    // The window the boot declared is the window it opened: what a client was
+    // told before the first tick is exactly where the feed then began.
+    expect(seam, 'the declared resume point is the one the feed opened at').toBe(resumesAt);
     expect(() => second.feed.since(ID, firstHead)).toThrow(EvictedError);
     expect(second.stalledMarkets).toEqual([]);
     // The record keeps both sides of the seam.

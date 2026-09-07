@@ -226,7 +226,10 @@ export const API_ROUTES: readonly RouteContract[] = [
     method: 'GET',
     path: '/markets/:id/ticks/:sequence',
     summary: 'The published tick at a sequence, from the record.',
-    params: { id: 'a hosted asset id', sequence: 'a positive integer written as digits' },
+    params: {
+      id: "a known asset id; a retired market's record still answers",
+      sequence: 'a positive integer written as digits',
+    },
     response: { object: { assetId: 'string', ...PUBLISHED } },
     refusals: {
       '400': 'the sequence is not a positive integer',
@@ -238,12 +241,13 @@ export const API_ROUTES: readonly RouteContract[] = [
     method: 'GET',
     path: '/markets/:id/price',
     summary:
-      'The price in force at an instant: the last published tick at or before it, the rule settlement uses.',
-    params: { id: 'a hosted asset id' },
+      'The price in force at an instant: the last published tick at or before it, the rule settlement uses. A retired market answers it from its record, which is what retirement leaves readable.',
+    params: { id: "a known asset id; a retired market's record still answers" },
     query: { at: 'an instant in milliseconds' },
     response: { object: { assetId: 'string', at: 'integer', rule: 'string', ...PUBLISHED } },
     refusals: {
-      '400': 'a missing or malformed instant, or an instant after the newest published one',
+      '400':
+        'a missing or malformed instant, or an instant after the newest published one — for a market this process no longer hosts, after the newest instant its record holds',
       '404':
         'the asset is unknown, the record starts after the instant, or this deployment keeps no record',
       '409':
@@ -255,7 +259,7 @@ export const API_ROUTES: readonly RouteContract[] = [
     path: '/markets/:id/seams',
     summary:
       'Every discontinuity the record holds for this market: where it stops and where it starts again, in sequence and in instant. What settle() takes as seams.',
-    params: { id: 'a hosted asset id' },
+    params: { id: "a known asset id; a retired market's record still answers" },
     response: { array: SEAM },
     refusals: { '404': 'the asset is unknown, or this deployment keeps no record' },
   },
@@ -279,7 +283,9 @@ export const API_ROUTES: readonly RouteContract[] = [
       '400': 'the sequence is not a positive integer',
       '404': 'the asset is unknown, or this deployment does not publish commitments',
       '409':
-        'the sequence is published but its window is not yet committed (the newest committed sequence is named), or the archive disagrees with the record',
+        'the sequence is published but its window is not yet committed (the newest committed sequence is named), or the archive disagrees with the record, or the archived window no longer hashes to the root its commitment signs',
+      '503':
+        'the commitment chain file is damaged past a line the message names; proofs of earlier sequences are unaffected',
     },
   },
   {
@@ -291,7 +297,7 @@ export const API_ROUTES: readonly RouteContract[] = [
     query: {
       'from?': 'the next sequence wanted; omitted joins at the live edge',
       'onGap?':
-        "'live' to be told a gap and joined at the oldest retained sequence, instead of a 400",
+        "'live' to be told a gap and joined at the sequence the feed resumes at, instead of a 400",
     },
     stream: {
       message: TICK_FRAME,
@@ -300,7 +306,7 @@ export const API_ROUTES: readonly RouteContract[] = [
     },
     refusals: {
       '400':
-        'a malformed from or onGap, or (without onGap=live) a sequence the venue cannot replay',
+        'a malformed from or onGap, or (without onGap=live) a sequence the venue cannot replay — including, between a restart that seamed this market and its first tick, every sequence below the one it will resume at',
       '404': 'the asset is not hosted',
     },
   },
@@ -371,6 +377,34 @@ export const CONTRACT_HISTORY: readonly { readonly version: string; readonly dig
   // real money — and correcting a wrong answer to a refusal is still a change
   // a client must be told about by its version.
   { version: '2.0.0', digest: '0d5dd03fcc427fee' },
+  // Cycle Audit 10, two changes in one version because they landed together.
+  //
+  // **The proof route (a4-05, and a8-06's refusal written down).** Its `409`
+  // now also covers an archived window that no longer hashes to the root its
+  // own commitment signs — a window an operator edited serves no proof for any
+  // sequence in it, not only for the line that was edited — and the `503` a
+  // damaged chain file has answered since a8-06 is listed rather than left for
+  // a broker to meet unannounced.
+  //
+  // **The routes that answered `500` (a4-06, a6-08, a6-02, a1-06).**
+  // `GET /markets/:id/price` on a **retired** market threw a bare `RangeError`
+  // reaching for a live tick the venue no longer hosts, so a broker settling an
+  // open contract on it got `500 Internal server error` — nothing that says
+  // whether to retry — for exactly the markets whose contracts are running out.
+  // It answers from the record now, bounded by the record's own head. And
+  // `GET /markets/:id/stream` in the window between a seamed boot and its first
+  // tick: the feed held nothing there, so it refused a resume from a sequence
+  // it really had published, while `from=1` was accepted and silently joined at
+  // the seam. The venue declares the resume point to the feed at priming, so
+  // that window now answers what the window after it answers.
+  //
+  // **Minor, not major.** Every status this table already listed still means
+  // what it said. Two refusals a venue could already make are written down; a
+  // `500` becomes the `200` this table always described; and one request that
+  // used to succeed by accident — `from=1` inside a sub-second boot window,
+  // answered with a silent jump — now gets the `400` the same table already
+  // lists for a sequence the venue cannot replay.
+  { version: '2.1.0', digest: '76df7ddf99783c45' },
 ];
 
 export const API_VERSION: string = CONTRACT_HISTORY[CONTRACT_HISTORY.length - 1]!.version;

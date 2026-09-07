@@ -19,6 +19,7 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import {
+  CommitmentError,
   CommitmentsFileError,
   EvictedError,
   UnknownSequenceError,
@@ -804,7 +805,12 @@ export class MarketController implements BeforeApplicationShutdown {
         'This deployment keeps no tick record; only the live stream is served.',
       );
     }
-    const newest = this.venue.lastTick(id);
+    // A market this process does not host — a retired one above all — has no
+    // live tick to bound the query with, and reaching for one used to throw a
+    // bare `RangeError` out of the venue and answer `500` (Cycle Audit 10:
+    // a4-06, a6-08). The record's own head is the honest bound, and retirement's
+    // promise is exactly that the record stays readable.
+    const newest = this.venue.lastTick(id) ?? (await this.venue.recordHead(id));
     if (newest === null || instant > newest.instant) {
       throw new BadRequestException(
         `No price has been published for ${id} at ${instant}` +
@@ -874,7 +880,7 @@ export class MarketController implements BeforeApplicationShutdown {
   }
 
   /**
-   * The proof, or a refusal that says the chain file itself is damaged.
+   * The proof, or a refusal that says the archive underneath it is damaged.
    *
    * **Cycle Audit 10, a8-06.** The chain is streamed from the top for every
    * proof, so a line cut mid-append — ENOSPC, a power loss — threw a bare
@@ -883,11 +889,20 @@ export class MarketController implements BeforeApplicationShutdown {
    * that tells a broker nothing about whether to retry, wait or escalate. The
    * line is named; the path is not, because a public route is not where an
    * operator learns the server's filesystem layout.
+   *
+   * **Cycle Audit 10, a4-05.** The other damaged archive: a window whose
+   * journal no longer hashes to the root its commitment signs. That is a
+   * `409` rather than a `503` — the file is readable and the chain is intact,
+   * and what conflicts is the archive with its own commitment — and it is the
+   * same refusal as the record disagreement below, which it now precedes:
+   * a window that was changed after it was committed serves no proof for any
+   * sequence in it, not only for the line that was changed.
    */
   private async proof(id: string, wanted: number): Promise<PublicationProof> {
     try {
       return await this.venue.proofFor(id, wanted);
     } catch (error) {
+      if (error instanceof CommitmentError) throw new ConflictException(error.message);
       if (!(error instanceof CommitmentsFileError)) throw error;
       throw new ServiceUnavailableException(
         `The commitment chain for ${id} cannot be read` +

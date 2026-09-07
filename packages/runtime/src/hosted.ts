@@ -67,6 +67,16 @@ export interface HostedMarketOptions {
   /** The last tick published before a restart, if any. */
   readonly resumeLastPublished?:
     Tick | { sequence: number; instant: EpochMillis; price: LogPrice } | null;
+  /**
+   * The key epoch this market's engine was derived at (Cycle Audit 10, a6-06).
+   *
+   * Carried so the two things that need to reproduce this engine can: the
+   * checkpoint, which must record the epoch its cursors index into, and a Lab
+   * fork, which builds a second engine from the same snapshot and would
+   * otherwise always build it at epoch 0. Default 0, which is every market that
+   * has never seamed.
+   */
+  readonly keyEpoch?: number;
 }
 
 /**
@@ -141,11 +151,13 @@ export class HostedMarket {
   #beforePending: ReturnType<MarketEngine['snapshot']> | null = null;
 
   readonly #personality: string | null;
+  readonly #keyEpoch: number;
 
   constructor(options: HostedMarketOptions) {
     this.#engine = options.engine;
     this.#clock = options.clock;
     this.#personality = options.personality ?? null;
+    this.#keyEpoch = options.keyEpoch ?? 0;
     this.#floorInstant = options.engine.snapshot().instant;
     this.#pending = options.resumePending ?? null;
     const resumed = options.resumeLastPublished ?? null;
@@ -165,6 +177,11 @@ export class HostedMarket {
   /** The personality fingerprint this market was hosted with, if it was given one. */
   get personality(): string | null {
     return this.#personality;
+  }
+
+  /** See {@link HostedMarketOptions.keyEpoch}. */
+  get keyEpoch(): number {
+    return this.#keyEpoch;
   }
 
   get lastPublished(): Tick | null {

@@ -152,6 +152,27 @@ describe('the operator’s state tool', () => {
   });
 
   /**
+   * **Cycle Audit 10 (a6-07).** The swap is the documented restore, and after
+   * one nothing said a restore had happened: the venue seamed from the
+   * backup's checkpoint and served on, while every tick published after the
+   * backup was gone from the record — measured, `/ticks/310` answering 404
+   * where an observer held sequence 310, and `/price?at=` answering the
+   * backup-era price for an instant already answered. The manifest the tool
+   * leaves in its own copy is enough to say so before the venue starts.
+   */
+  it('says a directory is a backup nothing has run in yet, and what starting it costs (a6-07)', async () => {
+    const source = await stateDir(100, 120);
+    const out = path.join(scratch(), 'swap');
+    const clock = new SteppableClock(epochMillis(GENESIS + 99));
+    expect((await runStateTool(['backup', '--dir', source, '--out', out], clock)).code).toBe(0);
+    const restored = await runStateTool(['verify', '--dir', out]);
+    expect(restored.code, 'saying so is not refusing').toBe(0);
+    expect(restored.output).toMatch(/backup taken at 1776000000099/);
+    expect(restored.output).toMatch(/nothing has run in it/);
+    expect(restored.output).toMatch(/served after that instant is absent/);
+  });
+
+  /**
    * **Cycle Audit 10 (a7-01).** The documented restore is a directory swap
    * with the service stopped, and the boot check is what decides. So the check
    * this test makes is the operator's: `verify` on the directory `backup` just

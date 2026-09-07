@@ -99,6 +99,31 @@ async function bootstrap(): Promise<void> {
     logger.error(inconsistent);
     process.exit(1);
   }
+  // **A restore rolls the published record back, and this is the one place that
+  // can say so (Cycle Audit 10, a6-07).** The documented restore is a directory
+  // swap with the service stopped, and after one nothing in the directory says
+  // a restore happened: the venue seams from the backup's checkpoint and serves
+  // on, while every tick published after the backup was taken is gone —
+  // measured, a sequence an observer held answering 404, and `/price?at=`
+  // answering an instant it had already answered with a different price. The
+  // manifest the backup tool leaves in its copy is the only trace, and heads
+  // still exactly as recorded means nothing has run here yet.
+  //
+  // Not a refusal: a restore is sometimes the right thing to do, and refusing
+  // the only remaining copy helps nobody. Loud, because an operator who reads
+  // this line can still stop and reach for a newer backup.
+  if (report.backup?.untouched === true) {
+    logger.warn(
+      `STARTING FROM A BACKUP — this state directory is a copy taken at ` +
+        `${String(report.backup.takenAt)} and nothing has run in it since. Every tick the venue ` +
+        `served after that instant is absent from this record: those sequences will answer 404, ` +
+        `and GET /markets/:id/price?at= will answer those instants with the price this record ` +
+        `ends at rather than the one observers saw, so a contract settled before the restore ` +
+        `settles differently after it. Markets reopen past what this record holds and on a new ` +
+        `key epoch, so nothing is published twice under one sequence. If a newer backup exists, ` +
+        `stop now and restore that one instead.`,
+    );
+  }
   // One writer per state directory (Cycle Audit 10: a3-07, a6-05). Two processes pointed at
   // one directory both booted, both hosted the catalogue, and both fell
   // permanently into a3-06 while reporting `ok`, `stalled: []`, `ready: true`

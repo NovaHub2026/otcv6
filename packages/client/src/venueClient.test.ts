@@ -79,6 +79,33 @@ describe('the reference client (PH-29.4)', () => {
     await expect(forged.proof('eurusd', 7)).rejects.toThrow(ContractViolation);
   });
 
+  /**
+   * **Cycle Audit 10, a4-03.** A client told no publisher key verifies the
+   * signature against the key the venue shipped beside it, and a venue that
+   * signs with a key of its own and names that key passes every step. It
+   * returned `verified: true` and said nothing about where the key came from.
+   * The checks still run — an internally consistent proof beats none — but
+   * the answer now carries `keySource`, and only a pinned key makes it
+   * `pinned`.
+   */
+  it('says when a proof could only be checked against the key the venue itself named', async () => {
+    const rogue = await fakeVenue({ rogueKey: true });
+    const blind = await new VenueClient({ baseUrl: rogue }).proof('eurusd', 7);
+    expect(isRefusal(blind)).toBe(false);
+    if (isRefusal(blind)) return;
+    expect(blind.verified).toBe(true);
+    expect(blind.keySource).toBe('self-certified');
+    // Told the key the operator published, the same venue is refused.
+    const told = new VenueClient({ baseUrl: rogue, publisherPublicKey: HEX });
+    await expect(told.proof('eurusd', 7)).rejects.toThrow(ContractViolation);
+    // And an honest venue read by a pinned client says so.
+    const honest = await new VenueClient({
+      baseUrl: await fakeVenue(),
+      publisherPublicKey: HEX,
+    }).proof('eurusd', 7);
+    expect(isRefusal(honest) ? null : honest.keySource).toBe('pinned');
+  });
+
   it('throws a ContractViolation naming the route and the departure', async () => {
     const client = new VenueClient({ baseUrl: await fakeVenue({ extraKey: true }) });
     await expect(client.markets()).rejects.toThrow(

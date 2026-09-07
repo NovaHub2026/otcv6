@@ -60,6 +60,27 @@ export interface AssetHeads {
   readonly history: number | null;
 }
 
+/**
+ * The backup this directory is a copy of, when it holds a manifest (a6-07).
+ */
+export interface BackupOrigin {
+  /** `takenAt` of the manifest the directory holds. */
+  readonly takenAt: number;
+  /**
+   * Whether nothing has run here since: every head still exactly what the
+   * manifest recorded.
+   *
+   * True is the signature of a **restore that has not been started yet** — a
+   * directory swap, the documented procedure. It is the one moment at which an
+   * operator can still be told what the restore costs: every tick the venue
+   * served after `takenAt` is absent from this record, so those sequences
+   * answer 404 and the settlement query answers those instants with the price
+   * this record ends at rather than the one observers saw. False means the
+   * venue has already run here and the manifest is only history.
+   */
+  readonly untouched: boolean;
+}
+
 export interface StateDirectoryReport {
   readonly directory: string;
   /** Assets with a checkpoint, sorted. */
@@ -70,6 +91,8 @@ export interface StateDirectoryReport {
   /** Seams and gaps a resume will take and say so; not refusals. */
   readonly warnings: readonly StateProblem[];
   readonly labComposed: boolean;
+  /** See {@link BackupOrigin}. Null when the directory holds no manifest. */
+  readonly backup: BackupOrigin | null;
 }
 
 export const RECORD_DB = 'record.db';
@@ -150,12 +173,14 @@ function integrityFailure(file: string): string | null {
  * history **ahead** of the record for the same reason, the other way round.
  *
  * What warns: a checkpoint `resumeMarket` will seam past (`UnusableRecordError`),
- * and an asset with a checkpoint and no record — `record.db` **absent from the
- * directory**, or present and holding nothing for that asset. Either way the
- * asset boots and primes nothing, and the two are said differently because an
- * operator fixes them differently (Cycle Audit 10, a3-03: the guard read
- * `record !== null`, so the case the sentence above names — no record at all —
- * was the one case that could not reach it).
+ * an asset with a checkpoint and no record — `record.db` **absent from the
+ * directory**, or present and holding nothing for that asset; the two are said
+ * differently because an operator fixes them differently (Cycle Audit 10,
+ * a3-03: the guard read `record !== null`, so the case the sentence above
+ * names — no record at all — was the one case that could not reach it) — and
+ * an asset the **record** holds that no checkpoint names, which is what a
+ * SIGKILL inside the first checkpoint interval leaves and what this function
+ * used to report as `Assets: none (nothing to resume)` (a6-06).
  *
  * What is not a checkpoint: a backup manifest (`backup.json`, `kind:
  * 'otc-state-backup'`) left in a directory the backup tool wrote. The store
@@ -168,7 +193,7 @@ export async function verifyStateDirectory(directory: string): Promise<StateDire
   const heads: Record<string, AssetHeads> = {};
   const labComposed = existsSync(path.join(directory, LAB_MARKER));
   if (!existsSync(directory)) {
-    return { directory, assets: [], heads, problems, warnings, labComposed };
+    return { directory, assets: [], heads, problems, warnings, labComposed, backup: null };
   }
 
   const store = new FileStateStore(directory);
@@ -317,6 +342,36 @@ export async function verifyStateDirectory(directory: string): Promise<StateDire
         });
       }
     }
+    // **The other direction, which nothing looked at (Cycle Audit 10, a6-06).**
+    // The loop above iterates the *checkpoints*, so an asset the record holds
+    // and no checkpoint names was examined by nothing at all: after a SIGKILL
+    // inside the first checkpoint interval — an OOM on a first deploy, a bad
+    // env, a crash loop — the record held ticks for 29 of 30 assets, and this
+    // function answered `Assets: none (nothing to resume)` with no problem and
+    // no warning, exit 0, on the directory that produced it.
+    //
+    // A warning, not a refusal: `resumeMarket` reopens such a market past the
+    // record on a new key epoch rather than forking it at sequence 1, so the
+    // directory boots correctly and what the operator needs is to be told which
+    // assets are about to take a seam nobody asked for.
+    if (record !== null) {
+      for (const assetId of await record.assets()) {
+        if (checkpoints.has(assetId)) continue;
+        const recordHead = await record.head(assetId);
+        const recordOldest = await record.oldest(assetId);
+        const historyHead = history === null ? null : await lastStoredSequence(history, assetId);
+        heads[assetId] = { checkpoint: null, record: recordHead, history: historyHead };
+        warnings.push({
+          file: RECORD_DB,
+          assetId,
+          detail:
+            `holds ticks ${String(recordOldest)}–${String(recordHead)} for an asset no ` +
+            `checkpoint names it: the process that served them was killed before its first ` +
+            `checkpoint. The market reopens past the record on a new key epoch — a seam — ` +
+            `rather than restarting at sequence 1.`,
+        });
+      }
+    }
   } finally {
     record?.close();
     history?.close();
@@ -338,7 +393,61 @@ export async function verifyStateDirectory(directory: string): Promise<StateDire
     problems,
     warnings,
     labComposed,
+    backup: backupOrigin(directory, heads),
   };
+}
+
+/**
+ * What the manifest in this directory says, and whether the directory still
+ * matches it (Cycle Audit 10, a6-07).
+ *
+ * The restore this project documents is a directory swap with the service
+ * stopped, and after one nothing in the directory says a restore happened. The
+ * boot seams from the backup's checkpoint and serves on, and everything the
+ * venue published after the backup was taken is simply gone: those sequences
+ * answer 404, and `GET /markets/:id/price?at=` answers instants observers
+ * already held with the price this record ends at — a contract settled before
+ * the restore settles differently after it. Measured on a 3.5-minute run
+ * against a 30-second-old backup, and reproduced independently.
+ *
+ * A boot cannot undo that. It can refuse to be silent about it, and the
+ * manifest `backupStateDirectory` leaves in the copy is enough: heads still
+ * exactly as recorded means nothing has run here yet, which is precisely the
+ * moment before the damage — the operator can still stop and reach for a newer
+ * backup. It is not a refusal, because a restore is sometimes the right thing
+ * to do and refusing the only remaining copy helps nobody.
+ */
+function backupOrigin(
+  directory: string,
+  heads: Readonly<Record<string, AssetHeads>>,
+): BackupOrigin | null {
+  const file = path.join(directory, BACKUP_MANIFEST);
+  if (!existsSync(file)) return null;
+  let manifest: BackupManifest;
+  try {
+    const text = readFileSync(file, 'utf8');
+    if (!isBackupManifestText(text)) return null;
+    manifest = JSON.parse(text) as BackupManifest;
+  } catch {
+    return null;
+  }
+  const takenAt = typeof manifest.takenAt === 'number' ? manifest.takenAt : 0;
+  const recorded = manifest.heads ?? {};
+  const names = Object.keys(recorded);
+  const untouched =
+    names.length === Object.keys(heads).length &&
+    names.every((id) => {
+      const was = recorded[id];
+      const now = heads[id];
+      return (
+        was !== undefined &&
+        now !== undefined &&
+        was.checkpoint === now.checkpoint &&
+        was.record === now.record &&
+        was.history === now.history
+      );
+    });
+  return { takenAt, untouched };
 }
 
 /** The boot refusal a report earns, or null when it may be resumed. */

@@ -144,6 +144,38 @@ export const MEASURED_BYTES_PER_TICK = 73;
 export const FIRST_SEQUENCE = 1;
 
 /**
+ * What a feed knows about a market that seamed before it published anything.
+ *
+ * **Cycle Audit 10 (a6-02, a1-06).** A restart longer than the catch-up bound
+ * seams a market: the previous process published through some sequence, the
+ * record keeps it, and this process resumes a lease beyond it — so the feed's
+ * window will begin above the record's head, with the sequences in between
+ * belonging to nobody. PH-30.4 stopped priming a seamed market's feed with the
+ * pre-seam tail, which was right (the feed is gapless, and priming it made every
+ * post-seam pass a refused gap) and left the feed empty between the boot and the
+ * first tick. In that window `since` had only its empty-history branch, which
+ * treats {@link FIRST_SEQUENCE} as the one legitimate request: a client resuming
+ * from the record's head plus one — the resume the whole contract is built on —
+ * was told its sequence "has never been published; the newest is 0. A client
+ * asking for it is not behind — it is holding a record this feed did not
+ * produce", which was false on every clause, while `from=1` was accepted and
+ * silently joined at the seam.
+ *
+ * Declaring the seam closes the window by making it answer what the window after
+ * it answers: an eviction naming the resume point, an accepted request at the
+ * resume point, and a refusal above it that names the record's real head.
+ */
+export interface FeedSeam {
+  /**
+   * The newest sequence published before the seam — the record's head, and the
+   * newest sequence that exists at all for this asset.
+   */
+  readonly publishedThrough: number;
+  /** The sequence this feed's window will begin at, above `publishedThrough`. */
+  readonly resumesAt: number;
+}
+
+/**
  * Ordered, gapless, resumable distribution of one market to many observers.
  *
  * The design decision worth stating is what happens to a client that cannot keep
@@ -159,6 +191,8 @@ export class TickFeed {
   readonly #retainTicks: number;
   readonly #history = new Map<string, Tick[]>();
   readonly #subscriptions = new Map<string, Set<InternalSubscription>>();
+  /** Declared seams, for markets that have published nothing here yet. */
+  readonly #seams = new Map<string, FeedSeam>();
 
   constructor(options: TickFeedOptions = {}) {
     this.#retainTicks = options.retainTicks ?? DEFAULT_RETAIN_TICKS;
@@ -169,11 +203,49 @@ export class TickFeed {
     }
   }
 
+  /**
+   * The seam declared for an asset that has published nothing here yet, or null.
+   *
+   * Null once the window exists — the history answers for itself from the first
+   * tick — and null for an asset the feed was told to forget. What an operator
+   * log and a boot-window test read to name the sequence the feed will open at.
+   */
+  declaredSeam(assetId: string): FeedSeam | null {
+    return this.#seams.get(assetId) ?? null;
+  }
+
   /** Sequence range currently retained for an asset. */
   retained(assetId: string): { oldest: number; newest: number } | null {
     const history = this.#history.get(assetId);
     if (history === undefined || history.length === 0) return null;
     return { oldest: history[0]!.sequence, newest: history[history.length - 1]!.sequence };
+  }
+
+  /**
+   * Declare where this feed's window will begin for a market that seamed.
+   *
+   * Called at priming, before the first tick, by whatever resumed the market and
+   * therefore knows both numbers: the record's head and the sequence the market
+   * will publish next. See {@link FeedSeam} for what it fixes. It is a statement
+   * about a window that does not exist yet, so it is refused if it does not
+   * describe one — a resume point at or below the record's head would put the
+   * feed's own window inside the record's, and the answers below would then be
+   * wrong in the direction that hides a gap.
+   */
+  seam(assetId: string, seam: FeedSeam): void {
+    if (!Number.isSafeInteger(seam.resumesAt) || seam.resumesAt < FIRST_SEQUENCE) {
+      throw new RangeError(
+        `A seam for ${assetId} must resume at a sequence of at least ${String(FIRST_SEQUENCE)}, ` +
+          `received ${String(seam.resumesAt)}.`,
+      );
+    }
+    if (!Number.isSafeInteger(seam.publishedThrough) || seam.publishedThrough >= seam.resumesAt) {
+      throw new RangeError(
+        `A seam for ${assetId} resuming at ${String(seam.resumesAt)} must follow what was ` +
+          `published before it, received publishedThrough ${String(seam.publishedThrough)}.`,
+      );
+    }
+    this.#seams.set(assetId, seam);
   }
 
   /**
@@ -206,6 +278,9 @@ export class TickFeed {
       previous = tick.sequence;
     }
     for (const tick of ticks) history.push(tick);
+    // The window exists now, so the declaration has done its work and the
+    // history answers for itself.
+    this.#seams.delete(assetId);
     if (history.length > this.#retainTicks) {
       history.splice(0, history.length - this.#retainTicks);
     }
@@ -230,6 +305,7 @@ export class TickFeed {
     }
     this.#subscriptions.delete(assetId);
     this.#history.delete(assetId);
+    this.#seams.delete(assetId);
   }
 
   /** Retained ticks from `fromSequence` onwards, inclusive. */
@@ -250,6 +326,20 @@ export class TickFeed {
     }
     const history = this.#history.get(assetId) ?? [];
     if (history.length === 0) {
+      // A market that seamed before publishing anything here has a window that
+      // does not exist yet but whose bounds are known (a6-02, a1-06). Answering
+      // from them makes this window and the one after the first tick give a
+      // client the same three answers.
+      const seam = this.#seams.get(assetId);
+      if (seam !== undefined) {
+        if (fromSequence < seam.resumesAt) {
+          throw new EvictedError(assetId, fromSequence, seam.resumesAt);
+        }
+        if (fromSequence > seam.resumesAt) {
+          throw new UnknownSequenceError(assetId, fromSequence, seam.publishedThrough);
+        }
+        return [];
+      }
       // **a5-09.** The empty case returned [] for any sequence, so the
       // Cycle Audit 3 refusal below did not apply "symmetrically" as the error
       // type claims: a client asking for 600 of an asset that had published

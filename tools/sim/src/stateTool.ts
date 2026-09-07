@@ -24,6 +24,17 @@ import {
  * directory aside, put the backup in its place, start; the boot check says
  * whether it agrees with itself, and the manifest says what it holds.
  *
+ * **A restore rolls the published record back, and `verify` now says so
+ * (Cycle Audit 10, a6-07).** A directory whose heads are still exactly what its
+ * manifest recorded is a backup nothing has run in yet, which is the moment
+ * before the damage: everything the venue served after the backup was taken is
+ * absent from that record, so those sequences answer 404 and
+ * `GET /markets/:id/price?at=` answers instants observers already held with the
+ * price the record ends at. Markets reopen past what the restored record holds
+ * and on a new key epoch, so no keystream position is spent twice and no
+ * sequence is republished — but the rollback itself is not undone by starting.
+ * Restore the newest backup, and read the line before starting the service.
+ *
  * **The manifest stays in the restored directory.** `backup.json` is left where
  * the copy put it and is not a checkpoint: the store skips it by its `kind`, so
  * the boot check and this tool's `verify` read the copy the same way. Until
@@ -76,6 +87,23 @@ export function describeReport(report: StateDirectoryReport): string {
   }
   if (report.labComposed)
     lines.push('Composed by the Lab: yes (production refuses this directory)');
+  // **Cycle Audit 10 (a6-07).** A restore is a directory swap and left no trace
+  // of itself; the manifest in the copy is the trace. Said here so an operator
+  // running `verify` before starting the service is told what the swap costs
+  // while there is still time to reach for a newer backup.
+  if (report.backup !== null) {
+    lines.push(
+      report.backup.untouched
+        ? `Backup copy: a backup taken at ${report.backup.takenAt}, and nothing has run in it ` +
+            `since. Starting a venue here rolls the published record back to that instant: ` +
+            `every tick served after that instant is absent from this record, so those ` +
+            `sequences answer 404 and the settlement query answers those instants with the ` +
+            `price this record ends at rather than the one observers saw. Restore the newest ` +
+            `backup, or accept the rollback deliberately.`
+        : `Backup copy: a backup taken at ${report.backup.takenAt}; the venue has run here ` +
+            `since, so the manifest is history rather than a warning.`,
+    );
+  }
   for (const w of report.warnings) {
     lines.push(`Warning: ${w.file}${w.assetId === null ? '' : ` (${w.assetId})`}: ${w.detail}`);
   }

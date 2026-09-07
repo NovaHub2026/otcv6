@@ -27,7 +27,12 @@ import {
   type AssetOverlay,
   type TickRecord,
 } from '@otc/runtime';
-import { DEFAULT_RETAIN_TICKS, TickFeed, type PublicationProof } from '@otc/distribution';
+import {
+  DEFAULT_RETAIN_TICKS,
+  FIRST_SEQUENCE,
+  TickFeed,
+  type PublicationProof,
+} from '@otc/distribution';
 import { EngineAccess } from './engineAccess.js';
 import { HistoryService } from './history.service.js';
 import { PublicationService } from './publication.service.js';
@@ -303,6 +308,7 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
         clock: this.clock,
         store: this.store,
         genesisInstant: genesis,
+        published: await this.#recordHead(asset.definition.id),
       });
       this.recovery.set(asset.definition.id, outcome);
       if (outcome.kind === 'seam') {
@@ -449,6 +455,23 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
   }
 
   /**
+   * The newest tick the record holds for an asset, or null (Cycle Audit 10,
+   * a6-06).
+   *
+   * Handed to `resumeMarket`, which needs it for two decisions the checkpoint
+   * alone cannot make: whether "no checkpoint" means a fresh market or one
+   * whose process died before its first checkpoint, and how far past the last
+   * published sequence a seam has to open. `tail(id, 1)` is the newest tick of
+   * the newest contiguous run, which after a seam is the newest tick — the
+   * record is read, never generated from (INV-001).
+   */
+  async #recordHead(assetId: string): Promise<Tick | null> {
+    if (this.record === null) return null;
+    const [newest] = await this.record.tail(assetId, 1);
+    return newest ?? null;
+  }
+
+  /**
    * Hand a market what the record holds for it, before it publishes here.
    *
    * Two readers, both of the same tail. The **feed** takes the newest contiguous
@@ -471,7 +494,8 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     // by instant, and a client resuming from before the seam is told the
     // window starts after it, which is the refusal the resume contract is
     // built on.
-    const seamed = this.recovery.get(assetId)?.kind === 'seam';
+    const recovery = this.recovery.get(assetId) ?? null;
+    const seamed = recovery?.kind === 'seam';
     const tail = await this.record.tail(assetId, DEFAULT_RETAIN_TICKS);
     if (tail.length > 0) {
       if (!seamed) this.feed.publish(assetId, tail);
@@ -485,12 +509,27 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     // restarts (PH-30.4).
     await this.publication.prime(assetId, this.record, seamed);
     const head = tail.length > 0 ? tail[tail.length - 1]!.sequence : null;
+    // **The boot window (Cycle Audit 10: a6-02, a1-06).** The feed is empty
+    // until the first post-seam pass, and an empty feed with nothing declared
+    // treats sequence 1 as the only legitimate request — so a client resuming
+    // from the record's head was told it held "a record this feed did not
+    // produce", of a sequence the record serves, while `from=1` was accepted
+    // and silently joined at the seam. Both numbers are known here: the record
+    // ends at `head`, and the seam's recovery outcome carries the sequence its
+    // new lease resumes at — stated when the lease was granted, not read off the
+    // drawn tick, which belongs to the Lab (INV-010, a1-03). Declaring them
+    // makes the window answer what the window after it answers.
+    const resumesAt = recovery?.kind === 'seam' ? recovery.resumesAtSequence : null;
+    if (resumesAt !== null) {
+      this.feed.seam(assetId, { publishedThrough: head ?? FIRST_SEQUENCE - 1, resumesAt });
+    }
     this.logger.log(
       head === null
         ? `${assetId}: no published record to prime from`
         : seamed
           ? `${assetId}: seamed; the record ends at sequence ${head} and the feed begins at ` +
-            `the seam; ${folded ?? 0} folded into the open minute`
+            `sequence ${resumesAt ?? 'the seam'}; ` +
+            `${folded ?? 0} folded into the open minute`
           : `${assetId}: feed primed from the record through sequence ${head} ` +
             `(${tail.length} ticks); ${folded ?? 0} folded into the open minute`,
     );
@@ -700,6 +739,7 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       clock: this.clock,
       store: this.store,
       genesisInstant: this.genesisInstant ?? epochMillis(this.clock.now()),
+      published: await this.#recordHead(id),
     });
     this.recovery.set(id, outcome);
     market.prime();
@@ -720,7 +760,29 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
   lastTick(assetId: string): { sequence: number; instant: number; price: number } | null {
     const published = this.latest.get(assetId);
     if (published !== undefined) return published;
-    return this.venue?.marketFor(assetId).lastPublishedState ?? null;
+    // **Cycle Audit 10 (a4-06, a6-08).** Only a hosted market has inherited
+    // state to fall back on, and `marketFor` throws a bare `RangeError` for one
+    // the venue does not host — a retired asset, or any asset in a boot that
+    // did not resume it. That `RangeError` is not an `HttpException`, so it left
+    // `GET /markets/:id/price` answering `500 Internal server error` for exactly
+    // the markets whose open contracts still need settling, while retirement's
+    // whole promise is that the record stays readable. There is no live tick for
+    // an unhosted market; the route bounds itself with the record instead.
+    return this.#marketOrNull(assetId)?.lastPublishedState ?? null;
+  }
+
+  /**
+   * The newest tick the record holds for an asset, or null (Cycle Audit 10).
+   *
+   * What `/markets/:id/price` bounds itself with when {@link
+   * VenueService.lastTick} has nothing to offer, which is every market this
+   * process does not host: a retired one above all. The record is the thing
+   * retirement promises stays readable, so it is the thing that answers.
+   */
+  async recordHead(assetId: string): Promise<Tick | null> {
+    if (this.record === null) return null;
+    const [newest] = await this.record.tail(assetId, 1);
+    return newest ?? null;
   }
 
   /** Whether this deployment keeps the published record (PH-28.1). */

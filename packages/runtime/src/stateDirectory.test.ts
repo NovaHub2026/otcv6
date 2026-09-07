@@ -253,12 +253,16 @@ describe('a state directory is verified as one thing (PH-28.3)', () => {
 
   it('warns, and does not refuse, a checkpoint with no record yet, and a checkpoint that will seam', async () => {
     const directory = await directoryWith({ published: 100, recorded: null, stored: 90 });
-    // A record file exists for another asset, so the store is there and this asset has no rows.
-    const record = new SqliteTickRecord(path.join(directory, RECORD_DB));
-    await record.append([{ assetId: 'gbpusd', ticks: [tick(1)] }]);
-    record.close();
+    // A record file exists for another asset, so the store is there and this
+    // asset has no rows. That other asset is `usdjpy`, which has a checkpoint
+    // here: an asset the record holds and no checkpoint names is its own
+    // warning now (Cycle Audit 10, a6-06), and this case is about a checkpoint
+    // with no record.
     const store = new FileStateStore(directory);
     await store.save({ ...stubRecord('usdjpy', epochMillis(GENESIS)), leasedBlocks: {} });
+    const record = new SqliteTickRecord(path.join(directory, RECORD_DB));
+    await record.append([{ assetId: 'usdjpy', ticks: [tick(1)] }]);
+    record.close();
     const report = await verifyStateDirectory(directory);
     expect(report.problems).toEqual([]);
     expect(report.warnings.map((w) => [w.file, w.assetId])).toEqual([
@@ -426,6 +430,74 @@ describe('a state directory is verified as one thing (PH-28.3)', () => {
     const report = await verifyStateDirectory(directory);
     expect(report.problems.map((p) => p.file)).toEqual(['assets']);
     expect(stateRefusal(report)).toMatch(/Refusing to start[\s\S]*assets/);
+  });
+
+  /**
+   * **Cycle Audit 10, a6-06.** The loop that checks the heads iterated the
+   * *checkpoints*, so an asset the record held and no checkpoint named was
+   * examined by nothing: `state:verify` answered `Assets: none (nothing to
+   * resume)` and `Consistent: every file agrees.`, exit 0, on a directory
+   * holding ticks for 29 of 30 assets after a SIGKILL inside the first
+   * checkpoint interval. Re-executed by the refuter on the audited commit.
+   *
+   * A warning rather than a problem, because `resumeMarket` now reopens such a
+   * market past the record instead of forking it at sequence 1 (see
+   * `seamPastRecord`): refusing the boot would refuse a directory the venue
+   * recovers correctly. What the operator needs is to be told, by name.
+   */
+  it('warns about a record holding ticks for an asset no checkpoint names (a6-06)', async () => {
+    const directory = await directoryWith({ published: 100, recorded: 100, stored: null });
+    const record = new SqliteTickRecord(path.join(directory, RECORD_DB));
+    await record.append([{ assetId: 'gbpusd', ticks: [tick(1), tick(2), tick(3)] }]);
+    record.close();
+    const report = await verifyStateDirectory(directory);
+    expect(report.problems).toEqual([]);
+    expect(report.warnings.map((w) => [w.file, w.assetId])).toEqual([[RECORD_DB, 'gbpusd']]);
+    expect(report.warnings[0]!.detail).toMatch(/ticks 1–3 .*no checkpoint names it/);
+    expect(report.warnings[0]!.detail).toMatch(/seam/);
+    // Named in the heads as well, so the tool prints what it holds rather than
+    // "Assets: none".
+    expect(report.heads['gbpusd']).toEqual({ checkpoint: null, record: 3, history: null });
+    expect(stateRefusal(report), 'the venue reopens past it; this is not a refusal').toBeNull();
+  });
+
+  /**
+   * **Cycle Audit 10, a6-07.** The documented restore is a directory swap with
+   * the service stopped, and after one nothing in the directory says a restore
+   * happened: the venue seams from the backup's checkpoint, every tick served
+   * after the backup is gone from the record (404 by sequence), and
+   * `GET /markets/:id/price?at=` answers instants observers already held with
+   * the backup-era price. Measured on a 3.5-minute run against a 30-second-old
+   * backup: `/ticks/310` 404 where an observer held sequence 310, and
+   * `/price?at=` answering -73 where observers saw -374.
+   *
+   * The rollback cannot be undone by a boot. What a boot can do is *say* so,
+   * and the manifest the backup tool leaves in the copy is enough to know: a
+   * directory whose heads are still exactly what the manifest recorded is a
+   * backup copy nothing has run in yet.
+   */
+  it('recognises an untouched backup copy, and stops once the venue has run in it (a6-07)', async () => {
+    const directory = await directoryWith({ published: 100, recorded: 130, stored: 120 });
+    const target = path.join(scratch(), 'backup');
+    await backupStateDirectory(directory, target, GENESIS + 5);
+
+    const asRestored = await verifyStateDirectory(target);
+    expect(asRestored.backup).toEqual({ takenAt: GENESIS + 5, untouched: true });
+    expect(asRestored.problems, 'saying so is not refusing').toEqual([]);
+    expect(stateRefusal(asRestored)).toBeNull();
+
+    // One tick served in the restored directory and it is no longer a copy of
+    // anything: the heads have moved past what the manifest recorded.
+    const record = new SqliteTickRecord(path.join(target, RECORD_DB));
+    await record.append([{ assetId: 'eurusd', ticks: [tick(131)] }]);
+    record.close();
+    expect((await verifyStateDirectory(target)).backup).toEqual({
+      takenAt: GENESIS + 5,
+      untouched: false,
+    });
+
+    // And a directory that is not a copy of anything says nothing.
+    expect((await verifyStateDirectory(directory)).backup).toBeNull();
   });
 
   it('reports a missing directory as nothing to resume, and the Lab marker as what it is', async () => {

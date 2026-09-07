@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { epochMillis, logPrice, type Tick } from '@otc/core';
-import { CommitmentError, proveInclusion, type InclusionProof } from './commitment.js';
+import { commit, CommitmentError, proveInclusion, type InclusionProof } from './commitment.js';
 import { readCommitmentsStream } from './commitmentsFile.js';
 import type { SignedCommitment } from './signing.js';
 
@@ -163,6 +163,37 @@ export async function proveFromPublication(
       throw new CommitmentError(
         `The journal for ${assetId} ${fromSequence}-${toSequence} does not match its commitment ` +
           `(${journal.ticks.length} ticks, first ${String(first?.sequence)}).`,
+      );
+    }
+    // The archive is checked against the root it is committed to, not merely
+    // against the range and the count.
+    //
+    // **Cycle Audit 10, a4-05.** Until here a proof was served for any window
+    // whose journal had the right first sequence and the right number of
+    // lines: an operator who changed the price on one line got a `200` for
+    // every *other* sequence in that window, carrying a signature that
+    // verifies and an inclusion proof that does not. The venue's own
+    // cross-check compares the requested tick with the record and so cannot
+    // see an edit anywhere else — and sees nothing at all once the tick has
+    // left the record's retention. A broker on the reference client is
+    // protected, because `verifyInclusion` fails and it throws; a broker who
+    // wrote their own reader is protected by nothing, and the venue was
+    // serving a proof it could itself have refused.
+    //
+    // One extra Merkle pass over a window already read and already hashed by
+    // `proveInclusion` — cheaper than the linear chain read this proof has
+    // paid for already.
+    const recomputed = commit(
+      signed.commitment.assetId,
+      journal.ticks,
+      signed.commitment.previousRoot,
+      signed.commitment.resumesAfter,
+    );
+    if (recomputed.root !== signed.commitment.root) {
+      throw new CommitmentError(
+        `The journal for ${assetId} ${fromSequence}-${toSequence} does not hash to the root its ` +
+          `commitment signs: the archived window was changed after it was committed, and no ` +
+          `proof from it can be trusted. An operator must restore the window from a backup.`,
       );
     }
     return { kind: 'proved', signed, proof: proveInclusion(journal.ticks, sequence), linksRead };

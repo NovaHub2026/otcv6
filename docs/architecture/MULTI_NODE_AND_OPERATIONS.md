@@ -298,6 +298,51 @@ deleted the one file that recorded what the backup held. `backup` verifies the
 copy _after_ writing the manifest, so its exit code is a statement about the
 directory an operator will actually swap in.
 
+**A restore rolls the published record back, and the boot says so (Cycle Audit
+10, a6-07).** A directory swap puts the backup's `record.db` in place, so every
+tick the venue served after the backup was taken is gone from the record it now
+publishes: those sequences answer `404`, and `GET /markets/:id/price?at=`
+answers instants observers already held with the price the restored record ends
+at — a contract settled before the restore settles differently after it.
+Measured on a 3.5-minute run against a 30-second-old backup, and reproduced
+independently: `/ticks/310` `404` where an observer held sequence 310, and
+`/price?at=` answering `-73` where observers saw `-374`. **No boot can undo
+that**, so the acts are separated: what a restore does to the _future_ is made
+safe automatically, and what it did to the _past_ is reported and left to the
+operator.
+
+- Safe automatically: every market reopens past what the restored record holds,
+  on a **new key epoch** (`resume.ts`). The seam's cursor floors are computed
+  from leases the restore rolled back with everything else — the process that
+  is gone consumed past them, measured at 4,057 cascade blocks of overlap — so
+  the floors alone are not enough. `keyring.derive` gives a different keystream
+  per epoch, so no position any earlier epoch spent can be drawn again whatever
+  the cursors say; the epoch is written into the checkpoint (`keyEpoch`, absent
+  means 0) so the resume that follows indexes into the same keystream.
+- Reported: `verifyStateDirectory` returns `backup` — the manifest's `takenAt`
+  and whether the directory's heads are still exactly what it recorded.
+  Unchanged heads mean nothing has run here yet, which is the last moment
+  before the damage. `npm run state:verify` prints it and the boot logs it,
+  loudly, naming what will answer `404` and what `/price?at=` will do. It is
+  **not** a refusal: a restore is sometimes the right thing to do and refusing
+  the only remaining copy helps nobody. **Restore the newest backup**, and read
+  that line before starting the service.
+
+**A kill before the first checkpoint no longer forks the market (Cycle Audit 10,
+a6-06).** The checkpoint cadence is 5 s and the record is written on every pass,
+so a `SIGKILL` inside that window — an OOM on a first deploy, a bad env, a crash
+loop — leaves ticks in `record.db` that no `<id>.json` names. That boot used to
+read "no checkpoint" as "fresh market": a new genesis, sequence 1, and the
+record refusing every tick as a fork. Measured on the audited commit: 29 of 30
+assets unhosted, `/health/ready` `503` on every probe for the life of the
+process, `/markets/eurusd-otc` `404`, and `state:verify` calling the directory
+consistent and naming no asset at all — because it iterated the checkpoints, and
+an asset the record held and no checkpoint named was examined by nothing. Now
+`VenueService` hands `resumeMarket` the record's newest tick, a market with no
+checkpoint and a record behind it reopens past that tick on a **new key epoch**
+(there is no lease or cursor anywhere to floor on), and `verifyStateDirectory`
+warns by name and range about every asset in that state.
+
 **Key rotation** (`packages/distribution/src/rotation.ts`). `verifySignedChain`
 took one key, so a rotated key failed verification exactly as a forgery does.
 Now a rotation is a record **signed by the outgoing key** naming its successor;

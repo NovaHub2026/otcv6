@@ -760,6 +760,50 @@ describe('the stream refuses what the feed refuses, with a status (a6-04)', () =
     expect(future.body()).not.toMatch(/\nid: \d+\ndata: /);
   });
 
+  it("bounds the gap in a seamed market's boot window instead of naming none (a6-02, a1-06)", () => {
+    // PH-30.4 leaves a seamed market's feed empty from the boot until its first
+    // tick — 323 to 1200 ms on the release build, longer for a slow asset. In
+    // that window the feed had only its empty-history rule, so the resume the
+    // contract is built on came back `400 ... has never been published; the
+    // newest is 0. A client asking for it is not behind — it is holding a
+    // record this feed did not produce`, of a sequence `/ticks/:sequence`
+    // serves; `onGap=live` got `resumesAt: null`, which the panel draws as an
+    // unbounded interruption rather than a bounded hole; and `from=1` — what a
+    // fresh archiver sends — was accepted with an empty replay and joined
+    // silently at the seam.
+    const feed = new TickFeed({ retainTicks: 5 });
+    feed.seam(FIRST, { publishedThrough: 116, resumesAt: 100_118 });
+    const venue = { ...venueStub([FIRST]), feed } as unknown as VenueService;
+    const controller = new MarketController(venue);
+
+    // Refused in the words the same request gets one tick later.
+    expect(() => controller.stream(FIRST, untouched(), request(), '117')).toThrow(
+      BadRequestException,
+    );
+    expect(() => controller.stream(FIRST, untouched(), request(), '117')).toThrow(
+      /older than the retained window, which starts at 100118/,
+    );
+    // Including the one that used to be accepted.
+    expect(() => controller.stream(FIRST, untouched(), request(), '1')).toThrow(
+      BadRequestException,
+    );
+
+    // Asked to be told: the hole is bounded at both ends, and what follows is a
+    // live subscription rather than a 500 from resubscribing into an empty feed.
+    const told = recording();
+    controller.stream(FIRST, told.res, request(), '117', 'live');
+    expect(told.status()).toBe(200);
+    expect(JSON.parse(/^event: gap\ndata: (.*)\n\n/.exec(told.body())![1]!)).toMatchObject({
+      requested: 117,
+      resumesAt: 100_118,
+    });
+    expect(told.body()).not.toMatch(/\nid: \d+\ndata: /);
+    feed.publish(FIRST, [
+      { sequence: 100_118, instant: epochMillis(ORIGIN + 90_000), price: logPrice(1_004) },
+    ]);
+    expect(told.body()).toMatch(/\nid: 100118\ndata: /);
+  });
+
   it('carries several assets on one connection, each with its own position (PH-22.2)', () => {
     // The optimisation is easy and the contract is the hard part. SSE has one
     // `Last-Event-ID` per connection; eight assets have eight positions, and

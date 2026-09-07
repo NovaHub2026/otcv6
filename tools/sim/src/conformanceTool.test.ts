@@ -7,9 +7,21 @@ describe('the conformance command', () => {
       base: 'http://h:1',
       out: null,
       ticks: 200,
+      key: null,
     });
     expect(parseConformanceArgs(['--base', 'http://h:1', '--out', 'r.md', '--ticks', '5'])).toEqual(
-      { base: 'http://h:1', out: 'r.md', ticks: 5 },
+      { base: 'http://h:1', out: 'r.md', ticks: 5, key: null },
+    );
+    // The publisher key, told out of band, is what makes a served proof
+    // evidence rather than a claim (Cycle Audit 10, a4-03).
+    expect(parseConformanceArgs(['--base', 'http://h:1', '--key', 'AB'.repeat(32)])).toEqual({
+      base: 'http://h:1',
+      out: null,
+      ticks: 200,
+      key: 'ab'.repeat(32),
+    });
+    expect(() => parseConformanceArgs(['--base', 'http://h:1', '--key', 'ab'])).toThrow(
+      /64 hex characters/,
     );
     expect(() => parseConformanceArgs([])).toThrow(/--base/);
     expect(() => parseConformanceArgs(['--base', 'http://h:1/'])).toThrow(/trailing slash/);

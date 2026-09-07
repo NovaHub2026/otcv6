@@ -135,6 +135,47 @@ describe('a proof comes from the archive (PH-29.1)', () => {
     });
     expect((await proveFromPublication(directory, 'eurusd', 35)).kind).toBe('proved');
   });
+
+  /**
+   * **Cycle Audit 10, a4-05.** An edit that keeps the shape: same first
+   * sequence, same number of lines, one price changed. Until this the window
+   * still proved — every *other* sequence in it came back `proved`, with a
+   * signature that verifies and an inclusion proof that does not, because
+   * nothing ever recomputed the root the commitment signs. The venue's own
+   * cross-check compares the requested tick with its record, so it sees the
+   * edited line and nothing else; a refuter served `/proof/5` after editing
+   * line 3 and got `200` with `verifyInclusion` false.
+   */
+  it('refuses every sequence in a window whose journal no longer hashes to its root (a4-05)', async () => {
+    const directory = await scratch();
+    const writer = new PublicationWriter({
+      directory,
+      windowTicks: 10,
+      privateKey: KEY,
+      assets: [SPEC],
+    });
+    writer.observe('eurusd', ticks(1, 20));
+    expect((await proveFromPublication(directory, 'eurusd', 3)).kind).toBe('proved');
+    expect((await proveFromPublication(directory, 'eurusd', 5)).kind).toBe('proved');
+    const file = path.join(directory, 'eurusd', '1-10.journal');
+    const lines = (await readFile(file, 'utf8')).split('\n');
+    const row = JSON.parse(lines[3]!) as [number, number, number];
+    expect(row[0]).toBe(3);
+    lines[3] = JSON.stringify([row[0], row[1], row[2] + 1]);
+    await writeFile(file, lines.join('\n'));
+    // The edited line, and a line nobody touched: the window is one object.
+    for (const sequence of [3, 5, 10]) {
+      await expect(proveFromPublication(directory, 'eurusd', sequence)).rejects.toThrow(
+        /does not hash to the root its commitment signs/,
+      );
+      await expect(proveFromPublication(directory, 'eurusd', sequence)).rejects.toBeInstanceOf(
+        CommitmentError,
+      );
+    }
+    // The next window is untouched and still proves: the refusal is the
+    // window's, not the market's.
+    expect((await proveFromPublication(directory, 'eurusd', 15)).kind).toBe('proved');
+  });
 });
 
 /**

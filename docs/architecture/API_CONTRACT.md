@@ -1,8 +1,8 @@
 # API Contract
 
 Type: SUPPORTING DOCUMENTATION (generated; do not edit by hand)
-Version: 2.0.0
-Digest: 0d5dd03fcc427fee
+Version: 2.1.0
+Digest: 76df7ddf99783c45
 Source: `apps/api/src/contract.ts` — rendered by `npm run contract:render`; held to the controller by `contract.test.ts`
 
 ---
@@ -184,7 +184,7 @@ The published tick at a sequence, from the record.
 
 | Path parameter | Must be |
 | --- | --- |
-| `id` | a hosted asset id |
+| `id` | a known asset id; a retired market's record still answers |
 | `sequence` | a positive integer written as digits |
 
 Response: a JSON object:
@@ -204,11 +204,11 @@ Response: a JSON object:
 
 ## GET `/markets/:id/price`
 
-The price in force at an instant: the last published tick at or before it, the rule settlement uses.
+The price in force at an instant: the last published tick at or before it, the rule settlement uses. A retired market answers it from its record, which is what retirement leaves readable.
 
 | Path parameter | Must be |
 | --- | --- |
-| `id` | a hosted asset id |
+| `id` | a known asset id; a retired market's record still answers |
 
 | Query parameter | Must be |
 | --- | --- |
@@ -228,7 +228,7 @@ Response: a JSON object:
 
 | Status | When |
 | --- | --- |
-| 400 | a missing or malformed instant, or an instant after the newest published one |
+| 400 | a missing or malformed instant, or an instant after the newest published one — for a market this process no longer hosts, after the newest instant its record holds |
 | 404 | the asset is unknown, the record starts after the instant, or this deployment keeps no record |
 | 409 | the instant falls inside a recorded discontinuity — nothing was published for it and nothing ever will be; the seam is named (see /markets/:id/seams) |
 
@@ -238,7 +238,7 @@ Every discontinuity the record holds for this market: where it stops and where i
 
 | Path parameter | Must be |
 | --- | --- |
-| `id` | a hosted asset id |
+| `id` | a known asset id; a retired market's record still answers |
 
 Response: a JSON array; each item:
 
@@ -278,7 +278,8 @@ Response: a JSON object:
 | --- | --- |
 | 400 | the sequence is not a positive integer |
 | 404 | the asset is unknown, or this deployment does not publish commitments |
-| 409 | the sequence is published but its window is not yet committed (the newest committed sequence is named), or the archive disagrees with the record |
+| 409 | the sequence is published but its window is not yet committed (the newest committed sequence is named), or the archive disagrees with the record, or the archived window no longer hashes to the root its commitment signs |
+| 503 | the commitment chain file is damaged past a line the message names; proofs of earlier sequences are unaffected |
 
 ## GET `/markets/:id/stream`
 
@@ -291,7 +292,7 @@ Server-sent events: every tick of one market in order, resumable by sequence; a 
 | Query parameter | Must be |
 | --- | --- |
 | `from?` | the next sequence wanted; omitted joins at the live edge |
-| `onGap?` | 'live' to be told a gap and joined at the oldest retained sequence, instead of a 400 |
+| `onGap?` | 'live' to be told a gap and joined at the sequence the feed resumes at, instead of a 400 |
 
 Response: `text/event-stream`. Frames by event name (`message` is the default event):
 
@@ -319,7 +320,7 @@ Response: `text/event-stream`. Frames by event name (`message` is the default ev
 
 | Status | When |
 | --- | --- |
-| 400 | a malformed from or onGap, or (without onGap=live) a sequence the venue cannot replay |
+| 400 | a malformed from or onGap, or (without onGap=live) a sequence the venue cannot replay — including, between a restart that seamed this market and its first tick, every sequence below the one it will resume at |
 | 404 | the asset is not hosted |
 
 ## GET `/markets/stream`

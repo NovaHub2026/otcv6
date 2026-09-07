@@ -149,6 +149,57 @@ describe.each(implementations)('%s', (_name, open) => {
     expect(await record.assets()).toEqual([]);
   });
 
+  /**
+   * **Cycle Audit 10, a2-07.** Every fork this suite could express was a fork
+   * on the *price*: `tickRecord.test`'s own case rewrites `price`,
+   * `venueRecord.test` corrupts a price, and `MemoryTickRecord.corrupt` took
+   * nothing else. So both fork sites could be reduced to
+   * `sequence && price` — leaving `sameTick` itself intact, which is what
+   * `replication.test` guards — and 3,244 unit tests stayed green. A market
+   * that republished the same prices at shifted instants after a clock repair
+   * would have been recorded silently, and the settlement query keys on
+   * instants.
+   */
+  it('refuses a fork that keeps the price and only moves the instant (a2-07)', async () => {
+    const record = await open();
+    await record.append([{ assetId: 'a', ticks: run(1, 5) }]);
+    const moved = [...run(4, 6)];
+    moved[0] = { ...moved[0]!, instant: epochMillis(moved[0]!.instant + 1) };
+    await expect(record.append([{ assetId: 'a', ticks: moved }])).rejects.toBeInstanceOf(
+      RecordForkError,
+    );
+    expect(await record.head('a'), 'the record was not modified').toBe(5);
+    expect(await record.since('a', 4, 1)).toEqual([tick(4)]);
+  });
+
+  /**
+   * **Cycle Audit 10, a2-13.** `MemoryTickRecord` staged one entry per asset
+   * per pass, so a second batch for the same asset replaced the first's
+   * staging and its ticks were dropped — silently, with the pass reported
+   * successful — while `SqliteTickRecord` inserted inside the transaction and
+   * kept them. Measured: `append([{a, 1..5}, {a, 3..8}])` left the memory
+   * record holding 3..8 and the SQLite one holding 1..8. The shipped venue
+   * passes one batch per asset, so nothing reached it; two implementations
+   * behind one interface disagreeing about what a pass means is the defect.
+   *
+   * Refused rather than reconciled, for `malformedBatch`'s reason one level
+   * up: a pass is one writer's output for a set of assets, and a pass that
+   * names an asset twice is not it.
+   */
+  it('refuses a pass that names one asset twice, whole (a2-13)', async () => {
+    const record = await open();
+    await expect(
+      record.append([
+        { assetId: 'a', ticks: run(1, 5) },
+        { assetId: 'b', ticks: run(1, 2) },
+        { assetId: 'a', ticks: run(3, 8) },
+      ]),
+    ).rejects.toThrow(/names a twice/);
+    expect(await record.head('a'), 'nothing written for a').toBeNull();
+    expect(await record.head('b'), 'nothing written for b either').toBeNull();
+    expect(await record.assets()).toEqual([]);
+  });
+
   it('trims to the newest `keep` and lists the assets it holds', async () => {
     const record = await open();
     await record.append([
