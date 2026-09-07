@@ -3,6 +3,12 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import {
+  describeStaleBuild,
+  isFreshBuild,
+  projectsSpawnedBy,
+  readBuildVerdict,
+} from './buildFreshness.js';
 import { listSourceFiles, readRepositoryFile, repoRoot } from './repository.js';
 import { stripCommentsKeepingStrings } from './sourceScan.js';
 
@@ -231,5 +237,110 @@ describe('the gate reports what it ran', () => {
     expect(coverage, 'the coverage step must run the unit project with coverage on').toMatch(
       /--project unit .*--coverage|--coverage .*--project unit/,
     );
+  });
+});
+
+/**
+ * Which build a suite that spawns one is talking to.
+ *
+ * **Cycle Audit 10, a2-05 and a2-06.** Vitest resolves workspace imports to
+ * TypeScript sources, so a run's only dependency on `dist/` is the handful of
+ * suites that spawn a built entry as a child process — and a stale `dist/`
+ * there is silent. Two plants in `apps/api/src`, in two different routes, were
+ * reported as passes by the statistical suite written to catch them. The one
+ * check that existed, in `tools/sim`, read two of `tsc -b --dry`'s three
+ * verdicts and so was red on a clean tree after any `git checkout`.
+ *
+ * The rule lives in `buildFreshness.ts` and runs as a setup file for both
+ * projects; these are its unit tests and the assertion that it is still wired
+ * in. The fixtures are assembled at run time rather than written as literals,
+ * so that this file does not itself read as one that spawns a build — the
+ * payload trick `guardrailMetaAudit.stat.test.ts` uses for the same reason.
+ */
+describe('a suite that spawns a build runs against this source', () => {
+  const distPath = (workspace: string, entry: string): string =>
+    [workspace, 'dist', entry].join('/');
+  const tsconfigOf = (project: string): string => `/tmp/checkout/${project}/tsconfig.json`;
+  const upToDate = (project: string): string =>
+    `12:00:00 PM - Project '${tsconfigOf(project)}' is up to date\n`;
+  const stampsOnly = (project: string): string =>
+    `12:00:00 PM - A non-dry build would update timestamps for output of project ` +
+    `'${tsconfigOf(project)}'\n`;
+  const wouldBuild = (project: string): string =>
+    `12:00:00 PM - A non-dry build would build project '${tsconfigOf(project)}'\n`;
+
+  it('is wired into both projects (a2-06)', () => {
+    const occurrences = config.match(/vitest\.setup\.buildFreshness\.ts/g) ?? [];
+    expect(occurrences.length, 'both projects must run the build-freshness setup').toBe(2);
+  });
+
+  it('reads both spellings of a workspace build path', () => {
+    const named = `const entry = path.join(repoRoot, '${distPath('apps/api', 'main.js')}');`;
+    expect(projectsSpawnedBy('apps/api/src/x.stat.test.ts', named)).toEqual(['apps/api']);
+    const relative = `const entry = path.resolve(here, '${['..', 'dist', 'main.js'].join('/')}');`;
+    expect(projectsSpawnedBy('apps/api/src/x.stat.test.ts', relative)).toEqual(['apps/api']);
+    // A path that is not a workspace build: the mutation payload two test files
+    // carry, and a relative `dist` that would resolve inside `src/`.
+    const payload = `'${['..', '..', 'trading', 'dist', 'index.js'].join('/')}'`;
+    expect(projectsSpawnedBy('tools/sim/src/x.test.ts', payload)).toEqual([]);
+    expect(projectsSpawnedBy('apps/api/src/lab/x.test.ts', relative)).toEqual([]);
+  });
+
+  it('accepts a build whose inputs are merely newer (a2-05)', () => {
+    // The third verdict, and the one the PH-28.1 fix did not read: content
+    // identical, stamps behind. A `touch`, a branch switch or the
+    // `git checkout -- .` that reverts a plant produces exactly this, and the
+    // guard was red on a clean tree with a complete build because of it.
+    const report = stampsOnly('packages/core') + stampsOnly('tools/sim');
+    expect(isFreshBuild(readBuildVerdict('tools/sim', report))).toBe(true);
+    expect(isFreshBuild(readBuildVerdict('tools/sim', upToDate('tools/sim')))).toBe(true);
+  });
+
+  it('rejects a build the compiler would rebuild anywhere in the graph (a2-06)', () => {
+    // The spawned project's own line says only that its stamps are behind; the
+    // stale project is upstream, and the process it spawns loads that one's
+    // `dist/`. Reading the spawned project's line alone — the literal fix a2-05
+    // proposed — passes this tree.
+    const report = wouldBuild('packages/core') + stampsOnly('tools/sim');
+    const verdict = readBuildVerdict('tools/sim', report);
+    expect(isFreshBuild(verdict)).toBe(false);
+    expect(verdict.wouldBuild).toEqual(['packages/core']);
+    expect(describeStaleBuild(verdict, report)).toContain('npx tsc -b tools/sim');
+  });
+
+  it('refuses a report that says nothing about the project', () => {
+    // A `tsc` that failed to run, or a project name that no longer exists,
+    // must not read as a clean build: silence is the failure mode every guard
+    // in this file exists for.
+    expect(isFreshBuild(readBuildVerdict('apps/api', ''))).toBe(false);
+    expect(isFreshBuild(readBuildVerdict('apps/api', upToDate('tools/sim')))).toBe(false);
+  });
+
+  it('finds every suite that spawns a build', () => {
+    const spawning = new Map<string, string[]>();
+    for (const root of WORKSPACE_ROOTS) {
+      for (const file of listSourceFiles(root, { includeTests: true })) {
+        if (!file.endsWith('.test.ts')) continue;
+        const projects = projectsSpawnedBy(file, readRepositoryFile(file));
+        if (projects.length > 0) spawning.set(file, projects);
+      }
+    }
+    // The seven `apps/api` statistical suites a2-06 named, the `tools/sim` job
+    // test that carried the only check, and the two outside them that spawn a
+    // build for the same reason. Named rather than counted: a detector that
+    // stopped reading one spelling would still find "some".
+    for (const file of [
+      'apps/api/src/clientReconstruction.stat.test.ts',
+      'apps/api/src/conformance.stat.test.ts',
+      'apps/api/src/panelSurface.stat.test.ts',
+      'apps/api/src/registration.stat.test.ts',
+      'apps/api/src/restart.stat.test.ts',
+      'apps/api/src/servedRecord.stat.test.ts',
+      'apps/api/src/stream.stat.test.ts',
+      'packages/runtime/src/sqliteConcurrency.test.ts',
+      'tools/sim/src/servedAssuranceJob.test.ts',
+    ]) {
+      expect(spawning.has(file), `${file} spawns a build and the detector missed it`).toBe(true);
+    }
   });
 });

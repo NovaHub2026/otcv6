@@ -46,6 +46,75 @@ const GENERATION_ROOTS = [
 ];
 
 /**
+ * The path between generation and publication, which must stay blind too.
+ *
+ * **Cycle Audit 10, a1-05.** {@link GENERATION_ROOTS} is the price path, and
+ * the economic-vocabulary rules reached no further — while
+ * `market.controller.ts` told the reader the opposite: "the trading boundary
+ * lives in `packages/trading` and the guardrail scan keeps that vocabulary out
+ * of `apps/api/src`". It did not. An auditor planted four defects and all four
+ * survived a full guardrail run: `const payout = capacity` in
+ * `RateLimitGuard.admit`, a `brokerExposure` refusal at the head of
+ * `MemoryTickRecord.append`, a `houseEdge` in `PublicationService.observe`, and
+ * `this.ready = payoutRatio > 0` in the venue.
+ *
+ * A lexical scan is the weakest of the INV-001 layers and this does not change
+ * that — what makes the hosting path blind is `composition.test.ts` (production
+ * registers no sign source), the engine-access and lab-surface guards, the
+ * dependency rules, and the by-value record-versus-feed tests that caught the
+ * one plant of the five which actually changed the market. The scan is cheap,
+ * and those four files are precisely where an economic dependency would be
+ * introduced by someone who meant well. So it reaches them.
+ *
+ * `apps/api/src/lab/` is excluded, and `packages/trading/src` stays out
+ * entirely, for the reason {@link REPLAYABLE_ROOTS} gives: the Lab is the
+ * operator's laboratory, it computes positions and settles them through
+ * `@otc/trading`, and scanning it for the word `payout` would be nonsense.
+ * What keeps the Lab out of production is the dependency rule below, not this
+ * scan.
+ */
+const HOSTING_ROOTS = ['packages/runtime/src', 'apps/api/src'];
+
+/**
+ * Directories inside {@link HOSTING_ROOTS} the economic rules do not reach,
+ * each with its reason.
+ */
+const HOSTING_EXCLUSIONS: Record<string, string> = {
+  'apps/api/src/lab/':
+    "the operator's laboratory computes positions and settles them; it is a separate process, " +
+    'reached only through `lab.main.ts`, and the dependency rule below is what keeps it there',
+};
+
+/**
+ * Words the hosting path may use that the price path may not, by file and rule.
+ *
+ * A writer lease has an expiry and a market contract has an expiry, and one
+ * regular expression cannot tell them apart. The exemption is per *term*, not
+ * per file: a line carrying `expiresAt` **and** `contractId` is still a
+ * violation, and a `payout` in either file is still a violation, because only
+ * the named word is removed before the rule is asked again.
+ */
+const HOSTING_VOCABULARY_ALLOWLIST: readonly {
+  readonly file: string;
+  readonly rule: string;
+  readonly term: string;
+  readonly reason: string;
+}[] = [
+  {
+    file: 'packages/runtime/src/lease.ts',
+    rule: 'no-contract-inputs',
+    term: 'expiresAt',
+    reason: 'a writer lease expires; it is a term of scheduling, not of a market contract',
+  },
+  {
+    file: 'packages/runtime/src/sqliteStore.ts',
+    rule: 'no-contract-inputs',
+    term: 'expiresAt',
+    reason: 'the stored form of the same lease grant',
+  },
+];
+
+/**
  * Packages that must stay replayable, which is a wider set than the price path.
  *
  * `runtime` schedules markets and persists them; `trading` settles against the
@@ -260,6 +329,37 @@ function generationSources(): Source[] {
 /** Everything that must stay reproducible: the price path, what hosts it, and what measures it. */
 function replayableSources(): Source[] {
   return sourcesUnder([...REPLAYABLE_ROOTS, ...TOOLING_ROOTS]);
+}
+
+/** What hosts and publishes the price path, minus the directories excused above (a1-05). */
+function hostingSources(): Source[] {
+  const excluded = Object.keys(HOSTING_EXCLUSIONS);
+  return sourcesUnder(HOSTING_ROOTS).filter(
+    ({ file }) => !excluded.some((prefix) => file.startsWith(prefix)),
+  );
+}
+
+/**
+ * Whether an allowlisted term is the only reason a line matched.
+ *
+ * The line is asked again with the term removed: if the rule stops matching,
+ * the term was the whole offence and the line is excused; if it still matches,
+ * something else in it is economic and the violation stands.
+ */
+function excusedByTerm(violation: Violation, term: string): boolean {
+  const withoutTerm = violation.text.replace(new RegExp(term, 'gi'), '');
+  return !scanSource(violation.file, withoutTerm, ECONOMIC_BLINDNESS_RULES).some(
+    (again) => again.rule === violation.rule,
+  );
+}
+
+function excusedInHostingPath(violation: Violation): boolean {
+  return HOSTING_VOCABULARY_ALLOWLIST.some(
+    (entry) =>
+      entry.file === violation.file &&
+      entry.rule === violation.rule &&
+      excusedByTerm(violation, entry.term),
+  );
 }
 
 function describeViolations(violations: Violation[]): string {
@@ -577,6 +677,41 @@ describe('generation code is economically blind', () => {
     );
     expect(describeViolations(violations)).toBe('');
   });
+
+  it('nor does the path that hosts and publishes it (CA10 a1-05)', () => {
+    // The venue, the tick record, the publication service and the rate limit.
+    // Four plants lived in exactly those four files and a full guardrail run
+    // was green, while the controller's own docstring said this scan kept that
+    // vocabulary out of `apps/api/src`.
+    const violations = hostingSources()
+      .flatMap(({ file, source }) => scanSource(file, source, ECONOMIC_BLINDNESS_RULES))
+      .filter((violation) => !excusedInHostingPath(violation));
+    expect(describeViolations(violations)).toBe('');
+  });
+
+  it('keeps no vocabulary exemption that is no longer needed', () => {
+    // The same rule the ambient-state allowlist above is held to: an exemption
+    // that outlives its reason is a hole with a docstring.
+    const violations = hostingSources().flatMap(({ file, source }) =>
+      scanSource(file, source, ECONOMIC_BLINDNESS_RULES),
+    );
+    const stale = HOSTING_VOCABULARY_ALLOWLIST.filter(
+      (entry) =>
+        !violations.some(
+          (violation) =>
+            violation.file === entry.file &&
+            violation.rule === entry.rule &&
+            excusedByTerm(violation, entry.term),
+        ),
+    ).map((entry) => `${entry.file} [${entry.rule}] ${entry.term}`);
+    expect(stale, 'exemptions nothing needs any more').toEqual([]);
+    for (const entry of HOSTING_VOCABULARY_ALLOWLIST) {
+      expect(entry.reason.length, `${entry.file} needs a reason`).toBeGreaterThan(10);
+    }
+    for (const [directory, reason] of Object.entries(HOSTING_EXCLUSIONS)) {
+      expect(reason.length, `${directory} needs a reason`).toBeGreaterThan(10);
+    }
+  });
 });
 
 describe('dependency direction', () => {
@@ -614,6 +749,22 @@ describe('dependency direction', () => {
       }))
       .filter(({ imports }) => imports.length > 0);
     expect(offenders).toEqual([]);
+  });
+
+  it('confines @otc/trading in the service to the Lab (CA10 a1-05)', () => {
+    // The economic-vocabulary scan skips `apps/api/src/lab/` because the Lab
+    // legitimately computes positions. That exclusion is only safe while the
+    // Lab is the *only* part of the service that reaches the trading boundary:
+    // an import of `@otc/trading` anywhere else in `apps/api/src` would put
+    // settlement vocabulary into the hosting path through a door the scan is
+    // told not to look at. Tests are excluded — `settlementQuery.test.ts` and
+    // `conformance.stat.test.ts` settle against the published record on
+    // purpose, which is what INV-009 asks of them.
+    const offenders = listSourceFiles('apps/api/src', { includeTests: false })
+      .filter((file) => !file.startsWith('apps/api/src/lab/'))
+      .map((file) => ({ file, imports: workspaceImports(file) }))
+      .filter(({ imports }) => imports.some((s) => s === '@otc/trading'));
+    expect(offenders, 'the trading boundary reached outside the Lab').toEqual([]);
   });
 
   it('limits @otc/engine to depending on @otc/core', () => {

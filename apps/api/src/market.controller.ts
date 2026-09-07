@@ -67,8 +67,18 @@ export const BOOT_NONCE = 'BOOT_NONCE';
  * was read-only, three subphases after it stopped being.
  *
  * Nothing here is economic. There are no positions, no contracts and no
- * settlement in this service; the trading boundary lives in `packages/trading`
- * and the guardrail scan keeps that vocabulary out of `apps/api/src`. And
+ * settlement in this service; the trading boundary lives in `packages/trading`.
+ * Until Cycle Audit 10 (a1-05) this sentence went on to say that "the guardrail
+ * scan keeps that vocabulary out of `apps/api/src`", and it did not: the
+ * economic-vocabulary rules stopped at the price path, and four plants — a
+ * `payout` in the rate limit, a `brokerExposure` in the record's append, a
+ * `houseEdge` in the publication service, a `payoutRatio` deciding this
+ * service's readiness — survived a full guardrail run. The scan reaches this
+ * directory now (`HOSTING_ROOTS` in `guardrails.test.ts`), with the Lab
+ * excluded and a dependency rule keeping `@otc/trading` inside it. What makes
+ * the claim true is still the behavioural layer, not the lexical one:
+ * `composition.test.ts` (production registers no sign source), the engine-access
+ * and lab-surface guards, and the by-value record-versus-feed tests. And
  * nothing here generates: every handler reads a record the venue has already
  * published, or asks a job to run, and none of them can reach the price path
  * (INV-001).

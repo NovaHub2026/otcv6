@@ -145,6 +145,20 @@ async function race(children: number, rounds: number): Promise<ChildResult[]> {
   return results;
 }
 
+describe('the build these processes run', () => {
+  it('is not older than the source under test (CA10 a2-06)', () => {
+    // The children below load this package's built store, and Vitest resolves
+    // everything else from source: a build made before the last edit would make
+    // this suite report on the previous implementation and say nothing about
+    // it. `vitest.setup.buildFreshness.ts` asks `tsc -b --dry` before this file
+    // runs; this fails if it did not run for this file.
+    expect(
+      (globalThis as { __otcFreshBuilds__?: string[] }).__otcFreshBuilds__,
+      'vitest.setup.buildFreshness.ts did not verify a build for this file',
+    ).toContain('packages/runtime');
+  });
+});
+
 describe('several processes, one leader', () => {
   const CHILDREN = 6;
   const ROUNDS = 150;
