@@ -214,8 +214,38 @@ than a careful reader copies correctly.
 
 The fixes are grouped by what they are about rather than by who found them,
 because several findings are one defect seen from different directions: the
-rate limit was found independently by four auditors, and the seam was found by
-three.
+rate limit was found independently by four auditors (a1-02, a2-03, a5-01,
+a8-01), the seam by three (a4-01, a1-01, a6-01), the unrestorable backup by
+three (a7-01, a6-11, a3-01), the torn commitments file by three (a2-04, a3-08,
+a8-06), and the release record's false corroboration by two (a5-06, a7-02).
+
+### What was fixed, and what is carried
+
+**Every critical and every material finding is fixed.** Seven clean-area
+reports needed nothing — they are findings that the guards they probed did
+hold. What is carried is fourteen minor findings, by name, each because the
+cost of fixing it now is worse than the cost of it standing:
+
+| Carried             | Why                                                                                                                                                                                                                                                                                       |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| a2-10               | The chain verifier's epoch check at a restart is unguarded; the refuter established the scenario only bites in a shape the project does not produce (a rotation naming a head the chain reaches after the restart).                                                                       |
+| a2-14               | `contract.test` exercises 12 of 14 response shapes in process; the other two are covered by the shipped-venue statistical suite.                                                                                                                                                          |
+| a3-14               | An auditor's own conduct note — it swept processes with a pattern its own command contained. Recorded because the same mistake has now cost this project three times, and it belongs in `CLAUDE.md`'s rules rather than in the code.                                                      |
+| a4-10               | `exposure` and the limiter accept fractional stakes that `settle()` refuses. Real, and reached only by a broker that ignores the integer-minor-unit contract PH-29.4 wrote for exactly this.                                                                                              |
+| a5-08               | The rate limit's bucket map is swept in full once it holds ten thousand entries; the refuter measured 0.157 ms and showed the precondition is unreachable in every composition the repository ships.                                                                                      |
+| a5-09, a7-07, a7-08 | Provenance stamps on generated records: a dirty-tree commit hash, a missing boot nonce, a tag object where a commit belongs. Each makes a record harder to tie to its run; none makes one false.                                                                                          |
+| a7-09, a7-11        | The hosted-CI table omits runs and nothing guards it; the evidence records are unguarded copies. Both are the same shape as a7-04, which is fixed, and both want a guard that reads a generated file against its generator — worth doing deliberately rather than at the end of an audit. |
+| a8-08               | The multiplexed client retries a refused resume for ever with the same query. Narrowed by the a5-03 fix that landed here; what remains is the retry's backoff, not its correctness.                                                                                                       |
+| a8-09               | The two journal readers disagree on what instants they accept. The venue's is the strict one, so the lab's is the lenient reader of a file the venue wrote.                                                                                                                               |
+| a8-11               | `engineAccess.ts` builds the same fork four times and carries an orphaned docblock. Duplication in a Lab-only path.                                                                                                                                                                       |
+| a8-12               | Each `/proof` streams the asset's whole commitments file from the top: ~350 ms on a year-sized chain. A real cost at scale, and a change to how proofs are read rather than a defect in what they say.                                                                                    |
+
+Carrying fourteen minor findings is a choice, and the reason it is defensible
+here and was not in Cycle Audit 9 — which carried one — is that this audit
+found ninety-eight things in a codebase that had just been called finished.
+Fixing the four criticals and every material finding took two waves and a
+gate; fixing the tail as well would have meant a third, and the next cycle can
+have them with a clear head.
 
 ## 5. What the plants say about the guards
 
