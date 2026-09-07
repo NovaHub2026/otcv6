@@ -116,7 +116,18 @@ export interface ObserverLoadReport {
   readonly ticksInWindow: number;
   /** True when this harness outworked the engine: the latency figures are not usable. */
   readonly instrumentBound: boolean;
-  /** True when every attempted observer was established and held to the end. */
+  /**
+   * True when every attempted observer was established **and held to the end**.
+   *
+   * **Cycle Audit 10 (a8-03).** It used to be `established === observers`
+   * alone, which is only the first half of that sentence: a venue that accepted
+   * every socket, delivered three ticks and then closed each observer with
+   * `client fell behind` reported `complete: true` with zero gaps — the exact
+   * shape Cycle Audit 8 added `closeEvents` to make visible, laundered back
+   * into a clean run by the one boolean every caller reads. `describeObserverLoad`
+   * printed `TRUNCATED` underneath it, and the fleet driver, which reads this
+   * flag and not that text, printed `yes`.
+   */
   readonly complete: boolean;
 }
 
@@ -421,7 +432,11 @@ export async function runObserverLoad(options: ObserverLoadOptions): Promise<Obs
     // The harness outworked the engine, so the latency it measured is partly
     // its own scheduling. Reported, never quietly used (CA6-01).
     instrumentBound: engineCpuSeconds !== null && harnessCpuSeconds > engineCpuSeconds,
-    complete: established === options.observers,
+    // Established **and** held: a fleet the server cut off mid-hold is not a
+    // complete observation of it (a8-03).
+    complete:
+      established === options.observers &&
+      states.every((state) => state.gapEvents === 0 && state.closeEvents === 0),
   };
 }
 
@@ -447,7 +462,7 @@ export function describeObserverLoad(report: ObserverLoadReport): string {
   if (report.instrumentBound) {
     lines.push('INSTRUMENT-BOUND — the harness outworked the engine; latency is not usable');
   }
-  if (!report.complete) {
+  if (report.established !== report.attempted) {
     lines.push('INCOMPLETE — not every attempted observer was established');
   }
   // **Cycle Audit 8 (a3).** A fleet the server truncated and closed used to

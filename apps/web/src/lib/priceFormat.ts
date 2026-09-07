@@ -42,6 +42,8 @@
  * than that is showing a movement no contract can settle against.
  */
 
+import { displayPrice, type InstrumentView } from '@otc/chart';
+
 /** The finest lattice the core will accept, and so the widest this may go. */
 const MAX_DISPLAY_PRECISION = 18;
 
@@ -127,4 +129,32 @@ export function toDisplayedPrice(price: number, precision: number): number {
     throw new RangeError(`A displayed price must be finite, received ${price}.`);
   }
   return Number.parseFloat(price.toFixed(precision));
+}
+
+/**
+ * A canonical integer, as the text a screen shows.
+ *
+ * **Cycle Audit 10 (a8-04).** `Tick.price` is a `LogPrice` — an offset on the
+ * asset's log lattice (ADR-0004), not a price — and the board printed it raw:
+ * BTC/USDT read `-65` where the chart beside it read `69992.0`, EUR/JPY `2`
+ * where the chart read `184.0002`, DOGE/USDT `-80` where the chart read
+ * `0.0779780`. The panel's own browser guard asserted `/^-?\d+$/` over those
+ * cells, which the lattice index satisfies and a display price does not, so
+ * the only test that could see the defect required it.
+ *
+ * This is the same conversion the venue applies for `/markets`'s
+ * `displayPrice` — `@otc/chart`'s portable `displayPrice`, rendered at the
+ * digits the asset settles on — so a card, a chart and the engine's own JSON
+ * are three renderings of one number rather than three answers (INV-002). The
+ * digit count is capped where the double runs out of significance, for the
+ * reason `renderablePrecision` exists (CA7-29).
+ */
+export function displayPriceText(price: number, instrument: InstrumentView): string {
+  const converted = displayPrice(price, instrument);
+  if (!Number.isFinite(converted)) {
+    throw new RangeError(`A displayed price must be finite, received ${converted}.`);
+  }
+  return converted.toFixed(
+    renderablePrecision(instrument.displayPrecision, instrument.referencePrice),
+  );
 }

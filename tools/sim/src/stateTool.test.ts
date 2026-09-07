@@ -1,5 +1,14 @@
 // Invariant evidence: INV-009 (reproducible settlement).
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  writeSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -101,6 +110,29 @@ describe('the operator’s state tool', () => {
     const empty = await runStateTool(['verify', '--dir', scratch()]);
     expect(empty.code).toBe(0);
     expect(empty.output).toMatch(/Assets: none \(nothing to resume\)[\s\S]*Consistent/);
+  });
+
+  /**
+   * **Cycle Audit 10 (a6-13).** This is the command the restore runbook names
+   * as its acceptance check, and on a state directory with 8 KB of garbage in
+   * the middle of `record.db` it printed every asset's heads and `Consistent:
+   * every file agrees.`, exit 0. The venue then booted, resumed and seamed the
+   * whole catalogue, and died in `#primeFromRecord` with a raw
+   * `ERR_SQLITE_ERROR` — every two seconds, under `Restart=always`.
+   */
+  it('does not call a damaged record.db consistent', async () => {
+    const directory = await stateDir(100, 4_000);
+    const file = path.join(directory, RECORD_DB);
+    const handle = openSync(file, 'r+');
+    try {
+      writeSync(handle, Buffer.alloc(8_192, 0x5a), 0, 8_192, Math.floor(statSync(file).size / 2));
+    } finally {
+      closeSync(handle);
+    }
+    const verified = await runStateTool(['verify', '--dir', directory]);
+    expect(verified.output).not.toMatch(/Consistent/);
+    expect(verified.output).toMatch(/record\.db: is damaged/);
+    expect(verified.code).toBe(1);
   });
 
   it('backup writes a verified copy with its manifest, at the clock it is given', async () => {

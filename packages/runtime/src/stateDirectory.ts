@@ -79,18 +79,83 @@ export const LAB_MARKER = path.join('lab', 'composed-by-lab.json');
 export { BACKUP_MANIFEST } from './fileStore.js';
 
 /**
+ * `PRAGMA quick_check` on one database file: null when it holds together, or
+ * what SQLite says is wrong with it (Cycle Audit 10, a6-13).
+ *
+ * Until this ran, verification asked each database only for a head per asset —
+ * a handful of pages — so damage anywhere else in the file was invisible. A
+ * state directory with 8 KB of garbage written into the middle of `record.db`
+ * passed `state:verify` with `Consistent: every file agrees.` and exit 0, which
+ * is the acceptance check the restore runbook names. The venue then booted,
+ * resumed and **seamed** every asset, hosted them, and died in
+ * `#primeFromRecord` with a raw `ERR_SQLITE_ERROR` and a Node stack;
+ * `deploy/otc-engine.service` is `Restart=always` / `RestartSec=2`, so that is
+ * a two-second crash loop that reseams the catalogue on every pass and never
+ * names a file. At other corruption offsets the operator's own tool died the
+ * same way, inside this function. One question, asked once per database, ends
+ * both: the directory is refused before a market resumes, by file, with what
+ * SQLite found.
+ *
+ * **Opened read-write, like every other reader here.** A read-only connection
+ * cannot create the `-shm` a WAL database needs, so a directory left behind by
+ * a killed process — precisely the directory a restore is run against — could
+ * fail to open at all and turn a recoverable boot into a refusal.
+ * `SqliteTickRecord` opens the same file read-write two statements later.
+ *
+ * The scan reads the whole file: tens of milliseconds on the tens of megabytes
+ * a bounded record runs to, once per boot and once per operator command.
+ */
+function integrityFailure(file: string): string | null {
+  let db: DatabaseSync;
+  try {
+    db = new DatabaseSync(file);
+  } catch (error) {
+    return `cannot be opened: ${(error as Error).message}`;
+  }
+  try {
+    // SQLite answers one row of `ok`, or a row per fault — some of them
+    // several lines long. A problem is one line in a refusal, so they are
+    // flattened here rather than in the middle of the operator's output.
+    const said = db
+      .prepare('PRAGMA quick_check')
+      .all()
+      .flatMap((row) => String(Object.values(row)[0] ?? '').split('\n'))
+      .map((line) => line.trim())
+      .filter((line) => line !== '' && line !== 'ok');
+    if (said.length === 0) return null;
+    return (
+      `is damaged and cannot answer for what the venue published: ${said.join('; ')}. ` +
+      `A boot on this file resumes and seams the catalogue and then dies part-way through ` +
+      `priming; restore a backup instead.`
+    );
+  } catch (error) {
+    // The check itself refused: damage bad enough that SQLite will not even
+    // walk the file. Same conclusion, and the message is SQLite's own.
+    return `is damaged: ${(error as Error).message}`;
+  } finally {
+    db.close();
+  }
+}
+
+/**
  * Check that the directory's files describe one market each, and agree.
  *
  * What refuses (a problem): a checkpoint that exists and cannot be read
  * (`CorruptRecordError`, the same class `resumeMarket` refuses); a database
- * written by newer code; a record whose head is **behind** the checkpoint's
+ * written by newer code; a database whose own pages do not hold together
+ * ({@link integrityFailure}, Cycle Audit 10 a6-13); a database that cannot be
+ * read at all; a record whose head is **behind** the checkpoint's
  * `lastPublished` — ticks observers saw and the record does not hold, which
  * a restore from an older record beside a newer checkpoint produces; a candle
  * history **ahead** of the record for the same reason, the other way round.
  *
  * What warns: a checkpoint `resumeMarket` will seam past (`UnusableRecordError`),
- * and an asset with a checkpoint and no record at all — a deployment from
- * before the record existed, which boots and primes nothing.
+ * and an asset with a checkpoint and no record — `record.db` **absent from the
+ * directory**, or present and holding nothing for that asset. Either way the
+ * asset boots and primes nothing, and the two are said differently because an
+ * operator fixes them differently (Cycle Audit 10, a3-03: the guard read
+ * `record !== null`, so the case the sentence above names — no record at all —
+ * was the one case that could not reach it).
  *
  * What is not a checkpoint: a backup manifest (`backup.json`, `kind:
  * 'otc-state-backup'`) left in a directory the backup tool wrote. The store
@@ -132,36 +197,103 @@ export async function verifyStateDirectory(directory: string): Promise<StateDire
     }
   }
 
+  // Absent, unreadable, or open: three states, because they are three
+  // different things to tell an operator. Unreadable covers both a file
+  // `integrityFailure` found damaged and one whose schema this code refuses —
+  // in either case the heads below are unknown, not null, and the directory is
+  // already refused.
   const recordFile = path.join(directory, RECORD_DB);
   let record: SqliteTickRecord | null = null;
+  let recordState: 'absent' | 'unreadable' | 'open' = 'absent';
   if (existsSync(recordFile)) {
-    try {
-      record = new SqliteTickRecord(recordFile);
-    } catch (error) {
-      problems.push({ file: RECORD_DB, assetId: null, detail: (error as Error).message });
+    recordState = 'unreadable';
+    const damage = integrityFailure(recordFile);
+    if (damage !== null) {
+      problems.push({ file: RECORD_DB, assetId: null, detail: damage });
+    } else {
+      try {
+        record = new SqliteTickRecord(recordFile);
+        recordState = 'open';
+      } catch (error) {
+        problems.push({ file: RECORD_DB, assetId: null, detail: (error as Error).message });
+      }
     }
   }
   const historyFile = path.join(directory, HISTORY_DB);
   let history: SqliteCandleHistory | null = null;
   if (existsSync(historyFile)) {
-    try {
-      history = new SqliteCandleHistory(historyFile);
-    } catch (error) {
-      problems.push({ file: HISTORY_DB, assetId: null, detail: (error as Error).message });
+    const damage = integrityFailure(historyFile);
+    if (damage !== null) {
+      problems.push({ file: HISTORY_DB, assetId: null, detail: damage });
+    } else {
+      try {
+        history = new SqliteCandleHistory(historyFile);
+      } catch (error) {
+        problems.push({ file: HISTORY_DB, assetId: null, detail: (error as Error).message });
+      }
     }
   }
 
+  /**
+   * A head read that names its file instead of escaping as a stack (a6-13).
+   *
+   * `quick_check` above catches the damage that is in the file; what a `-wal`
+   * still holds, or damage it does not reach, arrives here — and a raw
+   * `ERR_SQLITE_ERROR` out of the operator's own tool refuses nothing and names
+   * nothing. Once per file: thirty assets share one damaged database, and one
+   * problem describes it.
+   */
+  const unreadable = new Set<string>();
+  const headOf = async (
+    file: string,
+    read: () => Promise<number | null>,
+  ): Promise<number | null> => {
+    try {
+      return await read();
+    } catch (error) {
+      if (!unreadable.has(file)) {
+        unreadable.add(file);
+        problems.push({
+          file,
+          assetId: null,
+          detail: `cannot be read: ${(error as Error).message}`,
+        });
+      }
+      return null;
+    }
+  };
+
+  const openRecord = record;
+  const openHistory = history;
   try {
     for (const [assetId, checkpoint] of checkpoints) {
       const published = checkpoint.lastPublished?.sequence ?? null;
-      const recordHead = record === null ? null : await record.head(assetId);
-      const historyHead = history === null ? null : await lastStoredSequence(history, assetId);
+      const recordHead =
+        openRecord === null ? null : await headOf(RECORD_DB, () => openRecord.head(assetId));
+      const historyHead =
+        openHistory === null
+          ? null
+          : await headOf(HISTORY_DB, () => lastStoredSequence(openHistory, assetId));
       heads[assetId] = { checkpoint: published, record: recordHead, history: historyHead };
-      if (published !== null && recordHead === null && record !== null) {
+      // A head of null means "no tick for this asset" only when the record was
+      // read; when it was not, the directory is refused already and a warning
+      // about priming would be describing a file nobody will read.
+      if (
+        published !== null &&
+        recordHead === null &&
+        recordState !== 'unreadable' &&
+        !unreadable.has(RECORD_DB)
+      ) {
         warnings.push({
           file: RECORD_DB,
           assetId,
-          detail: `holds no tick for an asset whose checkpoint has published through ${published}; nothing is primed at boot`,
+          detail:
+            recordState === 'absent'
+              ? `is not in the state directory, and this asset's checkpoint has published ` +
+                `through ${published}: nothing is primed at boot, the commitment chain ` +
+                `restarts at a new root, and every client resuming from below the new head ` +
+                `is refused`
+              : `holds no tick for an asset whose checkpoint has published through ${published}; nothing is primed at boot`,
         });
       }
       if (published !== null && recordHead !== null && recordHead < published) {

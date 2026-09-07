@@ -8,6 +8,20 @@
 # way out — and keeps the newest <keep>. Without <every seconds> it runs once.
 set -euo pipefail
 state="${1:?state dir}"; out="${2:?backups dir}"; keep="${3:?keep}"; every="${4:-}"
+# Retention is `head -n -"$keep"`, and `head -n -0` prints *every* line: keep=0
+# deleted every backup in the directory, including the one this run had just
+# taken and verified, exit 0, immediately after printing `Consistent: every
+# file agrees.` (Cycle Audit 10, a2-09). A non-numeric keep reached `head` too
+# and died there with `invalid number of lines`, after the copy was written.
+# Both are the same missing question, and the answer costs an operator nothing:
+# a backup script whose job is to keep backups may not be told to keep none.
+case "$keep" in
+  ''|*[!0-9]*) echo "keep must be a whole number of backups; got '$keep'" >&2; exit 2;;
+esac
+if [ "$keep" -lt 1 ]; then
+  echo "keep must be at least 1: keep=0 deletes every backup, including the one just taken" >&2
+  exit 2
+fi
 cd "$(dirname "$0")/.."
 run_once() {
   local stamp target

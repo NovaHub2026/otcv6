@@ -842,6 +842,10 @@ Desde PH-30.1 el repositorio trae lo que un despliegue arranca:
   cortadas, `/metrics` y `/health/ready` solo para tu red, y la dirección del
   cliente reenviada (el límite de peticiones la usa).
 - `deploy/backup.sh` — `npm run state:backup` en bucle, conservando las últimas N.
+  **N debe ser 1 o más**: el script rechaza `0` (y cualquier valor no numérico)
+  antes de copiar nada, porque su retención es `head -n -N` y `head -n -0`
+  imprime todas las líneas — con `0` borraba todas las copias, incluida la que
+  acababa de tomar y verificar (Ciclo de Auditoría 10, a2-09).
 
 ### Operación: vivo, listo, métricas, límite
 
@@ -920,7 +924,11 @@ npm run assurance:served -- --base http://127.0.0.1:3000 --out verdict.md
                      # y escribe un informe; sale con 2 si algo es explotable
 npm run conformance -- --base http://127.0.0.1:3000 --out conformance.md
                      # la lista de verificación ejecutable contra tu despliegue (0/1)
-npm run state:verify -- --dir ./.otc-state          # el directorio de estado es coherente
+npm run state:verify -- --dir ./.otc-state          # el directorio de estado es coherente:
+                     # los puntos de control se leen, las cabeceras concuerdan, el registro
+                     # y el histórico pasan `PRAGMA quick_check` — un fichero dañado se
+                     # nombra aquí y no en mitad del arranque (a6-13). Sale 1 si el
+                     # directorio no existe, y 1 si algo no cuadra.
 npm run state:backup -- --dir ./.otc-state --out DIR # copia coherente y verificada
 npm run contract:render                              # regenera docs/architecture/API_CONTRACT.md
 ```

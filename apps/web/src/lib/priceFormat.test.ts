@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  displayPriceText,
   minMoveFor,
   priceFormatFor,
   renderablePrecision,
@@ -172,5 +173,66 @@ describe('the malformed label of 2026-09-02', () => {
         );
       }
     }
+  });
+});
+
+/**
+ * **Cycle Audit 10 (a8-04).** The board printed `Tick.price` under the market's
+ * name: the canonical integer, an offset on the log lattice, not a price. The
+ * numbers below are the shipped catalogue's, and the gap between the two
+ * columns is the defect — `-65` on screen where the chart beside it read
+ * `69992.0`.
+ */
+describe('a canonical integer, rendered for a card (a8-04)', () => {
+  // The instruments as `ASSET_CATALOGUE` defines them, verbatim.
+  const btc = { logQuantum: 0.0000017544005781582127, referencePrice: 70_000, displayPrecision: 1 };
+  const eurjpy = { logQuantum: 6.318992264722798e-7, referencePrice: 184, displayPrecision: 4 };
+  const doge = { logQuantum: 0.000003528291226936427, referencePrice: 0.078, displayPrecision: 7 };
+
+  it('is the price, not the lattice index', () => {
+    expect(displayPriceText(-65, btc)).toBe('69992.0');
+    expect(displayPriceText(2, eurjpy)).toBe('184.0002');
+    expect(displayPriceText(-80, doge)).toBe('0.0779780');
+    // The shape the browser guard used to assert, which only the defect has.
+    for (const text of [displayPriceText(-65, btc), displayPriceText(2, eurjpy)]) {
+      expect(text, 'a lattice index reached the screen').not.toMatch(/^-?\d+$/);
+    }
+  });
+
+  it('shows the digits the asset settles on, and no more', () => {
+    expect(displayPriceText(0, btc)).toBe('70000.0');
+    expect(displayPriceText(0, eurjpy)).toBe('184.0000');
+    expect(displayPriceText(0, doge)).toBe('0.0780000');
+    expect(displayPriceText(1, doge).split('.')[1]).toHaveLength(7);
+  });
+
+  it('is the same text the venue renders for the same integer', () => {
+    // `/markets` answers `displayPrice: displayPrice(price, instrument).toFixed(precision)`
+    // (market.controller.ts). One market, one number, whoever asks (INV-002).
+    for (const instrument of [btc, eurjpy, doge]) {
+      for (const price of [-1_000, -65, 0, 7, 4_321]) {
+        const venue = (instrument.referencePrice * Math.exp(price * instrument.logQuantum)).toFixed(
+          instrument.displayPrecision,
+        );
+        expect(displayPriceText(price, instrument)).toBe(venue);
+      }
+    }
+  });
+
+  it('caps the digits where the double runs out of them (CA7-29)', () => {
+    // The panel printed `1000000000000099.864691128455135200` for this
+    // combination once: 34 digits, of which sixteen are a price and the rest
+    // are the binary residue of the double. A price of that magnitude carries
+    // no decimals at all, and that is what it now says.
+    const absurd = { logQuantum: 1e-9, referencePrice: 1e15, displayPrecision: 18 };
+    expect(displayPriceText(0, absurd)).toBe('1000000000000000');
+    // And a reference where eighteen decimals are honest keeps them.
+    const tiny = { logQuantum: 1e-9, referencePrice: 1e-15, displayPrecision: 18 };
+    expect(displayPriceText(0, tiny).split('.')[1]).toHaveLength(18);
+  });
+
+  it('refuses a conversion that is not a number rather than printing one', () => {
+    expect(() => displayPriceText(Number.NaN, btc)).toThrow(RangeError);
+    expect(() => displayPriceText(1e12, btc)).toThrow(RangeError);
   });
 });

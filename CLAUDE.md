@@ -165,6 +165,22 @@ the statistical gate on every push to `main` (ADR-0009). CI is a _required
 corroborating_ layer — a red CI on a green local gate is a finding about the
 gate.
 
+**The gate needs a browser, and on this machine it needs a library path.** The
+statistical suite runs `apps/web/src/panel.stat.test.ts` and
+`apps/web/src/lab.stat.test.ts` in a real Chromium, and `npm run gate` sets
+`OTC_REQUIRE_BROWSER=1`, so a host where Chromium cannot launch fails the gate
+rather than skipping those files. Chromium here links against libraries that
+are unpacked into a local prefix, so the gate is run as:
+
+```bash
+LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
+```
+
+`SESSION_HANDOFF.md` carries the same line, and the failure message names the
+three packages and the `dpkg-deb -x` recipe at the moment it is needed. It is
+written here too because this is where the gate is budgeted, and because the
+browser suite is the only guard several fixes have (Cycle Audit 10, a2-11).
+
 **Before every approval commit, `npm run state:check`** — the two state
 guards, ten seconds. Cycle 9 merged PH-25 with them red (the handoff named a
 subphase the roadmap had approved) because the gate had run on an earlier

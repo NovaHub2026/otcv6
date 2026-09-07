@@ -45,13 +45,19 @@ function endlessStream(chunks: string[]): {
 
 function request(
   url: string,
-  init: { method?: string; headers?: Record<string, string>; ip?: string } = {},
+  init: {
+    method?: string;
+    headers?: Record<string, string>;
+    ip?: string;
+    /** The browser's connection, when a test needs to end it (a2-11). */
+    signal?: AbortSignal;
+  } = {},
 ): NextRequest {
   return {
     url,
     method: init.method ?? 'GET',
     headers: new Headers(init.headers ?? {}),
-    signal: new AbortController().signal,
+    signal: init.signal ?? new AbortController().signal,
     text: () => Promise.resolve(''),
     ...(init.ip === undefined ? {} : { ip: init.ip }),
   } as unknown as NextRequest;
@@ -254,6 +260,79 @@ describe('the engine proxy', () => {
     const [, init] = spy.mock.calls[0] as [URL, { method: string; headers: Headers }];
     expect(init.method).toBe('POST');
     expect(init.headers.get('content-type')).toBe('application/json');
+  });
+});
+
+/**
+ * **Cycle Audit 10 (a2-11).** PH-30.2 found that every chart a page had ever
+ * opened stayed subscribed on the engine through this proxy —
+ * `otc_stream_connections` read 16 for a board of eight — and it was closed by
+ * one line, `signal: request.signal`. Ten tests in this file drove the proxy
+ * and not one of them ever aborted anything: the fixture handed every request a
+ * fresh `AbortController`'s signal that nothing fired, so deleting that line
+ * again passed all ten, exit 0. Its only guard was the board test in
+ * `panel.stat.test.ts` — a real Chromium, forty to seventy seconds away, and
+ * unreachable on a host whose browser cannot launch.
+ *
+ * A leaked subscription is not a rendering defect: the engine holds the
+ * connection, the feed keeps writing to it, and the cost grows with every
+ * screen an operator ever opened. That deserves a guard in the fast suite.
+ */
+describe("the browser's disconnect reaches the engine (Cycle Audit 10, a2-11)", () => {
+  it("hands the upstream request the browser's own signal, and it aborts with it", async () => {
+    const signals: (AbortSignal | undefined)[] = [];
+    globalThis.fetch = vi.fn().mockImplementation((_url: URL, init: { signal?: AbortSignal }) => {
+      signals.push(init.signal);
+      return Promise.resolve(
+        new Response(endlessStream(['id: 1\ndata: {"sequence":1}\n\n']).body, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        }),
+      );
+    });
+
+    const browser = new AbortController();
+    const response = await GET(
+      request('http://panel.test/engine/markets/eurusd/stream', { signal: browser.signal }),
+      params(['markets', 'eurusd', 'stream']),
+    );
+    expect(response.status).toBe(200);
+
+    const upstream = signals[0];
+    expect(upstream, 'the proxy opened the upstream stream with no signal at all').toBeDefined();
+    expect(upstream!.aborted, 'the upstream was aborted before the browser left').toBe(false);
+
+    // The browser navigates away, or the chart is closed. Node's fetch ends the
+    // upstream request when this fires; without it the engine keeps the
+    // subscription for the life of the panel process.
+    browser.abort();
+    expect(
+      upstream!.aborted,
+      'the upstream request does not follow the browser: a closed chart stays subscribed on the engine',
+    ).toBe(true);
+
+    await response.body?.cancel();
+  });
+
+  it('aborts a write the same way, so a hung engine cannot pin this server', async () => {
+    const signals: (AbortSignal | undefined)[] = [];
+    globalThis.fetch = vi.fn().mockImplementation((_url: URL, init: { signal?: AbortSignal }) => {
+      signals.push(init.signal);
+      return Promise.resolve(new Response('{}', { status: 201 }));
+    });
+    const browser = new AbortController();
+    await POST(
+      request('http://panel.test/engine/assets', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        signal: browser.signal,
+      }),
+      params(['assets']),
+    );
+    const upstream = signals[0];
+    expect(upstream, 'a write was proxied with no signal').toBeDefined();
+    browser.abort();
+    expect(upstream!.aborted).toBe(true);
   });
 });
 

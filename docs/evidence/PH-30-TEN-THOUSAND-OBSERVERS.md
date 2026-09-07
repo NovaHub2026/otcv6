@@ -59,3 +59,31 @@ bounds on a quiet machine of the same class. The harness's own eight processes
 ran on the same machine; at five thousand they used cores the venue did not
 need, and at ten thousand the contention is in the numbers. Memory was not the
 constraint at any size measured.
+
+## 4. What the table above could not have shown (Cycle Audit 10, a8-03)
+
+The rows in §1 were produced by a driver that dropped two of the harness's own
+counters. `gapEvents` and `closeEvents` — the venue saying an asset's history
+was evicted, and the venue cutting an observer off mid-hold — were counted per
+worker (Cycle Audit 8 added them for exactly this) and then **not carried into
+the fleet row**: `FleetRow` had no field for them, the table had no column, and
+`complete` was `established === size`. Reproduced on a fake venue that serves
+three ticks and then closes every observer with `client fell behind`: the
+driver rendered `complete: yes`, `gaps 0`. `instrumentBound` was worse than
+uncounted — the driver never passed the engine's pid to a worker, so the flag
+that says the harness outworked the engine could not be true in any fleet row
+ever produced, this one included.
+
+So the numbers above stand for what they measure — established, gaps,
+duplicates, memory, latency — and **cannot** be read as saying the established
+observers held to the end. In particular the 8,752 established at ten thousand
+were not shown to be uncut; the row simply had nowhere to say so. The p99 of
+915 ms at that size is the conditions under which a venue starts cutting clients
+that fall behind, which is why this matters here rather than in the abstract.
+
+The driver now carries `gap frames`, `closed` and `bound` as columns, refuses to
+call a row complete over a non-zero counter, and passes the engine's pid to its
+workers; `observerLoad`'s own `complete` means established **and** held, which
+is what its docblock always said. A rerun at five and ten thousand belongs to
+whoever next needs those two rows to mean the stronger thing; it was not
+re-executed here, and this section is the record of that.
