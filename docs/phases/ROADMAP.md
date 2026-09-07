@@ -4,7 +4,7 @@ Type: SUPPORTING DOCUMENTATION (living)
 Status: Dynamic — phases may be split, merged, reordered or replaced as
 implementation reveals information (`GOVERNANCE.md` §13). Approved phases are
 never rewritten as though they had not happened.
-Last revised: 2026-09-06 (Cycle 10 complete — PH-28, PH-29, PH-30; Cycle Audit 10 closed; the release that stands is `v2.0.0`)
+Last revised: 2026-09-07 (Cycle 11 open — PH-31 active; Cycle 10 complete and audited, the release that stands is `v2.0.0`)
 
 ---
 
@@ -889,6 +889,30 @@ decided; the integration package regenerated from the tag.
 | PH-30.3  | Ten thousand observers held, from several processes, memory measured at the target          | APPROVED |
 | PH-30.4  | The whole catalogue measured on the release build; the per-asset evidence complete          | APPROVED |
 | PH-30.5  | Every open Issue closed or decided; the package regenerated; `v1.0.0` tagged and recorded   | APPROVED |
+
+## Cycle 11 — open (PH-31 …)
+
+Cycle 10 closed the engine as a product: `v2.0.0` is tagged on a commit hosted
+CI corroborated, the integration package is regenerated from it and verified
+inside itself, and Cycle Audit 10 is closed with every critical and material
+finding fixed. What opens Cycle 11 is not a plan drawn in advance but the
+Human Owner using the thing: the first phase came from them operating the Lab
+and saying what was wrong with it.
+
+| Phase | Title                                           | State  |
+| ----- | ----------------------------------------------- | ------ |
+| PH-31 | The Lab's push, as an operator actually uses it | ACTIVE |
+
+| Subphase | Title                                                              | State  |
+| -------- | ------------------------------------------------------------------ | ------ |
+| PH-31.1  | The push measured against the market: pace, unit, stop and ceiling | ACTIVE |
+
+**What the audit left for this cycle**, and what the next phases are most
+likely drawn from: the fourteen minor findings Cycle Audit 10 carried by name
+(`../audits/CYCLE-AUDIT-010.md` §4), Issue #9 (the multi-node composition, and
+the observer ceiling behind it), and the shadow run the release record asks
+for — weeks of a venue serving beside a broker, which is the only thing that
+turns the standing verdict from a theorem plus an hour into a measurement.
 
 ## Known uncertainties
 

@@ -9,11 +9,11 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Field              | Value                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- |
 | Last clean session | 2026-09-06                                                                        |
-| Branch             | `main` at `v2.0.0` (the Cycle Audit 10 merge, hosted CI green on both jobs)       |
+| Branch             | `feature/ph-31-lab-push`, off `main` at `v2.0.0`                                  |
 | Remote             | `origin` → NovaHub2026/otcv6, public                                              |
-| Active cycle       | Cycle 10, **3 of 3** — PH-28, PH-29, PH-30 approved; Cycle Audit 10 next          |
-| Active phase       | none — the third phase is approved; Cycle Audit 10 next                           |
-| Active subphase    | none                                                                              |
+| Active cycle       | Cycle 11, **0 of 3** — PH-31 active; Cycle 10 complete and audited                |
+| Active phase       | PH-31 — the Lab's push, as an operator actually uses it                           |
+| Active subphase    | PH-31.1 — the push measured against the market                                    |
 | Cycle Audit        | **010 closed** — 98 claims, 86 confirmed, 12 partial; fixes on `audit/ca10-fixes` |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                                |
 

@@ -14,8 +14,8 @@ Last synchronized: 2026-09-06
 
 | Field                            | Value                                                                                                                                                      |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 10 — **3 of 3** phases approved (PH-28, PH-29, PH-30); the closing cycle (Cycle Audit 10)                                                            |
-| Approved phases in current cycle | **3 of 3** — PH-28, PH-29, PH-30                                                                                                                           |
+| Active development cycle         | Cycle 11 — **0 of 3** phases approved (PH-31 active); opened by the Human Owner using the Lab                                                              |
+| Approved phases in current cycle | **0 of 3** — PH-31 is the first                                                                                                                            |
 | Cycle Audit state                | **010 closed** — 98 claims, 86 confirmed, 12 partial, 0 refuted; 45 plants, 23 survived and are closed; fixes gated green on `audit/ca10-fixes`            |
 | Last Cycle Audit                 | [Cycle Audit 009](docs/audits/CYCLE-AUDIT-009.md) — 2026-09-05, eight independent auditors, one worktree each, every finding refuted independently; closed |
 
@@ -23,10 +23,10 @@ Last synchronized: 2026-09-06
 
 | Field                  | Value                                                         |
 | ---------------------- | ------------------------------------------------------------- |
-| Active phase           | none                                                          |
-| Phase lifecycle        | none                                                          |
-| Active subphase        | none                                                          |
-| Subphase lifecycle     | none                                                          |
+| Active phase           | PH-31 — The Lab's push, as an operator actually uses it       |
+| Phase lifecycle        | ACTIVE                                                        |
+| Active subphase        | PH-31.1 — The push measured against the market                |
+| Subphase lifecycle     | ACTIVE                                                        |
 | Last approved phase    | PH-30 — Release 1.0: the engine as a broker integrates it     |
 | Last approved subphase | PH-30.5 — Every open Issue closed or decided; `v1.0.0` tagged |
 
@@ -211,7 +211,7 @@ right. That is the statistical layer doing what the unit layer cannot.
 
 ## EXACT NEXT LEGAL ACTION
 
-**Open Cycle 11.** Cycle 10 is complete and audited: three phases approved, Cycle Audit 10 closed (98 claims, 86 confirmed, 12 partial; every critical and material finding fixed in two gated waves, fourteen minor carried by name in the record), `v2.0.0` tagged on the commit hosted CI corroborated, and the integration package regenerated from that tag and verified inside itself. The roadmap's Cycle 10 section names what is deferred: Issue #9 (the multi-node composition), the engine's next stylised facts, jumps and volume; Issues #3 and #14 are the Human Owner's. The audit record's carried list is the first page of the next cycle's work.
+**Finish PH-31.1 on `feature/ph-31-lab-push`: the phase gate, the approval from evidence, and the merge to `main`.** Cycle 11 is open and its first phase came from the Human Owner operating the Lab and saying what was wrong with it — the pace default, the push scale, a way to stop, and levels bounded by the market's own state. Cycle 10 is complete and audited; `v2.0.0` is the release that stands. Cycle 10 is complete and audited: three phases approved, Cycle Audit 10 closed (98 claims, 86 confirmed, 12 partial; every critical and material finding fixed in two gated waves, fourteen minor carried by name in the record), `v2.0.0` tagged on the commit hosted CI corroborated, and the integration package regenerated from that tag and verified inside itself. The roadmap's Cycle 10 section names what is deferred: Issue #9 (the multi-node composition), the engine's next stylised facts, jumps and volume; Issues #3 and #14 are the Human Owner's. The audit record's carried list is the first page of the next cycle's work.
 
 Cycle 10 is complete and it was the closing cycle: PH-28 (the durable venue),
 PH-29 (the integration boundary), PH-30 (release 1.0). The third merge is
