@@ -903,9 +903,9 @@ and saying what was wrong with it.
 | ----- | ----------------------------------------------- | ------ |
 | PH-31 | The Lab's push, as an operator actually uses it | ACTIVE |
 
-| Subphase | Title                                                              | State  |
-| -------- | ------------------------------------------------------------------ | ------ |
-| PH-31.1  | The push measured against the market: pace, unit, stop and ceiling | ACTIVE |
+| Subphase | Title                                                              | State    |
+| -------- | ------------------------------------------------------------------ | -------- |
+| PH-31.1  | The push measured against the market: pace, unit, stop and ceiling | APPROVED |
 
 **What the audit left for this cycle**, and what the next phases are most
 likely drawn from: the fourteen minor findings Cycle Audit 10 carried by name
