@@ -10,7 +10,7 @@ Package: `tools/sim/scripts/integration-package.sh v2.0.0 <dir>`
 
 ## 1. Why this is 2.0.0 and not 1.0.1
 
-The API contract went from `1.1.0` to `2.0.0` in Cycle Audit 10.
+The API contract went from `1.1.0` to `2.0.0` in Cycle Audit 10, and to `2.1.0` in its second wave.
 `GET /markets/:id/price?at=` now **refuses** an instant inside a recorded
 discontinuity where a 1.x venue answered it with a price, and
 `GET /markets/:id/seams` publishes what `settle()` needs to refuse the same
@@ -79,13 +79,14 @@ record (INV-009), and private generator state never served (INV-010).
 
 ## 5. The commit, the gate and hosted CI
 
-|                        |                                                                                            |
-| ---------------------- | ------------------------------------------------------------------------------------------ |
-| Release commit         | the Cycle Audit 10 merge on `main`, tagged `v2.0.0`                                        |
-| Tree the gate ran on   | `970f54b` (`audit/ca10-fixes`)                                                             |
-| `npm run gate`         | `GATE_EXIT=0`, 2026-09-06 21:27–22:51Z                                                     |
-| Hosted CI on the merge | recorded in `CURRENT_STATE.md` § "Hosted CI, honestly"; the tag is cut only on a green run |
-| Contract               | `2.0.0` (`docs/architecture/API_CONTRACT.md`)                                              |
+|                        |                                                                                                                              |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Release commit         | `e97d12d` — the Cycle Audit 10 merge on `main`, tagged `v2.0.0`                                                              |
+| Trees the gate ran on  | `970f54b` (first wave) and `73ae2c9` (second)                                                                                |
+| `npm run gate`         | `GATE_EXIT=0` on both — 165 unit files / 3,421 tests; 47 statistical files / 402 tests in 4,744 s                            |
+| Hosted CI on the merge | **green on both jobs** — Quality Gate 8 min, Statistical Gate 1h57m (run 34077145349 on `e97d12d`). The tag was cut after it |
+| Contract               | `2.1.0` (`docs/architecture/API_CONTRACT.md`)                                                                                |
+| Package                | 536 files, 2.0 MB; verified inside itself at 162 files / 2,991 tests, exit 0                                                 |
 
 ## 6. What this release learned the hard way
 
