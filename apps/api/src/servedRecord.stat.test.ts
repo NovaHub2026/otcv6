@@ -100,8 +100,14 @@ async function bootOn(stateDir: string, port: number): Promise<Running> {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/health`);
       if (response.ok) {
-        const health = (await response.json()) as { bootNonce: string | null };
-        if (health.bootNonce === nonce) {
+        // **`ready`, not merely an answer (Cycle Audit 10).** The listener
+        // opens before the markets resume now, so that an orchestrator can
+        // point liveness at a booting process (a5-02) — which means `/health`
+        // answering no longer implies there is a market to read. Hosted CI
+        // caught this suite proceeding into a venue that had published one
+        // tick, and every realism metric then failed "over 1 ticks".
+        const health = (await response.json()) as { bootNonce: string | null; ready?: boolean };
+        if (health.bootNonce === nonce && health.ready === true) {
           return { child, port, base: `http://127.0.0.1:${port}`, output: () => output };
         }
       }
