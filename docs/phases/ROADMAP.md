@@ -899,9 +899,9 @@ finding fixed. What opens Cycle 11 is not a plan drawn in advance but the
 Human Owner using the thing: the first phase came from them operating the Lab
 and saying what was wrong with it.
 
-| Phase | Title                                           | State  |
-| ----- | ----------------------------------------------- | ------ |
-| PH-31 | The Lab's push, as an operator actually uses it | ACTIVE |
+| Phase | Title                                           | State    |
+| ----- | ----------------------------------------------- | -------- |
+| PH-31 | The Lab's push, as an operator actually uses it | APPROVED |
 
 | Subphase | Title                                                              | State    |
 | -------- | ------------------------------------------------------------------ | -------- |

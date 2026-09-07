@@ -9,10 +9,10 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Field              | Value                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- |
 | Last clean session | 2026-09-06                                                                        |
-| Branch             | `feature/ph-31-lab-push`, off `main` at `v2.0.0`                                  |
+| Branch             | `main`                                                                            |
 | Remote             | `origin` → NovaHub2026/otcv6, public                                              |
-| Active cycle       | Cycle 11, **0 of 3** — PH-31 active; Cycle 10 complete and audited                |
-| Active phase       | PH-31 — the Lab's push, as an operator actually uses it                           |
+| Active cycle       | Cycle 11, **1 of 3** — PH-31 approved; PH-32 next                                 |
+| Active phase       | none                                                                              |
 | Active subphase    | none                                                                              |
 | Cycle Audit        | **010 closed** — 98 claims, 86 confirmed, 12 partial; fixes on `audit/ca10-fixes` |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                                |
