@@ -143,6 +143,7 @@ function Key({
   disabled = false,
   title,
   block = false,
+  big = false,
   onClick,
   children,
 }: {
@@ -152,6 +153,8 @@ function Key({
   disabled?: boolean | undefined;
   title?: string | undefined;
   block?: boolean | undefined;
+  /** PH-31: the stop key, which is the one an operator hits without looking. */
+  big?: boolean | undefined;
   onClick: () => void;
   children: ReactNode;
 }): ReactElement {
@@ -169,7 +172,7 @@ function Key({
         font: 'inherit',
         flex: block ? undefined : pressed === undefined ? 1 : 1.5,
         width: block ? '100%' : undefined,
-        padding: '7px 0',
+        padding: big ? '14px 0' : '7px 0',
         // Grey when it cannot be pressed (PH-31): a key that keeps its green
         // or red while refusing to act is a key that lies about itself.
         background: disabled ? T.raised : lit ? tone.border : tone.fill,
@@ -342,15 +345,6 @@ export function Controles({
               es.lab.push.bias.up
             )}
           </Key>
-          <Key
-            side="up"
-            testId="lab-push-stop"
-            disabled={held || ((control?.pushing ?? null) === null && !(control?.armed ?? false))}
-            title={es.lab.push.stopInfo}
-            onClick={() => void onStop()}
-          >
-            {es.lab.push.stop}
-          </Key>
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
           {PUSH_SIZES.map((n) => (
@@ -380,6 +374,27 @@ export function Controles({
             )}
           </Key>
         </div>
+        {/*
+          **Last, and the width of the block (PH-31).** It was a small key in
+          the up row, between the levels and the bias, where it read as one
+          more thing to press rather than the way out of what is running. The
+          operator asked for it "abajo de todo, bien grande": a stop is the
+          control somebody reaches for without looking, so it is where the
+          thumb lands and it is the only full-width key here.
+        */}
+        <Key
+          side="down"
+          block
+          big
+          testId="lab-push-stop"
+          disabled={held || ((control?.pushing ?? null) === null && !(control?.armed ?? false))}
+          title={es.lab.push.stopInfo}
+          onClick={() => void onStop()}
+        >
+          <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: 0.5 }}>
+            {es.lab.push.stop.toUpperCase()}
+          </span>
+        </Key>
         {pushError !== null && (
           <div data-testid="lab-push-error" style={{ fontSize: 11, color: T.bad }}>
             {pushError}
