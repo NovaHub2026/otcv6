@@ -27,6 +27,7 @@ export function Empujar({
   pace,
   onPace,
   onBias,
+  onStop,
   state,
 }: {
   control: Control | null;
@@ -39,6 +40,8 @@ export function Empujar({
   onPace: (pace: Pace) => void;
   /** PH-24.16: sube / baja. */
   onBias: (direction: 'up' | 'down' | 'off') => Promise<void>;
+  /** PH-31: stop the running push and leave the bias standing. */
+  onStop: () => Promise<void>;
   /** PH-24.18: the market's distance unit, for the strip's label. */
   state: LabState | null;
 }): ReactElement {
@@ -47,6 +50,15 @@ export function Empujar({
   // Held only by its own act (PH-24.11): never by a quality run, never by an armed close.
   const held = busy === 'push';
   const bias = control?.bias ?? null;
+  // PH-31: the market's own ceiling. Absent — a state not read yet — is not a
+  // reason to grey out a button, so it falls back to the whole strip.
+  const ceiling = state?.pushCeiling;
+  const ceilingMax = ceiling?.max ?? Math.max(...PUSH_SIZES);
+  const capped = (n: number): boolean => n > ceilingMax;
+  const cappedWhy =
+    ceiling === undefined || ceiling.because === null
+      ? undefined
+      : p.ceiling.why(ceiling.because, ceiling.regime, ceiling.stretch, ceiling.max);
   // PH-24.24: the same countdown the panel's toggles carry — the ⓘ promises it
   // on the button, and this screen has the same buttons.
   const msLeft = control?.biasMsLeft;
@@ -77,7 +89,8 @@ export function Empujar({
           kind="danger"
           small
           testId={`lab-push--${String(n)}`}
-          disabled={held}
+          disabled={held || capped(n)}
+          title={capped(n) ? cappedWhy : undefined}
           onClick={() => void onPush(-n)}
         >
           {`−${String(n)}`}
@@ -90,7 +103,8 @@ export function Empujar({
           kind="primary"
           small
           testId={`lab-push-+${String(n)}`}
-          disabled={held}
+          disabled={held || capped(n)}
+          title={capped(n) ? cappedWhy : undefined}
           onClick={() => void onPush(n)}
         >
           {`+${String(n)}`}
@@ -166,6 +180,29 @@ export function Empujar({
           </span>
         </Button>
       }
+      {
+        /**
+         * **Parar (PH-31).** A distance push arms a queue of signs; until this
+         * button there was no way to say "enough" except waiting it out or
+         * using the close tab's release, which also takes down a sustained
+         * bias. This stops the push and nothing else, and it is only offered
+         * when there is one to stop.
+         */
+        <Button
+          kind="ghost"
+          small
+          testId="lab-push-stop"
+          disabled={held || (pushing === null && !(control?.armed ?? false))}
+          onClick={() => void onStop()}
+        >
+          {p.stop}
+        </Button>
+      }
+      {ceiling !== undefined && ceiling.because !== null && (
+        <span data-testid="lab-push-ceiling" style={{ color: T.warn, fontSize: 11 }}>
+          {p.ceiling.label(ceiling.max)} <Info text={cappedWhy ?? ''} />
+        </span>
+      )}
       <Badge tone={pushing !== null || bias !== null ? 'lab' : 'muted'} testId="lab-push-state">
         {pushing !== null
           ? p.running(pushing.direction === 1 ? 'up' : 'down', pushing.remaining)

@@ -390,7 +390,10 @@ describe('the Lab is marked wherever it appears', () => {
     }
     expect(strip).toMatch(/p\.pace\.label/);
     const lab = code('lab/Lab.tsx');
-    expect(lab).toMatch(/useState<Pace>\('rapido'\)/);
+    // PH-31: the market's own arrivals by default. `rapido` is one fifth of
+    // this market's interval, so the old default played every untouched push
+    // at five times the speed the market moves at.
+    expect(lab).toMatch(/useState<Pace>\('normal'\)/);
     // PH-24.18: the buttons send distances in the market's unit.
     expect(lab).toMatch(/push\?distance=\$\{String\(ticks\)\}&pace=\$\{pace\}/);
     expect(strip).toMatch(/(data-testid|testId)="lab-push-unit"/);
@@ -668,5 +671,29 @@ describe('the Lab is marked wherever it appears', () => {
     expect(code('lab/[...path]/route.ts'), 'the panel proxies the Lab to the engine').not.toMatch(
       /OTC_API_BASE/,
     );
+  });
+});
+
+/**
+ * PH-31, asked for after using it: "el botón de parar debe estar abajo de todo,
+ * bien grande". It was a small key in the up row, between the levels and the
+ * bias, which is where a stop is least useful — an operator reaching for it is
+ * already looking at the chart, not at the keys.
+ */
+describe('the stop is the last key in the push block, and the widest (PH-31)', () => {
+  it('is full width, larger than the level keys, and below every row of them', () => {
+    const controls = code('lab/Controles.tsx');
+    const stop = controls.indexOf('testId="lab-push-stop"');
+    expect(stop, 'the panel has a stop key').toBeGreaterThan(0);
+    // Below both rows of levels and both bias keys.
+    for (const after of ['lab-push-+1', 'lab-push--1', 'lab-direction-up', 'lab-direction-down']) {
+      expect(controls.indexOf(after), `${after} comes before the stop`).toBeLessThan(stop);
+    }
+    // Full width and the taller of the two sizes: `block` and `big` are what
+    // Key spells those, and nothing else in the panel asks for `big`.
+    const key = controls.slice(stop - 200, stop + 200);
+    expect(key).toMatch(/\bblock\b/);
+    expect(key).toMatch(/\bbig\b/);
+    expect(controls).toMatch(/padding:\s*big\s*\?\s*'14px 0'\s*:\s*'7px 0'/);
   });
 });

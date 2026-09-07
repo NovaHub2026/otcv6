@@ -158,3 +158,29 @@ describe('the panel speaks Spanish and explains itself behind ⓘ (PH-24.6)', ()
     expect(definitions.map((f) => path.relative(app, f))).toEqual(['ui/kit.tsx']);
   });
 });
+
+/**
+ * PH-31. The operator asked for this after using the strip: "cuando un botón
+ * está desactivado debe aparecer en gris". Both button components kept the
+ * colour of what they do — a green `+10`, a red `−10` — and only dropped their
+ * opacity, so a level the market's ceiling had refused still read as
+ * available, and the way to find out was to click it.
+ */
+describe('a button that cannot be pressed looks like one (PH-31)', () => {
+  it('drops the kind’s colour for the neutral surface when disabled', () => {
+    const kit = code(path.join(app, 'ui/kit.tsx'));
+    // The background is the theme's raised surface when disabled, not the
+    // kind's own — asserted on the expression, because the colours themselves
+    // are the theme's to change.
+    expect(kit).toMatch(/background:\s*disabled\s*\?\s*T\.raised\s*:\s*background/);
+    expect(kit).toMatch(/border:\s*`1px solid \$\{disabled \? T\.line : border\}`/);
+    expect(kit).toMatch(/color:\s*disabled\s*\?\s*T\.faint/);
+    expect(kit).toMatch(/cursor:\s*disabled\s*\?\s*'not-allowed'/);
+  });
+
+  it('greys the Lab panel’s keys the same way, pressed or not', () => {
+    const controls = code(path.join(app, 'lab/Controles.tsx'));
+    expect(controls).toMatch(/background:\s*disabled\s*\?\s*T\.raised\s*:\s*lit\s*\?/);
+    expect(controls).toMatch(/border:\s*`1px solid \$\{disabled \? T\.line : tone\.border\}`/);
+  });
+});

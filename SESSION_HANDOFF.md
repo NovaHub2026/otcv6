@@ -9,10 +9,10 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Field              | Value                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- |
 | Last clean session | 2026-09-06                                                                        |
-| Branch             | `main` at `v2.0.0` (the Cycle Audit 10 merge, hosted CI green on both jobs)       |
+| Branch             | `main`                                                                            |
 | Remote             | `origin` → NovaHub2026/otcv6, public                                              |
-| Active cycle       | Cycle 10, **3 of 3** — PH-28, PH-29, PH-30 approved; Cycle Audit 10 next          |
-| Active phase       | none — the third phase is approved; Cycle Audit 10 next                           |
+| Active cycle       | Cycle 11, **1 of 3** — PH-31 approved; PH-32 next                                 |
+| Active phase       | none                                                                              |
 | Active subphase    | none                                                                              |
 | Cycle Audit        | **010 closed** — 98 claims, 86 confirmed, 12 partial; fixes on `audit/ca10-fixes` |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                                |

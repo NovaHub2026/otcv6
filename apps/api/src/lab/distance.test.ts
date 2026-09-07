@@ -3,6 +3,7 @@ import { epochMillis, logPrice, type Tick } from '@otc/core';
 import { ASSET_CATALOGUE } from '@otc/engine';
 import {
   distanceUnitFrom,
+  UNITS_PER_CANDLE,
   LabDistances,
   medianCandleRange,
   MIN_RECORD_MINUTES,
@@ -55,7 +56,7 @@ describe('the distance unit', () => {
     expect(recordWindow(sparse, base + 29 * 60_000)).toEqual([]);
   });
 
-  it('is a quarter of the median complete-minute range, at least one step, priced at the level', () => {
+  it('is a tenth of the median complete-minute range, at least one step, priced at the level', () => {
     const base = 1_776_000_000_000;
     const ticks: Tick[] = [
       tick(1, base - 1, 0), // partial minute, dropped
@@ -71,7 +72,14 @@ describe('the distance unit', () => {
     ];
     expect(medianCandleRange(ticks)).toEqual({ range: 80, minutes: 3, tradedMinutes: 3 });
     const unit = distanceUnitFrom(ASSET_CATALOGUE[0]!, 0, ticks, base);
-    expect(unit.unitSteps).toBe(20);
+    // PH-31: a tenth, not a quarter. The operator measured what the quarter
+    // cost: `+10` asked for two and a half candles and the fork spent about
+    // 240 ticks on it, at a default pace that compressed those into a fifth of
+    // the time the market would have taken.
+    expect(unit.unitSteps).toBe(8);
+    expect(UNITS_PER_CANDLE).toBe(10);
+    // Ten of them is the candle the strip says it is, to the rounding.
+    expect(unit.unitSteps * UNITS_PER_CANDLE).toBeCloseTo(unit.candleRangeSteps, -1);
     expect(unit.candleRangeSteps).toBe(80);
     expect(Number(unit.unitPrice)).toBeGreaterThan(0);
     expect(distanceUnitFrom(ASSET_CATALOGUE[0]!, 0, [], base).unitSteps).toBe(1);
@@ -135,8 +143,12 @@ describe('which half hour the unit was cut from (Cycle Audit 8, a5)', () => {
     // price on one side of `now` as on the other.
     const quiet = distanceUnitFrom(ASSET_CATALOGUE[0]!, 0, half(now - 30 * 60_000, 40, 1), now);
     const violent = distanceUnitFrom(ASSET_CATALOGUE[0]!, 0, half(now, 160, 1), now);
-    expect(quiet.unitSteps).toBe(10);
-    expect(violent.unitSteps).toBe(40);
+    // PH-31 resized the unit from a quarter of the candle to a tenth; the
+    // ratio this test is about — four times as much price on one side of `now`
+    // as on the other — is unchanged by that, which is the point.
+    expect(quiet.unitSteps).toBe(4);
+    expect(violent.unitSteps).toBe(16);
+    expect(violent.unitSteps / quiet.unitSteps).toBe(4);
     expect(quiet.minutes).toBe(violent.minutes);
   });
 });

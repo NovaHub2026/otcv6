@@ -208,15 +208,21 @@ export function Button({
       disabled={disabled}
       onClick={onClick}
       style={{
-        background,
-        border: `1px solid ${border}`,
+        // **A disabled button is grey, not a dimmed green one (PH-31).** It
+        // used to keep `kind`'s colour and drop to 0.7 opacity, so a `+10` the
+        // market's ceiling had refused still read as an available green key —
+        // the operator learned it was blocked by clicking it. The colour a
+        // button carries is a promise about what it does; a button that does
+        // nothing may not make it.
+        background: disabled ? T.raised : background,
+        border: `1px solid ${disabled ? T.line : border}`,
         color: disabled ? T.faint : T.text,
         padding: small ? '2px 8px' : '5px 12px',
         fontSize: small ? 11 : 12,
         borderRadius: 3,
         cursor: disabled ? 'not-allowed' : 'pointer',
         font: 'inherit',
-        opacity: disabled ? 0.7 : 1,
+        opacity: disabled ? 0.55 : 1,
       }}
     >
       {children}

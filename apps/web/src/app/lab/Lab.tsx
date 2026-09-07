@@ -102,7 +102,12 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
   const [all, setAll] = useState<ControlAll | null>(null);
   const [lastPush, setLastPush] = useState<PushResult | null>(null);
   const [pushError, setPushError] = useState<string | null>(null);
-  const [pace, setPace] = useState<Pace>('rapido');
+  // **`normal`, not `rapido` (PH-31).** A pace is a fraction of the market's own
+  // interval — `rapido` is one fifth of it — so the default compressed every
+  // push into a fifth of the time the market would have taken, which is what
+  // made a large push look like a spike rather than a move. The market's own
+  // tempo is the honest default; the operator asks for compression.
+  const [pace, setPace] = useState<Pace>('normal');
   const [catalogue, setCatalogue] = useState<CatalogueEntry[]>([]);
   const [chartTf, setChartTf] = useState<PanelTimeframeId>('1m');
   const [positions, setPositions] = useState<LabPositionView[]>([]);
@@ -349,6 +354,33 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
     }
   };
 
+  /**
+   * Stop the push and leave everything else standing (PH-31).
+   *
+   * `scope=push` on the release route: the queued signs go, the arrival script
+   * goes, and the market's next tick is the keystream's own. A sustained
+   * `sube`/`baja` is deliberately *not* cleared — it is armed by its own
+   * button and cleared by it, and Cycle Audit 8 (a6) found what happens when
+   * one act quietly takes down another.
+   */
+  const stopPush = async (): Promise<void> => {
+    if (selected === null) return;
+    setBusy('push');
+    setPushError(null);
+    try {
+      const body = await labPost<Control>(`markets/${selected}/release?scope=push`);
+      if (isUnavailable(body)) {
+        setPushError(es.lab.push.failed(body.reason));
+        return;
+      }
+      setLastPush(null);
+      setControl(body);
+      void refreshState(selected);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const setBias = async (direction: 'up' | 'down' | 'off'): Promise<void> => {
     if (selected === null) return;
     setBusy('bias');
@@ -524,6 +556,7 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
               pace={pace}
               onPace={setPace}
               onBias={setBias}
+              onStop={stopPush}
               closeTimeframe={panelCloseTf}
               bucket={bucket}
               onBucket={setBucket}
@@ -552,6 +585,7 @@ export function Lab({ mode = 'control' }: { mode?: 'control' | 'avanzado' }): Re
               pace={pace}
               onPace={setPace}
               onBias={setBias}
+              onStop={stopPush}
               state={state}
             />
             <LabChart

@@ -13,8 +13,8 @@ import type { RegisteredAsset } from '@otc/engine';
 export type DistanceBasis = 'record' | 'fork';
 
 /**
- * The Lab's distance unit (PH-24.18): a quarter of the median range of the
- * market's own 1-minute candle, in lattice steps.
+ * The Lab's distance unit (PH-24.18, resized in PH-31): a **tenth** of the
+ * median range of the market's own 1-minute candle, in lattice steps.
  *
  * Every control that used to count ticks or lattice steps says less than it
  * did since PH-24.17 made a tick smaller and more frequent. The candle is what
@@ -24,7 +24,7 @@ export type DistanceBasis = 'record' | 'fork';
  * **Which half hour it is measured over is not a detail (Cycle Audit 8, a5).**
  * The median 1m range is strongly regime-dependent, so the market's next thirty
  * minutes and its last thirty minutes disagree by more than 2x about one
- * measurement in ten. The strip says «1 = ¼ vela», and the candles the operator
+ * measurement in ten. The strip says «1 = 1/10 vela», and the candles the operator
  * reads that against are the ones on the chart — the past. A unit cut from a
  * future nobody has seen makes «+3 unidades» move three times what the screen
  * suggests, or a third of it, with nothing on the screen saying so. So the
@@ -32,7 +32,7 @@ export type DistanceBasis = 'record' | 'fork';
  * given rather than declared by whoever passed them.
  */
 export interface DistanceUnit {
-  /** Lattice steps in one unit: a quarter of the median 1m range, at least one. */
+  /** Lattice steps in one unit: a tenth of the median 1m range, at least one. */
   readonly unitSteps: number;
   /** The unit as a price difference at the current level, at display precision. */
   readonly unitPrice: string;
@@ -44,6 +44,28 @@ export interface DistanceUnit {
   readonly basis: DistanceBasis;
   readonly measuredAt: number;
 }
+
+/**
+ * How many units make one median candle — and why it is ten and not four.
+ *
+ * **PH-31, from the operator's own complaint.** At a quarter, the strip's
+ * largest push (`+10`) asked for **two and a half candles**, and the fork
+ * needed about 240 ticks to travel it. At the pace the strip then defaulted
+ * to — `rapido`, one fifth of the market's own interval — those 240 ticks
+ * arrived in about half a minute: two and a half candles of travel in thirty
+ * seconds, which is not a move this market makes and looked like one it could
+ * not.
+ *
+ * A tenth makes the strip read straight. `+10` is **one candle**, and at the
+ * `normal` pace the same fork spends about a minute of the market's own
+ * arrivals on it: a strong minute, which is a minute this market has. `+1` is
+ * a tenth of a candle, a few seconds, which is the grain an operator needs to
+ * put a close on the lattice.
+ *
+ * The number is here rather than inline because it is the whole scale of every
+ * control that speaks in units, and `distance.test.ts` holds it.
+ */
+export const UNITS_PER_CANDLE = 10;
 
 const MINUTE_MS = 60_000;
 
@@ -144,7 +166,7 @@ export function distanceUnitFrom(
   measuredAt: number,
 ): DistanceUnit {
   const { range, minutes } = medianCandleRange(ticks);
-  const unitSteps = Math.max(1, Math.round(range / 4));
+  const unitSteps = Math.max(1, Math.round(range / UNITS_PER_CANDLE));
   const spec = {
     logQuantum: asset.instrument.logQuantum,
     referencePrice: asset.instrument.referencePrice,

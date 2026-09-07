@@ -14,21 +14,21 @@ Last synchronized: 2026-09-06
 
 | Field                            | Value                                                                                                                                                      |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 10 — **3 of 3** phases approved (PH-28, PH-29, PH-30); the closing cycle (Cycle Audit 10)                                                            |
-| Approved phases in current cycle | **3 of 3** — PH-28, PH-29, PH-30                                                                                                                           |
+| Active development cycle         | Cycle 11 — **1 of 3** phases approved (PH-31); PH-32 next                                                                                                  |
+| Approved phases in current cycle | **1 of 3** — PH-31                                                                                                                                         |
 | Cycle Audit state                | **010 closed** — 98 claims, 86 confirmed, 12 partial, 0 refuted; 45 plants, 23 survived and are closed; fixes gated green on `audit/ca10-fixes`            |
 | Last Cycle Audit                 | [Cycle Audit 009](docs/audits/CYCLE-AUDIT-009.md) — 2026-09-05, eight independent auditors, one worktree each, every finding refuted independently; closed |
 
 ## Phase and subphase
 
-| Field                  | Value                                                         |
-| ---------------------- | ------------------------------------------------------------- |
-| Active phase           | none                                                          |
-| Phase lifecycle        | none                                                          |
-| Active subphase        | none                                                          |
-| Subphase lifecycle     | none                                                          |
-| Last approved phase    | PH-30 — Release 1.0: the engine as a broker integrates it     |
-| Last approved subphase | PH-30.5 — Every open Issue closed or decided; `v1.0.0` tagged |
+| Field                  | Value                                                   |
+| ---------------------- | ------------------------------------------------------- |
+| Active phase           | none                                                    |
+| Phase lifecycle        | none                                                    |
+| Active subphase        | none                                                    |
+| Subphase lifecycle     | none                                                    |
+| Last approved phase    | PH-31 — The Lab's push, as an operator actually uses it |
+| Last approved subphase | PH-31.1 — The push measured against the market          |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
@@ -157,28 +157,21 @@ the record should say that the audited commit itself was never green.
 
 ## Verification state
 
-Executed on `audit/ca10-fixes` at `970f54b`, 2026-09-06, with
-`OTC_REQUIRE_BROWSER=1` and the browser prefix — the Cycle Audit 10 gate:
+Executed on `feature/ph-31-lab-push` at `eb4117c`, 2026-09-07, with
+`OTC_REQUIRE_BROWSER=1` and the browser prefix — the PH-31 phase gate:
 
 ```
-npm run gate  ->  GATE_EXIT=0        (21:27-22:51Z)
-  format:check     0
-  build            0
-  typecheck:web    0
-  typecheck:config 0
-  lint             0
-  unit         163 files, 3,348 tests          33.2s
-  coverage     163 files, 3,348 tests         113.5s   (floors enforced)
-  statistical   47 files,   402 tests       4,838.5s
-GATE COMPLETE: unit, coverage floors and statistical suites all ran, with a real browser
+npm run gate  ->  GATE_EXIT=0        (13:57-15:22Z)
+  unit         166 files, 3,436 tests          38.3s
+  coverage     166 files, 3,436 tests         119.6s   (floors enforced)
+  statistical   47 files,   411 tests       4,880.0s
 ```
 
-The statistical suite is 4,838 s — 81 minutes — against 4,798 s at the PH-30
-gate. The first run of this gate was **red**, and correctly: a statistical test
-booted a second venue on a state directory a live venue still held, and the
-one-writer lock the audit added refused it before the token refusal it was
-asserting could be reached. The test was sharing a directory; the lock was
-right. That is the statistical layer doing what the unit layer cannot.
+The run before it was **red**, on the two state-consistency guards, and the
+cause was mine: it was launched and then the approval documents were written
+under it, so those guards read a half-edited tree. The rule they broke is the
+repository's own — a gate that overlaps an edit is void — and the eighty
+minutes it cost are recorded rather than the run quietly repeated.
 
 ## Relevant records
 
@@ -211,7 +204,7 @@ right. That is the statistical layer doing what the unit layer cannot.
 
 ## EXACT NEXT LEGAL ACTION
 
-**Open Cycle 11.** Cycle 10 is complete and audited: three phases approved, Cycle Audit 10 closed (98 claims, 86 confirmed, 12 partial; every critical and material finding fixed in two gated waves, fourteen minor carried by name in the record), `v2.0.0` tagged on the commit hosted CI corroborated, and the integration package regenerated from that tag and verified inside itself. The roadmap's Cycle 10 section names what is deferred: Issue #9 (the multi-node composition), the engine's next stylised facts, jumps and volume; Issues #3 and #14 are the Human Owner's. The audit record's carried list is the first page of the next cycle's work.
+**Open PH-32 — the market time at which the anti-predictability claim stops resting on an hour.** The detection floor is `140.1 / sqrt(windows)`, so a year settles 30s (0.186pp gated) and leaves 15m at 1.018pp; every horizon crosses the 0.25pp product margin at about **seventeen years** of market time, which is 33 CPU-hours to generate and cannot be held in memory (936 GB). The phase makes the battery accumulate over chunks, proves the chunked path gives the same verdict as the whole-array one, and runs the thirty. Design notes: `~/.otc-local/ph32/DESIGN.md`. Cycle 11 is open and its first phase came from the Human Owner operating the Lab and saying what was wrong with it — the pace default, the push scale, a way to stop, and levels bounded by the market's own state. Cycle 10 is complete and audited; `v2.0.0` is the release that stands. Cycle 10 is complete and audited: three phases approved, Cycle Audit 10 closed (98 claims, 86 confirmed, 12 partial; every critical and material finding fixed in two gated waves, fourteen minor carried by name in the record), `v2.0.0` tagged on the commit hosted CI corroborated, and the integration package regenerated from that tag and verified inside itself. The roadmap's Cycle 10 section names what is deferred: Issue #9 (the multi-node composition), the engine's next stylised facts, jumps and volume; Issues #3 and #14 are the Human Owner's. The audit record's carried list is the first page of the next cycle's work.
 
 Cycle 10 is complete and it was the closing cycle: PH-28 (the durable venue),
 PH-29 (the integration boundary), PH-30 (release 1.0). The third merge is
