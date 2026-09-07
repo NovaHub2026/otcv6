@@ -170,14 +170,16 @@ function Key({
         flex: block ? undefined : pressed === undefined ? 1 : 1.5,
         width: block ? '100%' : undefined,
         padding: '7px 0',
-        background: lit ? tone.border : tone.fill,
-        border: `1px solid ${tone.border}`,
+        // Grey when it cannot be pressed (PH-31): a key that keeps its green
+        // or red while refusing to act is a key that lies about itself.
+        background: disabled ? T.raised : lit ? tone.border : tone.fill,
+        border: `1px solid ${disabled ? T.line : tone.border}`,
         color: disabled ? T.faint : lit ? T.bg : T.text,
         fontSize: 12,
         fontWeight: lit ? 700 : 500,
         borderRadius: 3,
         cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.6 : 1,
+        opacity: disabled ? 0.55 : 1,
       }}
     >
       {children}
