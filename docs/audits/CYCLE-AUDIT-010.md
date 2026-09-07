@@ -1,7 +1,7 @@
 # Cycle Audit 010
 
 Type: CYCLE AUDIT RECORD
-Status: CLOSED — 98 claims, 86 confirmed, 12 partial, 0 refuted; fixed on `audit/ca10-fixes`, gated green (`GATE_EXIT=0`, 970f54b)
+Status: CLOSED — 98 claims, 86 confirmed, 12 partial, 0 refuted; fixed in two waves, both gated green (`GATE_EXIT=0` on 970f54b and 73ae2c9)
 Cycle audited: Cycle 10 (PH-28, PH-29, PH-30) — the closing cycle
 Commit audited: `353f101` (the PH-30 merge, tagged `v1.0.0`)
 Conducted: 2026-09-06
@@ -303,11 +303,17 @@ Named, so the next audit knows where it did not look.
 
 ## 7. Verification
 
-The fixes are on `audit/ca10-fixes`, integrated one at a time with the unit
-suite green after each.
+The fixes came in two waves — the four criticals and the material findings the
+first wave reached, then the seventeen it did not — integrated one at a time
+with the unit suite green after each, and each wave gated in full.
 
 ```
-npm run gate  ->  GATE_EXIT=0        (970f54b, 2026-09-06, 21:27–22:51Z)
+npm run gate  ->  GATE_EXIT=0        (73ae2c9, 2026-09-07, 01:18-02:40Z)
+  unit         165 files, 3,421 tests          31.4s
+  coverage     165 files, 3,421 tests         110.0s   (floors enforced)
+  statistical   47 files,   402 tests       4,744.3s
+
+npm run gate  ->  GATE_EXIT=0        (970f54b, 2026-09-06, 21:27-22:51Z)
   format:check     0
   build            0
   typecheck:web    0
@@ -318,7 +324,8 @@ npm run gate  ->  GATE_EXIT=0        (970f54b, 2026-09-06, 21:27–22:51Z)
   statistical   47 files,   402 tests       4,838.5s
 ```
 
-**The first run of that gate was red, and it was right to be.** A statistical
+**Two runs were red before those, and both were right to be.** The first
+wave's: A statistical
 test booted a second venue on a state directory a live venue still held, and
 the new one-writer lock refused it before the module was constructed, so the
 token refusal it was asserting was never reached. The lock was correct and the
@@ -327,6 +334,17 @@ and the lock's own refusal is now asserted where the sharing was — in two real
 processes, which is the end-to-end form of the a6-05 fix. That is the audit's
 own rule applied to itself: the gate found a fix's consequence that no unit
 test could, which is what the statistical layer is for.
+
+And **hosted CI found one the local gate could not.** The a5-02 fix opens the
+listener before the markets resume, so an orchestrator can point liveness at a
+booting process — which means `/health` answering no longer implies there is a
+market to read. Six spawned-venue suites were corrected for that in the second
+wave; one was missed, and on a slower hosted runner it proceeded into a venue
+that had published a single tick, failing every realism metric with "over 1
+ticks". It waits for `ready` now.
+
+A red hosted run on a green local gate is a finding about the gate — the rule
+this project already had — and it has now paid twice in two days.
 
 Hosted CI on the merge is recorded in `CURRENT_STATE.md` § "Hosted CI,
 honestly". A green hosted run is not optional here: the release tag was cut on
