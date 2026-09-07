@@ -90,8 +90,37 @@ afternoon yet, and that is the evidence this phase was built on.
 
 ## 8. What the phase found
 
-_Filled at approval._
+1. **A Lab control is only as good as what it was measured against, and three
+   of the four had been measured against nothing.** The pace was a word that
+   meant one fifth of the market's interval; the unit was a quarter of a candle
+   chosen when a tick was a different size; the levels were four numbers with
+   no relation to what the market in front of them was doing. Each of them was
+   correct code and a wrong control.
+2. **The stop did not exist, and its absence was invisible to the suites**
+   because nothing tests what an operator cannot do. The nearest thing —
+   the close tab's release — also cleared a sustained bias, which is the
+   conflation Cycle Audit 8 (a6) had already found once in the push route.
+3. **A `unknown` parameter is a wiring defect waiting to happen** (PH-31.1 §5.3):
+   the ceiling was computed from the wrong object and no build, type or test
+   could see it, because `unknown` accepts everything and no test asked the
+   two paths the same question. The fix removed the parameter rather than
+   correcting the call.
+4. **The panel had been serving a three-day-old bundle** (§5.4). Four finished
+   changes were invisible in the browser while the suites were green, and they
+   were reported as undone. The launcher asked whether the bundle _existed_
+   where it should have asked whether it was _current_ — the same question the
+   project got wrong on 2026-09-02, when the panel served a tree nobody was
+   working on.
 
 ## 9. Integrated phase verification
 
-_Filled at approval._
+| Check                                                               | Result                                                                                                           |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| The subphase document APPROVED and the roadmap agrees               | `documentation.test.ts`, `stateConsistency.test.ts` green at `state:check`                                       |
+| The price path is untouched (INV-001)                               | no diff under `packages/engine`; `guardrails.test.ts`, `dependencies.test.ts` green                              |
+| Every control is measured against the market rather than a constant | `distance.test.ts`, `pushCeiling.test.ts`, `pushRoutes.test.ts`                                                  |
+| The published ceiling is the enforced ceiling                       | `pushRoutes.test.ts`, and the live venue refusing a `+10` with the regime named                                  |
+| Stopping a push stops the push and nothing else                     | `pushRoutes.test.ts`, and the live venue answering `discarded 8 / pushing null / bias 1`                         |
+| A control that cannot be used says so                               | `panelUx.test.ts` (grey when disabled), `labScreen.test.ts` (PARAR last, full width), measured in a real browser |
+| Every guard watched failing                                         | PH-31.1 §7 — five plants, five named failures                                                                    |
+| Phase quality gate `npm run gate` with the browser prefix           | **GATE**                                                                                                         |
