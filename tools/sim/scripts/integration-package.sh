@@ -16,7 +16,10 @@ ref="${1:?commit-ish}"; out="${2:?out dir}"
 repo="$(cd "$(dirname "$0")/../../.." && pwd)"
 rm -rf "$out"; mkdir -p "$out"
 git -C "$repo" archive --format=tar "$ref" | tar -x -C "$out"
-commit="$(git -C "$repo" rev-parse --short "$ref")"
+# `^{commit}`, because an annotated tag's own object hash is not the commit and
+# names nothing a reader can check out (Cycle Audit 10, a7-08: the v1.0.0
+# package stamped `0c2cad7`, the tag object, as its "commit").
+commit="$(git -C "$repo" rev-parse --short "$ref^{commit}")"
 # Process documents: how this repository is run, not how the engine is.
 rm -f "$out"/{CLAUDE.md,CURRENT_STATE.md,DOCS_INDEX.md,GOVERNANCE.md,PROJECT_CONTEXT.md,PROJECT_INTRODUCTION.md,SESSION_HANDOFF.md}
 rm -rf "$out"/docs/phases "$out"/docs/audits "$out"/docs/reports "$out"/docs/evidence "$out"/.github
