@@ -81,6 +81,21 @@ PYEOF
 cp "$out/docs/integration/INTEGRATION.md" "$out/INTEGRATION.md"
 mkdir -p "$out/examples" && cp "$out"/docs/integration/examples/* "$out/examples/"
 printf '# OTC Engine — integration package\n\nBuilt from commit `%s` of the engine repository on %s.\nStart with INTEGRATION.md; the API contract is docs/architecture/API_CONTRACT.md; the deployment files are under deploy/.\n' "$commit" "$(date -u +%F)" > "$out/README.md"
-( cd "$(dirname "$out")" && rm -f "$(basename "$out").zip" && python3 -c "
-import shutil,sys; shutil.make_archive(sys.argv[1], 'zip', root_dir=sys.argv[1])" "$(basename "$out")" )
+# The zip is the source tree, never what building or verifying it leaves behind.
+# `--verify` installs dependencies *inside* the package so the header can say it
+# ran, which took the v2.0.0 archive from 1.7 MB to 141 MB before this filter.
+python3 - "$out" <<'PYEOF'
+import os, pathlib, sys, zipfile
+out = pathlib.Path(sys.argv[1]).resolve()
+skip = {'node_modules', 'dist', 'coverage', '.next', '.next-stat', '.git', '.otc-state'}
+archive = out.with_suffix('.zip')
+archive.unlink(missing_ok=True)
+with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as zf:
+    for root, dirs, files in os.walk(out):
+        dirs[:] = sorted(d for d in dirs if d not in skip)
+        for name in sorted(files):
+            path = pathlib.Path(root) / name
+            zf.write(path, path.relative_to(out.parent))
+print(f"zipped {archive} ({archive.stat().st_size // 1024} KiB)")
+PYEOF
 echo "package at $out and $out.zip, from $commit"
