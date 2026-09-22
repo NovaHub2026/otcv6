@@ -205,11 +205,12 @@ describe('the arrival rate follows the activity it is given', () => {
   it('is the base tempo with no activity source', () => {
     const plain = new HawkesArrivalModel(DEFAULT_HAWKES, derive('activity-none'));
     const unit = new HawkesArrivalModel(DEFAULT_HAWKES, derive('activity-none'), { activity: 1 });
+    let differences = 0;
     for (let i = 1; i <= 10_000; i += 1) {
-      expect(unit.nextIntervalMs(context(500, 10, i))).toBe(
-        plain.nextIntervalMs(context(500, 10, i)),
-      );
+      const a = unit.nextIntervalMs(context(500, 10, i));
+      if (a !== plain.nextIntervalMs(context(500, 10, i))) differences += 1;
     }
+    expect(differences).toBe(0);
   });
 
   it('refuses an activity that is not positive', () => {

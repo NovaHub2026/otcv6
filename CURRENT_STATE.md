@@ -23,10 +23,10 @@ Last synchronized: 2026-09-06
 
 | Field                  | Value                                                   |
 | ---------------------- | ------------------------------------------------------- |
-| Active phase           | none                                                    |
-| Phase lifecycle        | none                                                    |
-| Active subphase        | none                                                    |
-| Subphase lifecycle     | none                                                    |
+| Active phase           | PH-34 — The market's tempo follows its state            |
+| Phase lifecycle        | ACTIVE                                                  |
+| Active subphase        | PH-34.1 — The engine, and the thirty assets on it       |
+| Subphase lifecycle     | ACTIVE                                                  |
 | Last approved phase    | PH-31 — The Lab's push, as an operator actually uses it |
 | Last approved subphase | PH-31.1 — The push measured against the market          |
 
@@ -54,6 +54,15 @@ shock "intervention" the signs could not select, and a candle close and a
 settlement price that name different ticks when the engine prints on a boundary
 millisecond (ADR-0017). The audit's other six findings are the next phases: a
 Lab with a correct mechanism and no controls.
+
+## PH-34 — the market's tempo follows its state
+
+The Human Owner's second phase from operating the engine, in their broker, on
+2026-09-22: ticks by character and regime (40% fewer on average), regimes that
+last like a market's and move as a ladder, calm 20% above the real market's
+typical movement with a floor under it. Branch `feature/ph-34-the-markets-tempo`
+in `~/.otc-ph34`. PH-32 and PH-33 wait for it: their long measurements are of
+the catalogue this phase replaces.
 
 ## A defect in the released `v2.0.0`, fixed ahead of the phase work
 

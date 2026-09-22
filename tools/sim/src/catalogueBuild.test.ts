@@ -315,9 +315,11 @@ describe('the authoring retreat (CA9 a8-09)', () => {
     expect(reachable.target).toBe(sample.excessKurtosis);
     // A drawn tail weight far above what the rhythm can carry: the builder
     // retreats, and the target it returns is the draw times 0.9 per retreat.
-    // Probed on this seat: the authoring reaches 5,000 outright and refuses
-    // above about 6,300, so 8,000 needs three nine-tenths steps (5,832).
-    const heavy = { ...sample, excessKurtosis: 8_000 };
+    // Probed on this seat since PH-34: the authoring reaches 3,000 outright and
+    // refuses above that, so 4,000 needs three nine-tenths steps (2,916). The
+    // volatility floor removes the low tail, so a rhythm carries less above it;
+    // before PH-34 the same seat reached 5,000 and 8,000 needed three steps.
+    const heavy = { ...sample, excessKurtosis: 4_000 };
     const retreated = reachableTarget(heavy, derive);
     expect(retreated.retreats).toBeGreaterThan(0);
     expect(retreated.target).toBeCloseTo(

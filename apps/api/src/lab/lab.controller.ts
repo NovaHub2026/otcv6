@@ -566,6 +566,13 @@ export class LabController {
       instant: EpochMillis;
       delta?: number | null;
       condition?: CloseCondition;
+      /**
+       * Which way a parity adjustment may go, when the caller knows what the
+       * level means: `1` up, `-1` down, `null` not at all. Absent, it follows
+       * the requested move from the current price, which is right for a close
+       * on the board and wrong for a preset — see `applyPreset`.
+       */
+      side?: 1 | -1 | null;
     },
     action: string,
     parameters: Record<string, unknown>,
@@ -592,6 +599,7 @@ export class LabController {
       // one lattice step away, and says so; a preview still names both.
       if (
         condition === 'exact' &&
+        request.side !== null &&
         plan.selection === null &&
         plan.impossible !== null &&
         /parity/.test(plan.impossible) &&
@@ -599,9 +607,11 @@ export class LabController {
         plan.reachableNeighbours.length === 2
       ) {
         const upward =
-          request.delta !== undefined && request.delta !== null
-            ? request.delta >= 0
-            : plan.target >= plan.fromPrice;
+          request.side !== undefined
+            ? request.side > 0
+            : request.delta !== undefined && request.delta !== null
+              ? request.delta >= 0
+              : plan.target >= plan.fromPrice;
         const neighbour = plan.reachableNeighbours[upward ? 1 : 0]!;
         const requested = plan.price;
         plan = this.planAt(id, neighbour, request.instant, null);
@@ -1602,6 +1612,25 @@ export class LabController {
       throw new ConflictException(`Position ${pid} has expired; nothing to arm.`);
     }
     const level = presetLevel(name, position.entryPrice, position.contract.direction);
+    // **Which way parity may move the level is the preset's, not the price's
+    // (PH-34).** The adjustment took the neighbour on the side of the move from
+    // the current price, so an up position entered at 236 with the market at
+    // 261 asked for 237 ("win by minimum distance"), found it off-parity and
+    // was armed at 236 — its own entry, a tie — while the row said "win". The
+    // side that keeps a preset what it says is away from the entry in the
+    // preset's direction; a tie has no such side, since either neighbour is a
+    // win or a loss, so it is not adjusted and the neighbours are named.
+    const up = position.contract.direction === 'up' ? 1 : -1;
+    const side: 1 | -1 | null =
+      name === 'win-minimum'
+        ? up
+        : name === 'loss-minimum'
+          ? (-up as 1 | -1)
+          : name === 'entry-plus-tick'
+            ? 1
+            : name === 'entry-minus-tick'
+              ? -1
+              : null;
     const asset = this.venue.assetFor(id)!;
     const price = displayPrice(level, {
       logQuantum: asset.instrument.logQuantum,
@@ -1610,7 +1639,7 @@ export class LabController {
     }).toFixed(asset.instrument.displayPrecision);
     const result = await this.applyAt(
       id,
-      { price, instant: position.expiryInstant },
+      { price, instant: position.expiryInstant, side },
       'preset.apply',
       {
         preset: name,

@@ -1095,3 +1095,32 @@ the epoch its checkpoint names. A deployment that keeps losing its state still
 restarts its market at the reference price each time; the integration guide now
 says how to see that, because the engine cannot tell a lost directory from a
 first boot.
+
+## 2026-09-22 — PH-34 runs before PH-32 and PH-33, and its engine and catalogue are one subphase
+
+**Context.** The Human Owner, running the engine in their broker, asked for the
+tick rate to follow each asset's character and its current regime, for regimes
+that last like a market's and move as a ladder, and for calm to stay above the
+real market — and decided each number when it was put to them (PH-34 §2).
+PH-32 (a fifty-eight-year run, 7 of 30 assets done) and PH-33 (venue-day
+scales) are measurements _of the catalogue_, and PH-34 replaces it.
+
+**Decision.**
+
+- **PH-34 first.** A verdict of PH-32 or PH-33 on the old catalogue would
+  describe a market no broker will run; both rerun on PH-34's catalogue. Their
+  supervisor stays held until then.
+- **One subphase for the engine and the catalogue.** Every engine change moves
+  numbers the catalogue pins — tail weights, tempos, dispersions — so none of
+  them is verifiable alone; four subphases would have been four unverifiable
+  approvals.
+- **Typical against typical** is the Human Owner's reading of "calm above the
+  real average", chosen with the arithmetic in front of them: against the real
+  average the market would have been ≈2.5× the real one, or tail-less.
+- **Every recorded lattice is kept** through the recalibration: a running
+  market's prices are integers on it, and three assets would otherwise have
+  changed display precision under a broker.
+
+**What this costs.** Days of machine time to rerun PH-32 and PH-33, and a
+catalogue whose excess kurtosis is lower — the floor removes the low tail — with
+three archetype bands lowered to what their cascades reach above it.

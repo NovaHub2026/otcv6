@@ -221,10 +221,12 @@ describe('regimes last like a market, and move as a ladder (PH-34)', () => {
 
   it('reports the activity of the regime in force, for the arrival model', () => {
     const modulator = new VolatilityRegimeModulator(DEFAULT_REGIMES, derive('activity'));
+    let mismatches = 0;
     for (let i = 1; i <= 200_000; i += 1) {
       modulator.advance(context(1_000, i));
-      expect(modulator.activity).toBe(DEFAULT_REGIMES[modulator.regime].activity);
+      if (modulator.activity !== DEFAULT_REGIMES[modulator.regime].activity) mismatches += 1;
     }
+    expect(mismatches).toBe(0);
   });
 
   it('puts calm above the real market, and each level above the one below', () => {

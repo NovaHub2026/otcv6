@@ -8,16 +8,32 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 | Field              | Value                                                                             |
 | ------------------ | --------------------------------------------------------------------------------- |
-| Last clean session | 2026-09-06                                                                        |
-| Branch             | `main`                                                                            |
+| Last clean session | 2026-09-22                                                                        |
+| Branch             | `feature/ph-34-the-markets-tempo`, worktree `~/.otc-ph34`                         |
 | Remote             | `origin` → NovaHub2026/otcv6, public                                              |
-| Active cycle       | Cycle 11, **1 of 3** — PH-31 approved; PH-32 next                                 |
-| Active phase       | none                                                                              |
-| Active subphase    | none                                                                              |
+| Active cycle       | Cycle 11, **1 of 3** — PH-31 approved; PH-34 active                               |
+| Active phase       | PH-34 — the market's tempo follows its state                                      |
+| Active subphase    | PH-34.1 — the engine, and the thirty assets on it                                 |
 | Cycle Audit        | **010 closed** — 98 claims, 86 confirmed, 12 partial; fixes on `audit/ca10-fixes` |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                                |
 
 ---
+
+## Right now (2026-09-22)
+
+- **`v2.1.0` is not tagged yet.** The ADR-0019 fix (a fresh genesis replayed
+  the last one) is merged to `main` at `d8aba15`, gated green locally on
+  `c30d43c`; tag it only after hosted CI on `d8aba15` is green, and write
+  `docs/evidence/RELEASE-2.1.0.md` then.
+- **PH-34.1 is implemented and not yet approved.** The engine changes and the
+  regenerated catalogue are on `feature/ph-34-the-markets-tempo`; the unit
+  suite and the full gate on it are the next legal actions, then the evidence
+  the broker will read (per-regime rates, durations, the level against the
+  real instrument).
+- **The long measurements stay held** (`~/.otc-local/ph33/.hold`): PH-32's
+  fifty-eight-year run and PH-33's scales measure the catalogue PH-34 replaces.
+- `~/Projects/orbit-otc-node` is the Human Owner's own broker stack (systemd
+  user services on 3010/3100/3030) — background load, never ours to stop.
 
 ## Continuation point
 

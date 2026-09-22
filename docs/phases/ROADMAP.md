@@ -902,10 +902,20 @@ and saying what was wrong with it.
 | Phase | Title                                           | State    |
 | ----- | ----------------------------------------------- | -------- |
 | PH-31 | The Lab's push, as an operator actually uses it | APPROVED |
+| PH-34 | The market's tempo follows its state            | ACTIVE   |
 
 | Subphase | Title                                                              | State    |
 | -------- | ------------------------------------------------------------------ | -------- |
 | PH-31.1  | The push measured against the market: pace, unit, stop and ceiling | APPROVED |
+| PH-34.1  | The engine, and the thirty assets on it                            | ACTIVE   |
+| PH-34.2  | Integrated verification, the battery, and the broker's upgrade     | PLANNED  |
+
+**PH-34** is the Human Owner's second phase from operating the engine, this
+time in their broker: the tick rate follows each asset's character and its
+current regime, 40% lower across the catalogue; regimes last like a market's and
+move as a ladder; calm sits 20% above the real market's typical movement, with a
+floor under it. It runs ahead of PH-32 and PH-33, whose long measurements are of
+the catalogue as it was and rerun on this one (`DECISION-LOG.md`, 2026-09-22).
 
 **What the audit left for this cycle**, and what the next phases are most
 likely drawn from: the fourteen minor findings Cycle Audit 10 carried by name

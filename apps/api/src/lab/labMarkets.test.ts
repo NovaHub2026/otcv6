@@ -144,6 +144,10 @@ describe('a bounded battery run says what it could not see', () => {
    * This case sits inside the band instead: a sample that survives *some*
    * hypotheses and not enough. It fails at a floor of 1, where the same sample
    * would be called clean.
+   *
+   * 150,000 ticks since PH-34: a slower tape buys more market time per tick,
+   * and 400,000 of them cleared the floor outright; 150,000 is about the market
+   * time 400,000 were before.
    */
   it('holds the floor at a sample that tests some hypotheses but not enough (a8)', async () => {
     const { venue, engine } = await labVenue();
@@ -152,7 +156,7 @@ describe('a bounded battery run says what it could not see', () => {
       engine,
       new SignSelector(),
       new LabSession(),
-    ).quality(ASSET_CATALOGUE[0]!.definition.id, '400000')) as QualityBody;
+    ).quality(ASSET_CATALOGUE[0]!.definition.id, '150000')) as QualityBody;
     const tested = body.predictability.hypothesesTested;
     expect(tested, 'the sample tests nothing, so it pins no floor').toBeGreaterThan(0);
     expect(tested, 'the sample clears the floor, so it pins nothing either').toBeLessThan(100);

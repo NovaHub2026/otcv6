@@ -77,6 +77,7 @@ confirmed.
    The real instrument's typical level is its reference volatility divided by
    the ratio of average to typical of the asset's own cascade: the OTC market
    is the real one's shape at a higher level.
+
 2. **A floor under the product.** No combination of regime, cascade and
    structure phase takes the volatility level below the calm level, ×1.2 of
    the real market's typical level. The floor is on the level — the expected movement — not
@@ -87,15 +88,16 @@ confirmed.
 4. **Regimes last like a market's**, each with a minimum and a random part
    with no mass near zero:
 
-   | Regime     | Minimum | Typical  |
-   | ---------- | ------: | -------: |
-   | compressed |  30 min |    1–3 h |
-   | normal     |  45 min |  1.5–4 h |
+   | Regime     | Minimum |   Typical |
+   | ---------- | ------: | --------: |
+   | compressed |  30 min |     1–3 h |
+   | normal     |  45 min |   1.5–4 h |
    | elevated   |  20 min | 30–90 min |
    | stressed   |  10 min | 15–30 min |
 
    The per-asset factor keeps each asset's character, narrowed from 0.3–2.7 to
    **0.7–1.5**, and never shortens a minimum.
+
 5. **Half of a regime's volatility arrives as ticks.** A level `L` above normal
    multiplies the tick rate by `L / L_normal` and the effective tick size by the
    square root of that, so each regime's candles are the size its level says:
@@ -128,13 +130,14 @@ confirmed.
 
 ## 4. Subphases
 
-| Subphase | Title                                                                           |
-| -------- | ------------------------------------------------------------------------------- |
-| PH-34.1  | Regimes as a random ladder that lasts like a market, at levels above the real one |
-| PH-34.2  | A floor under the volatility level                                              |
-| PH-34.3  | The tick rate follows the asset and its regime                                  |
-| PH-34.4  | The thirty assets recalibrated, and every number that moved re-measured         |
-| PH-34.5  | Integrated verification, the battery, and what a broker must know to upgrade    |
+| Subphase | Title                                                                        |
+| -------- | ---------------------------------------------------------------------------- |
+| PH-34.1  | The engine, and the thirty assets on it                                      |
+| PH-34.2  | Integrated verification, the battery, and what a broker must know to upgrade |
+
+The engine's changes and the recalibration are one subphase rather than four:
+every one of them moves the numbers the catalogue pins, so none of them is
+verifiable on its own, and the catalogue is the first thing that can be.
 
 ## 5. What it costs
 

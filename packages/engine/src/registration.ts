@@ -87,6 +87,12 @@ export type DifferentiationCheck = (
   existing: readonly RegisteredAsset[],
 ) => Promise<string | null> | string | null;
 
+/** How close the measured mean interval must come to its target (PH-34). */
+export const PACE_TOLERANCE = 0.05;
+
+/** Corrections the pace fit may make before the registration is refused. */
+export const PACE_FIT_PASSES = 4;
+
 export interface RegistrationRequest {
   readonly id: string;
   readonly family: AssetDefinition['family'];
@@ -113,6 +119,20 @@ export interface RegistrationRequest {
    * the five hand-authored assets were built.
    */
   readonly dispersion?: number;
+  /**
+   * The average interval between ticks the market must have, in milliseconds
+   * (PH-34): its tick rate, set by its character.
+   *
+   * The tempo that gives it is **fitted by measurement**, as the dispersion is:
+   * the Hawkes mean interval `tempo · (1 − burstiness)` is exact only when no
+   * burst reaches the intensity clamp and every excitation outlives the next
+   * arrival, and on the catalogue the realised interval ran from 1.08 to 3.0
+   * times that formula, the most bursty assets furthest off. So the
+   * calibration's measured interval corrects the tempo, and the calibration
+   * reruns, until the two agree within {@link PACE_TOLERANCE}. Omit it and the
+   * tempo is the traits' own.
+   */
+  readonly meanIntervalMs?: number;
   /**
    * The personality's character: the ladder of timescales and the shape.
    *
@@ -365,29 +385,20 @@ export async function registerAsset(
   }
 
   options.onStage?.('authoring');
-  let authored;
+  let authored: ReturnType<typeof authorPersonality>;
   try {
     authored = authorPersonality(request.traits, request.targets, derive);
   } catch (error) {
     return { kind: 'refused', stage: 'authoring', reason: (error as Error).message };
   }
 
-  const definition: AssetDefinition = {
+  let definition: AssetDefinition = {
     id: request.id,
     family: request.family,
     displayName: request.displayName,
     referencePrice: request.referencePrice,
     traits: authored.traits,
   };
-
-  // The budget the market is calibrated to is the real instrument's reference
-  // times how much more an OTC market moves (PH-34): typical against typical,
-  // about 1.7 on average. It depends on the solved clustering, so it is taken
-  // here, from the authored traits, on the solve's own stream.
-  const budget =
-    request.dispersion === undefined
-      ? undefined
-      : request.dispersion * otcDispersionFactor(authored.traits, derive('kurtosis'));
 
   // Everything the budget needs that can be decided without simulating, decided
   // before the simulation. The gate-before-solve ordering, one stage later.
@@ -421,6 +432,51 @@ export async function registerAsset(
   } catch (error) {
     return { kind: 'refused', stage: 'calibration', reason: (error as Error).message };
   }
+
+  // The tick rate, fitted by measurement (PH-34). A slower or faster tempo
+  // moves the arrival rate nearly in proportion, so each pass corrects by the
+  // measured ratio and reruns the calibration; the tempo enters the rate floor
+  // and the spacing feasibility, so the personality is re-authored with it.
+  if (request.meanIntervalMs !== undefined) {
+    for (let pass = 0; ; pass += 1) {
+      const ratio = request.meanIntervalMs / calibrated.evidence.meanIntervalMs;
+      if (Math.abs(ratio - 1) <= PACE_TOLERANCE) break;
+      if (pass >= PACE_FIT_PASSES) {
+        return {
+          kind: 'refused',
+          stage: 'calibration',
+          reason:
+            `The tick rate did not settle: after ${PACE_FIT_PASSES} corrections the market ` +
+            `ticks every ${calibrated.evidence.meanIntervalMs.toFixed(1)} ms against a target of ` +
+            `${request.meanIntervalMs.toFixed(1)} ms.`,
+        };
+      }
+      try {
+        authored = authorPersonality(
+          { ...request.traits, tempoMs: definition.traits.tempoMs * ratio },
+          request.targets,
+          derive,
+        );
+      } catch (error) {
+        return { kind: 'refused', stage: 'authoring', reason: (error as Error).message };
+      }
+      definition = { ...definition, traits: authored.traits };
+      try {
+        calibrated = await calibrateAssetAsync(definition, derive, options.calibration ?? {});
+      } catch (error) {
+        return { kind: 'refused', stage: 'calibration', reason: (error as Error).message };
+      }
+    }
+  }
+
+  // The budget the market is calibrated to is the real instrument's reference
+  // times how much more an OTC market moves (PH-34): typical against typical,
+  // about 1.7 on average. It depends on the solved clustering, so it is taken
+  // from the final authored traits, on the solve's own stream.
+  const budget =
+    request.dispersion === undefined
+      ? undefined
+      : request.dispersion * otcDispersionFactor(authored.traits, derive('kurtosis'));
 
   // The dispersion budget, hit by rescaling rather than by searching.
   //
