@@ -74,9 +74,15 @@ These belong to the runtime phase and are recorded here so they are not lost:
 1. **Master-secret custody.** Losing it makes history unreplayable; disclosing it
    makes the market predictable. It needs secure storage, backup, and an access
    path that never reaches a log.
-2. **Rotation.** `keyEpoch` exists for deliberate re-keying. Rotating an asset's
-   epoch starts a fresh stream while leaving prior history replayable under the
-   previous epoch.
+2. **Rotation, and which epoch a market starts on.** `keyEpoch` exists for
+   re-keying: a new epoch is a fresh stream, and prior history stays replayable
+   under the epoch its checkpoint names. **Every keystream a market starts is
+   keyed by the instant it starts** — genesis, backfill, seam, reopening — as
+   `startKeyEpoch(instant, previous)` in `packages/runtime/src/genesis.ts`
+   (ADR-0019). A genesis used to take epoch 0, so under one secret every market
+   started from an empty state directory was the same market, tick for tick; a
+   broker's `v2.0.0` deployment showed it as one figure repeating on every
+   asset.
 3. **Durable lease storage.** The high-water mark must be persisted before the
    blocks behind it are consumed. Lease size trades durable-write frequency
    against the size of the gap discarded per restart.

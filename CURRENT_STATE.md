@@ -55,6 +55,19 @@ settlement price that name different ticks when the engine prints on a boundary
 millisecond (ADR-0017). The audit's other six findings are the next phases: a
 Lab with a correct mechanism and no controls.
 
+## A defect in the released `v2.0.0`, fixed ahead of the phase work
+
+On 2026-09-22 the Human Owner reported their broker's `v2.0.0` deployment
+drawing one figure repeatedly on a five-minute chart, on all thirty assets.
+Measured: every genesis took key epoch 0, so under one secret a market started
+from an empty state directory was the previous such market, tick for tick —
+two production processes twenty seconds apart published the same thirty ticks.
+Seams from one restored backup had the same defect. Fixed on
+`fix/fresh-genesis-key` off `main` ([ADR-0019](docs/decisions/ADR-0019-a-keystream-is-keyed-by-when-it-starts.md)):
+every keystream is keyed by the instant it starts. Released from `main` as
+`v2.1.0` once hosted CI is green on the merge (`DECISION-LOG.md`, 2026-09-22).
+PH-32 and PH-33 take it when they next merge `main`.
+
 ## Cycle 1 result
 
 The cycle existed to settle one question: can a synthetic market be
@@ -195,6 +208,7 @@ minutes it cost are recorded rather than the run quietly repeated.
 | ADR-0016 | Server-sent events stay; the cost is a syscall and every transport pays it (APPROVED)                                                                                                                                                                                                                                            |
 | ADR-0017 | The expiry price is the tick at or before expiry; a candle is half-open; settlement is authoritative (APPROVED)                                                                                                                                                                                                                  |
 | ADR-0018 | One engine per deployment; a Lab-composed process is the engine in simulation mode; production is never Lab-composed (APPROVED)                                                                                                                                                                                                  |
+| ADR-0019 | A keystream is keyed by the instant it starts: a fresh genesis no longer replays the previous one (APPROVED)                                                                                                                                                                                                                     |
 | Backlog  | [GitHub Issues](https://github.com/NovaHub2026/otcv6/issues) #1–#22; closed: #1, #2, #4, #5, #6, #7, #8, #10, #11, #12, #13, #15, #16, #17, #18, #19, #20, #21, #22. #9 (the multi-node composition) is deferred by the Cycle 10 plan; #3 and #14 are the Human Owner's (Governance amendments). `docs/BACKLOG.md` mirrors them. |
 | Roadmap  | `docs/phases/ROADMAP.md`                                                                                                                                                                                                                                                                                                         |
 | Branch   | `audit/ca10-fixes` off `main` at the PH-30 merge `353f101` (tagged `v1.0.0`, Cycle 10 complete); before it the PH-29 merge `668efa9`, the PH-28 merge `fd17ec0` and the PH-27 merge `e8ed2ae` (Cycle 9 complete)                                                                                                                 |

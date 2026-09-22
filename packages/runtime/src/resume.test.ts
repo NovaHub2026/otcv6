@@ -13,6 +13,7 @@ import {
 } from '@otc/core';
 import { ASSET_CATALOGUE, type PersonalityTraits, type RegisteredAsset } from '@otc/engine';
 import { FileStateStore, MemoryStateStore } from './fileStore.js';
+import { startKeyEpoch } from './genesis.js';
 import { personalityFingerprint } from './personality.js';
 import { checkpointMarket, resumeMarket } from './resume.js';
 import {
@@ -124,8 +125,9 @@ describe('a recovery with no trustworthy cursor evidence moves to a new key epoc
     expect(after.length).toBeGreaterThan(0);
     expect(after[0]!.sequence).toBeGreaterThan(407 + 100_000);
     expect(after[0]!.instant).toBeGreaterThanOrEqual(GENESIS + 600_000);
-    // And on a keystream the dead process cannot have drawn from.
-    expect(market.keyEpoch).toBe(1);
+    // And on a keystream the dead process cannot have drawn from: the one the
+    // instant it reopened at owns (ADR-0019), not a constant.
+    expect(market.keyEpoch).toBe(startKeyEpoch(epochMillis(GENESIS + 600_000)));
   });
 
   it('starts fresh when the record holds nothing for the asset', async () => {
@@ -143,13 +145,14 @@ describe('a recovery with no trustworthy cursor evidence moves to a new key epoc
     const store = new MemoryStateStore();
     const clock = new SteppableClock(GENESIS);
     const first = await resumeMarket(base(store, clock));
-    expect(first.market.keyEpoch, 'a market that has never seamed').toBe(0);
+    const genesisEpoch = startKeyEpoch(GENESIS);
+    expect(first.market.keyEpoch, 'a genesis is keyed by its instant (ADR-0019)').toBe(
+      genesisEpoch,
+    );
     clock.advance(durationMillis(600_000));
     first.market.advance();
     const checkpoint = checkpointMarket(first.market, asset.definition.id, clock.now());
-    expect(checkpoint.keyEpoch, 'epoch 0 is the absent default; nothing new is written').toBe(
-      undefined,
-    );
+    expect(checkpoint.keyEpoch, 'and the checkpoint says so from the first one').toBe(genesisEpoch);
     // Anything that makes the record unusable takes the seam; the reason is not
     // what this asserts.
     await store.save({ ...checkpoint, leasedBlocks: {} });
@@ -157,11 +160,15 @@ describe('a recovery with no trustworthy cursor evidence moves to a new key epoc
     const secondClock = new SteppableClock(clock.now());
     const second = await resumeMarket(base(store, secondClock));
     expect(second.outcome.kind).toBe('seam');
-    expect(second.market.keyEpoch, 'the seam moved off the spent keystream').toBe(1);
+    const seamEpoch = startKeyEpoch(secondClock.now());
+    expect(seamEpoch).toBeGreaterThan(genesisEpoch);
+    expect(second.market.keyEpoch, 'the seam moved off the spent keystream').toBe(seamEpoch);
     secondClock.advance(durationMillis(60_000));
     second.market.advance();
     const afterSeam = checkpointMarket(second.market, asset.definition.id, secondClock.now());
-    expect(afterSeam.keyEpoch, 'and the checkpoint says which keystream its cursors index').toBe(1);
+    expect(afterSeam.keyEpoch, 'and the checkpoint says which keystream its cursors index').toBe(
+      seamEpoch,
+    );
     await store.save(afterSeam);
 
     // The resume that follows must land on the SAME keystream, or the cursors
@@ -169,7 +176,7 @@ describe('a recovery with no trustworthy cursor evidence moves to a new key epoc
     const thirdClock = new SteppableClock(secondClock.now());
     const third = await resumeMarket(base(store, thirdClock));
     expect(third.outcome.kind).toBe('resumed');
-    expect(third.market.keyEpoch).toBe(1);
+    expect(third.market.keyEpoch).toBe(seamEpoch);
     thirdClock.advance(durationMillis(60_000));
     const continued = third.market.advance();
     // Deterministic continuation: the same clock advance on the market that was
@@ -177,14 +184,14 @@ describe('a recovery with no trustworthy cursor evidence moves to a new key epoc
     secondClock.advance(durationMillis(60_000));
     expect(continued).toEqual(second.market.advance());
 
-    // And a seam from there moves on again rather than back to 1.
+    // And a seam from there moves on again rather than back.
     await store.save({
       ...checkpointMarket(third.market, asset.definition.id, thirdClock.now()),
       leasedBlocks: {},
     });
     const fourth = await resumeMarket(base(store, new SteppableClock(thirdClock.now())));
     expect(fourth.outcome.kind).toBe('seam');
-    expect(fourth.market.keyEpoch).toBe(2);
+    expect(fourth.market.keyEpoch).toBeGreaterThan(seamEpoch);
   });
 
   it('refuses a record whose key epoch is not a whole number, rather than guessing', async () => {

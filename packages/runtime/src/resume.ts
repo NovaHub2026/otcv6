@@ -16,6 +16,7 @@ import {
   ENGINE_STREAM_PURPOSES,
   type RegisteredAsset,
 } from '@otc/engine';
+import { startKeyEpoch } from './genesis.js';
 import { DEFAULT_MAX_CATCH_UP_MS, HostedMarket } from './hosted.js';
 import { personalityFingerprint } from './personality.js';
 import {
@@ -352,11 +353,15 @@ function freshMarket(
   options: ResumeOptions,
   cursors: Record<string, string> | undefined,
 ): HostedMarket {
+  // Keyed by the genesis instant, not epoch 0 (ADR-0019). At 0, every market
+  // started from nothing under one secret was the same market, tick for tick.
+  const keyEpoch = startKeyEpoch(options.genesisInstant);
   const engine = createMarketEngine({
     config: configFor(options.asset),
     keyring: options.keyring,
     environment: options.environment,
-    ...engineStreams(options, 0),
+    keyEpoch,
+    ...engineStreams(options, keyEpoch),
     start: { instant: options.genesisInstant, price: logPrice(0) },
     ...(cursors === undefined ? {} : { cursors }),
   });
@@ -364,6 +369,7 @@ function freshMarket(
     engine,
     clock: options.clock,
     personality: personalityFingerprint(options.asset),
+    keyEpoch,
     ...(options.maxCatchUpMs === undefined ? {} : { maxCatchUpMs: options.maxCatchUpMs }),
     ...(options.retractable === undefined ? {} : { retractable: options.retractable }),
   });
@@ -378,15 +384,20 @@ function freshMarket(
  * cursor, so there is no floor to compute — the only safe statement about the
  * keystream is that epoch 0 is spent to an unknown depth.
  *
- * So the market opens on **epoch 1**: a different keystream, in which nothing
- * has been drawn. The price carries over from the record's newest tick so the
- * market does not jump, the sequence continues a full lease past it so no
- * number is published twice, and the instant is the clock — the gap stays a
+ * So the market opens on **a new key epoch**: a different keystream, in which
+ * nothing has been drawn. The price carries over from the record's newest tick
+ * so the market does not jump, the sequence continues a full lease past it so
+ * no number is published twice, and the instant is the clock — the gap stays a
  * gap, as on every other seam.
+ *
+ * The epoch is the instant it opens at (ADR-0019). It was a constant 1, so two
+ * reopenings past the same record — a directory restored twice — played the
+ * same increments from the same price.
  */
 function seamPastRecord(options: ResumeOptions, published: Tick): ResumeResult {
-  const keyEpoch = 1;
   const now = options.clock.now();
+  const instant = epochMillis(Math.max(options.genesisInstant, now, published.instant));
+  const keyEpoch = startKeyEpoch(instant);
   const engine = createMarketEngine({
     config: configFor(options.asset),
     keyring: options.keyring,
@@ -394,7 +405,7 @@ function seamPastRecord(options: ResumeOptions, published: Tick): ResumeResult {
     keyEpoch,
     ...engineStreams(options, keyEpoch),
     start: {
-      instant: epochMillis(Math.max(options.genesisInstant, now, published.instant)),
+      instant,
       price: published.price,
       sequence: published.sequence + DEFAULT_SEQUENCE_LEASE,
     },
@@ -455,7 +466,12 @@ function seamFrom(
   // It costs nothing a seam has not already spent: a seam restarts the latent
   // state by definition, and the personality — every statistical property the
   // asset is — is a property of the config, not of which keystream feeds it.
-  const keyEpoch = (record.keyEpoch ?? 0) + 1;
+  //
+  // **Which** new epoch is the instant the seam opens at (ADR-0019), computed
+  // below once that instant is known. It was `keyEpoch + 1`, which is new
+  // relative to the record and the same for everyone holding the record: a
+  // backup restored twice, or onto two machines, seamed twice onto one
+  // keystream, from one price — the same increments, twice.
   const cursors: Record<string, string> = {};
   for (const purpose of ENGINE_STREAM_PURPOSES) {
     // Floored at the record's OWN snapshot cursors, not merely at its leases.
@@ -525,6 +541,7 @@ function seamFrom(
             (options.published?.sequence ?? 0) + DEFAULT_SEQUENCE_LEASE,
           ),
         };
+  const keyEpoch = startKeyEpoch(start.instant, record.keyEpoch ?? 0);
 
   const engine = createMarketEngine({
     config: configFor(options.asset),

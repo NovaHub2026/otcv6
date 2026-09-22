@@ -173,6 +173,19 @@ arquetipo, carácter y fuente del precio de referencia — y nada privado:
 `price` es el entero canónico — lo que liquida — y `displayPrice` es su
 representación, que nunca se compara.
 
+`recovery` dice cómo volvió el mercado en este arranque: `resumed` (continuó
+exactamente donde estaba), `seam` (continuó desde el último precio publicado, con
+una discontinuidad registrada y su motivo) o `fresh` (nació ahora, en el precio de
+referencia). **`fresh` solo es correcto en el primer arranque de un despliegue.**
+Si lo ves después, el motor perdió su `OTC_STATE_DIR` — un volumen que no
+persiste, un contenedor recreado, una réplica nueva — y el mercado empezó de
+nuevo: el precio vuelve a la referencia y el registro empieza otra vez. Hasta
+`v2.0.0` era peor: cada arranque así repetía **el mismo mercado, tick a tick**,
+porque todo nacimiento usaba la misma secuencia aleatoria bajo el mismo secreto;
+en un gráfico de cinco minutos se ve como una misma figura que se repite en todos
+los activos. Desde `v2.1.0` cada nacimiento tiene su propia secuencia (ADR-0019),
+pero perder el estado sigue siendo un fallo del despliegue que hay que corregir.
+
 `GET /archetypes` lista el vocabulario de alta de activos: ocho arquetipos, cada
 uno una región del espacio de rasgos, con su banda de dispersión en unidades
 logarítmicas y en porcentaje.
@@ -1000,6 +1013,10 @@ Dos avisos que ahorran tiempo:
 - [ ] `OTC_ADMIN_TOKEN` puesto; comprobado que sin él una escritura devuelve `403`
       (nombrando la variable en el cuerpo — el motor no usa `401`).
 - [ ] `OTC_STATE_DIR` en disco persistente, con copia de seguridad.
+- [ ] Un solo proceso del motor por despliegue: sin réplicas ni modo cluster
+      detrás de un balanceador (ADR-0018).
+- [ ] Tras reiniciar el motor, `GET /markets` no dice `"recovery": {"kind": "fresh"}`
+      en ningún activo: si lo dice, el estado no sobrevivió al reinicio.
 - [ ] Motor en loopback o detrás de proxy; administración inaccesible desde Internet.
 - [ ] `proxy_buffering off` verificado: los ticks llegan uno a uno.
 - [ ] Cliente consumiendo el stream con `from=<sequence>` y reintentos; un 400 por

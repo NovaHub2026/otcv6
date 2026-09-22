@@ -96,26 +96,33 @@ describe('the engine-event observer', () => {
     observer.observe();
     expect(session.engineEvents).toHaveLength(1);
     // Run the market a while; whatever changed is recorded and nothing else is.
-    for (let i = 0; i < 60; i += 1) {
+    //
+    // Until something changes, rather than for a fixed ten minutes. How soon a
+    // market changes state belongs to its keystream, and a keystream is keyed
+    // by the instant the market starts (ADR-0019): ten minutes held a
+    // transition on the epoch-0 market this was written against and none on
+    // another. Two simulated hours bound it, far past any sojourn.
+    let passes = 0;
+    while (passes < 60 || (session.engineEvents.length < 2 && passes < 720)) {
       clock.advance(durationMillis(10_000));
       await venue.tick();
       observer.observe();
+      passes += 1;
     }
-    // A transition, not merely a length that never shrank: ten minutes of this
-    // market changes something, and every record after the first names what it
-    // changed from and to. `>= last` was true of an observer that recorded
-    // nothing at all (Cycle Audit 8, a8).
+    // A transition, not merely a length that never shrank: the market changes
+    // something, and every record after the first names what it changed from
+    // and to. `>= last` was true of an observer that recorded nothing at all
+    // (Cycle Audit 8, a8).
     const transitions = session.engineEvents.slice(1);
-    expect(
-      transitions.length,
-      'ten simulated minutes recorded no engine transition',
-    ).toBeGreaterThan(0);
+    expect(transitions.length, 'two simulated hours recorded no engine transition').toBeGreaterThan(
+      0,
+    );
     for (const event of transitions) {
       expect(['regime', 'volatility', 'stall', 'recovery', 'seam']).toContain(event.kind);
       expect(event.detail, 'a transition that names no change').toMatch(/→/);
     }
     // And not one record per pass: what did not change was not recorded.
-    expect(session.engineEvents.length).toBeLessThan(60);
+    expect(session.engineEvents.length).toBeLessThan(passes);
     // And the Lab's stream is untouched: the observer writes engine events only.
     expect(session.labActions).toEqual([]);
     await venue.stop();

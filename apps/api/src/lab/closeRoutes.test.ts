@@ -796,13 +796,24 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
    */
   it('PH-30: a position opened while a due tick is unpublished still settles from its own entry', async () => {
     const { venue, clock, controller, engine } = await labVenue();
-    // 66 200 ms: the sweep's first open at which the drawn-and-due tick is
-    // exactly one lattice step above the last published one — the CI row.
-    await advance(venue, clock, 66_200);
+    // The sweep itself, rather than the offset it once found: the first open
+    // at which the drawn-and-due tick is exactly one lattice step above the
+    // last published one — the CI row. Which instant that is belongs to the
+    // market's keystream, and a keystream is keyed by the instant the market
+    // starts (ADR-0019), so the 66 200 ms that held on the epoch-0 market does
+    // not hold on another. A tenth of a second at a time, ten minutes at most.
+    await advance(venue, clock, 20_000);
     const market = engine.hostedMarket(id)!;
+    const setsUpTheTie = (): boolean =>
+      market.pending !== null &&
+      market.lastPublishedState !== null &&
+      market.pending.price - market.lastPublishedState.price === 1;
+    for (let swept = 0; !setsUpTheTie() && swept < 6_000; swept += 1) {
+      await advance(venue, clock, 100);
+    }
     const due = market.pending!;
     const published = market.lastPublishedState!;
-    expect(due.price - published.price, 'the sweep no longer sets up the tie').toBe(1);
+    expect(due.price - published.price, 'no open in ten minutes sets up the tie').toBe(1);
 
     // The scheduler sleeps until the pending tick is due and then publishes it.
     // Between those two, the clock is past the tick and the feed is not.

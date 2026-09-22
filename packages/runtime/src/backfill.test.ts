@@ -12,6 +12,7 @@ import {
 } from '@otc/core';
 import { ASSET_CATALOGUE, configFor, createMarketEngine } from '@otc/engine';
 import { backfillMarket, BackfillError } from './backfill.js';
+import { startKeyEpoch } from './genesis.js';
 import { HostedMarket, DEFAULT_MAX_CATCH_UP_MS } from './hosted.js';
 import {
   HISTORY_BASE_TIMEFRAME,
@@ -63,6 +64,9 @@ function liveThrough(to: number, stepMs = 1_000): { market: HostedMarket; ticks:
       config: configFor(asset),
       keyring,
       environment: 'test',
+      // The keystream a genesis at GENESIS is on (ADR-0019): the reference is
+      // the same market, not a market on epoch 0.
+      keyEpoch: startKeyEpoch(GENESIS),
       start: { instant: GENESIS, price: logPrice(0) },
     }),
     clock,

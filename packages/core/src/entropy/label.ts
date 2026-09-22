@@ -17,7 +17,12 @@ export interface StreamLabel {
   readonly asset: string;
   /** What the stream drives, e.g. `magnitude`, `sign`, `arrival`, `regime`. */
   readonly purpose: string;
-  /** Key generation. Incremented only for a deliberate re-key of a stream. */
+  /**
+   * Key generation: which keystream of this asset and purpose. A market takes a
+   * new one whenever it starts a keystream — genesis, backfill, seam — keyed by
+   * the instant it starts (`startKeyEpoch` in `@otc/runtime`, ADR-0019), so two
+   * markets started at different moments under one secret never share one.
+   */
   readonly keyEpoch: number;
 }
 
