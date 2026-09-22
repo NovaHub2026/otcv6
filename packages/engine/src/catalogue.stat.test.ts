@@ -123,8 +123,14 @@ describe('the catalogue is actually varied', () => {
   // parameterised. This is the weaker claim that the catalogue is not five
   // relabelled copies of one market.
   it('spans a wide range of pace', () => {
+    // Since PH-34 the pace is **derived** from each asset's dispersion — the
+    // square root of it, normalised to 2.47 ticks a second across the thirty —
+    // so the spread is the catalogue's own range of volatility rather than a
+    // free axis: 4.6× from EUR/GBP to DOGE (it was 8.1× when the tempo was
+    // drawn per seat). A floor of 4 keeps the claim this makes, which is that
+    // the assets do not share a tape.
     const paces = ASSET_CATALOGUE.map((a) => a.evidence.meanIntervalMs);
-    expect(Math.max(...paces) / Math.min(...paces)).toBeGreaterThan(5);
+    expect(Math.max(...paces) / Math.min(...paces)).toBeGreaterThan(4);
   });
 
   it('spans a wide range of scale', () => {

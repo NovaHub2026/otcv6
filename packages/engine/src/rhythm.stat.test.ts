@@ -45,7 +45,11 @@ describe('the co-varied solve across every admissible depth', () => {
       depth <= TRAIT_BOUNDS.cascadeDepth.max;
       depth += 1
     ) {
-      const target = 40;
+      // 18 since PH-34: the volatility floor removes the low tail of the
+      // level, so a four-component cascade reaches about 22 above it where it
+      // reached far more before. The sweep is about the solve hitting a target
+      // at every depth, not about the target's value.
+      const target = 18;
       // Spacing tightened and span widened so the ladder still fits between the
       // slowest component and the tick rate at depth 18. Both are tail-neutral,
       // so neither can flatter the solve.

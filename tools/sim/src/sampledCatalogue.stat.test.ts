@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, MasterKeyring, type RandomSource } from '@otc/core';
 import {
+  OTC_DISPERSION_FACTOR,
   ASSET_ARCHETYPES,
   calibrateAssetAsync,
   configFor,
@@ -62,7 +63,11 @@ function spanFor(cascadeSpanMs: number): { replicates: number; simulatedMs: numb
   // it only within 18.5%; combining three by median is what brings it inside
   // 15%. At one replicate the acceptance's published lattices spanned 2.4x for
   // one personality registered three times.
-  return { replicates: 3, simulatedMs: minimumDispersionSpanMs({ cascadeSpanMs }) / 3 };
+  // One per cent over the bound, as `buildCatalogue` does: `span / 3 × 3` is
+  // not `span` in floating point and the guard is a strict comparison — a
+  // sector-etf draw was refused at "needs 508.7 hours, this calibration spans
+  // 508.7" on PH-34's catalogue.
+  return { replicates: 3, simulatedMs: (minimumDispersionSpanMs({ cascadeSpanMs }) * 1.01) / 3 };
 }
 
 /** Verification runs twice as long again, on an unrelated keyring. */
@@ -72,7 +77,10 @@ function verificationSpanFor(cascadeSpanMs: number): {
 } {
   // Three replicates here too: the check is only as sharp as its own estimator,
   // and a single realisation of a quantity with memory is what CA6-15 was about.
-  return { replicates: 3, simulatedMs: (2 * minimumDispersionSpanMs({ cascadeSpanMs })) / 3 };
+  return {
+    replicates: 3,
+    simulatedMs: (2 * minimumDispersionSpanMs({ cascadeSpanMs }) * 1.01) / 3,
+  };
 }
 
 const MIRROR_TICKS = 120_000;
@@ -142,7 +150,13 @@ async function buildCatalogue(): Promise<readonly SampledAsset[]> {
       if (outcome.kind !== 'registered') {
         throw new Error(`${id} refused at ${outcome.stage}: ${outcome.reason}`);
       }
-      built.push({ archetype, asset: outcome.asset, budget: sample.dispersion });
+      // The budget the market is calibrated to is the family's reference at
+      // OTC level (PH-34): 1.7 times it, the Human Owner's number.
+      built.push({
+        archetype,
+        asset: outcome.asset,
+        budget: sample.dispersion * OTC_DISPERSION_FACTOR,
+      });
     }
   }
   return built;

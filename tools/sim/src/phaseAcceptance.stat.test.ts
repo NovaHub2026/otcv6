@@ -95,8 +95,12 @@ describe('PH-3 acceptance: the canonical engine', () => {
     // on: the largest tested bucket reaching the corrected and confirmation
     // thresholds, at 50% power (a4-01). The first is finer than the margin; the
     // second is not, and the documents say which is which.
-    expect(shortest.minimumDetectableEffectPoints).toBeCloseTo(0.221, 3);
-    expect(shortest.gateMinimumDetectableEffectPoints).toBeCloseTo(0.315, 3);
+    // Re-measured on PH-34's engine, 2026-09-22 (they were 0.221 and 0.315 on
+    // the pre-PH-34 model): a slower tape buys more market time per tick, so
+    // the same tick budget holds more thirty-second windows, and the level is
+    // 1.7× the real instrument's.
+    expect(shortest.minimumDetectableEffectPoints).toBeCloseTo(0.223, 3);
+    expect(shortest.gateMinimumDetectableEffectPoints).toBeCloseTo(0.319, 3);
     expect(shortest.gateSufficientForPayout).toBe(false);
 
     // Every attack family must actually have run.
