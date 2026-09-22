@@ -43,6 +43,7 @@ export {
   type ResumeOptions,
   type ResumeResult,
 } from './resume.js';
+export { START_EPOCH_SPAN, startKeyEpoch } from './genesis.js';
 export { personalityFingerprint } from './personality.js';
 export {
   AssetLease,

@@ -481,7 +481,11 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     // PH-24.16: the first pushed tick is anchored at now (gap + step); the rest at the pace.
     const mIntervals = intervals(mTicks, last2).slice(0, 4);
     expect(mIntervals[0]!).toBeLessThanOrEqual(gapMedio + bound + 1);
-    for (const ms of mIntervals.slice(1)) expect(ms).toBeLessThanOrEqual(bound);
+    // Within the millisecond the pace's bisection stops at, as the first tick
+    // is. `<= bound` was stricter than the mechanism it tests and held only on
+    // the epoch-0 market; on the keystream a genesis is keyed to now (ADR-0019)
+    // a later interval lands on bound + 1.
+    for (const ms of mIntervals.slice(1)) expect(ms).toBeLessThanOrEqual(bound + 1);
     for (const d of deltas(mTicks, last2).slice(0, 4)) expect(d).toBeLessThanOrEqual(0);
 
     // An unknown pace is refused.

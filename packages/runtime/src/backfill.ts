@@ -2,6 +2,7 @@ import { epochMillis, logPrice, SteppableClock, type EpochMillis, type Tick } fr
 import { yieldToLoop } from '@otc/core';
 import { configFor, createMarketEngine, type RegisteredAsset } from '@otc/engine';
 import type { Environment, MasterKeyring } from '@otc/core';
+import { startKeyEpoch } from './genesis.js';
 import { DEFAULT_MAX_CATCH_UP_MS, HostedMarket } from './hosted.js';
 import { personalityFingerprint } from './personality.js';
 import {
@@ -193,6 +194,10 @@ export async function backfillMarket(options: BackfillOptions): Promise<Backfill
   }
 
   const clock = new SteppableClock(options.genesisInstant);
+  // A backfill is a genesis, so it is keyed by its genesis instant (ADR-0019).
+  // On epoch 0, every boot on an empty directory generated the same days and
+  // joined the live market at the same point of the same walk.
+  const keyEpoch = startKeyEpoch(options.genesisInstant);
   const market = new HostedMarket({
     // The checkpoint this backfill writes must say what wrote it (PH-26.3).
     personality: personalityFingerprint(options.asset),
@@ -200,9 +205,11 @@ export async function backfillMarket(options: BackfillOptions): Promise<Backfill
       config: configFor(options.asset),
       keyring: options.keyring,
       environment: options.environment,
+      keyEpoch,
       start: { instant: options.genesisInstant, price: logPrice(0) },
     }),
     clock,
+    keyEpoch,
   });
 
   // Nothing is stored — the guard above established it — and the first tick
