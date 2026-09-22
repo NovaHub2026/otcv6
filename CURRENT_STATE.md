@@ -21,14 +21,14 @@ Last synchronized: 2026-09-06
 
 ## Phase and subphase
 
-| Field                  | Value                                                   |
-| ---------------------- | ------------------------------------------------------- |
-| Active phase           | PH-34 — The market's tempo follows its state            |
-| Phase lifecycle        | ACTIVE                                                  |
-| Active subphase        | PH-34.1 — The engine, and the thirty assets on it       |
-| Subphase lifecycle     | ACTIVE                                                  |
-| Last approved phase    | PH-31 — The Lab's push, as an operator actually uses it |
-| Last approved subphase | PH-31.1 — The push measured against the market          |
+| Field                  | Value                                                      |
+| ---------------------- | ---------------------------------------------------------- |
+| Active phase           | PH-34 — The market's tempo follows its state               |
+| Phase lifecycle        | ACTIVE                                                     |
+| Active subphase        | PH-34.2 — Integrated verification and the broker's upgrade |
+| Subphase lifecycle     | ACTIVE                                                     |
+| Last approved phase    | PH-31 — The Lab's push, as an operator actually uses it    |
+| Last approved subphase | PH-34.1 — The engine, and the thirty assets on it          |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was

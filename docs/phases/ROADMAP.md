@@ -907,8 +907,8 @@ and saying what was wrong with it.
 | Subphase | Title                                                              | State    |
 | -------- | ------------------------------------------------------------------ | -------- |
 | PH-31.1  | The push measured against the market: pace, unit, stop and ceiling | APPROVED |
-| PH-34.1  | The engine, and the thirty assets on it                            | ACTIVE   |
-| PH-34.2  | Integrated verification, the battery, and the broker's upgrade     | PLANNED  |
+| PH-34.1  | The engine, and the thirty assets on it                            | APPROVED |
+| PH-34.2  | Integrated verification, the battery, and the broker's upgrade     | ACTIVE   |
 
 **PH-34** is the Human Owner's second phase from operating the engine, this
 time in their broker: the tick rate follows each asset's character and its
