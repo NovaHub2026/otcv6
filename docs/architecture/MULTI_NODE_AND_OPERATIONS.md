@@ -318,7 +318,10 @@ operator.
   the floors alone are not enough. `keyring.derive` gives a different keystream
   per epoch, so no position any earlier epoch spent can be drawn again whatever
   the cursors say; the epoch is written into the checkpoint (`keyEpoch`, absent
-  means 0) so the resume that follows indexes into the same keystream.
+  means 0) so the resume that follows indexes into the same keystream. **Which**
+  epoch is the instant the seam opens at (ADR-0019): it was the record's epoch
+  plus one, so the same backup restored twice seamed twice onto one keystream
+  from one price, and played the same increments.
 - Reported: `verifyStateDirectory` returns `backup` — the manifest's `takenAt`
   and whether the directory's heads are still exactly what it recorded.
   Unchanged heads mean nothing has run here yet, which is the last moment
@@ -339,7 +342,8 @@ process, `/markets/eurusd-otc` `404`, and `state:verify` calling the directory
 consistent and naming no asset at all — because it iterated the checkpoints, and
 an asset the record held and no checkpoint named was examined by nothing. Now
 `VenueService` hands `resumeMarket` the record's newest tick, a market with no
-checkpoint and a record behind it reopens past that tick on a **new key epoch**
+checkpoint and a record behind it reopens past that tick on a **new key epoch**,
+keyed by the instant it reopens at (ADR-0019; it was a constant 1)
 (there is no lease or cursor anywhere to floor on), and `verifyStateDirectory`
 warns by name and range about every asset in that state.
 

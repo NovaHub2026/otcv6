@@ -1051,3 +1051,47 @@ publishes what `settle()` needs.
 **What this costs.** The project's first release tag is a tag nobody should
 use, and that is visible for ever in the repository. The alternative — a moved
 tag and a record that reads as though the release went cleanly — costs more.
+
+## 2026-09-22 — A fresh genesis replayed the previous one; fixed ahead of the phase work, released from `main` as `v2.1.0` (ADR-0019)
+
+**Context.** The Human Owner reported their broker's `v2.0.0` deployment
+drawing one figure repeatedly on a five-minute chart, across all thirty assets,
+with no restart they knew of. The cause was measured, not inferred: every
+genesis derived its keystream at epoch 0, so two production processes started
+twenty seconds apart on empty state directories published the same thirty
+ticks, price for price. The Human Owner then directed that this be fixed first,
+ahead of the tick-rate work they also raised (GOVERNANCE §61).
+
+**Decision.**
+
+- **Fixed on `fix/fresh-genesis-key`, cut from `main`, in its own worktree
+  (`~/.otc-genesis`)** — not on `feature/ph-32-the-long-run`. The defect is in a
+  released version a broker runs, so the fix belongs on the line releases are
+  cut from, and it must not wait for PH-32's approval, which waits on a
+  fifty-eight-year measurement. The PH-32 tree's `dist` stays frozen under that
+  measurement, as its handoff requires; the PH-33 worktree is untouched.
+- **The rule is ADR-0019**: a keystream is keyed by the instant it starts, for
+  every start — genesis, backfill, seam, reopening — not only the fresh one the
+  broker hit. Two seams from one restored backup had the same defect, and fixing
+  the reported case alone would have left it.
+- **Released as `v2.1.0`, not `v2.0.1`.** `main` carries PH-31 since `v2.0.0`:
+  Lab-only changes (`apps/api/src/lab`, `apps/web`, tools and documents; the
+  production composition and the API contract, `2.1.0`, are unchanged). A patch
+  number would describe a tag containing a phase of features as a fix, and a
+  branch off `v2.0.0` would need a second full gate for a production process
+  that is identical either way. The tag is cut after hosted CI is green on the
+  merge, as the 2026-09-06 entry requires.
+- **Three Lab tests were rewritten, not reseeded.** Each depended on the
+  epoch-0 realisation: a hard-coded 66,200 ms offset that set up a tie (now the
+  sweep itself), ten minutes that happened to contain a regime change (now
+  until a change, bounded at two hours), and a pace bound one millisecond
+  tighter than the bisection that produces the pace (now the bisection's own
+  tolerance, as the first tick already had).
+
+**What this costs.** A market started on this code is a different market from
+the one the same secret started on `v2.0.0` — which is the point, and harmless
+for any deployment whose state survives, because a running market resumes on
+the epoch its checkpoint names. A deployment that keeps losing its state still
+restarts its market at the reference price each time; the integration guide now
+says how to see that, because the engine cannot tell a lost directory from a
+first boot.
