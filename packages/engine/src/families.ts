@@ -1,11 +1,15 @@
 import { pow, type AssetFamily, type RandomSource } from '@otc/core';
 import { DISPERSION_WINDOW_MS } from './dispersion.js';
+import { DEFAULT_REGIMES } from './regime.js';
 import {
   cascadeInflation,
   cascadeRmsGain,
   MIN_FASTEST_COMPONENT_TICKS,
   personalityConfig,
+  layeredInflation,
+  meanRegimeActivity,
   regimeInflation,
+  structureDistribution,
   structureInflation,
   TRAIT_BOUNDS,
   type PersonalityTraits,
@@ -74,6 +78,64 @@ export interface AssetArchetype {
   readonly traits: SampledTraitRanges;
 }
 
+/** An archetype as it is written: every range but the tempo, which is derived. */
+export type ArchetypeDefinition = Omit<AssetArchetype, 'traits'> & {
+  readonly traits: Omit<SampledTraitRanges, 'tempoMs'>;
+};
+
+/**
+ * Ticks a second, on average over the regimes, per square root of quarterly
+ * dispersion (PH-34).
+ *
+ * The Human Owner's rule: an asset's tick rate follows its character, calmer
+ * assets ticking less, and the catalogue as a whole ticks **40% less** than it
+ * did — 4.1 ticks a second per asset before PH-34, 2.47 after. The square root
+ * spreads the thirty from about one tick a second (EUR/GBP, the calmest) to
+ * about four (DOGE); a steeper law put the calmest at one tick every two
+ * seconds. The constant is what puts the catalogue's own mean at 2.47, and
+ * `seats.test.ts` holds it there.
+ */
+export const TICK_RATE_PER_ROOT_DISPERSION = 5.29;
+
+/** The regime layer's mean activity at the default levels and durations. */
+export const MEAN_REGIME_ACTIVITY = meanRegimeActivity(DEFAULT_REGIMES);
+
+/** The average interval between ticks of an asset of this quarterly dispersion. */
+export function meanIntervalForDispersion(dispersion: number): number {
+  if (!(dispersion > 0) || !Number.isFinite(dispersion)) {
+    throw new RangeError(`A dispersion must be finite and positive, received ${dispersion}.`);
+  }
+  return 1_000 / (TICK_RATE_PER_ROOT_DISPERSION * Math.sqrt(dispersion));
+}
+
+/**
+ * The base tempo that gives this average interval: the Hawkes mean interval is
+ * `tempo · (1 − burstiness)` in the normal regime, and the regimes' activity
+ * makes the market tick `MEAN_REGIME_ACTIVITY` times faster than that on
+ * average.
+ */
+export function tempoForMeanInterval(meanIntervalMs: number, burstiness: number): number {
+  return (meanIntervalMs * MEAN_REGIME_ACTIVITY) / (1 - burstiness);
+}
+
+/** Every tempo a draw from this dispersion band and burstiness range can take. */
+export function tempoRangeFor(dispersion: Range, burstiness: Range): Range {
+  return {
+    min: tempoForMeanInterval(meanIntervalForDispersion(dispersion.max), burstiness.min),
+    max: tempoForMeanInterval(meanIntervalForDispersion(dispersion.min), burstiness.max),
+  };
+}
+
+export function withDerivedTempo(definition: ArchetypeDefinition): AssetArchetype {
+  return {
+    ...definition,
+    traits: {
+      ...definition.traits,
+      tempoMs: tempoRangeFor(definition.dispersion, definition.traits.burstiness),
+    },
+  };
+}
+
 /**
  * Margin over {@link MIN_FASTEST_COMPONENT_TICKS} when the spacing is clamped.
  *
@@ -135,9 +197,24 @@ export const KURTOSIS_HEADROOM = 0.95;
  */
 export const CEILING_INFLATION_STEPS = 20_000;
 
-/** The largest excess kurtosis this rhythm can reach, at maximum clustering. */
+/**
+ * The largest excess kurtosis this rhythm can reach, at maximum clustering.
+ *
+ * Through the layered estimate when a volatility floor couples the layers
+ * (PH-34), which is every personality since; the factorised product otherwise.
+ */
 export function reachableExcessKurtosis(traits: PersonalityTraits, stream: RandomSource): number {
   const config = personalityConfig({ ...traits, clustering: TRAIT_BOUNDS.clustering.max });
+  if (config.volatilityFloor !== null) {
+    return (
+      3 *
+        layeredInflation(
+          config,
+          structureDistribution(config.structure, stream, CEILING_INFLATION_STEPS),
+        ) -
+      3
+    );
+  }
   const product =
     cascadeInflation(config.cascade) *
     regimeInflation(config.regimes) *
@@ -167,12 +244,28 @@ function integerUniform(stream: RandomSource, range: Range): number {
   return Math.round(range.min) + stream.nextBoundedUint32(span);
 }
 
-/** Draw one personality from an archetype's region. */
-export function sampleTraits(archetype: AssetArchetype, stream: RandomSource): PersonalityTraits {
+/**
+ * Draw one personality from an archetype's region.
+ *
+ * With a `dispersion`, the tempo is **derived** from it and the drawn
+ * burstiness rather than drawn (PH-34): the tick rate follows the asset's
+ * character. Without one — a caller sampling a rhythm alone — the tempo is
+ * drawn from the archetype's derived range.
+ */
+export function sampleTraits(
+  archetype: AssetArchetype,
+  stream: RandomSource,
+  dispersion?: number,
+): PersonalityTraits {
   const ranges = archetype.traits;
-  const tempoMs = logUniform(stream, ranges.tempoMs);
+  const drawnTempoMs = dispersion === undefined ? logUniform(stream, ranges.tempoMs) : null;
   const cascadeDepth = integerUniform(stream, ranges.cascadeDepth);
   const cascadeSpanMs = logUniform(stream, ranges.cascadeSpanMs);
+  // Drawn before the spacing because the derived tempo needs it, and the
+  // spacing's ceiling needs the tempo.
+  const burstiness = uniform(stream, ranges.burstiness);
+  const tempoMs =
+    drawnTempoMs ?? tempoForMeanInterval(meanIntervalForDispersion(dispersion!), burstiness);
   const ceiling = spacingCeiling(cascadeSpanMs, cascadeDepth, tempoMs);
   const cascadeSpacing = uniform(stream, {
     min: ranges.cascadeSpacing.min,
@@ -182,7 +275,7 @@ export function sampleTraits(archetype: AssetArchetype, stream: RandomSource): P
     tempoMs,
     volatility: 1e-5,
     clustering: startingClustering(cascadeDepth),
-    burstiness: uniform(stream, ranges.burstiness),
+    burstiness,
     regimeSpread: uniform(stream, ranges.regimeSpread),
     structureSpread: uniform(stream, ranges.structureSpread),
     durationCoupling: uniform(stream, ranges.durationCoupling),
@@ -233,7 +326,9 @@ export interface ArchetypeSample {
 
 /** Draw a complete authoring brief: a personality, a tail weight, a budget. */
 export function sampleArchetype(archetype: AssetArchetype, stream: RandomSource): ArchetypeSample {
-  const traits = sampleTraits(archetype, stream);
+  // The budget first: the tempo is derived from it (PH-34).
+  const dispersion = logUniform(stream, archetype.dispersion);
+  const traits = sampleTraits(archetype, stream, dispersion);
   // The tail weight the *rhythm just drawn* can actually reach.
   //
   // **Cycle Audit 6, CA6-24.** `alt-crypto` draws a target in [130, 165] and a
@@ -252,7 +347,6 @@ export function sampleArchetype(archetype: AssetArchetype, stream: RandomSource)
     min: Math.min(archetype.excessKurtosis.min, ceiling),
     max: Math.min(archetype.excessKurtosis.max, ceiling),
   });
-  const dispersion = logUniform(stream, archetype.dispersion);
   return {
     traits: {
       ...traits,
@@ -329,14 +423,14 @@ const SECOND = 1_000;
  * 4.5%, 8.0%, 19.3% and 53.6%.
  */
 /**
- * Tempos were divided by four on 2026-09-03 (PH-24.17; crypto by three, at the
- * 250 ms trait floor): the catalogue's markets held 17–36 ticks a 1m candle at
- * the old tempos, and a candle's boundary gap — one tick step — was visible in
- * a fifth of them. The brief derives the tick RMS from the family's dispersion
- * and the tempo (`provisionalTickRms`), so a faster tempo keeps the quarterly
- * dispersion and shrinks the step: same market, finer grain.
+ * Tempos are not written here: each archetype's tempo range is **derived** from
+ * its dispersion band and its burstiness range (PH-34, {@link tempoRangeFor}),
+ * so an asset's tick rate follows its character — the Human Owner's "entre más
+ * tranquilo el mercado menos se mueve en cuanto a ticks". Until PH-34 they were
+ * typed by hand per family (PH-24.17 divided them by four for candle
+ * granularity), which put a calm pair at twice the rate of a volatile stock.
  */
-export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
+const ARCHETYPE_DEFINITIONS: readonly ArchetypeDefinition[] = [
   {
     id: 'major-fx',
     label: 'Major currency pair',
@@ -345,7 +439,6 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
     dispersion: { min: 0.03, max: 0.06 },
     excessKurtosis: { min: 45, max: 75 },
     traits: {
-      tempoMs: { min: 550, max: 1_050 },
       burstiness: { min: 0.52, max: 0.66 },
       regimeSpread: { min: 0.9, max: 1.15 },
       structureSpread: { min: 0.9, max: 1.15 },
@@ -363,9 +456,12 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
     family: 'forex',
     character: 'Few, widely separated rhythms and a memory that fades in a minute.',
     dispersion: { min: 0.14, max: 0.24 },
-    excessKurtosis: { min: 85, max: 130 },
+    // PH-34: the band's floor follows what this rhythm reaches above the
+    // volatility floor. The floor removes the low tail of the level, so a
+    // shallow cascade carries less tail above it: at the old floor of 85
+    // 43% of 300 draws were clamped, the lowest reaching 39.9.
+    excessKurtosis: { min: 35, max: 130 },
     traits: {
-      tempoMs: { min: 350, max: 600 },
       burstiness: { min: 0.55, max: 0.7 },
       regimeSpread: { min: 1.05, max: 1.3 },
       structureSpread: { min: 0.85, max: 1.1 },
@@ -391,7 +487,6 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
       // `|30s return|` is exactly zero and the calibration refuses with "the
       // asset does not move", blaming amplitude for a tempo problem. Narrowed
       // to a 3.5-second mean interval at the worst corner.
-      tempoMs: { min: 1_050, max: 1_500 },
       burstiness: { min: 0.42, max: 0.56 },
       regimeSpread: { min: 0.75, max: 0.95 },
       structureSpread: { min: 1.2, max: 1.45 },
@@ -411,7 +506,6 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
     dispersion: { min: 0.035, max: 0.07 },
     excessKurtosis: { min: 40, max: 70 },
     traits: {
-      tempoMs: { min: 750, max: 1_300 },
       burstiness: { min: 0.42, max: 0.58 },
       regimeSpread: { min: 0.85, max: 1.1 },
       structureSpread: { min: 1.1, max: 1.4 },
@@ -431,7 +525,6 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
     dispersion: { min: 0.06, max: 0.105 },
     excessKurtosis: { min: 80, max: 115 },
     traits: {
-      tempoMs: { min: 850, max: 1_300 },
       burstiness: { min: 0.48, max: 0.62 },
       regimeSpread: { min: 1.1, max: 1.35 },
       structureSpread: { min: 0.8, max: 1.0 },
@@ -449,9 +542,12 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
     family: 'commodity',
     character: 'Bursty and shallow: flurries of arrivals, short-lived rhythms.',
     dispersion: { min: 0.13, max: 0.22 },
-    excessKurtosis: { min: 100, max: 145 },
+    // PH-34: the band's floor follows what this rhythm reaches above the
+    // volatility floor. The floor removes the low tail of the level, so a
+    // shallow cascade carries less tail above it: at the old floor of 100
+    // 40% of 300 draws were clamped, the lowest reaching 48.0.
+    excessKurtosis: { min: 45, max: 145 },
     traits: {
-      tempoMs: { min: 400, max: 700 },
       burstiness: { min: 0.65, max: 0.8 },
       regimeSpread: { min: 1.2, max: 1.45 },
       structureSpread: { min: 0.85, max: 1.1 },
@@ -471,7 +567,6 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
     dispersion: { min: 0.34, max: 0.5 },
     excessKurtosis: { min: 115, max: 155 },
     traits: {
-      tempoMs: { min: 300, max: 500 },
       burstiness: { min: 0.72, max: 0.82 },
       regimeSpread: { min: 1.25, max: 1.45 },
       structureSpread: { min: 0.9, max: 1.15 },
@@ -489,7 +584,11 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
     family: 'crypto',
     character: 'Fast, shallow and extreme. The widest budget in the catalogue.',
     dispersion: { min: 0.48, max: 0.68 },
-    excessKurtosis: { min: 130, max: 165 },
+    // PH-34: the band's floor follows what this rhythm reaches above the
+    // volatility floor. The floor removes the low tail of the level, so a
+    // shallow cascade carries less tail above it: at the old floor of 130
+    // 27% of 300 draws were clamped, the lowest reaching 71.8.
+    excessKurtosis: { min: 65, max: 165 },
     traits: {
       // **Cycle Audit 6, CA6-23.** This was the narrowest box in the
       // catalogue, and its siblings were not distinguishable from three clones
@@ -516,7 +615,6 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
       // `metal`; a depth floor of 6 misses about one draw in five hundred.
       // Seven keeps the band and the character — still the shallowest ladder
       // in the catalogue beside `cross-fx` and `energy`.
-      tempoMs: { min: 250, max: 400 },
       burstiness: { min: 0.72, max: 0.88 },
       regimeSpread: { min: 1.2, max: 1.5 },
       structureSpread: { min: 0.8, max: 1.2 },
@@ -529,6 +627,11 @@ export const ASSET_ARCHETYPES: readonly AssetArchetype[] = [
     },
   },
 ];
+
+/** The archetypes, each with its tempo range derived from its character. */
+export const ASSET_ARCHETYPES: readonly AssetArchetype[] = ARCHETYPE_DEFINITIONS.map((definition) =>
+  withDerivedTempo(definition),
+);
 
 export function archetypeById(id: string): AssetArchetype {
   const found = ASSET_ARCHETYPES.find((archetype) => archetype.id === id);

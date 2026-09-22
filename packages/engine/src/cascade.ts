@@ -199,6 +199,21 @@ export class VolatilityCascade {
  * jumps arrive in PH-3.3; this subphase establishes the spine and measures what
  * it does not yet reproduce.
  */
+/**
+ * The cascade's typical product: the geometric mean of its stationary
+ * distribution, `(low · high)^(K/2)`, which is also its median.
+ *
+ * Each component is independently `low` or `high = 2 − low` with probability
+ * one half, so the log of the product is a sum of K fair draws between `ln low`
+ * and `ln high`, centred on half their sum. This is the cascade state at which a
+ * regime is at its own level; the volatility floor measures the cascade
+ * against it (PH-34).
+ */
+export function cascadeTypicalProduct(config: CascadeConfig): number {
+  const low = config.lowMultiplier;
+  return pow(low * (2 - low), config.components / 2);
+}
+
 export class CascadeMagnitudeModel implements MagnitudeModel {
   readonly #cascade: VolatilityCascade;
 

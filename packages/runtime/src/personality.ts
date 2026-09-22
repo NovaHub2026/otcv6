@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { RegisteredAsset } from '@otc/engine';
+import { ENGINE_MODEL, type RegisteredAsset } from '@otc/engine';
 
 /**
  * A fingerprint of the personality a checkpoint was written by.
@@ -13,14 +13,17 @@ import type { RegisteredAsset } from '@otc/engine';
  * refactor away from resuming the wrong market (INV-008, INV-009).
  *
  * The fingerprint is over what decides a market's behaviour and settlement:
- * the twelve personality traits, the lattice quantum, the reference price and
- * the family. The id is deliberately not in it — the id is what the record is
+ * the engine model, the twelve personality traits, the lattice quantum, the
+ * reference price and the family. The id is deliberately not in it — the id is what the record is
  * already keyed by, and the question is whether the *same id* means the same
  * market. Canonical key order, so an equal personality is an equal string.
  */
 export function personalityFingerprint(asset: RegisteredAsset): string {
   const traits = asset.definition.traits;
   const canonical = JSON.stringify({
+    // The model before the traits: the same traits under another engine are
+    // another market (PH-34).
+    model: ENGINE_MODEL,
     family: asset.definition.family,
     referencePrice: asset.definition.referencePrice,
     logQuantum: asset.instrument.logQuantum,

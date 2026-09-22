@@ -126,10 +126,15 @@ describe('four of the five rhythm traits are tail-neutral', () => {
     // `embedded x meanSojourn` normalised by its own total, so a common factor
     // on every sojourn divides out. A tempo applied to only *some* regimes
     // would not be neutral, and this assertion is what would catch that.
-    for (const regimeTempo of [0.4, 2.75]) {
-      const moved = kurtosisOf(withTraits({ regimeTempo }));
-      expect(Math.abs(moved - baseline) / baseline, `tempo ${regimeTempo}`).toBeLessThan(1e-13);
-    }
+    //
+    // PH-34: exact above 1, where the factor scales a sojourn's minimum and
+    // remainder alike. Below 1 it scales only the remainder — a minimum is
+    // never shortened, by the Human Owner's rule — so the factor is no longer
+    // common and the tail moves, by well under a percent.
+    const above = kurtosisOf(withTraits({ regimeTempo: 2.75 }));
+    expect(Math.abs(above - baseline) / baseline, 'tempo 2.75').toBeLessThan(1e-13);
+    const below = kurtosisOf(withTraits({ regimeTempo: 0.4 }));
+    expect(Math.abs(below - baseline) / baseline, 'tempo 0.4').toBeLessThan(0.01);
     // And the drift really is ulp-scale rather than absent, so nobody later
     // "tightens" this to toBe and gets a test that fails on a different CPU.
     expect(kurtosisOf(withTraits({ regimeTempo: 2.75 }))).not.toBe(baseline);
@@ -196,7 +201,9 @@ describe('the co-varied solve', () => {
     // it keeps the claim.
     const misses: string[] = [];
     for (const depth of [4, 11, 18]) {
-      const target = 40;
+      // Reachable at depth 4 above the volatility floor, which caps a
+      // four-component cascade near 22 (PH-34; it was 40 before the floor).
+      const target = 18;
       const base = withTraits({
         cascadeDepth: depth,
         cascadeSpanMs: 40 * 3_600_000,
@@ -212,8 +219,9 @@ describe('the co-varied solve', () => {
 
   it('reaches different targets at a fixed depth', () => {
     const misses: string[] = [];
-    // The floor is not zero: the regime and structure layers alone predict 10.36,
-    // and the cascade can only add. A target below that is refused, not clamped —
+    // The floor is not zero: the regime and structure layers alone predict 2.66
+    // (10.36 before PH-34's volatility floor removed the low tail), and the
+    // cascade can only add. A target below that is refused, not clamped —
     // which is the test below this one.
     for (const target of [12, 20, 60, 150]) {
       const clustering = solveClustering(DEFAULT_TRAITS, target, derive('structure-probe'));
@@ -227,14 +235,16 @@ describe('the co-varied solve', () => {
 
   it('needs less clustering per component as the cascade deepens', () => {
     const ladder = { cascadeSpanMs: 40 * 3_600_000, cascadeSpacing: 1.9 };
+    // 25: inside what a five-component cascade reaches above the volatility
+    // floor (about 34, PH-34).
     const shallow = solveClustering(
       withTraits({ ...ladder, cascadeDepth: 5 }),
-      40,
+      25,
       derive('structure-probe'),
     );
     const deep = solveClustering(
       withTraits({ ...ladder, cascadeDepth: 15 }),
-      40,
+      25,
       derive('structure-probe'),
     );
     expect(deep).toBeLessThan(shallow);

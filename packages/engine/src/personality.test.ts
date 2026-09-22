@@ -163,9 +163,13 @@ describe('the expansion is monotone in each trait', () => {
     expect(cascadeInflation(high.cascade)).toBeGreaterThan(cascadeInflation(low.cascade));
   });
 
-  it('regimeSpread pushes regime multipliers away from unity', () => {
+  it('regimeSpread pushes the regimes above normal further from it, and leaves calm where it is', () => {
+    // PH-34: calm is the Human Owner's floor — ×1.2 of the real market's
+    // typical level — for every asset, so a wider spread moves only elevated
+    // and stressed.
     const wide = expandPersonality({ ...DEFAULT_TRAITS, regimeSpread: 2 }, instrument);
-    expect(wide.regimes.compressed.multiplier).toBeLessThan(DEFAULT_REGIMES.compressed.multiplier);
+    expect(wide.regimes.compressed.multiplier).toBe(DEFAULT_REGIMES.compressed.multiplier);
+    expect(wide.regimes.elevated.multiplier).toBeGreaterThan(DEFAULT_REGIMES.elevated.multiplier);
     expect(wide.regimes.stressed.multiplier).toBeGreaterThan(DEFAULT_REGIMES.stressed.multiplier);
     expect(regimeInflation(wide.regimes)).toBeGreaterThan(regimeInflation(DEFAULT_REGIMES));
   });
@@ -197,9 +201,12 @@ describe('the closed forms agree with simulation of their own layer', () => {
   });
 
   it('regime closed form matches simulation', () => {
-    // Simulated over 3M steps in PH-4.1.
-    expect(regimeInflation(DEFAULT_REGIMES)).toBeGreaterThan(2.776 * 0.9);
-    expect(regimeInflation(DEFAULT_REGIMES)).toBeLessThan(2.776 * 1.1);
+    // Simulated over 3M one-second steps on 2026-09-22 (PH-34), each step
+    // weighted by the regime's activity because a tick return is sampled per
+    // tick: 1.2702. PH-4.1 measured 2.776 on the pre-PH-34 regimes — ×0.45 to
+    // ×3.6, Weibull sojourns near zero, time-weighted.
+    expect(regimeInflation(DEFAULT_REGIMES)).toBeGreaterThan(1.2702 * 0.9);
+    expect(regimeInflation(DEFAULT_REGIMES)).toBeLessThan(1.2702 * 1.1);
   });
 
   it('structure estimate is stable across stream and length', () => {
@@ -229,12 +236,20 @@ describe('the kurtosis gate', () => {
   });
 
   it('agrees with the measured full-stack simulation, conservatively', () => {
-    // 62.3 excess kurtosis measured over 1M magnitudes in PH-4.1. The prediction
-    // must be close, and must not sit below the measurement — a gate that
-    // underestimates is worse than no gate.
+    // The prediction must be close, and must not sit below the measurement — a
+    // gate that underestimates is worse than no gate.
+    //
+    // Measured on 2026-09-22 (PH-34), the default engine's tick increments:
+    // 12.68 over 1M ticks, 19.86 over 3M, 18.63 over 10M — the fourth moment
+    // converging from below and settling near 19. PH-4.1 measured 62.3 over 1M
+    // on the pre-PH-34 model, whose calm had no floor. The margin widened from
+    // a quarter to about a third: the layered estimate treats the structure
+    // phases by their metronome occupancy and the floor per tick, and both put
+    // it above what the path realises, which is the side a gate may err on.
+    const measured = 18.63;
     const predicted = predictedExcessKurtosis(config, derive('gate'));
-    expect(predicted).toBeGreaterThan(62.3);
-    expect(predicted).toBeLessThan(62.3 * 1.25);
+    expect(predicted).toBeGreaterThan(measured);
+    expect(predicted).toBeLessThan(measured * 1.45);
   });
 
   it('accepts the default personality', () => {

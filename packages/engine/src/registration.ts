@@ -21,6 +21,7 @@ import {
 import { registrationKeyLabel, type AuthoringTargets, type RegisteredAsset } from './catalogue.js';
 import {
   assertPersonalitySafe,
+  otcDispersionFactor,
   authorPersonality,
   EXCESS_KURTOSIS_BAND,
   personalityConfig,
@@ -101,12 +102,15 @@ export interface RegistrationRequest {
    */
   readonly displayPrecision?: number;
   /**
-   * σ of the terminal log return over a quarter, from `dispersion.ts`.
+   * σ of the terminal log return over a quarter, from `dispersion.ts`, **of
+   * the real instrument** the asset stands for.
    *
-   * The budget the asset is fitted to. Omit it and the personality keeps the
-   * amplitude its {@link RegistrationRequest.targets} imply, which is how the
-   * five hand-authored assets were built; supply it and the base volatility is
-   * scaled to hit it exactly.
+   * Since PH-34 the market is calibrated to this times
+   * {@link otcDispersionFactor} — an OTC market moves more than the real one,
+   * typical against typical, about 1.7 times on average — and the base
+   * volatility is scaled to hit that exactly. Omit it and the personality keeps
+   * the amplitude its {@link RegistrationRequest.targets} imply, which is how
+   * the five hand-authored assets were built.
    */
   readonly dispersion?: number;
   /**
@@ -376,6 +380,15 @@ export async function registerAsset(
     traits: authored.traits,
   };
 
+  // The budget the market is calibrated to is the real instrument's reference
+  // times how much more an OTC market moves (PH-34): typical against typical,
+  // about 1.7 on average. It depends on the solved clustering, so it is taken
+  // here, from the authored traits, on the solve's own stream.
+  const budget =
+    request.dispersion === undefined
+      ? undefined
+      : request.dispersion * otcDispersionFactor(authored.traits, derive('kurtosis'));
+
   // Everything the budget needs that can be decided without simulating, decided
   // before the simulation. The gate-before-solve ordering, one stage later.
   if (request.dispersion !== undefined) {
@@ -420,18 +433,16 @@ export async function registerAsset(
   // rhythm cannot reach its budget needs a base volatility outside
   // `TRAIT_BOUNDS`, and that is a statement about the family rather than about
   // the asset.
-  if (request.dispersion !== undefined) {
+  if (budget !== undefined) {
     try {
-      calibrated = rescaleCalibration(
-        calibrated,
-        request.dispersion / dispersionLogSigma(calibrated.evidence),
-      );
+      calibrated = rescaleCalibration(calibrated, budget / dispersionLogSigma(calibrated.evidence));
     } catch (error) {
       return {
         kind: 'refused',
         stage: 'dispersion',
         reason:
-          `This personality cannot reach a quarterly dispersion of ${request.dispersion}: ` +
+          `This personality cannot reach a quarterly dispersion of ${budget} (the reference ` +
+          `${request.dispersion} at OTC level): ` +
           (error as Error).message,
       };
     }

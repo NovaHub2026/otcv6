@@ -159,6 +159,65 @@ describe('stability', () => {
   });
 });
 
+/**
+ * PH-34: the regime sets the market's activity. "Un activo tranquilo con un
+ * régimen elevado se debe mover con más ticks que siendo tranquilo con un
+ * régimen menor."
+ */
+describe('the arrival rate follows the activity it is given', () => {
+  /** Mean interval of a feedback-loop run at a constant activity. */
+  function meanInterval(activity: number, stream: string, ticks = 200_000): number {
+    const model = new HawkesArrivalModel(DEFAULT_HAWKES, derive(stream), { activity });
+    let interval = DEFAULT_HAWKES.baseIntervalMs;
+    let total = 0;
+    for (let i = 1; i <= ticks; i += 1) {
+      interval = model.nextIntervalMs(context(interval, DEFAULT_HAWKES.referenceMagnitude, i));
+      total += interval;
+    }
+    return total / ticks;
+  }
+
+  it('ticks exactly as fast as the activity says, on average', () => {
+    const base = meanInterval(1, 'activity-base');
+    for (const activity of [0.8, 1.9, 2.3]) {
+      const ratio = base / meanInterval(activity, `activity-${activity}`);
+      expect(ratio, `activity ${activity}`).toBeGreaterThan(activity * 0.95);
+      expect(ratio, `activity ${activity}`).toBeLessThan(activity * 1.05);
+    }
+  });
+
+  it('scales the immigrant rate and not the branching, so a busy regime is not explosive', () => {
+    // Scaling the whole process by 2.3 would have made DEFAULT_HAWKES's 0.6
+    // branching ratio an effective 1.4. The clamp is a backstop; a stable
+    // process never needs it on an ordinary magnitude sequence.
+    const model = new HawkesArrivalModel(DEFAULT_HAWKES, derive('activity-stable'), {
+      activity: 2.3,
+    });
+    let interval = DEFAULT_HAWKES.baseIntervalMs;
+    let clamped = 0;
+    for (let i = 1; i <= 200_000; i += 1) {
+      interval = model.nextIntervalMs(context(interval, DEFAULT_HAWKES.referenceMagnitude, i));
+      if (model.intensityMultiplier >= 2.3 * DEFAULT_HAWKES.maxIntensityMultiplier) clamped += 1;
+    }
+    expect(clamped).toBe(0);
+  });
+
+  it('is the base tempo with no activity source', () => {
+    const plain = new HawkesArrivalModel(DEFAULT_HAWKES, derive('activity-none'));
+    const unit = new HawkesArrivalModel(DEFAULT_HAWKES, derive('activity-none'), { activity: 1 });
+    for (let i = 1; i <= 10_000; i += 1) {
+      expect(unit.nextIntervalMs(context(500, 10, i))).toBe(
+        plain.nextIntervalMs(context(500, 10, i)),
+      );
+    }
+  });
+
+  it('refuses an activity that is not positive', () => {
+    const model = new HawkesArrivalModel(DEFAULT_HAWKES, derive('activity-zero'), { activity: 0 });
+    expect(() => model.nextIntervalMs(context(500, 10))).toThrow(RangeError);
+  });
+});
+
 describe('snapshot and restore', () => {
   it('reproduces a continuation exactly', () => {
     const model = new HawkesArrivalModel(DEFAULT_HAWKES, derive('snap'));

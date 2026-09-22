@@ -1,4 +1,5 @@
 import { ln, pow, type RandomSource } from '@otc/core';
+import { DEFAULT_DURATION_COUPLING } from './hawkes.js';
 import type { MagnitudeContext } from './magnitude.js';
 import type { Modulator } from './modulator.js';
 
@@ -12,29 +13,54 @@ import type { Modulator } from './modulator.js';
  * measured those excursions at 13.7 times the heterogeneity of a plain random
  * walk.
  *
- * ## Why Weibull sojourns with shape below one
- *
- * Two reasons, and both are requirements rather than preferences.
+ * ## A sojourn is a minimum and a memoryless remainder (PH-34)
  *
  * **Non-lattice.** A regime lasting a whole number of ticks or candles
  * phase-locks to the candle and expiry grids, and the attack battery has a
  * family that conditions on exactly that. Sojourns are drawn in continuous time.
  *
- * **No characteristic duration** (§10). With shape below one the hazard falls
- * with age, so the remaining lifetime of a long-lived regime *grows* rather than
- * shrinking. Regimes therefore feel persistent and unpredictable in length,
- * instead of metronomic — which is what a fixed or exponential duration would
- * give.
+ * **Stochastic, not fixed** (§10). Until PH-34 a sojourn was a Weibull draw
+ * with shape below one, whose mass sits near zero: on a typical asset the
+ * median stressed episode was five minutes and half of them ended inside one
+ * five-minute candle; on the most restless, a minute and four fifths. The Human
+ * Owner saw it as a regime that changes from one candle to the next and asked
+ * for durations like a market's, the highest regime the shortest "pero tampoco
+ * una vela". So each regime has a **minimum** and, above it, a Weibull
+ * remainder at shape one — exponential, memoryless: past the minimum, how long
+ * a regime has left never depends on how long it has run, which keeps the
+ * length unpredictable in the sense §10 asks for without the mass at zero.
+ *
+ * ## A ladder
+ *
+ * Transitions move one step: compressed ↔ normal ↔ elevated ↔ stressed, the
+ * direction a fair draw with the weights below. Volatility escalates and
+ * subsides through the levels between; the fast shocks §10 also allows come
+ * from the structure layer's expansions and the cascade, not from a regime
+ * jumping two levels at once.
  */
 export const VOLATILITY_REGIMES = ['compressed', 'normal', 'elevated', 'stressed'] as const;
 export type VolatilityRegime = (typeof VOLATILITY_REGIMES)[number];
 
 export interface RegimeSpec {
-  /** Multiplier applied to magnitude while in this regime. */
+  /**
+   * The regime's volatility level relative to normal (PH-34): what its
+   * multiplier and activity were split from, and what the volatility floor
+   * compares against.
+   */
+  readonly level: number;
+  /** Multiplier applied to each tick's magnitude while in this regime. */
   readonly multiplier: number;
-  /** Weibull scale, in milliseconds. Sets the typical sojourn length. */
+  /**
+   * Multiplier on the tick rate while in this regime (PH-34): the share of the
+   * regime's volatility that arrives as more ticks rather than as larger ones.
+   * The arrival model reads it; 1 is the market's base tempo.
+   */
+  readonly activity: number;
+  /** Shortest sojourn, in milliseconds (PH-34). */
+  readonly minimumMs: number;
+  /** Weibull scale of the remainder above the minimum, in milliseconds. */
   readonly scaleMs: number;
-  /** Weibull shape. Below 1 gives a heavy-tailed, no-characteristic-duration law. */
+  /** Weibull shape of the remainder. 1 is exponential: memoryless past the minimum. */
   readonly shape: number;
   /** Transition weights to each regime, in `VOLATILITY_REGIMES` order. */
   readonly transitions: readonly number[];
@@ -43,42 +69,120 @@ export interface RegimeSpec {
 export type RegimeConfig = Readonly<Record<VolatilityRegime, RegimeSpec>>;
 
 /**
- * Defaults spanning quiet coils of tens of minutes to stressed episodes of a few
- * minutes, with transitions that favour neighbouring levels — volatility usually
- * escalates and subsides in steps rather than jumping between extremes.
+ * Each regime's volatility level, as a multiple of the real instrument's
+ * average volatility (PH-34, the Human Owner's numbers).
  *
- * The multiplier spread is deliberately modest. This layer is one of three that
- * widen the volatility distribution, and their contributions to kurtosis
- * multiply rather than add; a wider spread here was measured and put excess
- * kurtosis an order of magnitude past any real market.
+ * Calm is 20% **above** the real market, because an OTC market must be
+ * dynamic even at its quietest: "aun en los tramos más tranquilos debe haber
+ * un movimiento por arriba de la media del mercado real". Until PH-34
+ * compressed was ×0.45 of normal and the cascade could take it far lower —
+ * the quietest moments moved at about a twentieth of normal.
  */
-export const DEFAULT_REGIMES: RegimeConfig = {
-  compressed: {
-    multiplier: 0.45,
-    scaleMs: 45 * 60_000,
-    shape: 0.8,
-    transitions: [0, 0.75, 0.2, 0.05],
-  },
-  normal: { multiplier: 1.0, scaleMs: 60 * 60_000, shape: 0.75, transitions: [0.35, 0, 0.5, 0.15] },
-  elevated: {
-    multiplier: 1.9,
-    scaleMs: 25 * 60_000,
-    shape: 0.7,
-    transitions: [0.1, 0.55, 0, 0.35],
-  },
-  stressed: {
-    multiplier: 3.6,
-    scaleMs: 8 * 60_000,
-    shape: 0.65,
-    transitions: [0.05, 0.25, 0.7, 0],
-  },
+export const REGIME_LEVELS: Readonly<Record<VolatilityRegime, number>> = {
+  compressed: 1.2,
+  normal: 1.5,
+  elevated: 2.2,
+  stressed: 3.5,
 };
+
+/**
+ * The share of a regime's variance that arrives as ticks rather than as size.
+ *
+ * A half, by the Human Owner's decision: a level `L` times normal multiplies
+ * the tick rate by `L` and the effective tick size by `√L`, so variance per
+ * unit time is `L²` either way and a candle is the size its level says.
+ */
+export const REGIME_ACTIVITY_SHARE = 0.5;
+
+/** A regime's level relative to normal: what its multipliers are built from. */
+export function relativeRegimeLevel(regime: VolatilityRegime): number {
+  return REGIME_LEVELS[regime] / REGIME_LEVELS.normal;
+}
+
+/**
+ * Split a relative level into a tick-rate factor and a per-tick multiplier.
+ *
+ * Variance per unit time is `rate × size²`, and the duration coupling shrinks
+ * each tick by `rate^(−h)` because faster ticks mean shorter intervals
+ * (`DurationCouplingModulator`). So `size = level · activity^(h − ½)` keeps
+ * variance per unit time at `level²` whatever the activity is — including when
+ * a floor on the tick rate has raised it above `level^(2·share)`.
+ */
+export function splitRegimeLevel(
+  level: number,
+  durationCoupling: number,
+  minimumActivity = 0,
+): { readonly activity: number; readonly multiplier: number } {
+  if (!(level > 0) || !Number.isFinite(level)) {
+    throw new RangeError(`A regime level must be finite and positive, received ${level}.`);
+  }
+  const activity = Math.max(pow(level, 2 * REGIME_ACTIVITY_SHARE), minimumActivity);
+  return { activity, multiplier: level * pow(activity, durationCoupling - 0.5) };
+}
+
+/**
+ * How long each regime lasts, before a market's own character scales it.
+ *
+ * Minimums and medians the Human Owner confirmed: compressed 30 min (median
+ * about 1.4 h), normal 45 min (about 2 h), elevated 20 min (about 50 min),
+ * stressed 10 min (about 18 min) — the highest the shortest, and never a
+ * single five-minute candle.
+ */
+export const REGIME_DURATIONS: Readonly<
+  Record<VolatilityRegime, { readonly minimumMs: number; readonly scaleMs: number }>
+> = {
+  compressed: { minimumMs: 30 * 60_000, scaleMs: 80 * 60_000 },
+  normal: { minimumMs: 45 * 60_000, scaleMs: 110 * 60_000 },
+  elevated: { minimumMs: 20 * 60_000, scaleMs: 40 * 60_000 },
+  stressed: { minimumMs: 10 * 60_000, scaleMs: 12 * 60_000 },
+};
+
+/**
+ * The ladder: from each regime, the weights of stepping down and up, in
+ * `VOLATILITY_REGIMES` order. The ends can only step inward.
+ */
+export const REGIME_LADDER: Readonly<Record<VolatilityRegime, readonly number[]>> = {
+  compressed: [0, 1, 0, 0],
+  normal: [0.45, 0, 0.55, 0],
+  elevated: [0, 0.65, 0, 0.35],
+  stressed: [0, 0, 1, 0],
+};
+
+/**
+ * The regime layer at the default personality: the levels above, split at the
+ * default duration coupling, with no floor on the tick rate.
+ *
+ * The multiplier spread is still modest. This layer is one of three that widen
+ * the volatility distribution, and their contributions to kurtosis multiply
+ * rather than add.
+ */
+export const DEFAULT_REGIMES: RegimeConfig = Object.fromEntries(
+  VOLATILITY_REGIMES.map((regime) => [
+    regime,
+    {
+      level: relativeRegimeLevel(regime),
+      ...splitRegimeLevel(relativeRegimeLevel(regime), DEFAULT_DURATION_COUPLING),
+      ...REGIME_DURATIONS[regime],
+      shape: 1,
+      transitions: REGIME_LADDER[regime],
+    },
+  ]),
+) as unknown as RegimeConfig;
 
 export function assertRegimeConfig(config: RegimeConfig): void {
   for (const regime of VOLATILITY_REGIMES) {
     const spec = config[regime];
     if (!(spec.multiplier > 0) || !Number.isFinite(spec.multiplier)) {
       throw new RangeError(`Regime ${regime} multiplier must be finite and positive.`);
+    }
+    if (!(spec.level > 0) || !Number.isFinite(spec.level)) {
+      throw new RangeError(`Regime ${regime} level must be finite and positive.`);
+    }
+    if (!(spec.activity > 0) || !Number.isFinite(spec.activity)) {
+      throw new RangeError(`Regime ${regime} activity must be finite and positive.`);
+    }
+    if (!(spec.minimumMs >= 0) || !Number.isFinite(spec.minimumMs)) {
+      throw new RangeError(`Regime ${regime} minimumMs must be finite and non-negative.`);
     }
     if (!(spec.scaleMs > 0) || !Number.isFinite(spec.scaleMs)) {
       throw new RangeError(`Regime ${regime} scaleMs must be finite and positive.`);
@@ -132,6 +236,8 @@ export interface RegimeSnapshot {
 export class VolatilityRegimeModulator implements Modulator {
   #regime: VolatilityRegime;
   #remainingMs: number;
+  /** The regime the last tick was sized under; the floor reads its level. */
+  #inForce: VolatilityRegime;
 
   constructor(
     readonly config: RegimeConfig,
@@ -140,12 +246,13 @@ export class VolatilityRegimeModulator implements Modulator {
   ) {
     assertRegimeConfig(config);
     this.#regime = initial;
+    this.#inForce = initial;
     this.#remainingMs = this.#drawSojourn(initial);
   }
 
   #drawSojourn(regime: VolatilityRegime): number {
     const spec = this.config[regime];
-    return weibullSample(this.stream, spec.scaleMs, spec.shape);
+    return spec.minimumMs + weibullSample(this.stream, spec.scaleMs, spec.shape);
   }
 
   #transition(from: VolatilityRegime): VolatilityRegime {
@@ -167,6 +274,7 @@ export class VolatilityRegimeModulator implements Modulator {
     // transition takes effect from the next one. Both layers follow this rule,
     // so "which state produced this tick" has one answer.
     const multiplier = this.config[this.#regime].multiplier;
+    this.#inForce = this.#regime;
 
     this.#remainingMs -= context.intervalMs;
     // A loop rather than a single step: an interval can be longer than a
@@ -189,6 +297,22 @@ export class VolatilityRegimeModulator implements Modulator {
     return this.#regime;
   }
 
+  /**
+   * The tick-rate factor of the regime in force now, for the arrival model
+   * (PH-34). Read before a tick's interval is drawn, so it is the regime that
+   * the tick about to be produced will be sized under: `advance` returns the
+   * multiplier of the regime in force at the *start* of a tick, and a
+   * transition takes effect from the next one.
+   */
+  get activity(): number {
+    return this.config[this.#regime].activity;
+  }
+
+  /** The relative level of the regime the last tick was sized under (PH-34). */
+  get levelInForce(): number {
+    return this.config[this.#inForce].level;
+  }
+
   snapshot(): RegimeSnapshot {
     return { regime: this.#regime, remainingMs: this.#remainingMs };
   }
@@ -199,6 +323,7 @@ export class VolatilityRegimeModulator implements Modulator {
       throw new RangeError(`Unknown regime in snapshot: ${JSON.stringify(typed.regime)}.`);
     }
     this.#regime = typed.regime;
+    this.#inForce = typed.regime;
     this.#remainingMs = typed.remainingMs;
   }
 }

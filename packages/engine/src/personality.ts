@@ -1,8 +1,17 @@
 import { epochMillis, exp, ln, pow, type RandomSource } from '@otc/core';
 import type { InstrumentSpec } from '@otc/core';
-import { DEFAULT_CASCADE, type CascadeConfig } from './cascade.js';
+import { cascadeTypicalProduct, DEFAULT_CASCADE, type CascadeConfig } from './cascade.js';
 import { DEFAULT_HAWKES, type HawkesConfig } from './hawkes.js';
-import { DEFAULT_REGIMES, VOLATILITY_REGIMES, type RegimeConfig } from './regime.js';
+import {
+  REGIME_DURATIONS,
+  REGIME_LEVELS,
+  REGIME_LADDER,
+  relativeRegimeLevel,
+  splitRegimeLevel,
+  VOLATILITY_REGIMES,
+  type RegimeConfig,
+  type VolatilityRegime,
+} from './regime.js';
 import { DEFAULT_STRUCTURE, StructurePhaseModulator, type StructureConfig } from './structure.js';
 import type { MarketEngineConfig } from './factory.js';
 
@@ -85,10 +94,15 @@ export interface PersonalityTraits {
   readonly cascadeSpacing: number;
 
   /**
-   * Scalar on every volatility regime's sojourn scale.
+   * How long this market holds a regime: above 1 longer, below 1 it changes
+   * character more often.
    *
-   * Above 1, this market holds a regime longer; below 1, it changes character
-   * more often. Exactly tail-neutral: see {@link regimeInflation}.
+   * Since PH-34 the trait is a character axis rather than the scale itself: it
+   * maps onto a factor in `[0.7, 1.5]` ({@link regimeDurationFactor}) that
+   * scales the random part of every sojourn and never shortens a minimum. It
+   * used to scale the whole Weibull draw across 0.3–2.7, which gave the most
+   * restless assets a median stressed episode of a minute. Exactly
+   * tail-neutral: see {@link regimeInflation}.
    */
   readonly regimeTempo: number;
 
@@ -240,6 +254,45 @@ function spreadMultiplier(multiplier: number, spread: number): number {
 }
 
 /**
+ * The factor `regimeTempo` scales a regime's sojourn by (PH-34).
+ *
+ * Log-linear on each side of 1, so the trait's whole fence `[0.3, 3]` lands on
+ * `[0.7, 1.5]`, the order of the catalogue's thirty assets is kept, and the
+ * default trait of exactly 1 is exactly 1 — the default personality still
+ * reproduces `DEFAULT_REGIMES` bit for bit.
+ */
+export const REGIME_DURATION_FACTOR_RANGE = { min: 0.7, max: 1.5 } as const;
+
+export function regimeDurationFactor(regimeTempo: number): number {
+  if (regimeTempo === 1) return 1;
+  const { min: traitMin, max: traitMax } = TRAIT_BOUNDS.regimeTempo;
+  const { min, max } = REGIME_DURATION_FACTOR_RANGE;
+  const exponent = regimeTempo < 1 ? ln(min) / ln(traitMin) : ln(max) / ln(traitMax);
+  return pow(regimeTempo, exponent);
+}
+
+/**
+ * The slowest the market may tick on average, in ticks per millisecond: one
+ * every two seconds (PH-34, the Human Owner's floor), so a thirty-second
+ * contract on the calmest asset in its calmest regime still sees about fifteen.
+ */
+export const MIN_TICK_RATE_PER_MS = 1 / 2_000;
+
+/**
+ * A regime's level relative to normal, with this market's spread applied.
+ *
+ * `regimeSpread` widens only the levels **above** normal, and through its
+ * square root: calm is the Human Owner's floor (×1.2 of the real average) for
+ * every asset, and the most violent stress in the catalogue stays within
+ * ×3.2–×4.2 of it rather than reaching ×5.
+ */
+function spreadLevel(regime: VolatilityRegime, spread: number): number {
+  const level = relativeRegimeLevel(regime);
+  if (level <= 1 || spread === 1) return level;
+  return exp(Math.sqrt(spread) * ln(level));
+}
+
+/**
  * Expand traits into the engine configuration.
  *
  * Timings, transition weights and hazard shapes are inherited from the
@@ -275,15 +328,28 @@ export function personalityConfig(
     lowMultiplier: 1 - traits.clustering,
   };
 
+  // The regime layer (PH-34): each level split between tick rate and size at
+  // this market's duration coupling, the rate floored at one tick every two
+  // seconds, and every sojourn a minimum plus a memoryless remainder scaled by
+  // the market's character.
+  const minimumActivity = MIN_TICK_RATE_PER_MS * traits.tempoMs * (1 - traits.burstiness);
+  const durationFactor = regimeDurationFactor(traits.regimeTempo);
   const regimes = Object.fromEntries(
     VOLATILITY_REGIMES.map((name) => [
       name,
       {
-        ...DEFAULT_REGIMES[name],
-        multiplier: spreadMultiplier(DEFAULT_REGIMES[name].multiplier, traits.regimeSpread),
-        // Multiplication by exactly 1 is exact, so the default personality still
-        // reproduces DEFAULT_REGIMES bit for bit.
-        scaleMs: DEFAULT_REGIMES[name].scaleMs * traits.regimeTempo,
+        level: spreadLevel(name, traits.regimeSpread),
+        ...splitRegimeLevel(
+          spreadLevel(name, traits.regimeSpread),
+          traits.durationCoupling,
+          minimumActivity,
+        ),
+        // Multiplication by exactly 1 is exact, so the default personality
+        // still reproduces DEFAULT_REGIMES bit for bit.
+        minimumMs: REGIME_DURATIONS[name].minimumMs * Math.max(1, durationFactor),
+        scaleMs: REGIME_DURATIONS[name].scaleMs * durationFactor,
+        shape: 1,
+        transitions: REGIME_LADDER[name],
       },
     ]),
   ) as unknown as RegimeConfig;
@@ -312,6 +378,10 @@ export function personalityConfig(
     structure,
     arrival,
     durationCoupling: traits.durationCoupling,
+    volatilityFloor: {
+      level: relativeRegimeLevel('compressed'),
+      cascadeReference: cascadeTypicalProduct(cascade),
+    },
   };
 }
 
@@ -398,9 +468,10 @@ const LANCZOS_SHIFT = 7.5;
 /**
  * Γ(z) for z ≥ 1, by the Lanczos approximation.
  *
- * Only ever called with `1 + 1/shape`, and shape is bounded below 1 from above
- * by the regime configuration, so `z > 1.5` always and the reflection formula —
- * which would need `Math.sin`, banned here as non-portable — is unreachable.
+ * Only ever called with `1 + 1/shape` for a positive shape, so `z > 1` always
+ * (exactly 2 at the regime layer's shape of one since PH-34) and the reflection
+ * formula — which would need `Math.sin`, banned here as non-portable — is
+ * unreachable.
  */
 function gamma(z: number): number {
   const coefficients = [
@@ -428,13 +499,36 @@ function gamma(z: number): number {
 const STATIONARY_POWER_ITERATIONS = 2_000;
 
 /**
- * Exact inflation of the volatility regime layer.
+ * Exact inflation of the volatility regime layer, per tick.
  *
  * The regime is a semi-Markov chain, so the fraction of *time* spent in a state
  * is not its embedded-chain probability: it is that probability weighted by mean
- * sojourn. Weibull sojourns have mean `scale · Γ(1 + 1/shape)`.
+ * sojourn, `minimum + scale · Γ(1 + 1/shape)`.
+ *
+ * And since PH-34 the fraction of **ticks** is not the fraction of time: a
+ * regime at activity `a` produces `a` times as many ticks per unit time, so the
+ * per-tick distribution weights each regime by time × activity. That is the
+ * distribution the kurtosis of a tick return is a moment of.
  */
 export function regimeInflation(config: RegimeConfig): number {
+  let second = 0;
+  let fourth = 0;
+  for (const regime of regimeTickWeights(config)) {
+    const squared = regime.multiplier * regime.multiplier;
+    second += regime.weight * squared;
+    fourth += regime.weight * squared * squared;
+  }
+  return inflation(second, fourth);
+}
+
+/**
+ * Each regime's share of **ticks**, with the level and multiplier it sizes
+ * them at: time occupancy of the semi-Markov chain, weighted by activity.
+ */
+function regimeTickWeights(
+  config: RegimeConfig,
+  per: 'tick' | 'time' = 'tick',
+): readonly { readonly level: number; readonly multiplier: number; readonly weight: number }[] {
   const rows = VOLATILITY_REGIMES.map((name) => {
     const weights = config[name].transitions;
     const total = weights.reduce((sum, weight) => sum + weight, 0);
@@ -451,21 +545,20 @@ export function regimeInflation(config: RegimeConfig): number {
   }
 
   const meanSojourn = VOLATILITY_REGIMES.map(
-    (name) => config[name].scaleMs * gamma(1 + 1 / config[name].shape),
+    (name) => config[name].minimumMs + config[name].scaleMs * gamma(1 + 1 / config[name].shape),
   );
-  const weighted = embedded.map((mass, index) => mass * meanSojourn[index]!);
+  const weighted = embedded.map(
+    (mass, index) =>
+      mass *
+      meanSojourn[index]! *
+      (per === 'tick' ? config[VOLATILITY_REGIMES[index]!].activity : 1),
+  );
   const total = weighted.reduce((sum, value) => sum + value, 0);
-  const stationary = weighted.map((value) => value / total);
-
-  let second = 0;
-  let fourth = 0;
-  VOLATILITY_REGIMES.forEach((name, index) => {
-    const multiplier = config[name].multiplier;
-    const squared = multiplier * multiplier;
-    second += stationary[index]! * squared;
-    fourth += stationary[index]! * squared * squared;
-  });
-  return inflation(second, fourth);
+  return VOLATILITY_REGIMES.map((name, index) => ({
+    level: config[name].level,
+    multiplier: config[name].multiplier,
+    weight: weighted[index]! / total,
+  }));
 }
 
 /** Steps used to estimate the structure layer's inflation. */
@@ -520,6 +613,156 @@ export function structureInflation(
   return inflation(second / steps, fourth / steps);
 }
 
+/** One state of a layer's stationary distribution: its multiplier and weight. */
+interface LayerAtom {
+  readonly multiplier: number;
+  readonly weight: number;
+}
+
+/**
+ * The structure layer's stationary distribution, by the same simulation
+ * {@link structureInflation} runs: the share of time spent at each phase
+ * multiplier. The floor needs the distribution, not only its moments, because
+ * it acts on the product of the layers rather than on each one.
+ */
+export function structureDistribution(
+  config: StructureConfig,
+  stream: RandomSource,
+  steps: number = STRUCTURE_INFLATION_STEPS,
+): readonly LayerAtom[] {
+  const modulator = new StructurePhaseModulator(config, stream);
+  const intervalMs = STRUCTURE_PROBE_INTERVAL_MS;
+  let instant = STRUCTURE_PROBE_EPOCH_MS;
+  const counts = new Map<number, number>();
+  for (let step = 0; step < steps; step += 1) {
+    instant += intervalMs;
+    const multiplier = modulator.advance({
+      intervalMs,
+      previousMagnitude: STRUCTURE_PROBE_MAGNITUDE,
+      instant: epochMillis(instant),
+      sequence: step,
+    });
+    counts.set(multiplier, (counts.get(multiplier) ?? 0) + 1);
+  }
+  // Sorted, so the summation order — and therefore the last bit of every
+  // moment built from it — does not depend on which phase was visited first.
+  return [...counts.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([multiplier, count]) => ({ multiplier, weight: count / steps }));
+}
+
+/** Binomial coefficient, exactly for the cascade depths `TRAIT_BOUNDS` allows. */
+function binomial(n: number, k: number): number {
+  let value = 1;
+  for (let i = 1; i <= k; i += 1) value = (value * (n - k + i)) / i;
+  return value;
+}
+
+/**
+ * The per-tick fourth-to-second moment ratio of the three layers together,
+ * with the volatility floor applied (PH-34).
+ *
+ * Exact enumeration rather than a product of per-layer ratios, because the
+ * floor acts on the **product** of the layers' levels: a cascade state is
+ * lifted in a compressed regime and not in a stressed one, so the layers stop
+ * being separable the moment a floor exists. Every layer's stationary
+ * distribution is known — the regime's semi-Markov occupancy, weighted by
+ * activity because a tick return is sampled per tick; the cascade's
+ * independent two-point components, a binomial; the structure phases from
+ * their own simulation — and the three are independent processes, so the
+ * joint distribution is their product and the sum over it is exact.
+ *
+ * With no floor this is exactly {@link cascadeInflation} ×
+ * {@link regimeInflation} × the structure layer's own ratio: moments of a
+ * product of independent variables factorise.
+ */
+export function layeredInflation(
+  config: Omit<MarketEngineConfig, 'instrument'>,
+  structure: readonly LayerAtom[],
+): number {
+  const regimes = regimeTickWeights(config.regimes);
+  const { components, lowMultiplier } = config.cascade;
+  const high = 2 - lowMultiplier;
+  const floor = config.volatilityFloor;
+  let total = 0;
+  let second = 0;
+  let fourth = 0;
+  for (const regime of regimes) {
+    for (let up = 0; up <= components; up += 1) {
+      const cascade = pow(high, up) * pow(lowMultiplier, components - up);
+      const cascadeWeight = binomial(components, up) / pow(2, components);
+      for (const phase of structure) {
+        const weight = regime.weight * cascadeWeight * phase.weight;
+        let lift = 1;
+        if (floor !== null) {
+          const level = regime.level * (cascade / floor.cascadeReference) * phase.multiplier;
+          if (level < floor.level) lift = floor.level / level;
+        }
+        const m = regime.multiplier * cascade * phase.multiplier * lift;
+        const squared = m * m;
+        total += weight;
+        second += weight * squared;
+        fourth += weight * squared * squared;
+      }
+    }
+  }
+  return inflation(second / total, fourth / total);
+}
+
+/**
+ * The time-average of the regime layer's activity: how much faster than its
+ * base tempo a market ticks on average, over the regimes' occupancy (PH-34).
+ */
+export function meanRegimeActivity(config: RegimeConfig): number {
+  let mean = 0;
+  VOLATILITY_REGIMES.forEach((name, index) => {
+    mean += regimeTickWeights(config, 'time')[index]!.weight * config[name].activity;
+  });
+  return mean;
+}
+
+/**
+ * How much more the OTC market moves than the real instrument, on average
+ * (PH-34): the factor a seat's reference dispersion is multiplied by to give
+ * the budget the calibration rescales to.
+ *
+ * The Human Owner's rule is **typical against typical**: calm moves 20% more
+ * than the real market on an ordinary day, normal 50% more. The real
+ * instrument's typical level is its reference volatility divided by the ratio
+ * of average to typical of this asset's own cascade — the OTC market is the
+ * real one's shape at a higher level — so the normal regime at the cascade's
+ * typical state sits at `1.5 · reference / κ`. Averaged over time, variance per
+ * unit time is the square of the layered level with the floor applied (the
+ * regime's split between rate and size preserves it), so the market's own
+ * average is that times the level's time-RMS. For this catalogue's cascades the
+ * factor is about 1.7.
+ */
+export function otcDispersionFactor(traits: PersonalityTraits, stream: RandomSource): number {
+  const config = personalityConfig(traits);
+  const structure = structureDistribution(config.structure, stream);
+  const floor = config.volatilityFloor;
+  const { components, lowMultiplier } = config.cascade;
+  const high = 2 - lowMultiplier;
+  const reference = floor?.cascadeReference ?? cascadeTypicalProduct(config.cascade);
+  let total = 0;
+  let second = 0;
+  for (const regime of regimeTickWeights(config.regimes, 'time')) {
+    for (let up = 0; up <= components; up += 1) {
+      const cascade = pow(high, up) * pow(lowMultiplier, components - up);
+      const cascadeWeight = binomial(components, up) / pow(2, components);
+      for (const phase of structure) {
+        const weight = regime.weight * cascadeWeight * phase.weight;
+        const raw = regime.level * (cascade / reference) * phase.multiplier;
+        const level = floor !== null && raw < floor.level ? floor.level : raw;
+        total += weight;
+        second += weight * level * level;
+      }
+    }
+  }
+  const typicalToAverage = cascadeTypicalProduct(config.cascade) / cascadeRmsGain(traits);
+  return REGIME_LEVELS.normal * Math.sqrt(second / total) * typicalToAverage;
+}
+
 /**
  * Predicted excess kurtosis of the increment distribution.
  *
@@ -539,6 +782,9 @@ export function predictedExcessKurtosis(
   config: Omit<MarketEngineConfig, 'instrument'>,
   stream: RandomSource,
 ): number {
+  if (config.volatilityFloor !== null) {
+    return 3 * layeredInflation(config, structureDistribution(config.structure, stream)) - 3;
+  }
   const product =
     cascadeInflation(config.cascade) *
     regimeInflation(config.regimes) *
@@ -618,6 +864,9 @@ export function solveClustering(
     );
   }
   const config = personalityConfig(traits);
+  if (config.volatilityFloor !== null) {
+    return solveClusteringWithFloor(traits, targetExcessKurtosis, stream);
+  }
   const fixed = regimeInflation(config.regimes) * structureInflation(config.structure, stream);
   const requiredCascade = (targetExcessKurtosis + 3) / (3 * fixed);
 
@@ -645,6 +894,55 @@ export function solveClustering(
   for (let iteration = 0; iteration < CLUSTERING_BISECTION_STEPS; iteration += 1) {
     const middle = (low + high) / 2;
     if (cascadeInflationOfClustering(middle) < perComponent) low = middle;
+    else high = middle;
+  }
+  return (low + high) / 2;
+}
+
+/**
+ * The clustering solve when a volatility floor couples the layers (PH-34).
+ *
+ * The floor makes the cascade's contribution depend on the regime and the
+ * structure phase it multiplies, so the required cascade inflation can no
+ * longer be divided out of a product. The solve bisects clustering against
+ * {@link layeredInflation} instead, on one structure distribution drawn from
+ * `stream` — the distribution does not depend on clustering, so the bisection
+ * is exact with respect to it, as the unfloored solve is with respect to its
+ * stream. The predicted kurtosis rises with clustering: a wider cascade adds
+ * tail above the floor faster than the floor removes it below
+ * (`personality.test.ts` checks it on the catalogue's own traits).
+ */
+function solveClusteringWithFloor(
+  traits: PersonalityTraits,
+  targetExcessKurtosis: number,
+  stream: RandomSource,
+): number {
+  const structure = structureDistribution(personalityConfig(traits).structure, stream);
+  const predictedAt = (clustering: number): number =>
+    3 * layeredInflation(personalityConfig({ ...traits, clustering }), structure) - 3;
+  const ceiling: number = TRAIT_BOUNDS.clustering.max;
+  const least = predictedAt(0);
+  if (least > targetExcessKurtosis) {
+    throw new RangeError(
+      `The regime and structure layers alone predict an excess kurtosis of ` +
+        `${least.toFixed(2)}, already above the target of ${targetExcessKurtosis}. No ` +
+        `clustering can reach it: the cascade can only add tail weight. Lower ` +
+        `regimeSpread or structureSpread.`,
+    );
+  }
+  if (predictedAt(ceiling) < targetExcessKurtosis) {
+    throw new TailWeightUnreachableError(
+      `An excess kurtosis of ${targetExcessKurtosis} needs more cascade inflation than ` +
+        `clustering ${ceiling} can provide at depth ${traits.cascadeDepth} above the ` +
+        `volatility floor. Raise cascadeDepth, or raise regimeSpread so another layer ` +
+        `carries some of the tail.`,
+    );
+  }
+  let low = 0;
+  let high = ceiling;
+  for (let iteration = 0; iteration < CLUSTERING_BISECTION_STEPS; iteration += 1) {
+    const middle = (low + high) / 2;
+    if (predictedAt(middle) < targetExcessKurtosis) low = middle;
     else high = middle;
   }
   return (low + high) / 2;
