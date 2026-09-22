@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { writeFileSync } from 'node:fs';
 import {
+  ASSET_CATALOGUE,
   ASSET_SEATS,
   CALIBRATION_SPAN_MS,
   minimumDispersionSpanMs,
@@ -74,7 +75,25 @@ async function main(): Promise<void> {
     if (outcome.kind !== 'registered') {
       throw new Error(`${seat.id} refused at ${outcome.stage}: ${outcome.reason}`);
     }
-    const asset = outcome.asset;
+    // **The lattice is part of a market's record, so a recalibration keeps it**
+    // (PH-24.17 did the same by hand; PH-34 makes it the build's rule). A
+    // running market's published prices are integers on its lattice: a new
+    // quantum would reinterpret the last one at another scale and the shown
+    // price would jump at the upgrade, and a new precision would change what a
+    // broker displays. A seat with no recorded asset takes the fresh lattice.
+    // The evidence keeps the fresh quantum as the measurement it is.
+    const recordedAsset = ASSET_CATALOGUE.find((candidate) => candidate.definition.id === seat.id);
+    const asset: RegisteredAsset =
+      recordedAsset === undefined
+        ? outcome.asset
+        : {
+            ...outcome.asset,
+            instrument: {
+              ...outcome.asset.instrument,
+              logQuantum: recordedAsset.instrument.logQuantum,
+              displayPrecision: recordedAsset.instrument.displayPrecision,
+            },
+          };
     built.push(asset);
     entries.push(entry(seat, asset));
     const seconds = ((Date.now() - seatStarted) / 1000).toFixed(0);

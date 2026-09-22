@@ -21,6 +21,7 @@ import {
 import { registrationKeyLabel, type AuthoringTargets, type RegisteredAsset } from './catalogue.js';
 import {
   assertPersonalitySafe,
+  OTC_DISPERSION_FACTOR,
   authorPersonality,
   EXCESS_KURTOSIS_BAND,
   personalityConfig,
@@ -86,6 +87,12 @@ export type DifferentiationCheck = (
   existing: readonly RegisteredAsset[],
 ) => Promise<string | null> | string | null;
 
+/** How close the measured mean interval must come to its target (PH-34). */
+export const PACE_TOLERANCE = 0.05;
+
+/** Corrections the pace fit may make before the registration is refused. */
+export const PACE_FIT_PASSES = 4;
+
 export interface RegistrationRequest {
   readonly id: string;
   readonly family: AssetDefinition['family'];
@@ -101,14 +108,31 @@ export interface RegistrationRequest {
    */
   readonly displayPrecision?: number;
   /**
-   * σ of the terminal log return over a quarter, from `dispersion.ts`.
+   * σ of the terminal log return over a quarter, from `dispersion.ts`, **of
+   * the real instrument** the asset stands for.
    *
-   * The budget the asset is fitted to. Omit it and the personality keeps the
-   * amplitude its {@link RegistrationRequest.targets} imply, which is how the
-   * five hand-authored assets were built; supply it and the base volatility is
-   * scaled to hit it exactly.
+   * Since PH-34 the market is calibrated to this times
+   * {@link OTC_DISPERSION_FACTOR} — an OTC market moves 1.7 times the real one
+   * on average, the Human Owner's number — and the base
+   * volatility is scaled to hit that exactly. Omit it and the personality keeps
+   * the amplitude its {@link RegistrationRequest.targets} imply, which is how
+   * the five hand-authored assets were built.
    */
   readonly dispersion?: number;
+  /**
+   * The average interval between ticks the market must have, in milliseconds
+   * (PH-34): its tick rate, set by its character.
+   *
+   * The tempo that gives it is **fitted by measurement**, as the dispersion is:
+   * the Hawkes mean interval `tempo · (1 − burstiness)` is exact only when no
+   * burst reaches the intensity clamp and every excitation outlives the next
+   * arrival, and on the catalogue the realised interval ran from 1.08 to 3.0
+   * times that formula, the most bursty assets furthest off. So the
+   * calibration's measured interval corrects the tempo, and the calibration
+   * reruns, until the two agree within {@link PACE_TOLERANCE}. Omit it and the
+   * tempo is the traits' own.
+   */
+  readonly meanIntervalMs?: number;
   /**
    * The personality's character: the ladder of timescales and the shape.
    *
@@ -361,14 +385,14 @@ export async function registerAsset(
   }
 
   options.onStage?.('authoring');
-  let authored;
+  let authored: ReturnType<typeof authorPersonality>;
   try {
     authored = authorPersonality(request.traits, request.targets, derive);
   } catch (error) {
     return { kind: 'refused', stage: 'authoring', reason: (error as Error).message };
   }
 
-  const definition: AssetDefinition = {
+  let definition: AssetDefinition = {
     id: request.id,
     family: request.family,
     displayName: request.displayName,
@@ -409,6 +433,48 @@ export async function registerAsset(
     return { kind: 'refused', stage: 'calibration', reason: (error as Error).message };
   }
 
+  // The tick rate, fitted by measurement (PH-34). A slower or faster tempo
+  // moves the arrival rate nearly in proportion, so each pass corrects by the
+  // measured ratio and reruns the calibration; the tempo enters the rate floor
+  // and the spacing feasibility, so the personality is re-authored with it.
+  if (request.meanIntervalMs !== undefined) {
+    for (let pass = 0; ; pass += 1) {
+      const ratio = request.meanIntervalMs / calibrated.evidence.meanIntervalMs;
+      if (Math.abs(ratio - 1) <= PACE_TOLERANCE) break;
+      if (pass >= PACE_FIT_PASSES) {
+        return {
+          kind: 'refused',
+          stage: 'calibration',
+          reason:
+            `The tick rate did not settle: after ${PACE_FIT_PASSES} corrections the market ` +
+            `ticks every ${calibrated.evidence.meanIntervalMs.toFixed(1)} ms against a target of ` +
+            `${request.meanIntervalMs.toFixed(1)} ms.`,
+        };
+      }
+      try {
+        authored = authorPersonality(
+          { ...request.traits, tempoMs: definition.traits.tempoMs * ratio },
+          request.targets,
+          derive,
+        );
+      } catch (error) {
+        return { kind: 'refused', stage: 'authoring', reason: (error as Error).message };
+      }
+      definition = { ...definition, traits: authored.traits };
+      try {
+        calibrated = await calibrateAssetAsync(definition, derive, options.calibration ?? {});
+      } catch (error) {
+        return { kind: 'refused', stage: 'calibration', reason: (error as Error).message };
+      }
+    }
+  }
+
+  // The budget the market is calibrated to is the real instrument's reference
+  // times how much more an OTC market moves on average (PH-34): 1.7, the
+  // Human Owner's number.
+  const budget =
+    request.dispersion === undefined ? undefined : request.dispersion * OTC_DISPERSION_FACTOR;
+
   // The dispersion budget, hit by rescaling rather than by searching.
   //
   // The calibration is homogeneous of degree one in `volatility` — every layer
@@ -420,18 +486,16 @@ export async function registerAsset(
   // rhythm cannot reach its budget needs a base volatility outside
   // `TRAIT_BOUNDS`, and that is a statement about the family rather than about
   // the asset.
-  if (request.dispersion !== undefined) {
+  if (budget !== undefined) {
     try {
-      calibrated = rescaleCalibration(
-        calibrated,
-        request.dispersion / dispersionLogSigma(calibrated.evidence),
-      );
+      calibrated = rescaleCalibration(calibrated, budget / dispersionLogSigma(calibrated.evidence));
     } catch (error) {
       return {
         kind: 'refused',
         stage: 'dispersion',
         reason:
-          `This personality cannot reach a quarterly dispersion of ${request.dispersion}: ` +
+          `This personality cannot reach a quarterly dispersion of ${budget} (the reference ` +
+          `${request.dispersion} at OTC level): ` +
           (error as Error).message,
       };
     }

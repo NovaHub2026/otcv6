@@ -3,6 +3,7 @@ import {
   archetypeById,
   type AssetArchetype,
   type Range,
+  tempoRangeFor,
   type SampledTraitRanges,
 } from './families.js';
 
@@ -72,6 +73,11 @@ export interface AssetSeat {
   readonly traits: SampledTraitRanges;
 }
 
+/** A seat as it is written: every range but the tempo, which is derived (PH-34). */
+type SeatDefinition = Omit<AssetSeat, 'traits'> & {
+  readonly traits: Omit<SampledTraitRanges, 'tempoMs'>;
+};
+
 const r = (min: number, max: number): Range => ({ min, max });
 const h = (min: number, max: number): Range => ({ min: min * HOUR, max: max * HOUR });
 const s = (min: number, max: number): Range => ({ min: min * SECOND, max: max * SECOND });
@@ -83,7 +89,7 @@ const STOCK_SOURCE =
 const INDEX_SOURCE =
   'Invented index: no true price. Opens at a common base so a percentage reads at a glance.';
 
-export const ASSET_SEATS: readonly AssetSeat[] = [
+const SEAT_DEFINITIONS: readonly SeatDefinition[] = [
   // ── Forex: six majors on major-fx, two crosses on cross-fx ──────────────────
   {
     id: 'eurusd-otc',
@@ -97,7 +103,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     dispersion: 0.038,
     excessKurtosis: r(48, 56),
     traits: {
-      tempoMs: r(680, 760),
       burstiness: r(0.56, 0.6),
       regimeSpread: r(0.92, 0.98),
       structureSpread: r(0.97, 1.03),
@@ -121,7 +126,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     dispersion: 0.043,
     excessKurtosis: r(64, 74),
     traits: {
-      tempoMs: r(600, 670),
       burstiness: r(0.63, 0.66),
       regimeSpread: r(1.06, 1.13),
       structureSpread: r(0.92, 0.98),
@@ -145,7 +149,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     dispersion: 0.052,
     excessKurtosis: r(58, 68),
     traits: {
-      tempoMs: r(550, 590),
       burstiness: r(0.58, 0.62),
       regimeSpread: r(1.02, 1.08),
       structureSpread: r(0.9, 0.93),
@@ -169,14 +172,15 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     dispersion: 0.058,
     excessKurtosis: r(70, 75),
     traits: {
-      tempoMs: r(770, 850),
       burstiness: r(0.61, 0.65),
       regimeSpread: r(1.12, 1.15),
       structureSpread: r(1.07, 1.13),
       durationCoupling: r(0.18, 0.2),
       cascadeDepth: r(13, 13),
       cascadeSpanMs: h(26, 29),
-      cascadeSpacing: r(2.55, 2.7),
+      // 2.45 rather than 2.55 (PH-34): at the tempo its character now gives —
+      // about three times slower — the worst corner admits 2.507.
+      cascadeSpacing: r(2.45, 2.7),
       regimeTempo: r(1.35, 1.45),
       arrivalMemoryMs: s(175, 195),
     },
@@ -193,7 +197,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     dispersion: 0.033,
     excessKurtosis: r(45, 50),
     traits: {
-      tempoMs: r(880, 960),
       burstiness: r(0.52, 0.54),
       regimeSpread: r(0.9, 0.93),
       structureSpread: r(0.95, 1.01),
@@ -217,7 +220,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     dispersion: 0.03,
     excessKurtosis: r(53, 61),
     traits: {
-      tempoMs: r(1000, 1050),
       burstiness: r(0.53, 0.57),
       regimeSpread: r(0.97, 1.03),
       structureSpread: r(1.12, 1.15),
@@ -241,7 +243,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     dispersion: 0.215,
     excessKurtosis: r(120, 130),
     traits: {
-      tempoMs: r(355, 390),
       burstiness: r(0.68, 0.7),
       regimeSpread: r(1.26, 1.3),
       structureSpread: r(0.85, 0.89),
@@ -265,7 +266,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     dispersion: 0.15,
     excessKurtosis: r(85, 92),
     traits: {
-      tempoMs: r(540, 600),
       burstiness: r(0.55, 0.58),
       regimeSpread: r(1.05, 1.11),
       structureSpread: r(1.05, 1.1),
@@ -292,7 +292,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     budgetNote: 'A single stock, not a sector fund: 1.7× the sector-etf ceiling of 0.07.',
     excessKurtosis: r(44, 54),
     traits: {
-      tempoMs: r(1050, 1200),
       burstiness: r(0.42, 0.47),
       regimeSpread: r(0.86, 0.93),
       structureSpread: r(1.22, 1.32),
@@ -317,7 +316,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     budgetNote: 'A single stock, not a sector fund: 1.5× the sector-etf ceiling of 0.07.',
     excessKurtosis: r(40, 48),
     traits: {
-      tempoMs: r(1200, 1300),
       burstiness: r(0.42, 0.46),
       regimeSpread: r(0.85, 0.9),
       structureSpread: r(1.3, 1.4),
@@ -342,7 +340,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     budgetNote: 'A single stock, not a sector fund: 3.7× the sector-etf ceiling of 0.07.',
     excessKurtosis: r(58, 70),
     traits: {
-      tempoMs: r(750, 850),
       burstiness: r(0.54, 0.58),
       regimeSpread: r(1.0, 1.08),
       structureSpread: r(1.1, 1.18),
@@ -367,7 +364,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     budgetNote: 'A single stock, not a sector fund: 4.3× the sector-etf ceiling of 0.07.',
     excessKurtosis: r(60, 70),
     traits: {
-      tempoMs: r(820, 950),
       burstiness: r(0.5, 0.55),
       regimeSpread: r(1.02, 1.1),
       structureSpread: r(1.14, 1.24),
@@ -392,7 +388,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     budgetNote: 'A single stock, not a sector fund: 3.0× the sector-etf ceiling of 0.07.',
     excessKurtosis: r(50, 62),
     traits: {
-      tempoMs: r(950, 1080),
       burstiness: r(0.47, 0.52),
       regimeSpread: r(0.9, 0.98),
       structureSpread: r(1.34, 1.4),
@@ -417,7 +412,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     budgetNote: 'A single stock, not a sector fund: 2.4× the sector-etf ceiling of 0.07.',
     excessKurtosis: r(46, 56),
     traits: {
-      tempoMs: r(880, 1000),
       burstiness: r(0.46, 0.51),
       regimeSpread: r(0.94, 1.02),
       structureSpread: r(1.18, 1.28),
@@ -442,7 +436,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     budgetNote: 'A single stock, not a sector fund: 2.7× the sector-etf ceiling of 0.07.',
     excessKurtosis: r(56, 68),
     traits: {
-      tempoMs: r(900, 1020),
       burstiness: r(0.52, 0.57),
       regimeSpread: r(1.04, 1.1),
       structureSpread: r(1.1, 1.17),
@@ -467,7 +460,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     budgetNote: 'A single stock, not a sector fund: 4.6× the sector-etf ceiling of 0.07.',
     excessKurtosis: r(50, 60),
     traits: {
-      tempoMs: r(780, 880),
       burstiness: r(0.49, 0.54),
       regimeSpread: r(0.96, 1.04),
       structureSpread: r(1.1, 1.16),
@@ -494,7 +486,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     dispersion: 0.34,
     excessKurtosis: r(115, 128),
     traits: {
-      tempoMs: r(300, 340),
       burstiness: r(0.72, 0.75),
       regimeSpread: r(1.25, 1.31),
       structureSpread: r(0.9, 0.96),
@@ -519,7 +510,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     dispersion: 0.44,
     excessKurtosis: r(138, 155),
     traits: {
-      tempoMs: r(340, 400),
       burstiness: r(0.78, 0.82),
       regimeSpread: r(1.36, 1.45),
       structureSpread: r(1.02, 1.1),
@@ -543,7 +533,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     dispersion: 0.4,
     excessKurtosis: r(125, 140),
     traits: {
-      tempoMs: r(420, 500),
       burstiness: r(0.74, 0.78),
       regimeSpread: r(1.3, 1.38),
       structureSpread: r(1.08, 1.15),
@@ -568,14 +557,15 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     dispersion: 0.59,
     excessKurtosis: r(140, 155),
     traits: {
-      tempoMs: r(280, 330),
       burstiness: r(0.8, 0.85),
       regimeSpread: r(1.3, 1.4),
       structureSpread: r(0.9, 1.02),
       durationCoupling: r(0.4, 0.5),
       cascadeDepth: r(8, 9),
       cascadeSpanMs: h(2.5, 4),
-      cascadeSpacing: r(3.2, 3.8),
+      // 3.0 rather than 3.2 (PH-34): at the tempo its character now gives,
+      // the worst corner admits 3.079.
+      cascadeSpacing: r(3.0, 3.8),
       regimeTempo: r(0.4, 0.5),
       arrivalMemoryMs: s(25, 33),
     },
@@ -593,7 +583,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     dispersion: 0.53,
     excessKurtosis: r(130, 140),
     traits: {
-      tempoMs: r(340, 400),
       burstiness: r(0.72, 0.76),
       regimeSpread: r(1.2, 1.28),
       structureSpread: r(1.05, 1.2),
@@ -618,7 +607,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     dispersion: 0.66,
     excessKurtosis: r(150, 165),
     traits: {
-      tempoMs: r(250, 290),
       burstiness: r(0.85, 0.88),
       regimeSpread: r(1.42, 1.5),
       structureSpread: r(0.8, 0.9),
@@ -644,7 +632,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     dispersion: 0.62,
     excessKurtosis: r(145, 162),
     traits: {
-      tempoMs: r(255, 300),
       burstiness: r(0.84, 0.88),
       regimeSpread: r(1.38, 1.48),
       structureSpread: r(1.05, 1.2),
@@ -671,7 +658,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
       // Pushed away from BTC on tempo, regime, structure and coupling after the
       // measurement in `seats.test.ts` put the two 0.020 apart: a basket is
       // slower and more session-shaped than its largest constituent.
-      tempoMs: r(390, 450),
       burstiness: r(0.75, 0.79),
       regimeSpread: r(1.33, 1.41),
       structureSpread: r(1.02, 1.1),
@@ -697,7 +683,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
       'A five-name thematic basket, not a blue-chip index: 9.1× the blue-chip-index ceiling of 0.022.',
     excessKurtosis: r(45, 55),
     traits: {
-      tempoMs: r(1050, 1150),
       burstiness: r(0.5, 0.56),
       regimeSpread: r(0.75, 0.82),
       structureSpread: r(1.35, 1.45),
@@ -723,7 +708,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
       'A seven-name thematic basket, not a blue-chip index: 6.4× the blue-chip-index ceiling of 0.022.',
     excessKurtosis: r(30, 40),
     traits: {
-      tempoMs: r(1300, 1500),
       burstiness: r(0.42, 0.47),
       regimeSpread: r(0.82, 0.9),
       structureSpread: r(1.2, 1.28),
@@ -749,7 +733,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
       'A five-name thematic basket, not a blue-chip index: 10.9× the blue-chip-index ceiling of 0.022.',
     excessKurtosis: r(38, 48),
     traits: {
-      tempoMs: r(1150, 1250),
       burstiness: r(0.52, 0.56),
       regimeSpread: r(0.88, 0.95),
       structureSpread: r(1.27, 1.35),
@@ -779,7 +762,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
       'A five-name thematic basket with Roblox and Unity in it: 3.1× the sector-etf ceiling of 0.07.',
     excessKurtosis: r(62, 70),
     traits: {
-      tempoMs: r(750, 820),
       burstiness: r(0.55, 0.58),
       regimeSpread: r(0.85, 0.9),
       structureSpread: r(1.3, 1.4),
@@ -805,7 +787,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
       'A five-name thematic basket of high-beta names: 4.3× the sector-etf ceiling of 0.07.',
     excessKurtosis: r(64, 70),
     traits: {
-      tempoMs: r(1000, 1100),
       burstiness: r(0.44, 0.49),
       regimeSpread: r(1.08, 1.1),
       structureSpread: r(1.2, 1.3),
@@ -831,7 +812,6 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
       'A five-name thematic basket, not a sector fund: 2.4× the sector-etf ceiling of 0.07.',
     excessKurtosis: r(40, 48),
     traits: {
-      tempoMs: r(1100, 1180),
       burstiness: r(0.42, 0.45),
       regimeSpread: r(0.92, 0.97),
       structureSpread: r(1.36, 1.4),
@@ -844,6 +824,18 @@ export const ASSET_SEATS: readonly AssetSeat[] = [
     },
   },
 ];
+
+/**
+ * The thirty seats, each with the tempo range its own dispersion and
+ * burstiness give (PH-34): the tick rate follows the asset's character.
+ */
+export const ASSET_SEATS: readonly AssetSeat[] = SEAT_DEFINITIONS.map((seat) => ({
+  ...seat,
+  traits: {
+    ...seat.traits,
+    tempoMs: tempoRangeFor({ min: seat.dispersion, max: seat.dispersion }, seat.traits.burstiness),
+  },
+}));
 
 /**
  * The narrowed box as an archetype value, so `sampleArchetype` and

@@ -448,6 +448,40 @@ está en `docs/integration/CATALOGUE.md` de este paquete.
 | Cripto (6)            | BTC, ETH, SOL, XRP, DOGE, BNB — todos contra USDT                      |
 | Índices temáticos (8) | MMX, AIX, CGX, TCX, GMX, SCX, EVX, BRX — todos en USDT, abren en 1 000 |
 
+### Cuánto se mueve cada activo, y cada cuánto (v2.2.0)
+
+Dos cosas que conviene saber antes de enchufar el motor a un frontend:
+
+- **La frecuencia de ticks sigue al carácter del activo y a su estado.** Un
+  activo tranquilo tiene menos ticks por segundo que uno volátil, y todos se
+  aceleran cuando el mercado se agita. Medido sobre sesenta días simulados por
+  activo, la mediana del catálogo va de **1,86 ticks/s en calma a 5,74 en
+  estrés** (normal 2,34), y por activo desde 0,88 /s (EUR/GBP en su régimen
+  normal) hasta 13,8 /s (DOGE en estrés). El catálogo entero da **un 40% menos
+  de ticks** que hasta la v2.1.0: menos tráfico en el stream y menos registro
+  que guardar, sin cambiar el tamaño de las velas.
+- **El mercado es más dinámico que el instrumento real que da nombre a cada
+  activo**: alrededor de **1,7 veces** su volatilidad media, y en los tramos
+  tranquilos por encima de lo que ese instrumento hace en un día normal. Es una
+  decisión de producto, no una casualidad de la calibración.
+
+La tabla por activo y por régimen está en
+[`docs/evidence/PH-34-THE-MARKETS-TEMPO.md`](../evidence/PH-34-THE-MARKETS-TEMPO.md)
+del repositorio.
+
+**Qué cambia al actualizar desde la v2.1.0 o anterior.** El modelo de mercado
+forma parte de la huella que lleva cada punto de control, así que al arrancar
+con la versión nueva **cada activo hace una costura**: continúa desde su último
+precio publicado —sin salto de precio, porque la cuadrícula de cada activo se
+conserva— con una discontinuidad registrada que `GET /markets/:id/seams`
+publica y `settle` respeta. Un contrato cuya ventana toque esa costura no se
+liquida; es una por activo y solo en el arranque de la actualización.
+
+**Los empates se reducen a menos de la mitad.** Un contrato que termina
+exactamente en el precio de entrada se reembolsa (ADR-0007). Esa tasa pasa de
+0,42%–0,53% a **0,085%–0,267%** por activo, porque el mercado recorre más
+cuadrícula en treinta segundos.
+
 Cada entrada de `GET /catalogue` lleva:
 
 ```json

@@ -35,7 +35,12 @@ describe('the catalogue is well formed', () => {
     (_id, asset) => {
       expect(() => assertValidInstrument(asset.instrument)).not.toThrow();
       expect(() => assertPersonalityTraits(asset.definition.traits)).not.toThrow();
-      expect(asset.instrument.logQuantum).toBe(asset.evidence.logQuantum);
+      // The published lattice is the one the asset was first recorded on, kept
+      // through every recalibration because a running market's prices are
+      // integers on it (PH-34, `buildCatalogue.ts`); the evidence records the
+      // fresh measurement. It is never coarser than that measurement, so ties
+      // on it are never more frequent than the 1% the calibration targets.
+      expect(asset.instrument.logQuantum).toBeLessThanOrEqual(asset.evidence.logQuantum);
     },
   );
 

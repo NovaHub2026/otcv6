@@ -297,13 +297,23 @@ export function PreviewChart({
      * much of the record the live bar's re-reading stands in for.
      */
     let hole: { from: number; to: number } | null = null;
+    /**
+     * The hole's bounds, carried by every status that follows it.
+     *
+     * **PH-34.** A hole is a fact about the record this chart is reading; a
+     * quiet market is a passing condition. The stall notice used to replace the
+     * status outright, so the bounds disappeared from the screen the moment the
+     * market went three mean intervals without a tick — which at PH-34's tick
+     * rates is an ordinary pause on a calm asset, and was rare enough before
+     * them that the browser suite caught it only here.
+     */
+    const holeSuffix = (): string =>
+      hole === null ? '' : ` — ${es.preview.status.holeBounded(hole.from, hole.to)}`;
     const liveStatus = (): string => {
       if (!connection.joinExact) {
-        const bounded =
-          hole === null ? '' : ` — ${es.preview.status.holeBounded(hole.from, hole.to)}`;
-        return `${es.preview.status.live} — la vela en curso es el registro, releído cada minuto${bounded}`;
+        return `${es.preview.status.live} — la vela en curso es el registro, releído cada minuto${holeSuffix()}`;
       }
-      return afterGap ? es.preview.status.liveAfterGap : es.preview.status.live;
+      return `${afterGap ? es.preview.status.liveAfterGap : es.preview.status.live}${holeSuffix()}`;
     };
 
     const armStall = (): void => {
@@ -313,7 +323,7 @@ export function PreviewChart({
         if (cancelled) return;
         setStatus(
           `no tick for ${(quietMs / 1000).toFixed(0)}s — ${STALL_MULTIPLE}× this market's ` +
-            `mean interval; check the engine's health`,
+            `mean interval; check the engine's health${holeSuffix()}`,
         );
       }, quietMs);
     };

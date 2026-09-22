@@ -1,7 +1,12 @@
 // Invariant evidence: INV-007 (asset differentiation), INV-010 (private generator state).
 import { describe, expect, it } from 'vitest';
 import { yieldToLoop } from '@otc/core';
-import { ASSET_CATALOGUE, ASSET_SEATS } from '@otc/engine';
+import {
+  ASSET_CATALOGUE,
+  ASSET_SEATS,
+  meanIntervalForDispersion,
+  PACE_TOLERANCE,
+} from '@otc/engine';
 import { requestFor } from './catalogueBuild.js';
 
 /**
@@ -21,7 +26,15 @@ import { requestFor } from './catalogueBuild.js';
  * In the statistical project because a seat's draw is a feasibility loop
  * (tens of seconds for all thirty), not because the claim is statistical.
  */
-const SOLVED = new Set(['clustering', 'volatility']);
+/**
+ * Traits the registration **fits by measurement** rather than carrying from
+ * the draw: clustering to the tail-weight target, volatility to the dispersion
+ * budget, and — since PH-34 — the tempo to the tick rate the asset's character
+ * gives, because the Hawkes mean interval is not its formula on a bursty
+ * market. Each is asserted by what it was fitted to rather than by equality
+ * with a draw that was only the starting point; the tempo's check is below.
+ */
+const SOLVED = new Set(['clustering', 'volatility', 'tempoMs']);
 
 describe('the compiled catalogue is the seats’ own draw', () => {
   it('every sampled trait, the drawn tail weight and the retreats of every entry match the seat', async () => {
@@ -48,6 +61,14 @@ describe('the compiled catalogue is the seats’ own draw', () => {
         seat.referencePrice,
       );
       expect(compiled!.definition.displayName, `${seat.id} displayName`).toBe(seat.displayName);
+      // What the tempo was fitted to: the tick rate this seat's dispersion
+      // gives, inside the fit's own tolerance (PH-34).
+      const target = meanIntervalForDispersion(seat.dispersion);
+      expect(
+        Math.abs(compiled!.evidence.meanIntervalMs / target - 1),
+        `${seat.id} ticks every ${compiled!.evidence.meanIntervalMs.toFixed(0)} ms against a ` +
+          `target of ${target.toFixed(0)} ms`,
+      ).toBeLessThanOrEqual(PACE_TOLERANCE);
     }
   }, 600_000);
 });

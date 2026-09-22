@@ -24,15 +24,16 @@ import type { MarketEngine } from './engine.js';
  * past 120000 ticks, while the one that matters most —
  * `productionComposition.test.ts`, the only caller that drives the shipped
  * factory under `environment: 'production'` — runs 10000. At dogeusdt-otc's
- * recorded mean interval of 93 ms — the fastest tape in the catalogue, so the
- * least market time a fixed window buys — that is about 16 minutes at the
- * narrow end and 3.1 hours at the wide one, against markets that run for months
+ * recorded mean interval of 237 ms — the fastest tape in the catalogue, so the
+ * least market time a fixed window buys — that is about 39.5 minutes at the
+ * narrow end and 7.9 hours at the wide one, against markets that run for months
  * with a monotonic sequence.
  *
  * Those market times are a tempo away from being wrong, and were: they read
  * "under an hour" and "about eleven hours" until PH-24.17 divided the
  * catalogue's tempo inside the same cycle, and nothing failed when they stopped
- * being true (Cycle Audit 8, a1). A fixed window in ticks buys less market time
+ * being true (Cycle Audit 8, a1). PH-34 moved them the other way, cutting the
+ * catalogue's tick rate by 40%, and this time the guard below said so. A fixed window in ticks buys less market time
  * when a tick is worth less. `mirror.test.ts` now recomputes every number in
  * this paragraph — the ticks from the callers it finds by searching for them,
  * the conversion from `ASSET_CATALOGUE` — so the sentence is a measurement

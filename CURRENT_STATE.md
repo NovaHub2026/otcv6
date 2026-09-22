@@ -14,21 +14,21 @@ Last synchronized: 2026-09-06
 
 | Field                            | Value                                                                                                                                                      |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 11 — **1 of 3** phases approved (PH-31); PH-32 next                                                                                                  |
-| Approved phases in current cycle | **1 of 3** — PH-31                                                                                                                                         |
+| Active development cycle         | Cycle 12 — **1 of 3** phases approved (PH-34). Cycle 11 is left open: PH-32 and PH-33 are paused on their branches, and rerun on PH-34’s catalogue         |
+| Approved phases in current cycle | **1 of 3** — PH-34                                                                                                                                         |
 | Cycle Audit state                | **010 closed** — 98 claims, 86 confirmed, 12 partial, 0 refuted; 45 plants, 23 survived and are closed; fixes gated green on `audit/ca10-fixes`            |
 | Last Cycle Audit                 | [Cycle Audit 009](docs/audits/CYCLE-AUDIT-009.md) — 2026-09-05, eight independent auditors, one worktree each, every finding refuted independently; closed |
 
 ## Phase and subphase
 
-| Field                  | Value                                                   |
-| ---------------------- | ------------------------------------------------------- |
-| Active phase           | none                                                    |
-| Phase lifecycle        | none                                                    |
-| Active subphase        | none                                                    |
-| Subphase lifecycle     | none                                                    |
-| Last approved phase    | PH-31 — The Lab's push, as an operator actually uses it |
-| Last approved subphase | PH-31.1 — The push measured against the market          |
+| Field                  | Value                                                      |
+| ---------------------- | ---------------------------------------------------------- |
+| Active phase           | none                                                       |
+| Phase lifecycle        | none                                                       |
+| Active subphase        | none                                                       |
+| Subphase lifecycle     | none                                                       |
+| Last approved phase    | PH-34 — The market's tempo follows its state               |
+| Last approved subphase | PH-34.2 — Integrated verification and the broker's upgrade |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was
@@ -55,6 +55,15 @@ settlement price that name different ticks when the engine prints on a boundary
 millisecond (ADR-0017). The audit's other six findings are the next phases: a
 Lab with a correct mechanism and no controls.
 
+## PH-34 — the market's tempo follows its state
+
+The Human Owner's second phase from operating the engine, in their broker, on
+2026-09-22: ticks by character and regime (40% fewer on average), regimes that
+last like a market's and move as a ladder, calm 20% above the real market's
+typical movement with a floor under it. Branch `feature/ph-34-the-markets-tempo`
+in `~/.otc-ph34`. PH-32 and PH-33 wait for it: their long measurements are of
+the catalogue this phase replaces.
+
 ## A defect in the released `v2.0.0`, fixed ahead of the phase work
 
 On 2026-09-22 the Human Owner reported their broker's `v2.0.0` deployment
@@ -76,12 +85,12 @@ both?
 
 **It can.** On 24 million ticks spanning 327 simulated days, one asset is:
 
-|                              | Result                                                                                                                                                                                                          |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unexploitable                | clean verdict across ~570 hypotheses and all four attack feature kinds                                                                                                                                          |
-| At a resolution that matters | 30-second single-test detection floor 0.221pp, finer than the 0.2513pp margin the 99% payout implies; the gate's own 50%-power figure at 30 s is 0.315pp, and `VALIDATION.md` says which claim is which (a4-01) |
-| Plausible                    | 15/15 realism metrics, bands unchanged since the commit that introduced the engine (906e398)                                                                                                                    |
-| Structurally guaranteed      | mirror test passes with zero divergences                                                                                                                                                                        |
+|                              | Result                                                                                                                                                                                                                                                 |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Unexploitable                | clean verdict across ~570 hypotheses and all four attack feature kinds                                                                                                                                                                                 |
+| At a resolution that matters | 30-second single-test detection floor 0.223pp (PH-34's catalogue; 0.221pp before it), finer than the 0.2513pp margin the 99% payout implies; the gate's own 50%-power figure at 30 s is 0.319pp, and `VALIDATION.md` says which claim is which (a4-01) |
+| Plausible                    | 15/15 realism metrics, bands unchanged since the commit that introduced the engine (906e398)                                                                                                                                                           |
+| Structurally guaranteed      | mirror test passes with zero divergences                                                                                                                                                                                                               |
 
 ## Blockers
 
@@ -105,9 +114,13 @@ Governance itself**, and **commitments that bind them outside the repository**
 **At-the-money settlement** was decided by the Human Owner before delegation and
 is recorded in
 [ADR-0007](docs/decisions/ADR-0007-at-the-money-settlement.md): a tie is refunded.
-The realised at-the-money rate on the published lattice is 0.42%-0.48% per asset
-(`MEASURED_LATTICE_TIE_RATES`), re-measured in PH-24.17 over 12 replicates on one
-stream family after the recalibration moved every rate.
+The realised at-the-money rate on the published lattice is **0.085%-0.267%**
+per asset (`MEASURED_LATTICE_TIE_RATES`), re-measured in PH-34 over 12
+replicates per asset on 2026-09-22. It was 0.42%-0.53%: PH-34 put the market at
+1.7 times the real instrument on the lattice PH-26.3 recorded — a
+recalibration keeps a market's lattice — so a thirty-second contract lands
+exactly at the money about half as often, and half as many stakes are
+refunded.
 
 ## Verification standing
 

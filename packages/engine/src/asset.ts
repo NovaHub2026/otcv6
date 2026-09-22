@@ -176,38 +176,47 @@ export const TARGET_TIE_RATE = 0.01;
  * thirty sits below the 1% nominal target the quantum was calibrated to,
  * because a tie is an integer-price event and the calibration measures a
  * continuous proxy for it.
+ *
+ * **Re-measured on 2026-09-22 (PH-34), and they roughly halved**: 0.085% to
+ * 0.267%, against 0.42% to 0.53% before. The lattice each asset publishes on
+ * is the one PH-26.3 recorded — a recalibration keeps it, so a running
+ * market's prices keep their meaning — and PH-34 put the market at 1.7 times
+ * the real instrument on that same lattice, so a thirty-second contract
+ * crosses more of it and lands exactly at the money less often. A tie is
+ * refunded (ADR-0007), so this is the refund rate a broker sees, and it is
+ * lower than it was.
  */
 export const MEASURED_LATTICE_TIE_RATES = {
-  'eurusd-otc': 0.004,
-  'gbpusd-otc': 0.00591,
-  'usdjpy-otc': 0.00462,
-  'audusd-otc': 0.00529,
-  'usdchf-otc': 0.00595,
-  'eurgbp-otc': 0.00553,
-  'gbpjpy-otc': 0.00529,
-  'eurjpy-otc': 0.0045,
-  'aapl-otc': 0.00425,
-  'msft-otc': 0.00524,
-  'nvda-otc': 0.00554,
-  'tsla-otc': 0.0044,
-  'meta-otc': 0.00446,
-  'amzn-otc': 0.00441,
-  'pbr-otc': 0.00549,
-  'nu-otc': 0.00502,
-  'btcusdt-otc': 0.00685,
-  'ethusdt-otc': 0.00413,
-  'bnbusdt-otc': 0.00489,
-  'solusdt-otc': 0.00565,
-  'xrpusdt-otc': 0.00559,
-  'dogeusdt-otc': 0.00483,
-  'mmx-idx-otc': 0.00607,
-  'cgx-idx-otc': 0.00463,
-  'aix-idx-otc': 0.00545,
-  'tcx-idx-otc': 0.00501,
-  'scx-idx-otc': 0.00498,
-  'gmx-idx-otc': 0.0063,
-  'evx-idx-otc': 0.00558,
-  'brx-idx-otc': 0.00473,
+  'eurusd-otc': 0.00165,
+  'gbpusd-otc': 0.00225,
+  'usdjpy-otc': 0.0022,
+  'audusd-otc': 0.0013,
+  'usdchf-otc': 0.00267,
+  'eurgbp-otc': 0.00184,
+  'gbpjpy-otc': 0.00124,
+  'eurjpy-otc': 0.00152,
+  'aapl-otc': 0.00218,
+  'msft-otc': 0.00184,
+  'nvda-otc': 0.00192,
+  'tsla-otc': 0.00181,
+  'meta-otc': 0.00189,
+  'amzn-otc': 0.00143,
+  'pbr-otc': 0.00243,
+  'nu-otc': 0.00154,
+  'btcusdt-otc': 0.00138,
+  'ethusdt-otc': 0.0012,
+  'bnbusdt-otc': 0.00144,
+  'solusdt-otc': 0.00179,
+  'xrpusdt-otc': 0.00124,
+  'dogeusdt-otc': 0.00146,
+  'mmx-idx-otc': 0.00118,
+  'cgx-idx-otc': 0.00085,
+  'aix-idx-otc': 0.00213,
+  'tcx-idx-otc': 0.00222,
+  'scx-idx-otc': 0.00203,
+  'gmx-idx-otc': 0.00176,
+  'evx-idx-otc': 0.00207,
+  'brx-idx-otc': 0.00189,
 } as const;
 
 /** Horizon the quantum is calibrated against: the shortest contract. */

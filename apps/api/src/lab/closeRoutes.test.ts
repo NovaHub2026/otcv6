@@ -80,6 +80,32 @@ async function advance(venue: VenueService, clock: SteppableClock, ms: number): 
   }
 }
 
+/**
+ * Advance past a position's expiry until the record holds a tick after it.
+ *
+ * A contract settles on the first tick after its expiry (ADR-0017), and these
+ * tests advanced a fixed ten seconds past it. Since PH-34 set tick rates by
+ * character, EUR/USD ticks about once a second and a market fresh from genesis
+ * — no excitation yet — measured eleven and a half seconds without one, so a
+ * fixed advance was asserting the tape's speed rather than the settlement.
+ */
+async function advancePastExpiry(
+  venue: VenueService,
+  clock: SteppableClock,
+  controller: LabController,
+  positionId: string,
+): Promise<void> {
+  const expiry = (
+    controller.listPositions(id) as { positions: { id: string; expiryInstant: number }[] }
+  ).positions.find((p) => p.id === positionId)!.expiryInstant;
+  await advance(venue, clock, Math.max(0, expiry - clock.now()) + 10_000);
+  for (let step = 0; step < 24; step += 1) {
+    const newest = venue.feed.since(id, 1).at(-1);
+    if (newest !== undefined && newest.instant > expiry) return;
+    await advance(venue, clock, 5_000);
+  }
+}
+
 /** The price in force at `instant`: the last published tick at or before it (ADR-0017). */
 function inForceAt(venue: VenueService, instant: EpochMillis): Tick | null {
   let last: Tick | null = null;
@@ -296,7 +322,7 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     expect(row.expected).toMatchObject({ outcome: 'win', basis: 'armed-target' });
     expect(row.actual).toBeNull();
 
-    await advance(venue, clock, 70_000);
+    await advancePastExpiry(venue, clock, controller, position.id);
     const after = controller.listPositions(id) as {
       positions: {
         id: string;
@@ -706,7 +732,7 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     // showing the same null an unsettleable entry would show.
     expect(rowNow().settlement).toBeNull();
 
-    await advance(venue, clock, 70_000);
+    await advancePastExpiry(venue, clock, controller, opened.position.id);
     const settled = rowNow();
     expect(settled.settlement).toEqual({ kind: 'settled' });
     expect(settled.actual).not.toBeNull();
@@ -837,7 +863,7 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     )) as Applied;
     expect(applied.armed).toBe(true);
 
-    await advance(venue, clock, 70_000);
+    await advancePastExpiry(venue, clock, controller, opened.position.id);
     const row = (
       controller.listPositions(id) as {
         positions: {
@@ -879,7 +905,7 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     expect(opened.position.entryPrice, 'the open read a feed the pass had not written').toBe(
       inForce.price,
     );
-    await advance(venue, clock, 70_000);
+    await advancePastExpiry(venue, clock, controller, opened.position.id);
     const row = (
       controller.listPositions(id) as {
         positions: { id: string; actual: { agrees: boolean } | null }[];

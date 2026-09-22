@@ -9,6 +9,7 @@ import {
   type Tick,
 } from '@otc/core';
 import {
+  OTC_DISPERSION_FACTOR,
   archetypeById,
   dispersionLogSigma,
   minimumDispersionSpanMs,
@@ -89,8 +90,10 @@ describe('an asset drawn, registered, backfilled and carried forward', () => {
 
     expect(asset.instrument.logQuantum).toBeGreaterThan(0);
     expect(asset.instrument.displayPrecision).toBeGreaterThan(0);
-    // Fitted to its family's budget, and the family's band is where it landed.
-    expect(dispersionLogSigma(asset.evidence)).toBeCloseTo(budget, 12);
+    // Fitted to its family's budget **at OTC level** — the reference times
+    // OTC_DISPERSION_FACTOR, 1.7, since PH-34 — and the family's band is where
+    // the reference landed.
+    expect(dispersionLogSigma(asset.evidence)).toBeCloseTo(budget * OTC_DISPERSION_FACTOR, 12);
     expect(budget).toBeGreaterThanOrEqual(ARCHETYPE.dispersion.min);
     expect(budget).toBeLessThanOrEqual(ARCHETYPE.dispersion.max);
   }, 600_000);
@@ -154,15 +157,18 @@ describe('an asset drawn, registered, backfilled and carried forward', () => {
     }
     const realised = Math.sqrt((sum / (last.instant - first.instant)) * 90 * 86_400_000);
     console.info(
-      `lifecycle-metal quarterly dispersion: budget ${(100 * budget).toFixed(2)}%, ` +
+      `lifecycle-metal quarterly dispersion: reference ${(100 * budget).toFixed(2)}%, ` +
+        `OTC budget ${(100 * budget * OTC_DISPERSION_FACTOR).toFixed(2)}%, ` +
         `realised over ${BACKFILL_DAYS} days ${(100 * realised).toFixed(2)}%`,
     );
     // The realised figure is the accurate one: summing squared per-tick moves
     // is the realised quadratic variation, which has far lower variance than
     // the windowed estimator the calibration must use before a lattice exists.
     // What carries the error is the fit, and twelve turnovers puts it near ±12%.
-    expect(realised / budget).toBeGreaterThan(0.72);
-    expect(realised / budget).toBeLessThan(1.38);
+    // The budget the market is fitted to is the reference at OTC level (PH-34).
+    const otcBudget = budget * OTC_DISPERSION_FACTOR;
+    expect(realised / otcBudget).toBeGreaterThan(0.72);
+    expect(realised / otcBudget).toBeLessThan(1.38);
   });
 
   it('carries on from the backfill with no seam and no repeated tick', async () => {

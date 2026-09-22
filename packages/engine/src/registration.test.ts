@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { assertValidInstrument, assertValidStreamLabel, MasterKeyring } from '@otc/core';
 import { ASSET_CATALOGUE, registrationKeyLabel } from './catalogue.js';
 import { dispersionLogSigma } from './dispersion.js';
-import { cascadeRmsGain, EXCESS_KURTOSIS_BAND, TRAIT_BOUNDS } from './personality.js';
+import {
+  cascadeRmsGain,
+  EXCESS_KURTOSIS_BAND,
+  OTC_DISPERSION_FACTOR,
+  TRAIT_BOUNDS,
+} from './personality.js';
 import {
   ASSET_ID_PATTERN,
   checkIdentity,
@@ -379,7 +384,13 @@ describe('a dispersion budget is hit by measuring once and rescaling', () => {
   it('lands on the budget exactly, and records that it rescaled', async () => {
     const outcome = await registerAsset(request({ dispersion: 0.12 }), options());
     if (outcome.kind !== 'registered') throw new Error(outcome.reason);
-    expect(dispersionLogSigma(outcome.asset.evidence)).toBeCloseTo(0.12, 12);
+    // The request names the real instrument's dispersion; the market is
+    // calibrated to that at OTC level (PH-34): 1.7 times, exactly.
+    expect(OTC_DISPERSION_FACTOR).toBe(1.7);
+    expect(dispersionLogSigma(outcome.asset.evidence)).toBeCloseTo(
+      0.12 * OTC_DISPERSION_FACTOR,
+      12,
+    );
     // The calibration ran at a different volatility from the one registered,
     // and the record says by how much — otherwise an audit could reproduce the
     // numbers and never learn which volatility produced them.

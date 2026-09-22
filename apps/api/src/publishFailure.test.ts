@@ -121,13 +121,16 @@ describe('a market whose publish path refuses is unserving, and says so (a3-06)'
   it('names the asset in /health, refuses readiness, and counts it in otc_markets_stalled', async () => {
     const { service, clock, controller } = build();
     await service.start();
-    clock.advance(durationMillis(2_000));
+    // Ten seconds, inside the catch-up bound: two was enough when EUR/USD
+    // ticked three times a second, and since PH-34 set it near one a pass that
+    // short can publish nothing, so nothing reaches the publish path to refuse.
+    clock.advance(durationMillis(10_000));
     await service.tick();
     expect(service.feed.since(first.definition.id, 1).length).toBeGreaterThan(0);
     expect(controller.health()).toMatchObject({ status: 'ok', stalled: [] });
 
     desyncFeed(service, first.definition.id);
-    clock.advance(durationMillis(2_000));
+    clock.advance(durationMillis(10_000));
     // The pass itself completes: the refusal belongs to one market, not to the
     // process. Before the fix this rejected, and nothing below was true.
     await service.tick();

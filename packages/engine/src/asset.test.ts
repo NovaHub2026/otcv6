@@ -71,10 +71,12 @@ describe('a calibration can be moved to another volatility without simulating', 
     expect(scaledByArithmetic.instrument.displayPrecision).toBe(
       scaledBySimulation.instrument.displayPrecision,
     );
-    // Far enough for the answer to actually move. A fiftyfold coarser lattice
+    // Far enough for the answer to actually move. A twentyfold coarser lattice
     // needs fewer decimals and a fiftyfold finer one needs more; carrying the
-    // figure across would get the second of those dangerously wrong.
-    expect(rescaleCalibration(measured, 50).instrument.displayPrecision).toBeLessThan(
+    // figure across would get the second of those dangerously wrong. (Twenty,
+    // not fifty, since PH-34: the asset's base volatility is larger at OTC level
+    // and fifty times it leaves the trait's bounds.)
+    expect(rescaleCalibration(measured, 20).instrument.displayPrecision).toBeLessThan(
       measured.instrument.displayPrecision,
     );
     expect(rescaleCalibration(measured, 0.02).instrument.displayPrecision).toBeGreaterThan(

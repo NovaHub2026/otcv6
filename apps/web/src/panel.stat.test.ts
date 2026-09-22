@@ -816,6 +816,25 @@ describe('the panel, in a browser', () => {
       // record it asks for a sequence the new process cannot serve, is told
       // where the record picks up, and must say so with the bounds.
       await restartEngineLosingRecord();
+      // **Until the restarted venue is serving again (PH-34).** A chart that
+      // connects to a venue with nothing published yet is a different case —
+      // it retries, reloads its history and joins live, with no hole to name —
+      // and at PH-34's tick rates a calm asset takes seconds to publish its
+      // first tick after a restart, where it used to take one. The case this
+      // asserts is the hole, so the precondition is a venue that can answer.
+      const serving = ids[0]!;
+      await expect
+        .poll(
+          async () => {
+            const response = await fetch(`http://127.0.0.1:${apiPort}/markets/${serving}`).catch(
+              () => null,
+            );
+            if (response === null || !response.ok) return 0;
+            return ((await response.json()) as { sequence: number | null }).sequence ?? 0;
+          },
+          { timeout: 60_000, interval: 500 },
+        )
+        .toBeGreaterThan(0);
       await page.getByTestId('board-toggle').click();
       await expect
         .poll(async () => page.getByTestId('stream-status').textContent(), { timeout: 120_000 })

@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { epochMillis, MasterKeyring, type RandomSource } from '@otc/core';
 import type { MagnitudeContext } from './magnitude.js';
+import { pow } from '@otc/core';
 import {
   assertRegimeConfig,
   DEFAULT_REGIMES,
+  REGIME_DURATIONS,
+  REGIME_LEVELS,
+  splitRegimeLevel,
   VOLATILITY_REGIMES,
   VolatilityRegimeModulator,
   weibullSample,
@@ -32,6 +36,8 @@ describe('configuration', () => {
 
   it.each([
     ['a non-positive multiplier', { multiplier: 0 }],
+    ['a non-positive activity', { activity: 0 }],
+    ['a negative minimum', { minimumMs: -1 }],
     ['a non-positive scale', { scaleMs: 0 }],
     ['a non-positive shape', { shape: 0 }],
     ['the wrong number of transitions', { transitions: [1, 0] }],
@@ -130,7 +136,7 @@ describe('the regime chain', () => {
     const brief: RegimeConfig = Object.fromEntries(
       VOLATILITY_REGIMES.map((regime) => [
         regime,
-        { ...DEFAULT_REGIMES[regime], scaleMs: 1_000, shape: 1 },
+        { ...DEFAULT_REGIMES[regime], minimumMs: 0, scaleMs: 1_000, shape: 1 },
       ]),
     ) as RegimeConfig;
     const modulator = new VolatilityRegimeModulator(brief, derive('long-interval'));
@@ -142,11 +148,126 @@ describe('the regime chain', () => {
     const degenerate: RegimeConfig = Object.fromEntries(
       VOLATILITY_REGIMES.map((regime) => [
         regime,
-        { ...DEFAULT_REGIMES[regime], scaleMs: 1e-12, shape: 1 },
+        { ...DEFAULT_REGIMES[regime], minimumMs: 0, scaleMs: 1e-12, shape: 1 },
       ]),
     ) as RegimeConfig;
     const modulator = new VolatilityRegimeModulator(degenerate, derive('degenerate'));
     expect(() => modulator.advance(context(1_000_000, 1))).toThrow(RangeError);
+  });
+});
+
+/**
+ * PH-34: what the Human Owner saw and asked for. "Vi que muchos activos en una
+ * vela está en un régimen y ya en la otra cambia […] que el régimen más alto
+ * sea el que menos dure pero tampoco una vela."
+ */
+describe('regimes last like a market, and move as a ladder (PH-34)', () => {
+  /** Every completed sojourn of a long run, by regime, in milliseconds. */
+  function sojourns(stream: string, steps = 2_000_000): Record<string, number[]> {
+    const modulator = new VolatilityRegimeModulator(DEFAULT_REGIMES, derive(stream));
+    const out: Record<string, number[]> = {};
+    let current = modulator.regime;
+    let since = 0;
+    let first = true;
+    for (let i = 1; i <= steps; i += 1) {
+      modulator.advance(context(1_000, i));
+      since += 1_000;
+      if (modulator.regime !== current) {
+        // The first sojourn started before anything was observed; skip it.
+        if (!first) (out[current] ??= []).push(since);
+        first = false;
+        current = modulator.regime;
+        since = 0;
+      }
+    }
+    return out;
+  }
+
+  it('never ends a regime before its minimum', () => {
+    const observed = sojourns('minimum');
+    for (const regime of VOLATILITY_REGIMES) {
+      const lengths = observed[regime] ?? [];
+      expect(lengths.length, `${regime} was visited`).toBeGreaterThan(20);
+      // A one-second step can end a sojourn up to a second late, never early.
+      expect(Math.min(...lengths), regime).toBeGreaterThanOrEqual(
+        REGIME_DURATIONS[regime].minimumMs,
+      );
+    }
+  });
+
+  it('makes the highest regime the shortest, and never a single five-minute candle', () => {
+    const observed = sojourns('ordering');
+    const median = (values: readonly number[]): number =>
+      [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]!;
+    const stressed = median(observed.stressed!);
+    for (const regime of ['compressed', 'normal', 'elevated'] as const) {
+      expect(stressed, `stressed against ${regime}`).toBeLessThan(median(observed[regime]!));
+    }
+    expect(Math.min(...observed.stressed!)).toBeGreaterThanOrEqual(2 * 5 * 60_000);
+  });
+
+  it('moves one step at a time, up or down', () => {
+    const modulator = new VolatilityRegimeModulator(DEFAULT_REGIMES, derive('ladder'));
+    let previous = VOLATILITY_REGIMES.indexOf(modulator.regime);
+    const steps = new Set<number>();
+    for (let i = 1; i <= 2_000_000; i += 1) {
+      modulator.advance(context(1_000, i));
+      const now = VOLATILITY_REGIMES.indexOf(modulator.regime);
+      if (now !== previous) steps.add(now - previous);
+      previous = now;
+    }
+    expect([...steps].sort()).toEqual([-1, 1]);
+  });
+
+  it('reports the activity of the regime in force, for the arrival model', () => {
+    const modulator = new VolatilityRegimeModulator(DEFAULT_REGIMES, derive('activity'));
+    let mismatches = 0;
+    for (let i = 1; i <= 200_000; i += 1) {
+      modulator.advance(context(1_000, i));
+      if (modulator.activity !== DEFAULT_REGIMES[modulator.regime].activity) mismatches += 1;
+    }
+    expect(mismatches).toBe(0);
+  });
+
+  it('puts calm above the real market, and each level above the one below', () => {
+    expect(REGIME_LEVELS.compressed).toBeGreaterThan(1);
+    for (let i = 1; i < VOLATILITY_REGIMES.length; i += 1) {
+      expect(REGIME_LEVELS[VOLATILITY_REGIMES[i]!]).toBeGreaterThan(
+        REGIME_LEVELS[VOLATILITY_REGIMES[i - 1]!],
+      );
+    }
+  });
+});
+
+describe('a level is split between tick rate and size (PH-34)', () => {
+  it.each([
+    [0.8, 0.25, 0],
+    [2.3, 0.25, 0],
+    [2.3, 0.6, 0],
+    [0.8, 0.3, 1.1],
+  ])(
+    'keeps variance per unit time at level² (level %s, coupling %s, floor %s)',
+    (level, h, floor) => {
+      const { activity, multiplier } = splitRegimeLevel(level, h, floor);
+      // rate × size², where faster ticks mean shorter intervals and the duration
+      // coupling shrinks each tick by rate^(−h).
+      const variancePerTime = activity * pow(multiplier * pow(activity, -h), 2);
+      expect(variancePerTime).toBeCloseTo(level * level, 12);
+    },
+  );
+
+  it('carries half of the variance as ticks when nothing floors the rate', () => {
+    expect(splitRegimeLevel(2.3, 0.25).activity).toBeCloseTo(2.3, 15);
+  });
+
+  it('raises the rate to the floor and shrinks the size to match', () => {
+    const floored = splitRegimeLevel(0.8, 0.25, 1.1);
+    expect(floored.activity).toBe(1.1);
+    expect(floored.multiplier).toBeLessThan(splitRegimeLevel(0.8, 0.25).multiplier);
+  });
+
+  it('refuses a level that is not positive', () => {
+    expect(() => splitRegimeLevel(0, 0.25)).toThrow(RangeError);
   });
 });
 

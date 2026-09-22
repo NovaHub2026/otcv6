@@ -214,8 +214,19 @@ describe('a takeover that seams records the seam', () => {
     expect(successor.recovery.kind).toBe('seam');
     expect(successor.pendingSeam).toBe(true);
 
-    clock.advance(durationMillis(STEP_MS));
-    const advance = await successor.advance(clock.now());
+    // Until the successor's first tick, rather than one step: a seam starts
+    // with no excitation, so the market ticks at its immigrant rate alone, and
+    // since PH-34 set tick rates by character a calm asset can pass one
+    // five-second step without a tick. What is asserted is the same — the seam
+    // is recorded with the first tick, and not before it on an empty pass.
+    let advance = await successor.advance(clock.now());
+    for (let step = 0; advance.ticks.length === 0 && step < 12; step += 1) {
+      expect(successor.pendingSeam, 'the seam was spent on a pass that published nothing').toBe(
+        true,
+      );
+      clock.advance(durationMillis(STEP_MS));
+      advance = await successor.advance(clock.now());
+    }
     expect(advance.ticks.length).toBeGreaterThan(0);
     expect(advance.seam).not.toBeNull();
     expect(successor.pendingSeam).toBe(false);

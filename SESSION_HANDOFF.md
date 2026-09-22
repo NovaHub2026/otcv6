@@ -6,18 +6,34 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                                             |
-| ------------------ | --------------------------------------------------------------------------------- |
-| Last clean session | 2026-09-06                                                                        |
-| Branch             | `main`                                                                            |
-| Remote             | `origin` → NovaHub2026/otcv6, public                                              |
-| Active cycle       | Cycle 11, **1 of 3** — PH-31 approved; PH-32 next                                 |
-| Active phase       | none                                                                              |
-| Active subphase    | none                                                                              |
-| Cycle Audit        | **010 closed** — 98 claims, 86 confirmed, 12 partial; fixes on `audit/ca10-fixes` |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                                |
+| Field              | Value                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------ |
+| Last clean session | 2026-09-22                                                                                             |
+| Branch             | `feature/ph-34-the-markets-tempo`, worktree `~/.otc-ph34`                                              |
+| Remote             | `origin` → NovaHub2026/otcv6, public                                                                   |
+| Active cycle       | Cycle 12, **1 of 3** — PH-34 approved. Cycle 11 stays open: PH-32 and PH-33 rerun on PH-34’s catalogue |
+| Active phase       | none                                                                                                   |
+| Active subphase    | none                                                                                                   |
+| Cycle Audit        | **010 closed** — 98 claims, 86 confirmed, 12 partial; fixes on `audit/ca10-fixes`                      |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                                                     |
 
 ---
+
+## Right now (2026-09-22)
+
+- **`v2.1.0` is released**: the ADR-0019 fix, tagged on `d8aba15` after hosted
+  CI went green on both jobs, with `docs/evidence/RELEASE-2.1.0.md` beside it.
+  It is the version a broker should be running until PH-34 ships.
+- **PH-34 is APPROVED** on `GATE_EXIT=0` at `3412049` (unit 168 files / 3,478
+  tests; statistical 47 / 411 with a real browser), with the per-asset evidence
+  in `docs/evidence/PH-34-THE-MARKETS-TEMPO.md`. What is left is the merge to
+  `main`, hosted CI on it, and `v2.2.0` tagged after it is green — then PH-32
+  and PH-33 rerun on this catalogue, which is what the held supervisor is
+  waiting for.
+- **The long measurements stay held** (`~/.otc-local/ph33/.hold`): PH-32's
+  fifty-eight-year run and PH-33's scales measure the catalogue PH-34 replaces.
+- `~/Projects/orbit-otc-node` is the Human Owner's own broker stack (systemd
+  user services on 3010/3100/3030) — background load, never ours to stop.
 
 ## Continuation point
 

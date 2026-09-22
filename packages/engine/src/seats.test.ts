@@ -8,6 +8,7 @@ import {
   assertArchetypeFeasible,
   sampleArchetype,
   sampleTraits,
+  tempoRangeFor,
   type Range,
   type SampledTraitRanges,
 } from './families.js';
@@ -95,10 +96,21 @@ describe('every seat is an archetype’s box, narrowed', () => {
     (id, seat) => {
       const parent = archetypeById(seat.archetype);
       for (const name of SAMPLED) {
+        // The tempo is derived from the dispersion (PH-34), so the parent's box
+        // for it is the one its own rule gives at this seat's budget: a seat
+        // whose budget leaves the band — declared, below — takes its tempo
+        // with it, as it should.
+        const box =
+          name === 'tempoMs'
+            ? tempoRangeFor(
+                { min: seat.dispersion, max: seat.dispersion },
+                parent.traits.burstiness,
+              )
+            : parent.traits[name];
         expect(
-          inside(seat.traits[name], parent.traits[name]),
+          inside(seat.traits[name], box),
           `${id} ${name} [${seat.traits[name].min}, ${seat.traits[name].max}] leaves ` +
-            `${parent.id} [${parent.traits[name].min}, ${parent.traits[name].max}]`,
+            `${parent.id} [${box.min}, ${box.max}]`,
         ).toBe(true);
       }
       expect(inside(seat.excessKurtosis, parent.excessKurtosis), `${id} kurtosis`).toBe(true);

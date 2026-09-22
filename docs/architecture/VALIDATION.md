@@ -163,8 +163,10 @@ The largest tested bucket is the whole sample because the `unconditional`
 family now exists; before it, the gate figure at 30 s would have been about
 0.45pp. On the PH-3 acceptance run (24 million ticks, 327 simulated days,
 `tools/sim/src/phaseAcceptance.stat.test.ts`, 2026-09-02) the 30-second figures
-are **0.221pp** single-test and **0.315pp** gate, and both are asserted there to
-three decimals.
+are **0.223pp** single-test and **0.319pp** gate, and both are asserted there to
+three decimals (0.221 and 0.315 until PH-34 recalibrated the catalogue on
+2026-09-22; the single-test floor is still finer than the 0.2513pp margin the
+99% payout implies, and the gate figure is still not).
 
 **Measured against the leak the figure is quoted for**
 (`packages/lab/src/attacks/gateSensitivity.stat.test.ts`, the `biasedCoin`

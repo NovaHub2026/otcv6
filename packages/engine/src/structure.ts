@@ -154,6 +154,8 @@ const MAX_TIGHTNESS = 3;
 
 export class StructurePhaseModulator implements Modulator {
   #phase: StructurePhase;
+  /** The multiplier the last tick was sized with; the floor reads it (PH-34). */
+  #multiplierInForce = 1;
   #ageMs = 0;
   #pathLength = 0;
   #averagePathRate = 0;
@@ -200,6 +202,7 @@ export class StructurePhaseModulator implements Modulator {
     // same rule, so "which state produced this tick" has one answer.
     const spec = this.config[this.#phase];
     const multiplier = spec.multiplier;
+    this.#multiplierInForce = multiplier;
     const age = Math.max(1, this.#ageMs);
     // Age term: rising for exponents above 1, so a phase becomes more likely to
     // end the longer it has run.
@@ -223,6 +226,11 @@ export class StructurePhaseModulator implements Modulator {
     }
 
     return multiplier;
+  }
+
+  /** The phase multiplier the last tick was sized with (PH-34). */
+  get multiplierInForce(): number {
+    return this.#multiplierInForce;
   }
 
   get phase(): StructurePhase {
@@ -253,6 +261,7 @@ export class StructurePhaseModulator implements Modulator {
       throw new RangeError(`Unknown structure phase in snapshot: ${JSON.stringify(typed.phase)}.`);
     }
     this.#phase = typed.phase;
+    this.#multiplierInForce = this.config[typed.phase].multiplier;
     this.#ageMs = typed.ageMs;
     this.#pathLength = typed.pathLength;
     this.#averagePathRate = typed.averagePathRate;

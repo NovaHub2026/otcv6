@@ -147,6 +147,17 @@ export interface HawkesSnapshot {
   readonly averageMagnitude: number;
 }
 
+/**
+ * What sets the market's activity level between bursts: the volatility regime
+ * in force (PH-34). Sign-blind by construction — a regime is drawn from its own
+ * stream and never sees a price or a sign — so coupling arrivals to it couples
+ * one sign-blind state to another, which is what ADR-0003 permits.
+ */
+export interface ActivitySource {
+  /** Multiplier on the baseline intensity. 1 is the market's base tempo. */
+  readonly activity: number;
+}
+
 export class HawkesArrivalModel implements ArrivalModel {
   #excitation = 0;
   #averageMagnitude: number;
@@ -154,9 +165,29 @@ export class HawkesArrivalModel implements ArrivalModel {
   constructor(
     readonly config: HawkesConfig,
     private readonly stream: RandomSource,
+    private readonly activitySource: ActivitySource | null = null,
   ) {
     assertHawkesConfig(config);
     this.#averageMagnitude = config.referenceMagnitude;
+  }
+
+  /**
+   * The baseline intensity multiplier now: the regime's activity, or 1.
+   *
+   * **Only the baseline is scaled, never the excitation.** Speeding the whole
+   * process up by `a` would multiply the branching ratio by `a` as well — each
+   * arrival's excitation decays in wall-clock time while the arrivals it excites
+   * come `a` times faster — and a stressed regime at ×2.3 on a market at 0.6
+   * would be explosive at 1.4. Scaling the immigrant rate alone keeps the
+   * branching ratio what the configuration says, and the stationary rate
+   * `a / (tempo · (1 − n))` scales by exactly `a`.
+   */
+  #activity(): number {
+    const activity = this.activitySource?.activity ?? 1;
+    if (!(activity > 0) || !Number.isFinite(activity)) {
+      throw new RangeError(`Arrival activity must be finite and positive, received ${activity}.`);
+    }
+    return activity;
   }
 
   nextIntervalMs(context: ArrivalContext): number {
@@ -182,7 +213,11 @@ export class HawkesArrivalModel implements ArrivalModel {
     // Then excite, in proportion to the relative size of the tick just produced.
     this.#excitation += excitationPerEvent(this.config) * (context.previousMagnitude / reference);
 
-    const multiplier = Math.min(1 + this.#excitation, this.config.maxIntensityMultiplier);
+    const activity = this.#activity();
+    const multiplier = Math.min(
+      activity + this.#excitation,
+      activity * this.config.maxIntensityMultiplier,
+    );
     const meanIntervalMs = this.config.baseIntervalMs / multiplier;
     const u = 1 - this.stream.nextFloat64();
     return Math.max(1, Math.floor(-ln(u) * meanIntervalMs));
@@ -190,7 +225,8 @@ export class HawkesArrivalModel implements ArrivalModel {
 
   /** Current intensity multiplier. Diagnostics and tests. */
   get intensityMultiplier(): number {
-    return Math.min(1 + this.#excitation, this.config.maxIntensityMultiplier);
+    const activity = this.#activity();
+    return Math.min(activity + this.#excitation, activity * this.config.maxIntensityMultiplier);
   }
 
   /** Running average magnitude. Diagnostics and tests. */

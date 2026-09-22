@@ -58,8 +58,18 @@ const GENESIS = 1_776_000_000_000;
  * This one was not.
  */
 const REPLICATES = 100;
-/** Windows at the slowest horizon; sets each replicate's simulated length. */
-const SLOWEST_WINDOWS = 800;
+/**
+ * Windows at the slowest horizon; sets each replicate's simulated length.
+ *
+ * **1,600 since PH-34.** The tie control's overdispersion is what proves the
+ * estimator can see any, and its excess over one scales with the number of
+ * ties: at 800 windows the 30-second tie rate — a third of what it was, now
+ * that the market moves 1.7× on the same lattice — read a design effect of
+ * 1.29 against the 1.43 the replicate count's own error bar demands. Twice the
+ * windows is twice the excess and the same error bar, at twice the four
+ * minutes this file costs.
+ */
+const SLOWEST_WINDOWS = 1_600;
 const YIELD_TICKS = 250_000;
 
 async function replicate(index: number): Promise<HorizonOutcome[]> {

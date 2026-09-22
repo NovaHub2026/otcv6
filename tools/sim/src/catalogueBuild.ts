@@ -1,6 +1,7 @@
 import { MasterKeyring, type RandomSource } from '@otc/core';
 import {
   authorPersonality,
+  meanIntervalForDispersion,
   registrationKeyLabel,
   sampleArchetype,
   seatArchetype,
@@ -157,6 +158,9 @@ export function requestFor(seat: AssetSeat): {
         ...(sample.clampedFrom === undefined ? {} : { clampedFrom: sample.clampedFrom }),
       },
       dispersion: seat.dispersion,
+      // The tick rate its character gives (PH-34), which the registration fits
+      // the tempo to by measurement.
+      meanIntervalMs: meanIntervalForDispersion(seat.dispersion),
     },
   };
 }
