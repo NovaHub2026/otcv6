@@ -652,7 +652,13 @@ describe('a restart past the catch-up bound seams the record (PH-30.4)', () => {
     const third = venue(store, clock3, new InMemoryCandleHistory(), record, publishing());
     await third.start();
     expect(third.recoveryFor(ID)?.kind).toBe('resumed');
+    // Until the resumed market has published a window of its own, rather than
+    // for thirty seconds: since PH-34 set tick rates by character, thirty
+    // seconds of this asset is well under the hundred ticks a window holds.
     await run(third, clock3, 30);
+    for (let chunk = 0; chunk < 30 && ((await record.head(ID)) ?? 0) < seam + 120; chunk += 1) {
+      await run(third, clock3, 10);
+    }
     expect(errors.mock.calls.map((c) => String(c[0])).filter((m) => /tick failed/.test(m))).toEqual(
       [],
     );

@@ -21,7 +21,7 @@ import {
 import { registrationKeyLabel, type AuthoringTargets, type RegisteredAsset } from './catalogue.js';
 import {
   assertPersonalitySafe,
-  otcDispersionFactor,
+  OTC_DISPERSION_FACTOR,
   authorPersonality,
   EXCESS_KURTOSIS_BAND,
   personalityConfig,
@@ -112,8 +112,8 @@ export interface RegistrationRequest {
    * the real instrument** the asset stands for.
    *
    * Since PH-34 the market is calibrated to this times
-   * {@link otcDispersionFactor} — an OTC market moves more than the real one,
-   * typical against typical, about 1.7 times on average — and the base
+   * {@link OTC_DISPERSION_FACTOR} — an OTC market moves 1.7 times the real one
+   * on average, the Human Owner's number — and the base
    * volatility is scaled to hit that exactly. Omit it and the personality keeps
    * the amplitude its {@link RegistrationRequest.targets} imply, which is how
    * the five hand-authored assets were built.
@@ -470,13 +470,10 @@ export async function registerAsset(
   }
 
   // The budget the market is calibrated to is the real instrument's reference
-  // times how much more an OTC market moves (PH-34): typical against typical,
-  // about 1.7 on average. It depends on the solved clustering, so it is taken
-  // from the final authored traits, on the solve's own stream.
+  // times how much more an OTC market moves on average (PH-34): 1.7, the
+  // Human Owner's number.
   const budget =
-    request.dispersion === undefined
-      ? undefined
-      : request.dispersion * otcDispersionFactor(authored.traits, derive('kurtosis'));
+    request.dispersion === undefined ? undefined : request.dispersion * OTC_DISPERSION_FACTOR;
 
   // The dispersion budget, hit by rescaling rather than by searching.
   //

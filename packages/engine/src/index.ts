@@ -102,7 +102,7 @@ export {
   meanRegimeActivity,
   MIN_FASTEST_COMPONENT_TICKS,
   MIN_TICK_RATE_PER_MS,
-  otcDispersionFactor,
+  OTC_DISPERSION_FACTOR,
   predictedExcessKurtosis,
   REGIME_DURATION_FACTOR_RANGE,
   regimeDurationFactor,

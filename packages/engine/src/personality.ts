@@ -4,7 +4,6 @@ import { cascadeTypicalProduct, DEFAULT_CASCADE, type CascadeConfig } from './ca
 import { DEFAULT_HAWKES, type HawkesConfig } from './hawkes.js';
 import {
   REGIME_DURATIONS,
-  REGIME_LEVELS,
   REGIME_LADDER,
   relativeRegimeLevel,
   splitRegimeLevel,
@@ -723,45 +722,20 @@ export function meanRegimeActivity(config: RegimeConfig): number {
 
 /**
  * How much more the OTC market moves than the real instrument, on average
- * (PH-34): the factor a seat's reference dispersion is multiplied by to give
- * the budget the calibration rescales to.
+ * (PH-34): a seat's reference dispersion times this is the budget the
+ * calibration rescales to — exactly, for every asset.
  *
- * The Human Owner's rule is **typical against typical**: calm moves 20% more
- * than the real market on an ordinary day, normal 50% more. The real
- * instrument's typical level is its reference volatility divided by the ratio
- * of average to typical of this asset's own cascade — the OTC market is the
- * real one's shape at a higher level — so the normal regime at the cascade's
- * typical state sits at `1.5 · reference / κ`. Averaged over time, variance per
- * unit time is the square of the layered level with the floor applied (the
- * regime's split between rate and size preserves it), so the market's own
- * average is that times the level's time-RMS. For this catalogue's cascades the
- * factor is about 1.7.
+ * **1.7, the Human Owner's number** (2026-09-22). It was first derived from
+ * the layered model, typical against typical — calm 20% above the real
+ * market's ordinary day, normal 50% — and measured over sixty simulated days
+ * per asset that put the whole market at 2.0× the real one (1.45–2.48), calm's
+ * typical five minutes at 1.6× a real ordinary day's: the floor and the
+ * structure phases raise the typical level more than the analytic estimate
+ * saw. Put to them with both anchors, the Human Owner chose the market as a
+ * whole at 1.7×. Calm's typical five minutes then sit near 1.4× the real
+ * market's ordinary day, and its quietest tenth near the ordinary day itself.
  */
-export function otcDispersionFactor(traits: PersonalityTraits, stream: RandomSource): number {
-  const config = personalityConfig(traits);
-  const structure = structureDistribution(config.structure, stream);
-  const floor = config.volatilityFloor;
-  const { components, lowMultiplier } = config.cascade;
-  const high = 2 - lowMultiplier;
-  const reference = floor?.cascadeReference ?? cascadeTypicalProduct(config.cascade);
-  let total = 0;
-  let second = 0;
-  for (const regime of regimeTickWeights(config.regimes, 'time')) {
-    for (let up = 0; up <= components; up += 1) {
-      const cascade = pow(high, up) * pow(lowMultiplier, components - up);
-      const cascadeWeight = binomial(components, up) / pow(2, components);
-      for (const phase of structure) {
-        const weight = regime.weight * cascadeWeight * phase.weight;
-        const raw = regime.level * (cascade / reference) * phase.multiplier;
-        const level = floor !== null && raw < floor.level ? floor.level : raw;
-        total += weight;
-        second += weight * level * level;
-      }
-    }
-  }
-  const typicalToAverage = cascadeTypicalProduct(config.cascade) / cascadeRmsGain(traits);
-  return REGIME_LEVELS.normal * Math.sqrt(second / total) * typicalToAverage;
-}
+export const OTC_DISPERSION_FACTOR = 1.7;
 
 /**
  * Predicted excess kurtosis of the increment distribution.
