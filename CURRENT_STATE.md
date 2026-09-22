@@ -14,8 +14,8 @@ Last synchronized: 2026-09-06
 
 | Field                            | Value                                                                                                                                                      |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 11 — **1 of 3** phases approved (PH-31); PH-32 next                                                                                                  |
-| Approved phases in current cycle | **1 of 3** — PH-31                                                                                                                                         |
+| Active development cycle         | Cycle 12 — **1 of 3** phases approved (PH-34). Cycle 11 is left open: PH-32 and PH-33 are paused on their branches, and rerun on PH-34’s catalogue         |
+| Approved phases in current cycle | **1 of 3** — PH-34                                                                                                                                         |
 | Cycle Audit state                | **010 closed** — 98 claims, 86 confirmed, 12 partial, 0 refuted; 45 plants, 23 survived and are closed; fixes gated green on `audit/ca10-fixes`            |
 | Last Cycle Audit                 | [Cycle Audit 009](docs/audits/CYCLE-AUDIT-009.md) — 2026-09-05, eight independent auditors, one worktree each, every finding refuted independently; closed |
 
@@ -23,12 +23,12 @@ Last synchronized: 2026-09-06
 
 | Field                  | Value                                                      |
 | ---------------------- | ---------------------------------------------------------- |
-| Active phase           | PH-34 — The market's tempo follows its state               |
-| Phase lifecycle        | ACTIVE                                                     |
-| Active subphase        | PH-34.2 — Integrated verification and the broker's upgrade |
-| Subphase lifecycle     | ACTIVE                                                     |
-| Last approved phase    | PH-31 — The Lab's push, as an operator actually uses it    |
-| Last approved subphase | PH-34.1 — The engine, and the thirty assets on it          |
+| Active phase           | none                                                       |
+| Phase lifecycle        | none                                                       |
+| Active subphase        | none                                                       |
+| Subphase lifecycle     | none                                                       |
+| Last approved phase    | PH-34 — The market's tempo follows its state               |
+| Last approved subphase | PH-34.2 — Integrated verification and the broker's upgrade |
 
 **PH-24 is APPROVED, and with it Cycle 8's third phase: the Cycle Audit runs
 now (§28).** Twenty-four subphases, twenty-three of which stand — PH-24.23 was

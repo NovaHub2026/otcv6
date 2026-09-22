@@ -2,7 +2,8 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-34
-Status: ACTIVE
+Status: APPROVED
+Approved: 2026-09-22 — on the integrated verification in PH-34.2 (`GATE_EXIT=0` on `3412049`)
 Cycle: 11 (phase 2)
 Created: 2026-09-22
 Branch: `feature/ph-34-the-markets-tempo`, cut from `fix/fresh-genesis-key` (ADR-0019), which carries `main`
