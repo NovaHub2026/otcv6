@@ -5,6 +5,7 @@ import { pow } from '@otc/core';
 import {
   assertRegimeConfig,
   DEFAULT_REGIMES,
+  REGIME_ACTIVITY_SHARE,
   REGIME_DURATIONS,
   REGIME_LEVELS,
   splitRegimeLevel,
@@ -259,8 +260,34 @@ describe('a level is split between tick rate and size (PH-34)', () => {
     },
   );
 
-  it('carries half of the variance as ticks when nothing floors the rate', () => {
-    expect(splitRegimeLevel(2.3, 0.25).activity).toBeCloseTo(2.3, 15);
+  it('carries the share of the variance the constant states, as ticks', () => {
+    // **PH-37 lowered the share from ½ to ¼**, so agitation arrives as a bigger
+    // step rather than almost entirely as more ticks: a stressed tick stepped
+    // ×1.41 of a calm one on EUR/USD and ×1.03 on TSLA, which is not what a
+    // regime is supposed to look like. Written against the constant rather than
+    // against a number, so what this pins is the contract `activity =
+    // level^(2·share)` and not the setting of the day.
+    expect(splitRegimeLevel(2.3, 0.25).activity).toBeCloseTo(
+      pow(2.3, 2 * REGIME_ACTIVITY_SHARE),
+      15,
+    );
+    // And the share itself, stated once: a quarter into the rate.
+    expect(REGIME_ACTIVITY_SHARE).toBe(0.25);
+  });
+
+  it('puts more of a high regime into the step than into the rate (PH-37)', () => {
+    // The step from calm to stressed is `span^(1 − share)` — the duration
+    // coupling cancels out of it — so the ladder's own span of 1.6/0.8 = ×2
+    // gives ×1.41 at a half (which is what EUR/USD measured on PH-35's
+    // catalogue) and **×1.68** at a quarter, with the rate still rising.
+    const calm = splitRegimeLevel(0.8, 0.25);
+    const stressed = splitRegimeLevel(1.6, 0.25);
+    const stepRatio =
+      (stressed.multiplier * pow(stressed.activity, -0.25)) /
+      (calm.multiplier * pow(calm.activity, -0.25));
+    expect(stepRatio).toBeCloseTo(pow(2, 1 - REGIME_ACTIVITY_SHARE), 12);
+    expect(stepRatio).toBeGreaterThan(1.6);
+    expect(stressed.activity / calm.activity).toBeGreaterThan(1.1);
   });
 
   it('raises the rate to the floor and shrinks the size to match', () => {

@@ -159,8 +159,23 @@ export interface ActivitySource {
 }
 
 export class HawkesArrivalModel implements ArrivalModel {
-  #excitation = 0;
+  #excitation: number;
   #averageMagnitude: number;
+  /**
+   * Whether the running average has seen a magnitude yet (PH-37.1).
+   *
+   * `referenceMagnitude` is an absolute number and the magnitudes it is
+   * compared against are not: they are sizes in quanta, so how far the seed is
+   * from the truth depends on the lattice the asset publishes on. Seeding the
+   * excitation at its stationary value exposed it — the same seed left EUR/USD
+   * 24% slow over its first 300 ticks on the current lattice and 60% fast on
+   * one 32 times coarser, purely from the ratio `magnitude / 10`.
+   *
+   * So the first magnitude *becomes* the average rather than being blended into
+   * a guess, which makes the opening ratio 1 whatever the units are. A restored
+   * snapshot counts as having observed: its average is a measurement.
+   */
+  #observed = false;
 
   constructor(
     readonly config: HawkesConfig,
@@ -169,6 +184,26 @@ export class HawkesArrivalModel implements ArrivalModel {
   ) {
     assertHawkesConfig(config);
     this.#averageMagnitude = config.referenceMagnitude;
+    // **Open at the stationary excitation, not at zero (PH-37.1).**
+    //
+    // `branchingRatio`'s own docstring states it: the realised mean interval is
+    // `baseIntervalMs · (1 − n)` *because* the stationary excitation is
+    // `n / (1 − n)`. Starting at zero opens every market at the immigrant rate
+    // and lets it climb, so a market ticks at a fraction of its calibrated pace
+    // until the excitation fills — measured over 150 independent markets of
+    // EUR/USD, **0.86 ticks a second over the first 300 against 1.55 settled,
+    // a 44% shortfall**, and the higher the branching the worse it is.
+    //
+    // That is not a quiet corner: a genesis restarts here, and so does every
+    // seam — a restart, a restore, an upgrade, and since ADR-0020 a market that
+    // reopens itself after an outage. The engine was opening each of them on a
+    // market that ticks at half pace for its first half hour.
+    //
+    // The seed is a property of the configuration, not of any state this model
+    // cannot vouch for, which is what makes it legitimate on a seam: it is the
+    // mean of the distribution the process is stationary in, not a memory of
+    // what happened before the gap. Sign-blind, like everything here.
+    this.#excitation = config.branchingRatio / (1 - config.branchingRatio);
   }
 
   /**
@@ -206,7 +241,12 @@ export class HawkesArrivalModel implements ArrivalModel {
           (-Math.max(1, context.elapsedSincePreviousMs) * LN2) /
             this.config.magnitudeAverageHalfLifeMs,
         );
-      this.#averageMagnitude += (context.previousMagnitude - this.#averageMagnitude) * weight;
+      if (this.#observed) {
+        this.#averageMagnitude += (context.previousMagnitude - this.#averageMagnitude) * weight;
+      } else {
+        this.#averageMagnitude = context.previousMagnitude;
+        this.#observed = true;
+      }
     }
     const reference = Math.max(MIN_REFERENCE_MAGNITUDE, this.#averageMagnitude);
 
@@ -248,6 +288,9 @@ export class HawkesArrivalModel implements ArrivalModel {
     }
     this.#excitation = typed.excitation;
     this.#averageMagnitude = typed.averageMagnitude;
+    // A restored average is a measurement, not a guess: this engine has
+    // observed, whatever this instance has seen.
+    this.#observed = true;
   }
 }
 
