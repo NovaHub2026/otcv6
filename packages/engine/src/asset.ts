@@ -43,6 +43,21 @@ export interface CalibrationEvidence {
   readonly logQuantum: number;
   /** Realised fraction of horizons with no net lattice movement. */
   readonly tieRate: number;
+  /**
+   * The at-the-money rate this lattice actually produces at the shortest
+   * horizon, measured on the published series rather than on continuous
+   * returns (PH-37). This is the number {@link MAX_REFUND_RATE} bounds.
+   */
+  readonly realisedRefundRate?: number;
+  /**
+   * How much coarser than the quantile's own lattice the chosen one is.
+   *
+   * Both of these are optional only until the catalogue is rebuilt inside this
+   * subphase: a recorded asset from before PH-37 has neither, and the compiler
+   * has to accept the old file long enough to produce the builder that replaces
+   * it. `catalogue.test.ts` holds every rebuilt entry to having both.
+   */
+  readonly refundLatticeFactor?: number;
   /** Median move over the calibration horizon, in lattice steps. */
   readonly medianSteps: number;
   readonly meanIntervalMs: number;
@@ -106,6 +121,47 @@ export interface CalibratedAsset {
  * a refund, revisit this number rather than the mechanism.
  */
 export const TARGET_TIE_RATE = 0.01;
+
+/**
+ * The most at-the-money contracts a lattice may produce at the shortest
+ * horizon, measured on the series that settles.
+ *
+ * **PH-37, and it is the Human Owner's number.** {@link TARGET_TIE_RATE} is a
+ * quantile of *continuous* returns and is now only where the search starts;
+ * what a lattice is chosen by is this, the realised rate — the published
+ * integer unchanged between entry and expiry — because that is what a refund
+ * costs (ADR-0007).
+ *
+ * The reason the number moved at all is texture rather than economics. At the
+ * 1% proxy the catalogue published a price one to two orders of magnitude finer
+ * than the instruments it is named for — EUR/USD 27 times finer than a pipette,
+ * NU 320 times finer than a cent — so **the price moved on 93–99% of ticks**,
+ * jaggedly, where a real EUR/USD tape leaves 45.8% of its ticks unchanged. The
+ * Human Owner, watching it, said the market looked volatile when it was not.
+ *
+ * Anchoring each asset to its real instrument's increment was measured and
+ * rejected: it is not uniform. It leaves PBR and NU — an 18-dollar and a
+ * 14-dollar stock on a one-cent lattice — refunding 26% and 45% of
+ * thirty-second contracts. A ceiling is uniform, and the texture each asset
+ * gets under it is whatever its own volatility allows.
+ */
+export const MAX_REFUND_RATE = 0.05;
+
+/**
+ * How much coarser than the starting quantum the search may go, in steps.
+ *
+ * Geometric, because what the eye reads is the ratio of a typical step to the
+ * lattice. Measured across the thirty, the chosen factor lands between 4 and 32.
+ */
+export const REFUND_CANDIDATE_FACTORS: readonly number[] = [1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24, 32];
+
+/**
+ * Thirty-second horizons the refund measurement runs over.
+ *
+ * At 8,000 windows the standard error on a 5% rate is 0.24 points, which is
+ * finer than the gap between two neighbouring candidate factors produces.
+ */
+export const REFUND_FIT_HORIZONS = 8_000;
 
 /**
  * What this target actually is, measured.
@@ -242,6 +298,10 @@ export interface CalibrationOptions {
   readonly simulatedMs?: number;
   readonly replicates?: number;
   readonly targetTieRate?: number;
+  /** Ceiling on the realised at-the-money rate; defaults to {@link MAX_REFUND_RATE}. */
+  readonly maxRefundRate?: number;
+  /** Horizons the refund measurement runs over; defaults to {@link REFUND_FIT_HORIZONS}. */
+  readonly refundHorizons?: number;
   /** Yield to the event loop every this many ticks, in the async variant. */
   readonly chunkTicks?: number;
 }
@@ -308,6 +368,108 @@ function quantile(sorted: readonly number[], fraction: number): number {
  * choose. The walk is accumulated at full precision and windowed by wall clock,
  * which is also how a contract sees it.
  */
+/**
+ * The realised at-the-money rate of each candidate lattice, on one walk.
+ *
+ * **What a refund actually is.** The calibration's own returns are continuous,
+ * and a tie is not: it is the *published integer* unchanged between entry and
+ * expiry, on a price that moves by `floor(|move| / quantum + u)` with `u`
+ * uniform — the stochastic rounding ADR-0004 quantises the magnitude with. Half
+ * a quantum of movement is one step half the time and none the other half, so
+ * the realised rate and the continuous quantile differ by about a factor of two
+ * and neither predicts the other well enough to choose a lattice by.
+ *
+ * **Why every candidate can share one walk.** Before PH-37.1 it could not: the
+ * arrival process was excited by the floored step count, so each quantum
+ * produced a different tape — 1.00 ticks a second against 0.74 across a factor
+ * of 27 on EUR/USD. The layers above see the magnitude now, so the walk is the
+ * same market whatever it is published on, and the candidates differ only in
+ * where they round. They share the rounding draw too, which is faithful for
+ * each of them and leaves the comparison between them almost noiseless.
+ */
+function* realisedTieRatesCore(
+  config: Omit<MarketEngineConfig, 'instrument'>,
+  derive: (purpose: string) => RandomSource,
+  horizonMs: number,
+  horizons: number,
+  quantum: number,
+  factors: readonly number[],
+  chunkTicks: number,
+): Generator<void, readonly number[]> {
+  const magnitude = new ModulatedMagnitudeModel(
+    new CascadeMagnitudeModel(
+      config.baseVolatility,
+      config.cascade,
+      derive('refund-cascade'),
+      derive('refund-shock'),
+    ),
+    [
+      new VolatilityRegimeModulator(config.regimes, derive('refund-regime')),
+      new StructurePhaseModulator(config.structure, derive('refund-structure')),
+      new DurationCouplingModulator(config.durationCoupling, config.arrival.baseIntervalMs),
+    ],
+  );
+  const arrival = new HawkesArrivalModel(config.arrival, derive('refund-arrival'));
+  const sign = derive('refund-sign');
+  const rounding = derive('refund-rounding');
+  const referenceUnit = config.baseVolatility;
+
+  const quanta = factors.map((factor) => quantum * factor);
+  const prices = new Float64Array(quanta.length);
+  const entries = new Float64Array(quanta.length);
+  const ties = new Array<number>(quanta.length).fill(0);
+
+  let elapsedMs = 0;
+  let previousMagnitude = CALIBRATION_INITIAL_MAGNITUDE;
+  let previousIntervalMs = 0;
+  let sequence = 0;
+  let horizonEndMs = horizonMs;
+  let settled = 0;
+  const simulatedMs = horizonMs * horizons;
+
+  while (elapsedMs < simulatedMs) {
+    const instant = epochMillis(elapsedMs);
+    const intervalMs = arrival.nextIntervalMs({
+      elapsedSincePreviousMs: previousIntervalMs,
+      previousMagnitude,
+      instant,
+      sequence,
+    });
+    elapsedMs += intervalMs;
+    previousIntervalMs = intervalMs;
+    const move = magnitude.advance({
+      intervalMs,
+      previousMagnitude,
+      instant: epochMillis(elapsedMs),
+      sequence,
+    });
+    previousMagnitude = move / referenceUnit;
+    const direction = sign.nextBoolean() ? 1 : -1;
+    const u = rounding.nextFloat64();
+    for (let k = 0; k < quanta.length; k += 1) {
+      prices[k]! += direction * Math.floor(move / quanta[k]! + u);
+    }
+    sequence += 1;
+
+    while (elapsedMs >= horizonEndMs) {
+      // The window that just closed settles against where it opened, and the
+      // next one opens on the price that closed it — entry and expiry on the
+      // published series, which is what `settle()` compares (ADR-0004).
+      if (settled > 0) {
+        for (let k = 0; k < quanta.length; k += 1) {
+          if (prices[k] === entries[k]) ties[k]! += 1;
+        }
+      }
+      for (let k = 0; k < quanta.length; k += 1) entries[k] = prices[k]!;
+      settled += 1;
+      horizonEndMs += horizonMs;
+    }
+    if (sequence % chunkTicks === 0) yield;
+  }
+  const windows = Math.max(1, settled - 1);
+  return ties.map((count) => count / windows);
+}
+
 function* horizonReturnsCore(
   config: Omit<MarketEngineConfig, 'instrument'>,
   derive: (purpose: string) => RandomSource,
@@ -444,15 +606,54 @@ function* calibrateAssetCore(
   // quantile of a heavy-tailed variable, and one unlucky replicate should not
   // move the lattice.
   const orderedQuanta = [...perReplicate].sort((a, b) => a - b);
-  const logQuantum = orderedQuanta[Math.floor(orderedQuanta.length / 2)]!;
+  const startingQuantum = orderedQuanta[Math.floor(orderedQuanta.length / 2)]!;
   const returns = pooled;
   const ticks = totalTicks;
   const sorted = [...returns].sort((a, b) => a - b);
-  if (!(logQuantum > 0)) {
+  if (!(startingQuantum > 0)) {
     throw new RangeError(
       `Calibration produced a non-positive quantum for ${definition.id}: the asset does not move.`,
     );
   }
+
+  // **The lattice is chosen by what it refunds, measured (PH-37).** The
+  // quantile above is where the search starts; the lattice is the coarsest
+  // candidate whose *realised* at-the-money rate stays at or below the ceiling,
+  // because that is the number the ceiling is about and the quantile is not.
+  // Coarsest, not nearest: what the ceiling buys is the staircase, and every
+  // step below it is texture given away for refunds nobody asked to avoid.
+  const maxRefundRate = options.maxRefundRate ?? MAX_REFUND_RATE;
+  if (!(maxRefundRate > 0) || maxRefundRate >= 1) {
+    throw new RangeError(`Max refund rate must be in (0, 1), received ${maxRefundRate}.`);
+  }
+  const factors = REFUND_CANDIDATE_FACTORS;
+  const realised = yield* realisedTieRatesCore(
+    config,
+    derive,
+    horizonMs,
+    options.refundHorizons ?? REFUND_FIT_HORIZONS,
+    startingQuantum,
+    factors,
+    options.chunkTicks ?? CALIBRATION_CHUNK_TICKS,
+  );
+  let chosen = 0;
+  for (let k = 0; k < factors.length; k += 1) {
+    if (realised[k]! <= maxRefundRate) chosen = k;
+  }
+  // The finest candidate is the quantile's own lattice. If even that refunds
+  // past the ceiling the asset cannot honour it at this horizon — it moves too
+  // little between entry and expiry — and the right answer is to say so rather
+  // than to publish a lattice finer than the calibration can measure.
+  if (realised[0]! > maxRefundRate) {
+    throw new RangeError(
+      `${definition.id} settles ${(realised[0]! * 100).toFixed(2)}% of its ` +
+        `${horizonMs / 1000}s contracts at the money on the finest lattice its own returns ` +
+        `support, past the ${(maxRefundRate * 100).toFixed(1)}% ceiling. Nothing coarser can ` +
+        `help: this asset does not move far enough at that horizon.`,
+    );
+  }
+  const logQuantum = startingQuantum * factors[chosen]!;
+  const realisedRefundRate = realised[chosen]!;
 
   const displayPrecision = displayPrecisionFor(logQuantum, definition.referencePrice);
 
@@ -474,6 +675,8 @@ function* calibrateAssetCore(
       predictedExcessKurtosis: predicted,
       logQuantum,
       tieRate: ties / returns.length,
+      realisedRefundRate,
+      refundLatticeFactor: factors[chosen]!,
       logVariancePerMs:
         returns.reduce((sum, value) => sum + value * value, 0) / returns.length / horizonMs,
       medianSteps: quantile(sorted, 0.5) / logQuantum,
