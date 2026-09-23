@@ -114,6 +114,24 @@ export class Venue {
     return this.#assets.get(assetId)!;
   }
 
+  /**
+   * Replace the hosted market for one asset, keeping its registered asset.
+   *
+   * The one caller is the reopening of a market its catch-up bound refuses
+   * (ADR-0020): the venue holds the market, so the venue is where the
+   * replacement lands. It is a map write, deliberately — a venue is a
+   * scheduling convenience and holds no market-level state of its own, so
+   * swapping one market changes nothing about any other.
+   */
+  reopen(assetId: string, market: HostedMarket): void {
+    if (!this.#markets.has(assetId)) {
+      throw new RangeError(
+        `Unknown asset ${assetId}. The venue hosts: ${[...this.#markets.keys()].join(', ')}.`,
+      );
+    }
+    this.#markets.set(assetId, market);
+  }
+
   /** Prime every market so the next deadline is known. */
   prime(): void {
     for (const market of this.#markets.values()) market.prime();

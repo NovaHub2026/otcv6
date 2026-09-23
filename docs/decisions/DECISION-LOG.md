@@ -1124,3 +1124,40 @@ scales) are measurements _of the catalogue_, and PH-34 replaces it.
 **What this costs.** Days of machine time to rerun PH-32 and PH-33, and a
 catalogue whose excess kurtosis is lower — the floor removes the low tail — with
 three archetype bands lowered to what their cascades reach above it.
+
+## 2026-09-23 — A stalled market reopens itself, and the panel stops calling ordinary silence a stall
+
+**Context.** Two things came out of running `v2.3.0` on the Human Owner's own
+machine, hours apart.
+
+The panel showed the market flickering: the stall notice fired after three mean
+tick intervals without a tick, which at the rates PH-34 and PH-35 settled on is
+193 false alarms an hour on EUR/USD, 385 on AAPL and 1,096 on DOGE. The price
+was rolling the whole time; the flicker was the notice. Fixed on
+`fix/panel-quiet-notice` — twenty mean intervals with a fifteen-second floor,
+measured at 0.0 false alarms an hour across the thirty — and released as
+`v2.3.1`.
+
+Then the host suspended for two hours and fifty-one minutes, and every one of
+the thirty markets was left frozen three hours behind the clock. That is the
+third time on this machine. The runtime's refusal is correct (ADR-0010), but its
+only exit was a person noticing and restarting the process.
+
+**Decision.** The Human Owner chose the automatic seam ("sí, hazlo con la
+costura automática"), and it is built as **PH-36** under
+[ADR-0020](ADR-0020-a-stall-reopens-itself.md): a market past its catch-up bound
+reopens itself at the clock, from its last published price, on a fresh key
+epoch, with the gap recorded as a seam — the same reopening a restart performs,
+and nothing more.
+
+- **The bound itself does not move.** Fifteen seconds, half the shortest
+  contract. Nothing about what a catch-up may generate changes.
+- **Only the catch-up bound reopens a market.** A publish or record refusal
+  leaves it stalled, because those mean the venue and its record disagree.
+- **Two bounds against seam storms**: the market must have published since its
+  last reopening, and sixty seconds must have passed.
+- **`OTC_AUTO_REOPEN=0`** restores the previous behaviour.
+
+**Why it is a phase and not a fix.** It changes what a broker sees in normal
+operation — seams stop being an operator-only event — so it carries a phase
+document, an ADR, the broker-facing text in `INTEGRATION.md`, and a phase gate.

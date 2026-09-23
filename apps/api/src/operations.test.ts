@@ -30,6 +30,12 @@ function venue(): { venue: VenueService; clock: SteppableClock; controller: Mark
     null,
     null,
     new MemoryTickRecord(),
+    undefined,
+    null,
+    // These guards drive a market past its bound and then read `/health` and
+    // `/metrics` about it, so it must stay stalled: the automatic reopening
+    // (ADR-0020) has its own tests.
+    false,
   );
   return { venue: service, clock, controller: new MarketController(service) };
 }

@@ -214,6 +214,7 @@ export class AppModule {
               record,
               recordTicksFromEnvironment(),
               options.engineAccess ?? null,
+              autoReopenFromEnvironment(),
             ),
         },
         {
@@ -262,6 +263,27 @@ export const MAX_BACKFILL_DAYS = 365;
  * from a typo. The value is whole days written as digits, with a ceiling, and
  * anything else is refused by name before a market exists.
  */
+/**
+ * Whether a market past its catch-up bound reopens itself (ADR-0020).
+ *
+ * On unless `OTC_AUTO_REOPEN` is exactly `0`, and read strictly for the reason
+ * the backfill is: a typo in an operator's environment must not quietly switch
+ * off the thing that keeps an unattended venue alive, nor quietly switch on the
+ * thing an operator disabled on purpose.
+ */
+export function autoReopenFromEnvironment(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = env.OTC_AUTO_REOPEN;
+  if (raw === undefined || raw.trim().length === 0) return true;
+  const value = raw.trim();
+  if (value !== '0' && value !== '1') {
+    throw new Error(
+      `OTC_AUTO_REOPEN must be 0 or 1, got ${raw}. A market past its catch-up bound reopens ` +
+        `itself as a recorded seam unless this is 0 (ADR-0020).`,
+    );
+  }
+  return value === '1';
+}
+
 export function backfillDaysFromEnvironment(env: NodeJS.ProcessEnv = process.env): number {
   const raw = env.OTC_BACKFILL_DAYS;
   if (raw === undefined || raw.trim().length === 0) return 0;

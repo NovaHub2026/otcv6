@@ -124,8 +124,16 @@ export interface ResumeResult {
  * wrapper is indistinguishable from no wrapper, and a cursor a caller supplies
  * is applied to the wrapper, which delegates the seek.
  */
-function engineStreams(
-  options: ResumeOptions,
+export interface EngineStreamOptions {
+  readonly asset: RegisteredAsset;
+  readonly keyring: MasterKeyring;
+  readonly environment: Environment;
+  readonly signSource?: SignSourceFactory;
+  readonly arrivalSource?: SignSourceFactory;
+}
+
+export function engineStreams(
+  options: EngineStreamOptions,
   keyEpoch: number,
 ): {
   streams?: Readonly<Partial<Record<string, RandomSource>>>;

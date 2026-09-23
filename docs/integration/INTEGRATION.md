@@ -302,7 +302,23 @@ de la costura queda dentro de una ventana comprometida y tiene prueba —, y el
 enlace siguiente ata la cabeza sellada y declara la secuencia tras la que
 reanuda. `verifyCommitmentsFile` (de `@otc/distribution`) verifica una sola
 cadena y nombra el intervalo en `breaks`, con `bound: true` cuando su borde está
-atado. Una petición de prueba dentro del intervalo responde **409** nombrando
+atado.
+
+**Y desde la v2.4.0 una costura también ocurre sin que nadie reinicie nada.** Si
+el proceso pierde la CPU más de 15 s — el host suspende la máquina, el
+contenedor se congela, el reloj se resincroniza — el mercado queda por detrás
+del reloj y el motor se niega a inventar el hueco. Antes se quedaba muerto hasta
+que una persona lo reiniciaba. Ahora **se reabre solo**: continúa desde su
+último precio publicado, en un keystream nuevo, con la secuencia adelantada un
+lease y el hueco registrado como costura — exactamente lo que hacía el reinicio.
+Para un bróker no hay nada nuevo que implementar: es la misma costura de §5, se
+lee en `GET /markets/:id/seams`, un `at` dentro del hueco sigue siendo `409` y
+un contrato cuya ventana la toque **no se liquida**. Lo único que cambia es la
+frecuencia: si tu host suspende a menudo verás costuras a menudo, y
+`otc_market_reopenings_total` en `/metrics` las cuenta. Un despliegue que las
+acumula tiene un problema de host, y ese contador es lo que lo dice.
+`OTC_AUTO_REOPEN=0` devuelve el comportamiento anterior (el mercado se queda
+parado y `/health` lo nombra) para quien prefiera decidirlo a mano. Una petición de prueba dentro del intervalo responde **409** nombrando
 sus dos extremos, no un «no» a secas.
 
 ### 3.5 Histórico de velas

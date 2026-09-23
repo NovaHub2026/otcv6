@@ -35,6 +35,8 @@ async function venueAndSession() {
     null,
     undefined,
     engine.hand,
+    // The event this guard records is the stall, so the market stays stalled.
+    false,
   );
   await venue.start();
   const session = new LabSession();

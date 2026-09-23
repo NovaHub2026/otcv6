@@ -44,6 +44,13 @@ export {
   type ResumeResult,
 } from './resume.js';
 export { START_EPOCH_SPAN, startKeyEpoch } from './genesis.js';
+export {
+  MIN_REOPEN_INTERVAL_MS,
+  NothingPublishedError,
+  reopenStalledMarket,
+  type ReopenOptions,
+  type ReopenResult,
+} from './reopen.js';
 export { personalityFingerprint } from './personality.js';
 export {
   AssetLease,
