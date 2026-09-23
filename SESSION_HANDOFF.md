@@ -6,16 +6,16 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                                                                  |
-| ------------------ | ------------------------------------------------------------------------------------------------------ |
-| Last clean session | 2026-09-22                                                                                             |
-| Branch             | `feature/ph-34-the-markets-tempo`, worktree `~/.otc-ph34`                                              |
-| Remote             | `origin` → NovaHub2026/otcv6, public                                                                   |
-| Active cycle       | Cycle 12, **1 of 3** — PH-34 approved. Cycle 11 stays open: PH-32 and PH-33 rerun on PH-34’s catalogue |
-| Active phase       | PH-35 — the level the market runs at                                                                   |
-| Active subphase    | PH-35.1 — the level, the ladder, and the thirty on them                                                |
-| Cycle Audit        | **010 closed** — 98 claims, 86 confirmed, 12 partial; fixes on `audit/ca10-fixes`                      |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                                                     |
+| Field              | Value                                                                                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------------------- |
+| Last clean session | 2026-09-22                                                                                                    |
+| Branch             | `feature/ph-34-the-markets-tempo`, worktree `~/.otc-ph34`                                                     |
+| Remote             | `origin` → NovaHub2026/otcv6, public                                                                          |
+| Active cycle       | Cycle 12, **2 of 3** — PH-34 and PH-35 approved. Cycle 11 stays open: PH-32 and PH-33 rerun on this catalogue |
+| Active phase       | none                                                                                                          |
+| Active subphase    | none                                                                                                          |
+| Cycle Audit        | **010 closed** — 98 claims, 86 confirmed, 12 partial; fixes on `audit/ca10-fixes`                             |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                                                            |
 
 ---
 

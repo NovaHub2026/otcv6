@@ -2,7 +2,8 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-35
-Status: ACTIVE
+Status: APPROVED
+Approved: 2026-09-23 — `GATE_EXIT=0` on `622859f`, with the per-asset evidence in [`PH-35-THE-LEVEL.md`](../evidence/PH-35-THE-LEVEL.md)
 Cycle: 12 (phase 2)
 Created: 2026-09-23
 Branch: `feature/ph-35-the-level`, cut from `main` at `v2.2.0`
@@ -61,6 +62,17 @@ did not move.
 
 ## 4. Subphases
 
-| Subphase | Title                                                |
-| -------- | ---------------------------------------------------- |
-| PH-35.1  | The level, the ladder, and the thirty assets on them |
+| Subphase | Title                                                | State    |
+| -------- | ---------------------------------------------------- | -------- |
+| PH-35.1  | The level, the ladder, and the thirty assets on them | APPROVED |
+
+## 5. What it cost, and what it leaves for the next reader
+
+Three assets of thirty left the `aggregational-gaussianity` band, which moved
+from 0.85 to 0.95 with the measurement across all thirty recorded beside it
+(0.259–0.909, median 0.573). It is a band on a metric that aggregates sixty
+**ticks** — twenty to sixty seconds of these markets — and a gentler ladder
+puts a tick return and a sixty-tick return in more nearly the same volatility.
+A reader who wants the old band back is asking for a sharper step between
+regimes, which is the thing this phase was asked to soften; the choice is the
+Human Owner's and it is recorded here rather than buried in a constant.

@@ -448,7 +448,7 @@ está en `docs/integration/CATALOGUE.md` de este paquete.
 | Cripto (6)            | BTC, ETH, SOL, XRP, DOGE, BNB — todos contra USDT                      |
 | Índices temáticos (8) | MMX, AIX, CGX, TCX, GMX, SCX, EVX, BRX — todos en USDT, abren en 1 000 |
 
-### Cuánto se mueve cada activo, y cada cuánto (v2.2.0)
+### Cuánto se mueve cada activo, y cada cuánto (v2.3.0)
 
 Dos cosas que conviene saber antes de enchufar el motor a un frontend:
 
@@ -460,10 +460,16 @@ Dos cosas que conviene saber antes de enchufar el motor a un frontend:
   normal) hasta 13,8 /s (DOGE en estrés). El catálogo entero da **un 40% menos
   de ticks** que hasta la v2.1.0: menos tráfico en el stream y menos registro
   que guardar, sin cambiar el tamaño de las velas.
-- **El mercado es más dinámico que el instrumento real que da nombre a cada
-  activo**: alrededor de **1,7 veces** su volatilidad media, y en los tramos
-  tranquilos por encima de lo que ese instrumento hace en un día normal. Es una
-  decisión de producto, no una casualidad de la calibración.
+- **El mercado se mueve como el instrumento real que da nombre a cada activo**:
+  su volatilidad media es la de ese instrumento (×0,99 medido sobre sesenta días
+  por activo). En la v2.2.0 era 1,7 veces mayor, y se cambió porque un mercado
+  que se mueve más también se aleja más de su precio de referencia con el
+  tiempo. Ejemplos medidos: el EUR/USD tiene un rango mediano de **0,022%** en
+  una vela de 5 minutos del régimen normal (unos 2,5 pips) y de **0,59%** en un
+  día; BTC 4,21% en un día; TSLA 3,44%.
+- **El salto entre regímenes es suave**: una vela del régimen estresado mide
+  1,6 veces una del normal, y los niveles por régimen son 0,92 / 1,07 / 1,31 /
+  1,64 veces un día normal del instrumento real.
 
 La tabla por activo y por régimen está en
 [`docs/evidence/PH-34-THE-MARKETS-TEMPO.md`](../evidence/PH-34-THE-MARKETS-TEMPO.md)
@@ -477,10 +483,11 @@ conserva— con una discontinuidad registrada que `GET /markets/:id/seams`
 publica y `settle` respeta. Un contrato cuya ventana toque esa costura no se
 liquida; es una por activo y solo en el arranque de la actualización.
 
-**Los empates se reducen a menos de la mitad.** Un contrato que termina
-exactamente en el precio de entrada se reembolsa (ADR-0007). Esa tasa pasa de
-0,42%–0,53% a **0,085%–0,267%** por activo, porque el mercado recorre más
-cuadrícula en treinta segundos.
+**Empates.** Un contrato que termina exactamente en el precio de entrada se
+reembolsa (ADR-0007). La tasa medida por activo es **0,167%–0,435%** (12
+réplicas por activo): era 0,42%–0,53% antes de la v2.2.0, bajó a 0,085%–0,267%
+mientras el mercado corría a 1,7 veces el real, y volvió a este rango al
+devolverlo a su nivel.
 
 Cada entrada de `GET /catalogue` lleva:
 
