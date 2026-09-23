@@ -122,6 +122,25 @@ export class PublicationService {
     }
   }
 
+  /**
+   * Seal this asset's chain and start a new one past a gap (ADR-0020).
+   *
+   * What `prime` does when it finds a seam in the record at boot, made
+   * reachable while the process runs: a market that reopens itself past its
+   * catch-up bound leaves exactly that gap, and a chain that bridged it would
+   * attest a range nobody published. The sealed head is bound by the link that
+   * opens the new chain, so a verifier sees the interval where it is.
+   */
+  seamChain(assetId: string): void {
+    if (this.writer === null) return;
+    this.seal(assetId);
+    this.writer.seamChain(assetId);
+    this.logger.warn(
+      `${assetId}: the commitment chain is sealed and restarted past a seam — the market ` +
+        `reopened itself at the clock, so the interval it did not publish is not attested.`,
+    );
+  }
+
   /** Seal every asset's open window. The shutdown path's one call. */
   sealAll(): void {
     let sealed = 0;

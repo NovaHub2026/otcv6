@@ -155,6 +155,20 @@ logged once per distinct message, `/health` reports `degraded` with the stalled
 list, and the restart takes the seam and logs it as one. Cycle Audit 6 found
 `/health` returning `ok` with every market stopped (CA6-33).
 
+**The restart is no longer the only exit (ADR-0020).** A market refused by the
+catch-up bound reopens itself in place: the same seam a restart takes — last
+published price, the clock, a key epoch derived from that instant, the sequence
+a lease further on — with the outage left as a gap, one `WARN` line naming it,
+and `otc_market_reopenings_total` counting it. Two bounds keep it from becoming
+noise: the market must have published since its last reopening, and
+`MIN_REOPEN_INTERVAL_MS` (60 s) must have passed, so a process that starves on
+every pass stalls by name rather than writing a seam per pass. Only
+`CatchUpTooLargeError` reopens anything — a publish or record refusal means this
+venue and its record disagree, which is not something a seam should hide — and
+`OTC_AUTO_REOPEN=0` restores the previous behaviour. The evidence is
+`venueReopen.test.ts` (ten cases, five planted defects) and
+`packages/runtime/src/reopen.test.ts`.
+
 `cluster.test.ts` is the integrated evidence: three nodes, five assets, four
 crashes and four revivals, one damaged checkpoint, a suspended process that
 wakes believing it leads. It asserts single writer and prefix at every step, no

@@ -237,6 +237,12 @@ export class MarketController implements BeforeApplicationShutdown {
       '# HELP otc_tick_pass_failures_total Publish passes that threw, since boot.',
       '# TYPE otc_tick_pass_failures_total counter',
       `otc_tick_pass_failures_total ${String(counters.failedPasses)}`,
+      // ADR-0020: a market that reopens itself leaves a seam in the record, so
+      // a deployment accumulating these has a host that keeps stopping it —
+      // which is a thing to fix, and this is what says so.
+      '# HELP otc_market_reopenings_total Markets reopened past their catch-up bound, since boot.',
+      '# TYPE otc_market_reopenings_total counter',
+      `otc_market_reopenings_total ${String(counters.reopenings)}`,
       '# HELP otc_stream_subscribers Open stream subscriptions, every market.',
       '# TYPE otc_stream_subscribers gauge',
       `otc_stream_subscribers ${String(counters.subscribers)}`,

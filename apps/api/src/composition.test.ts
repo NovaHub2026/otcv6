@@ -99,14 +99,18 @@ describe('production registers no sign source (PH-24.1, ADR-0015 §3)', () => {
   });
 
   it('markets are retractable only when a Lab source is composed in (PH-24.13)', () => {
+    // Three sites, not two: the two resumes, and the reopening a market takes
+    // when its catch-up bound refuses it (ADR-0020), which rebuilds the engine
+    // and must carry the composition with it or hand a controlled market back
+    // to the keystream halfway through a scenario.
     const venue = code('venue.service.ts');
     const sites =
       venue.match(/retractable: this\.signSource !== null \|\| this\.arrivalSource !== null,/g) ??
       [];
     expect(
       sites,
-      'every resumeMarket site derives retractable from the composed sources',
-    ).toHaveLength(2);
+      'every site that builds a market derives retractable from the composed sources',
+    ).toHaveLength(3);
     expect(venue).not.toMatch(/retractable: true/);
   });
 

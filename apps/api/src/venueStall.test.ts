@@ -18,9 +18,38 @@ const GENESIS = epochMillis(1_776_000_000_000);
 const keyring = (): MasterKeyring =>
   MasterKeyring.fromSecret('venue-stall-spec', new Uint8Array(32).fill(7));
 
+/**
+ * A venue whose markets stay stalled: the automatic reopening is off.
+ *
+ * Every test in this file is about what a stall costs the process it happens
+ * in, which is still what happens when the reopening is refused by its own
+ * bounds or switched off by an operator (ADR-0020). The reopening itself is
+ * tested in `venueReopen.test.ts`.
+ */
+function stallingService(store: MemoryStateStore, clock: SteppableClock): VenueService {
+  return new VenueService(
+    store,
+    keyring(),
+    clock,
+    [asset],
+    undefined,
+    undefined,
+    null,
+    null,
+    0,
+    null,
+    null,
+    null,
+    null,
+    undefined,
+    null,
+    false,
+  );
+}
+
 async function stalledVenue(): Promise<{ venue: VenueService; clock: SteppableClock }> {
   const clock = new SteppableClock(GENESIS);
-  const venue = new VenueService(new MemoryStateStore(), keyring(), clock, [asset]);
+  const venue = stallingService(new MemoryStateStore(), clock);
   await venue.start();
   // Publish normally once, so the market is demonstrably healthy first.
   clock.advance(durationMillis(2_000));
@@ -100,7 +129,7 @@ describe('a stall does not survive the restart that should clear it (Cycle Audit
   it('freezes the checkpoint of a market that is publishing nothing, so the next boot seams', async () => {
     const clock = new SteppableClock(GENESIS);
     const store = new MemoryStateStore();
-    const first = new VenueService(store, keyring(), clock, [asset]);
+    const first = stallingService(store, clock);
     await first.start();
     clock.advance(durationMillis(2_000));
     await first.tick();

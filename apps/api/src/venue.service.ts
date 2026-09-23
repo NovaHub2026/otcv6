@@ -14,12 +14,16 @@ import {
 } from '@otc/core';
 import { ASSET_CATALOGUE, type RegisteredAsset } from '@otc/engine';
 import {
+  CatchUpTooLargeError,
   checkpointMarket,
   DEFAULT_RECORD_TICKS,
+  MIN_REOPEN_INTERVAL_MS,
+  reopenStalledMarket,
   resumeMarket,
   Venue,
   type AssetBatch,
   type HostedMarket,
+  type AssetFailure,
   type RecordedSeam,
   type RecoveryOutcome,
   type SignSourceFactory,
@@ -131,6 +135,17 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
    * number is still available, in `/health`.
    */
   private readonly stalledLogged = new Map<string, string>();
+  /**
+   * When each market last reopened itself, and whether it has published since.
+   *
+   * The two bounds on an automatic reopening (ADR-0020). A process that starves
+   * on every pass must not write a seam on every pass: it stays stalled by name,
+   * which is what an operator needs to see, and the record stays readable.
+   */
+  private readonly reopenedAt = new Map<string, EpochMillis>();
+  private readonly awaitingFirstTick = new Set<string>();
+  /** Automatic reopenings this process has taken, every asset, for `/metrics`. */
+  private reopenings = 0;
   private lastCheckpointAt = 0;
   /** The advance currently running, so shutdown can wait for it. */
   private inFlight: Promise<void> = Promise.resolve();
@@ -247,6 +262,15 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
      * (`composition.test.ts`, `labSurface.test.ts` assert both).
      */
     engineAccess: ((access: EngineAccess) => void) | null = null,
+    /**
+     * Whether a market past its catch-up bound reopens itself (ADR-0020).
+     *
+     * On by default, because the default deployment is unattended and the
+     * alternative is a market that stays dead until a person notices.
+     * `OTC_AUTO_REOPEN=0` restores the previous behaviour for an operator who
+     * would rather decide each one.
+     */
+    private readonly autoReopen = true,
   ) {
     engineAccess?.(
       new EngineAccess({
@@ -417,6 +441,7 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     readonly uptimeMs: number;
     readonly subscribers: number;
     readonly failedPasses: number;
+    readonly reopenings: number;
   } {
     let subscribers = 0;
     for (const id of this.assetIds) subscribers += this.feed.subscriberCount(id);
@@ -425,6 +450,7 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       uptimeMs: this.startedAt === null ? 0 : this.clock.now() - this.startedAt,
       subscribers,
       failedPasses: this.passFailures.total,
+      reopenings: this.reopenings,
     };
   }
 
@@ -908,6 +934,93 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     }
   }
 
+  /**
+   * Reopen a market its catch-up bound refused, or leave it stalled.
+   *
+   * Returns whether it was reopened, so the caller can skip the stall it would
+   * otherwise record. Everything a boot seam does for the surfaces around the
+   * market is done here too, in one act: the feed is told where its window
+   * begins, the commitment chain is sealed and restarted past the gap, and the
+   * recovery an observer reads stops describing a process that ended hours ago.
+   * The record needs nothing — it writes a seam whenever an append jumps a
+   * sequence, which is exactly what the first tick after this does.
+   */
+  #reopen(failure: AssetFailure): boolean {
+    if (!this.autoReopen || this.venue === null) return false;
+    // Only the catch-up bound. A publish refusal or a record refusal means this
+    // venue and its record disagree about what was served, and a seam there
+    // would paper over a disagreement that has to be looked at (ADR-0020).
+    if (!(failure.error instanceof CatchUpTooLargeError)) return false;
+    const assetId = failure.assetId;
+    const now = epochMillis(this.clock.now());
+    // Published since the last reopening, and not too soon after it: a process
+    // starving on every pass stalls by name instead of writing a seam per pass.
+    if (this.awaitingFirstTick.has(assetId)) return false;
+    const previous = this.reopenedAt.get(assetId);
+    if (previous !== undefined && now - previous < MIN_REOPEN_INTERVAL_MS) return false;
+
+    let reopened;
+    try {
+      reopened = reopenStalledMarket({
+        ...(this.signSource === null ? {} : { signSource: this.signSource }),
+        ...(this.arrivalSource === null ? {} : { arrivalSource: this.arrivalSource }),
+        retractable: this.signSource !== null || this.arrivalSource !== null,
+        market: this.venue.marketFor(assetId),
+        asset: this.venue.assetFor(assetId),
+        keyring: this.keyring,
+        environment: 'production',
+        clock: this.clock,
+      });
+    } catch (error) {
+      // A market that has published nothing has no price to carry over, which
+      // is a genesis and belongs to the boot path. Left stalled, and said once.
+      const message = error instanceof Error ? error.message : String(error);
+      if (this.stalledLogged.get(assetId) !== 'NotReopened') {
+        this.stalledLogged.set(assetId, 'NotReopened');
+        this.logger.error(`${assetId}: past its catch-up bound and not reopened — ${message}`);
+      }
+      this.stalled.set(assetId, failure.error.message);
+      return true;
+    }
+
+    this.venue.reopen(assetId, reopened.market);
+    reopened.market.prime();
+    this.recovery.set(assetId, reopened.outcome);
+    // The feed is left exactly as a boot seam leaves it: an empty window with
+    // its bounds declared. It refuses a batch whose sequence jumps — a gap here
+    // would reach every observer — so publishing the reopened market into the
+    // window it left would be refused by the publish path, and the market would
+    // stall again one pass later for a reason that has nothing to do with the
+    // clock. Subscribers are cancelled with the reason; on reconnect they are
+    // told where the window resumes, which is the refusal the resume contract
+    // is built on, and the record still holds both sides of the gap.
+    this.feed.forget(
+      assetId,
+      `the market reopened past its catch-up bound; the stream resumes at sequence ` +
+        `${reopened.outcome.resumesAtSequence}`,
+    );
+    this.feed.seam(assetId, {
+      publishedThrough: reopened.from.sequence,
+      resumesAt: reopened.outcome.resumesAtSequence,
+    });
+    this.publication.seamChain(assetId);
+    this.reopenedAt.set(assetId, now);
+    this.awaitingFirstTick.add(assetId);
+    this.reopenings += 1;
+    this.stalled.delete(assetId);
+    this.stalledLogged.delete(assetId);
+    // One line per reopening, and it names everything needed to find the seam
+    // in the record afterwards. Not deduped: a reopening is rare by
+    // construction, and each one is a discontinuity somebody may settle across.
+    this.logger.warn(
+      `${assetId}: REOPENED — ${failure.error.message} Continuing from sequence ` +
+        `${reopened.from.sequence} at the same price, resuming at sequence ` +
+        `${reopened.outcome.resumesAtSequence} on key epoch ${reopened.market.keyEpoch}. ` +
+        `The gap is recorded as a seam; a contract whose window touches it will not settle.`,
+    );
+    return true;
+  }
+
   async #pass(): Promise<void> {
     if (this.venue === null) return;
     // Not the writer any more: publish nothing, record nothing (Cycle Audit 10: a6-05).
@@ -926,6 +1039,12 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     const { published, failures } = this.venue.advanceDetailed(epochMillis(this.clock.now()));
     this.lastPublishedCount = published.length;
     for (const failure of failures) {
+      // A market past its catch-up bound can never clear it by waiting — the
+      // bound is measured from the last time this runtime looked at the clock,
+      // and that moves only after the check it just failed. So the one exit was
+      // a person restarting the process. It takes it itself now (ADR-0020),
+      // which is the same reopening a restart performs and nothing more.
+      if (this.#reopen(failure)) continue;
       this.stalled.set(failure.assetId, failure.error.message);
       // Logged once per distinct *kind* of failure, keyed on the error's name:
       // a market that has stopped emits this on every scheduler tick, and a log
@@ -953,6 +1072,9 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
         this.stalledLogged.delete(assetId);
         this.logger.log(`${assetId}: publishing again`);
       }
+      // The second bound on an automatic reopening: a market must have
+      // published since the last one before it may take another (ADR-0020).
+      this.awaitingFirstTick.delete(assetId);
       const last = generated[generated.length - 1];
       if (last !== undefined) this.latest.set(assetId, last);
       if (ticks.length === 0) continue;

@@ -1363,6 +1363,15 @@ describe('a stalled market is logged once per kind of failure (a6-05)', () => {
       null,
       epochMillis(ORIGIN),
       0,
+      null,
+      null,
+      null,
+      null,
+      undefined,
+      null,
+      // The dedup this guard counts is the stall line's, so the market must
+      // stay stalled: the automatic reopening (ADR-0020) is off here.
+      false,
     );
     await venue.start();
     const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
