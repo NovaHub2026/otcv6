@@ -69,29 +69,26 @@ export interface RegimeSpec {
 export type RegimeConfig = Readonly<Record<VolatilityRegime, RegimeSpec>>;
 
 /**
- * Each regime's volatility level, as a multiple of the real instrument's
- * average volatility (PH-34, the Human Owner's numbers).
+ * Each regime's volatility level, **relative to normal** (PH-35).
  *
- * Calm is 20% **above** the real market, because an OTC market must be
- * dynamic even at its quietest: "aun en los tramos más tranquilos debe haber
- * un movimiento por arriba de la media del mercado real". Until PH-34
- * compressed was ×0.45 of normal and the cascade could take it far lower —
- * the quietest moments moved at about a twentieth of normal.
+ * Where the market sits in absolute terms is the calibration's business
+ * ({@link OTC_DISPERSION_FACTOR}); this is the shape of the ladder.
+ *
+ * **PH-35 compressed the rungs above normal.** PH-34 set them at 0.8 / 1 /
+ * 1.47 / 2.33, which put a stressed five-minute candle at 2.3 times a normal
+ * one — measured on EUR/USD, 0.039% of price in normal against 0.089% in
+ * stress. The Human Owner, watching it, asked for the step up to be gentler:
+ * stressed is now **1.6 times normal**, elevated the geometric middle of the
+ * same span, and the calm rung is where it was, because what was too much was
+ * the escalation rather than the quiet.
  */
 export const REGIME_LEVELS: Readonly<Record<VolatilityRegime, number>> = {
-  compressed: 1.2,
-  normal: 1.5,
-  elevated: 2.2,
-  stressed: 3.5,
+  compressed: 0.8,
+  normal: 1,
+  elevated: 1.24,
+  stressed: 1.6,
 };
 
-/**
- * The share of a regime's variance that arrives as ticks rather than as size.
- *
- * A half, by the Human Owner's decision: a level `L` times normal multiplies
- * the tick rate by `L` and the effective tick size by `√L`, so variance per
- * unit time is `L²` either way and a candle is the size its level says.
- */
 export const REGIME_ACTIVITY_SHARE = 0.5;
 
 /** A regime's level relative to normal: what its multipliers are built from. */

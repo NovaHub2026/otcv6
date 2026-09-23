@@ -201,12 +201,12 @@ describe('the closed forms agree with simulation of their own layer', () => {
   });
 
   it('regime closed form matches simulation', () => {
-    // Simulated over 3M one-second steps on 2026-09-22 (PH-34), each step
+    // Simulated over 3M one-second steps on 2026-09-23 (PH-35), each step
     // weighted by the regime's activity because a tick return is sampled per
-    // tick: 1.2702. PH-4.1 measured 2.776 on the pre-PH-34 regimes — ×0.45 to
-    // ×3.6, Weibull sojourns near zero, time-weighted.
-    expect(regimeInflation(DEFAULT_REGIMES)).toBeGreaterThan(1.2702 * 0.9);
-    expect(regimeInflation(DEFAULT_REGIMES)).toBeLessThan(1.2702 * 1.1);
+    // tick: 1.0708 on the compressed ladder (1.2702 on PH-34's, 2.776 on the
+    // pre-PH-34 regimes, which PH-4.1 measured time-weighted).
+    expect(regimeInflation(DEFAULT_REGIMES)).toBeGreaterThan(1.0708 * 0.9);
+    expect(regimeInflation(DEFAULT_REGIMES)).toBeLessThan(1.0708 * 1.1);
   });
 
   it('structure estimate is stable across stream and length', () => {
@@ -239,14 +239,12 @@ describe('the kurtosis gate', () => {
     // The prediction must be close, and must not sit below the measurement — a
     // gate that underestimates is worse than no gate.
     //
-    // Measured on 2026-09-22 (PH-34), the default engine's tick increments:
-    // 12.68 over 1M ticks, 19.86 over 3M, 18.63 over 10M — the fourth moment
-    // converging from below and settling near 19. PH-4.1 measured 62.3 over 1M
-    // on the pre-PH-34 model, whose calm had no floor. The margin widened from
-    // a quarter to about a third: the layered estimate treats the structure
-    // phases by their metronome occupancy and the floor per tick, and both put
-    // it above what the path realises, which is the side a gate may err on.
-    const measured = 18.63;
+    // Measured on 2026-09-23 (PH-35), the default engine's tick increments
+    // over 10M ticks: 18.03, with the prediction at 20.90 — a sixth above it,
+    // and above is the side a gate may err on. (PH-34 read 18.63 against a
+    // prediction a third above; PH-4.1 read 62.3 on the pre-PH-34 model, whose
+    // calm had no floor.)
+    const measured = 18.03;
     const predicted = predictedExcessKurtosis(config, derive('gate'));
     expect(predicted).toBeGreaterThan(measured);
     expect(predicted).toBeLessThan(measured * 1.45);

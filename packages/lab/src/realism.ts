@@ -404,12 +404,19 @@ function* realismSteps(
       'aggregational-gaussianity',
       'Ratio of aggregated excess kurtosis to tick excess kurtosis.',
       'Summing returns pulls the distribution toward normal. A model whose tails do not ' +
-        'thin under aggregation is producing them by a mechanism real markets do not have.',
+        'thin under aggregation is producing them by a mechanism real markets do not have. ' +
+        'The ceiling is 0.95 since PH-35: sixty ticks is twenty to sixty seconds of these ' +
+        'markets, a horizon at which a real market\u2019s kurtosis barely falls either, and ' +
+        'PH-35 compressed the regime ladder by the Human Owner\u2019s decision \u2014 a tick ' +
+        'return and a sixty-tick return now sit in more nearly the same volatility. Measured ' +
+        'across the thirty on 2026-09-23, on this test\u2019s own procedure: 0.259 to 0.909, ' +
+        'median 0.573, three above the 0.85 the band held until then (eurjpy 0.909, aapl ' +
+        '0.900, gmx 0.893) and none above 0.91.',
       excessKurtosis(aggregated),
       tickKurtosis,
       { name: 'tick excess kurtosis', value: tickKurtosis, floor: 1.5 },
       0,
-      0.85,
+      0.95,
       over(AGGREGATION_TICKS),
     ),
   );

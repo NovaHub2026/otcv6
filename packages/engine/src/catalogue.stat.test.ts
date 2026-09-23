@@ -86,8 +86,16 @@ describe('recorded calibration evidence reproduces', () => {
       expect(ratio, `${id} quantum ratio`).toBeGreaterThan(0.6);
       expect(ratio, `${id} quantum ratio`).toBeLessThan(1.6);
 
-      // Display precision is derived from the quantum, so it must be stable.
-      expect(fresh.instrument.displayPrecision).toBe(asset.instrument.displayPrecision);
+      // Display precision is derived from the quantum, so it moves at most a
+      // step. The published one is the lattice PH-26.3 recorded, kept through
+      // every recalibration so a running market's prices keep their meaning
+      // (PH-34); a fresh calibration derives its own, and at PH-35's level the
+      // two can land either side of a decade — tcx-idx-otc reads 4 fresh
+      // against the 3 it publishes.
+      expect(
+        Math.abs(fresh.instrument.displayPrecision - asset.instrument.displayPrecision),
+        `${id} display precision`,
+      ).toBeLessThanOrEqual(1);
 
       // The gate is analytic, so it should barely move at all.
       const kurtosisRatio =

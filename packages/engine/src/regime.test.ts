@@ -229,8 +229,11 @@ describe('regimes last like a market, and move as a ladder (PH-34)', () => {
     expect(mismatches).toBe(0);
   });
 
-  it('puts calm above the real market, and each level above the one below', () => {
-    expect(REGIME_LEVELS.compressed).toBeGreaterThan(1);
+  it('rises a rung at a time, with PH-35’s gentler step up', () => {
+    // Relative to normal since PH-35; a stressed candle is 1.6 normal ones,
+    // where PH-34 made it 2.3.
+    expect(REGIME_LEVELS.normal).toBe(1);
+    expect(REGIME_LEVELS.stressed / REGIME_LEVELS.normal).toBeCloseTo(1.6, 10);
     for (let i = 1; i < VOLATILITY_REGIMES.length; i += 1) {
       expect(REGIME_LEVELS[VOLATILITY_REGIMES[i]!]).toBeGreaterThan(
         REGIME_LEVELS[VOLATILITY_REGIMES[i - 1]!],

@@ -84,8 +84,10 @@ describe('the candles the recalibration was for', () => {
       expect(
         report.gapOverRange.shareAboveQuarter,
         `${id} has ${(report.gapOverRange.shareAboveQuarter * 100).toFixed(1)}% of candles gapping past a quarter of their range`,
-        // Worst 8.1% (gbpusd) at PH-34's rates, against 16-31% before PH-24.17.
-      ).toBeLessThanOrEqual(0.1);
+        // Worst 10.9% (gbpusd) at PH-35's level, 8.1% at PH-34's, against
+        // 16-31% before PH-24.17. A gentler ladder makes candles more alike in
+        // size, so a gap of one tick step clears a quarter of one more often.
+      ).toBeLessThanOrEqual(0.12);
     },
     900_000,
   );

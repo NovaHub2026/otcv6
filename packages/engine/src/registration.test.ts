@@ -386,7 +386,7 @@ describe('a dispersion budget is hit by measuring once and rescaling', () => {
     if (outcome.kind !== 'registered') throw new Error(outcome.reason);
     // The request names the real instrument's dispersion; the market is
     // calibrated to that at OTC level (PH-34): 1.7 times, exactly.
-    expect(OTC_DISPERSION_FACTOR).toBe(1.7);
+    expect(OTC_DISPERSION_FACTOR).toBe(1);
     expect(dispersionLogSigma(outcome.asset.evidence)).toBeCloseTo(
       0.12 * OTC_DISPERSION_FACTOR,
       12,

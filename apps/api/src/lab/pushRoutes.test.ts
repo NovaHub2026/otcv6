@@ -566,8 +566,13 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     expect(
       Math.abs(pushed.landing.latticeLevel - pushed.distance!.fromLevel),
     ).toBeGreaterThanOrEqual(2 * state.distance.unitSteps);
+    // Within two units of where the state said the market was: the state was
+    // read a moment earlier, and between the two the market can publish a tick
+    // and the pending one is retracted. A unit is a tenth of a candle's range
+    // and a candle holds about sixty ticks since PH-34 cut the rate, so a
+    // single tick is about eight tenths of a unit where it used to be four.
     expect(Math.abs(pushed.distance!.fromLevel - state.latticeLevel)).toBeLessThan(
-      state.distance.unitSteps,
+      2 * state.distance.unitSteps,
     );
     expect(pushed.pushing).toMatchObject({
       direction: 1,

@@ -53,9 +53,13 @@ describe('the volatility floor', () => {
     expect(floor.advance(context)).toBe(1);
   });
 
-  it('sits at calm, which is above the real market', () => {
+  it('sits at the calm rung, which is the quietest the market is allowed to be', () => {
     expect(DEFAULT_ENGINE_CONFIG.volatilityFloor!.level).toBe(relativeRegimeLevel('compressed'));
-    expect(REGIME_LEVELS.compressed).toBeGreaterThan(1);
+    // Below normal, and the lowest of the four: where the market sits against
+    // the instrument it is named for is the calibration's anchor since PH-35
+    // (`OTC_DISPERSION_FACTOR`), not this ladder.
+    expect(REGIME_LEVELS.compressed).toBeLessThan(REGIME_LEVELS.normal);
+    expect(Math.min(...Object.values(REGIME_LEVELS))).toBe(REGIME_LEVELS.compressed);
   });
 
   it.each([
