@@ -63,9 +63,9 @@ import {
  *
  * A stalled market keeps its stream open and sends nothing, so `live` was true
  * of the socket and false of the market. Now the status flips when no tick has
- * arrived for {@link STALL_MULTIPLE} times this asset's mean interval, and
- * flips back on the next tick. The shell's health line carries the venue's own
- * reason.
+ * arrived for {@link STALL_MULTIPLE} times this asset's mean interval — never
+ * sooner than {@link MIN_QUIET_MS} — and flips back on the next tick. The
+ * shell's health line carries the venue's own reason.
  *
  * ## The `data-testid` attributes
  *
@@ -97,8 +97,32 @@ export function holeOf(event: Event): { from: number; to: number } | null {
   return null;
 }
 
-/** Quiet for this many mean intervals and the status stops saying `live`. */
-export const STALL_MULTIPLE = 3;
+/**
+ * Quiet for this many mean intervals — and never sooner than
+ * {@link MIN_QUIET_MS} — and the status stops saying `live`.
+ *
+ * **Twenty since the Human Owner watched the panel flicker.** At three, the
+ * notice fired on the market's own quiet: a Hawkes process leaves a gap of
+ * three mean intervals about five per cent of the time, which on the
+ * catalogue's own arrivals is **193 times an hour on EUR/USD, 385 on AAPL and
+ * 1,096 on DOGE** (measured over 400,000 ticks each on 2026-09-23). At the
+ * rates before PH-34 each of those flashes lasted a third of a second and
+ * nobody saw them; at one tick a second they are a panel that blinks.
+ *
+ * At twenty, the same measurement counts **none** in a hundred and eight hours
+ * of EUR/USD — its longest natural gap was 15.9 s, sixteen times its mean —
+ * and a market that has genuinely stopped is still named within twenty
+ * seconds, inside the venue's own fifteen-second catch-up bound.
+ */
+export const STALL_MULTIPLE = 20;
+
+/**
+ * The shortest quiet that may be called a stall, whatever the asset's tempo.
+ *
+ * Fifteen seconds, the catch-up bound: below it a market is not behind by the
+ * runtime's own definition, so the panel has nothing to report.
+ */
+export const MIN_QUIET_MS = 15_000;
 /** Delay before the first reconnect; doubles per consecutive failure. */
 /** One minute, the record's permanent base tier. */
 const MINUTE_MS = 60_000;
@@ -318,13 +342,10 @@ export function PreviewChart({
 
     const armStall = (): void => {
       if (stallTimer !== null) clearTimeout(stallTimer);
-      const quietMs = STALL_MULTIPLE * asset.meanIntervalMs;
+      const quietMs = Math.max(STALL_MULTIPLE * asset.meanIntervalMs, MIN_QUIET_MS);
       stallTimer = setTimeout(() => {
         if (cancelled) return;
-        setStatus(
-          `no tick for ${(quietMs / 1000).toFixed(0)}s — ${STALL_MULTIPLE}× this market's ` +
-            `mean interval; check the engine's health${holeSuffix()}`,
-        );
+        setStatus(`${es.preview.status.quiet(quietMs / 1000)}${holeSuffix()}`);
       }, quietMs);
     };
 

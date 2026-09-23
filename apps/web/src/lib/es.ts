@@ -44,6 +44,9 @@ export const es = {
       liveAfterGap: 'en vivo — reconectado tras un hueco',
       holeBounded: (from: number, to: number) =>
         `hueco avisado por el motor: secuencias ${String(from)}–${String(to)} no servidas`,
+      quiet: (seconds: number) =>
+        `sin ticks durante ${seconds.toFixed(0)} s — este mercado no debería callar tanto; ` +
+        `revisa la salud del motor`,
       interrupted: 'stream interrumpido',
       notHosted: 'sin hospedar',
       reconnecting: 'reconectando',
