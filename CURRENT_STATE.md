@@ -12,23 +12,23 @@ Last synchronized: 2026-09-06
 
 ## Development cycle
 
-| Field                            | Value                                                                                                                                                                                                         |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 12 — **3 of 3** phases approved (PH-34, PH-35, PH-36): the Cycle Audit is the next legal action (§28). Cycle 11 is left open: PH-32 and PH-33 are paused on their branches, and rerun on this catalogue |
-| Approved phases in current cycle | **3 of 3** — PH-34, PH-35, PH-36. Cycle 12 is complete and the Cycle Audit is the next legal action (§28)                                                                                                     |
-| Cycle Audit state                | **010 closed** — 98 claims, 86 confirmed, 12 partial, 0 refuted; 45 plants, 23 survived and are closed; fixes gated green on `audit/ca10-fixes`                                                               |
-| Last Cycle Audit                 | [Cycle Audit 009](docs/audits/CYCLE-AUDIT-009.md) — 2026-09-05, eight independent auditors, one worktree each, every finding refuted independently; closed                                                    |
+| Field                            | Value                                                                                                                                                      |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Active development cycle         | Cycle 13 — **0 of 3** phases approved; PH-37 is the first. Cycle 12 is complete and **Cycle Audit 12 is due** (§28); Cycle 11 stays open                   |
+| Approved phases in current cycle | **0 of 3** — PH-37 is active                                                                                                                               |
+| Cycle Audit state                | **010 closed** — 98 claims, 86 confirmed, 12 partial, 0 refuted; 45 plants, 23 survived and are closed; fixes gated green on `audit/ca10-fixes`            |
+| Last Cycle Audit                 | [Cycle Audit 009](docs/audits/CYCLE-AUDIT-009.md) — 2026-09-05, eight independent auditors, one worktree each, every finding refuted independently; closed |
 
 ## Phase and subphase
 
-| Field                  | Value                                                             |
-| ---------------------- | ----------------------------------------------------------------- |
-| Active phase           | none                                                              |
-| Phase lifecycle        | none                                                              |
-| Active subphase        | none                                                              |
-| Subphase lifecycle     | none                                                              |
-| Last approved phase    | PH-36 — A stalled market reopens itself                           |
-| Last approved subphase | PH-36.1 — The reopening, its bounds, and what a broker sees of it |
+| Field                  | Value                                                                              |
+| ---------------------- | ---------------------------------------------------------------------------------- |
+| Active phase           | PH-37 — The staircase: a price you can read tick by tick                           |
+| Phase lifecycle        | ACTIVE                                                                             |
+| Active subphase        | PH-37.2 — The lattice by refund ceiling, and the thirty assets on it               |
+| Subphase lifecycle     | ACTIVE                                                                             |
+| Last approved phase    | PH-36 — A stalled market reopens itself                                            |
+| Last approved subphase | PH-37.1 — The arrival process stops seeing the lattice, and the regime splits 0.25 |
 
 **Cycle 12 is full and unaudited: Cycle Audit 12 is the next legal action
 (GOVERNANCE §28).** PH-34 (the market's tempo follows its state), PH-35 (the

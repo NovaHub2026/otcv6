@@ -914,6 +914,31 @@ the observer ceiling behind it), and the shadow run the release record asks
 for — weeks of a venue serving beside a broker, which is the only thing that
 turns the standing verdict from a theorem plus an hour into a measurement.
 
+## Cycle 13 — the texture of a price
+
+| Phase | Title                                            | Status |
+| ----- | ------------------------------------------------ | ------ |
+| PH-37 | The staircase: a price you can read tick by tick | ACTIVE |
+
+| Subphase | Title                                                                    | Status   |
+| -------- | ------------------------------------------------------------------------ | -------- |
+| PH-37.1  | The arrival process stops seeing the lattice, and the regime splits 0.25 | APPROVED |
+| PH-37.2  | The lattice by refund ceiling, and the thirty assets on it               | ACTIVE   |
+
+**Cycle 12 is full and its audit is due.** GOVERNANCE §28 puts the Cycle Audit
+before any new phase; this one opened ahead of it on the Human Owner's
+direction of 2026-09-23, because what opened it is the same thing that opened
+Cycle 12 — them running the engine and saying what was wrong with it. The audit
+is still the next thing after this phase, and `CURRENT_STATE.md` says so.
+
+**PH-37** came from one sentence: _"el problema nunca estuvo en la cantidad de
+tick ni en el tamaño de la vela […] el precio se mueve de un punto a otro mucho
+mayor muy rapido"_. Measured, the catalogue was publishing one to two orders of
+magnitude finer than the instruments it is named for — the price moved on
+93–99% of ticks where a real EUR/USD tape leaves 45.8% of them unchanged — so
+the market looked volatile when it was not. The lattice is chosen by what it
+refunds now, under a ceiling the Human Owner set.
+
 ## Cycle 12 — opened by what the broker found
 
 Cycle 11 is left open: PH-32 (the long run) and PH-33 (the year of operation)
@@ -924,18 +949,21 @@ and finding, first, that every market replayed itself on a five-minute chart
 (fixed and released as `v2.1.0`, ADR-0019), and then that the tick rate
 belonged to the asset's family rather than to its character and its state.
 
-| Phase | Title                                | State    |
-| ----- | ------------------------------------ | -------- |
-| PH-34 | The market's tempo follows its state | APPROVED |
-| PH-35 | The level the market runs at         | APPROVED |
-| PH-36 | A stalled market reopens itself      | APPROVED |
+| Phase | Title                                            | State    |
+| ----- | ------------------------------------------------ | -------- |
+| PH-34 | The market's tempo follows its state             | APPROVED |
+| PH-35 | The level the market runs at                     | APPROVED |
+| PH-36 | A stalled market reopens itself                  | APPROVED |
+| PH-37 | The staircase: a price you can read tick by tick | ACTIVE   |
 
-| Subphase | Title                                                          | State    |
-| -------- | -------------------------------------------------------------- | -------- |
-| PH-34.1  | The engine, and the thirty assets on it                        | APPROVED |
-| PH-34.2  | Integrated verification, the battery, and the broker's upgrade | APPROVED |
-| PH-35.1  | The level, the ladder, and the thirty assets on them           | APPROVED |
-| PH-36.1  | The reopening, its bounds, and what a broker sees of it        | APPROVED |
+| Subphase | Title                                                                    | State    |
+| -------- | ------------------------------------------------------------------------ | -------- |
+| PH-34.1  | The engine, and the thirty assets on it                                  | APPROVED |
+| PH-34.2  | Integrated verification, the battery, and the broker's upgrade           | APPROVED |
+| PH-35.1  | The level, the ladder, and the thirty assets on them                     | APPROVED |
+| PH-36.1  | The reopening, its bounds, and what a broker sees of it                  | APPROVED |
+| PH-37.1  | The arrival process stops seeing the lattice, and the regime splits 0.25 | APPROVED |
+| PH-37.2  | The lattice by refund ceiling, and the thirty assets on it               | ACTIVE   |
 
 **PH-34** is the Human Owner's second phase from operating the engine, this
 time in their broker: the tick rate follows each asset's character and its

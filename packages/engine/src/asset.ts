@@ -48,16 +48,9 @@ export interface CalibrationEvidence {
    * horizon, measured on the published series rather than on continuous
    * returns (PH-37). This is the number {@link MAX_REFUND_RATE} bounds.
    */
-  readonly realisedRefundRate?: number;
-  /**
-   * How much coarser than the quantile's own lattice the chosen one is.
-   *
-   * Both of these are optional only until the catalogue is rebuilt inside this
-   * subphase: a recorded asset from before PH-37 has neither, and the compiler
-   * has to accept the old file long enough to produce the builder that replaces
-   * it. `catalogue.test.ts` holds every rebuilt entry to having both.
-   */
-  readonly refundLatticeFactor?: number;
+  readonly realisedRefundRate: number;
+  /** How much coarser than the quantile's own lattice the chosen one is. */
+  readonly refundLatticeFactor: number;
   /** Median move over the calibration horizon, in lattice steps. */
   readonly medianSteps: number;
   readonly meanIntervalMs: number;

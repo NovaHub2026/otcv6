@@ -571,8 +571,17 @@ describe('PH-24.10 — a push is N natural ticks', () => {
     // and the pending one is retracted. A unit is a tenth of a candle's range
     // and a candle holds about sixty ticks since PH-34 cut the rate, so a
     // single tick is about eight tenths of a unit where it used to be four.
-    expect(Math.abs(pushed.distance!.fromLevel - state.latticeLevel)).toBeLessThan(
-      2 * state.distance.unitSteps,
+    // **Bounded by the ticks between the two reads, not by the unit (PH-37.2).**
+    // A unit is a tenth of a candle's range in lattice steps, and the staircase
+    // lattice has taken it to **one step** — EUR/USD's minute candle spans
+    // about eighteen steps now where it spanned two hundred. Measured here: a
+    // drift of 2 steps against a unit of 1, so `< 2 × unitSteps` was the
+    // quantisation floor rather than a statement about the market. What it
+    // asserts is unchanged, written as the couple of ticks it is, with the unit
+    // kept as the floor for a finer lattice.
+    expect(state.distance.unitSteps, 'the distance unit has vanished').toBeGreaterThanOrEqual(1);
+    expect(Math.abs(pushed.distance!.fromLevel - state.latticeLevel)).toBeLessThanOrEqual(
+      Math.max(2 * state.distance.unitSteps, 4),
     );
     expect(pushed.pushing).toMatchObject({
       direction: 1,

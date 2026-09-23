@@ -76,13 +76,16 @@ async function main(): Promise<void> {
       throw new Error(`${seat.id} refused at ${outcome.stage}: ${outcome.reason}`);
     }
     // **The lattice is part of a market's record, so a recalibration keeps it**
-    // (PH-24.17 did the same by hand; PH-34 makes it the build's rule). A
+    // (PH-24.17 did the same by hand; PH-34 makes it the build's rule), unless
+    // `--relattice` says otherwise — PH-37 changes the lattice deliberately. A
     // running market's published prices are integers on its lattice: a new
     // quantum would reinterpret the last one at another scale and the shown
     // price would jump at the upgrade, and a new precision would change what a
     // broker displays. A seat with no recorded asset takes the fresh lattice.
     // The evidence keeps the fresh quantum as the measurement it is.
-    const recordedAsset = ASSET_CATALOGUE.find((candidate) => candidate.definition.id === seat.id);
+    const recordedAsset = options.relattice
+      ? undefined
+      : ASSET_CATALOGUE.find((candidate) => candidate.definition.id === seat.id);
     const asset: RegisteredAsset =
       recordedAsset === undefined
         ? outcome.asset
@@ -125,8 +128,8 @@ async function main(): Promise<void> {
   else writeFileSync(options.out, body, 'utf8');
 
   const table =
-    `| asset | archetype | tail weight drawn → authored | quantum | precision | tie rate | median steps | mean interval ms | calibration | time |\n` +
-    `| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n${evidence.join('\n')}\n\n` +
+    `| asset | archetype | tail weight drawn → authored | quantum | precision | refund 30s | lattice | tie rate | median steps | mean interval ms | calibration | time |\n` +
+    `| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n${evidence.join('\n')}\n\n` +
     `Keyring: \`MasterKeyring.forTesting(registrationKeyLabel(id))\` per asset. Run label: \`${options.label}\`. ` +
     `Replicates: ${String(options.replicates)}. Total run time: ${minutes} minutes.\n`;
   if (options.evidence !== null) writeFileSync(options.evidence, table, 'utf8');

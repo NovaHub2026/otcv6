@@ -71,6 +71,8 @@ const asset: RegisteredAsset = {
     predictedExcessKurtosis: 51.68,
     logQuantum: 3.1314e-7,
     tieRate: 0.0095,
+    realisedRefundRate: 0.0441,
+    refundLatticeFactor: 16,
     medianSteps: 72.4,
     meanIntervalMs: 348.0,
     logVariancePerMs: 1.23e-13,
@@ -177,10 +179,15 @@ describe('the evidence row says what the run did', () => {
     expect(cells[1]).toBe(seat.id);
     expect(cells[2]).toBe(seat.archetype);
     expect(cells[3]).toBe('51.7 → 51.7 (0 retreats)');
-    expect(cells[6]).toBe('0.950%');
+    // PH-37 put the two numbers the lattice is now chosen by in front of the
+    // continuous tie rate: what the lattice actually refunds at thirty seconds,
+    // and how much coarser than the quantile's own lattice it is.
+    expect(cells[6]).toBe('4.41%');
+    expect(cells[7]).toBe('x16');
+    expect(cells[8]).toBe('0.950%');
     // The span each replicate simulated, as the entry records it — not the
     // fit's need (CA9 a3-01).
-    expect(cells[9]).toBe('9.1 d × 3');
+    expect(cells[11]).toBe('9.1 d × 3');
     const floored = evidenceRow({
       seat,
       asset: { ...asset, evidence: { ...asset.evidence, simulatedMs: 288_000_000 } },
@@ -195,8 +202,8 @@ describe('the evidence row says what the run did', () => {
       replicates: 3,
       seconds: 10,
     });
-    expect(floored.split('|').map((c) => c.trim())[9]).toBe('3.3 d × 3');
-    expect(cells[10]).toBe('10s');
+    expect(floored.split('|').map((c) => c.trim())[11]).toBe('3.3 d × 3');
+    expect(cells[12]).toBe('10s');
   });
 
   it('says when the archetype asked for more tail than the rhythm could give', () => {
@@ -228,6 +235,7 @@ describe('the options a run is given', () => {
       label: 'catalogue-of-thirty',
       seats: null,
       replicates: 3,
+      relattice: false,
     });
   });
 
@@ -250,6 +258,7 @@ describe('the options a run is given', () => {
       label: 'run-7',
       seats: ['eurusd-otc', 'nu-otc'],
       replicates: 5,
+      relattice: false,
     });
   });
 
