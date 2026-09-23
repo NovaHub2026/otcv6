@@ -197,7 +197,22 @@ async function restartEngineLosingRecord(): Promise<void> {
   if (engine === null) throw new Error('no engine to restart');
   const { child, stateDir, port } = engine;
   child.kill('SIGKILL');
-  await new Promise((resolve) => setTimeout(resolve, 1_000));
+  // **Past the catch-up bound, deliberately (2026-09-23).** This waited one
+  // second, and one second decides nothing: a checkpoint younger than the
+  // fifteen-second bound is *resumed*, and a resumed market republishes from
+  // its checkpoint — so whether the chart's stored sequence falls below the
+  // window the new process serves, which is the whole hole this case asserts,
+  // depended on whether the candle history happened to lag the checkpoint or
+  // lead it. Locally it lagged and the hole was 34 sequences wide; on hosted CI
+  // it led, the resume served the sequence the chart asked for, the chart
+  // joined live with nothing to report and the matcher polled `en vivo` for two
+  // minutes (the Statistical Gate on `4af1106` and `da0128c`).
+  //
+  // Waiting past the bound makes the restart a seam, which is what the comment
+  // above always claimed: the sequence restarts a whole lease further on, so
+  // what the chart asks for is unambiguously below what the record picks up at,
+  // and the refusal is the bounded one every time.
+  await new Promise((resolve) => setTimeout(resolve, 18_000));
   for (const file of ['record.db', 'record.db-wal', 'record.db-shm']) {
     await rm(path.join(stateDir, file), { force: true });
   }
@@ -823,6 +838,25 @@ describe('the panel, in a browser', () => {
       // first tick after a restart, where it used to take one. The case this
       // asserts is the hole, so the precondition is a venue that can answer.
       const serving = ids[0]!;
+      // The precondition, stated rather than hoped for: the restart seamed, so
+      // the record picks up a lease above anything this chart holds. A resume
+      // here would serve what the chart asks for and there would be no hole to
+      // read — which is how this case spent two CI runs asserting a screen the
+      // venue had no reason to draw.
+      await expect
+        .poll(
+          async () => {
+            const response = await fetch(`http://127.0.0.1:${apiPort}/markets/${serving}`).catch(
+              () => null,
+            );
+            if (response === null || !response.ok) return '';
+            return (
+              ((await response.json()) as { recovery?: { kind?: string } }).recovery?.kind ?? ''
+            );
+          },
+          { timeout: 60_000, interval: 500 },
+        )
+        .toBe('seam');
       await expect
         .poll(
           async () => {
