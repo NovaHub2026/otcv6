@@ -218,7 +218,7 @@ describe('the panel calls a market quiet only when the engine has stopped', () =
     const floor = /export const MIN_QUIET_MS = ([\d_]+);/.exec(chart);
     expect(floor, 'MIN_QUIET_MS is no longer declared where this reads it').not.toBeNull();
     expect(
-      Number(floor![1].replace(/_/g, '')),
+      Number(floor![1]!.replace(/_/g, '')),
       'below the catch-up bound nothing is behind',
     ).toBeGreaterThanOrEqual(15_000);
   });
