@@ -2,7 +2,8 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-36
-Status: ACTIVE
+Status: APPROVED
+Approved: 2026-09-23 — on the integrated verification in PH-36.1 (`GATE_EXIT=0` on `a1ba7ac`)
 Cycle: 12 (phase 3)
 Created: 2026-09-23
 Branch: `feature/ph-36-a-stall-reopens-itself`, cut from `main` at `4af1106`
