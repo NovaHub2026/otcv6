@@ -5,7 +5,7 @@ import {
   calibrateAsset,
   MEASURED_LATTICE_TIE_RATES,
   rescaleCalibration,
-  TARGET_TIE_RATE,
+  MAX_REFUND_RATE,
 } from './asset.js';
 import { ASSET_CATALOGUE, registrationKeyLabel } from './catalogue.js';
 import { dispersionLogSigma } from './dispersion.js';
@@ -131,7 +131,12 @@ describe('the measured tie-rate table is complete (CA9 a3-05)', () => {
     expect(Object.keys(MEASURED_LATTICE_TIE_RATES).sort()).toEqual(ids);
     for (const [id, rate] of Object.entries(MEASURED_LATTICE_TIE_RATES)) {
       expect(rate, id).toBeGreaterThan(0);
-      expect(rate, id).toBeLessThan(TARGET_TIE_RATE);
+      // **Against the ceiling, not the quantile (PH-37.2).** This read
+      // `< TARGET_TIE_RATE`, the 1% nominal, which was true while the lattice
+      // was chosen by that quantile and every realised rate came out at about
+      // half of it. A lattice is chosen by what it refunds now, so what bounds
+      // these is the bound the choice is made against.
+      expect(rate, id).toBeLessThan(MAX_REFUND_RATE);
     }
   });
 });

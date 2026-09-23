@@ -78,11 +78,42 @@ describe('the distance unit', () => {
     // the time the market would have taken.
     expect(unit.unitSteps).toBe(8);
     expect(UNITS_PER_CANDLE).toBe(10);
-    // Ten of them is the candle the strip says it is, to the rounding.
-    expect(unit.unitSteps * UNITS_PER_CANDLE).toBeCloseTo(unit.candleRangeSteps, -1);
+    // **Ten of them is the candle, exactly (PH-37.2).** This allowed a whole
+    // order of magnitude of slack — `toBeCloseTo(…, -1)` passes anything within
+    // five — and the unit was rounded to whole lattice steps, which was
+    // harmless while a candle spanned hundreds of them. On the staircase
+    // lattice a candle spans about eighteen, so the rounding was taking up to
+    // thirty per cent out of the contract this line exists to state, and on
+    // EUR/USD it had collapsed the unit to a single step. The unit is a tenth
+    // of the candle, so it is a tenth of the candle.
+    expect(unit.unitSteps * UNITS_PER_CANDLE).toBe(unit.candleRangeSteps);
     expect(unit.candleRangeSteps).toBe(80);
     expect(Number(unit.unitPrice)).toBeGreaterThan(0);
     expect(distanceUnitFrom(ASSET_CATALOGUE[0]!, 0, [], base).unitSteps).toBe(1);
+  });
+
+  it('is a tenth of the candle on a lattice too coarse to round on (PH-37.2)', () => {
+    // A candle of fourteen steps is what the rebuilt catalogue produces; the
+    // old rounding made its unit 1, so `+10` moved ten steps where it promises
+    // fourteen. Whole numbers of steps are not available at this scale and the
+    // unit does not pretend otherwise: the walk stops at the first tick that
+    // reaches the distance, and the push's floor of one step is applied where
+    // the push is armed.
+    const base = 1_776_000_000_000;
+    const coarse: Tick[] = [
+      tick(1, base - 1, 0),
+      tick(2, base + 1_000, 0),
+      tick(3, base + 2_000, 14), // minute 1: range 14
+      tick(4, base + 61_000, 0),
+      tick(5, base + 62_000, 11), // minute 2: range 11
+      tick(6, base + 121_000, 0),
+      tick(7, base + 122_000, 18), // minute 3: range 18
+      tick(8, base + 181_000, 0),
+    ];
+    const unit = distanceUnitFrom(ASSET_CATALOGUE[0]!, 0, coarse, base);
+    expect(unit.candleRangeSteps).toBeLessThan(20);
+    expect(unit.unitSteps * UNITS_PER_CANDLE).toBe(unit.candleRangeSteps);
+    expect(Number.isInteger(unit.unitSteps)).toBe(false);
   });
 
   it('caches per market for its lifetime and no longer', () => {

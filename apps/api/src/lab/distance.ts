@@ -33,6 +33,10 @@ export type DistanceBasis = 'record' | 'fork';
  */
 export interface DistanceUnit {
   /** Lattice steps in one unit: a tenth of the median 1m range, at least one. */
+  /**
+   * A tenth of the median candle's range, in lattice steps — fractional, since
+   * PH-37.2 (see {@link distanceUnitFrom}).
+   */
   readonly unitSteps: number;
   /** The unit as a price difference at the current level, at display precision. */
   readonly unitPrice: string;
@@ -166,7 +170,20 @@ export function distanceUnitFrom(
   measuredAt: number,
 ): DistanceUnit {
   const { range, minutes } = medianCandleRange(ticks);
-  const unitSteps = Math.max(1, Math.round(range / UNITS_PER_CANDLE));
+  // **Not rounded to whole steps (PH-37.2).** This read
+  // `Math.max(1, Math.round(range / UNITS_PER_CANDLE))`, which was harmless
+  // while a candle spanned two hundred lattice steps and destroys the contract
+  // above now that the staircase lattice has it spanning about eighteen: a
+  // median range of 14 steps rounds to a unit of 1, and then `+10` is ten steps
+  // where it promises one candle — thirty per cent short, and short by more the
+  // coarser the asset. Measured on the rebuilt catalogue, the unit had
+  // collapsed to a single step on EUR/USD.
+  //
+  // The unit is a tenth of the candle, so it is a tenth of the candle. A
+  // fraction of a step is a perfectly good distance: the walk stops at the
+  // first tick that *reaches* it, and the push's floor of one step is applied
+  // where the push is armed, not here.
+  const unitSteps = range > 0 ? range / UNITS_PER_CANDLE : 1;
   const spec = {
     logQuantum: asset.instrument.logQuantum,
     referencePrice: asset.instrument.referencePrice,

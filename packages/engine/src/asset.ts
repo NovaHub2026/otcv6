@@ -1,3 +1,4 @@
+import { VolatilityFloorModulator } from './floor.js';
 import {
   assertValidInstrument,
   epochMillis,
@@ -10,7 +11,7 @@ import { yieldToLoop } from '@otc/core';
 import { CascadeMagnitudeModel } from './cascade.js';
 import type { MarketEngineConfig } from './factory.js';
 import { DurationCouplingModulator, HawkesArrivalModel } from './hawkes.js';
-import { ModulatedMagnitudeModel } from './modulator.js';
+import { ModulatedMagnitudeModel, type Modulator } from './modulator.js';
 import {
   assertPersonalitySafe,
   assertPersonalityTraits,
@@ -222,50 +223,59 @@ export const REFUND_FIT_HORIZONS = 8_000;
  * so a pass means the rate is a property of the process at these parameters
  * and not of the twelve seeds it was read from (Cycle Audit 8, a5, closed
  * that way for the five; PH-26.3 keeps it for the thirty). Every one of the
- * thirty sits below the 1% nominal target the quantum was calibrated to,
- * because a tie is an integer-price event and the calibration measures a
+ * thirty sits below {@link MAX_REFUND_RATE}, which since PH-37 is what a
+ * lattice is chosen by — the 1% nominal quantile is only where that search
+ * starts, because a tie is an integer-price event and the quantile measures a
  * continuous proxy for it.
  *
- * **Re-measured on 2026-09-23 (PH-35)**: 0.167% to 0.435%, median 0.327%. The
- * lattice each asset publishes on is the one PH-26.3 recorded — a
- * recalibration keeps it, so a running market's prices keep their meaning —
- * and the rate on it follows how far the market travels over a contract.
- * PH-34 put that at 1.7 times the real instrument and the rates halved to
- * 0.085%-0.267%; PH-35 brought the market back to the real instrument's own
- * level and they came back with it, near the 0.42%-0.53% of before both. A tie
- * is refunded (ADR-0007), so this is the refund rate a broker sees.
+ * **Re-measured on 2026-09-23 (PH-37.2)**: **3.31% to 4.77%, mean 3.96%**, and
+ * that is the headline of the phase rather than a side effect of it. The
+ * lattices were between 6 and 356 times finer than the instruments the assets
+ * are named for, so the price moved on 93–99% of ticks and the market looked
+ * volatile when it was not. They are ×12 or ×16 coarser now, chosen per asset
+ * as the coarsest that clears a 5% ceiling by the standard error of its own
+ * measurement, and what that buys is the staircase: the price rests and then
+ * steps, the way a real tape does.
+ *
+ * A tie is refunded (ADR-0007), so this is the refund rate a broker sees, and
+ * it is the cost the Human Owner chose with the measured table in front of
+ * them: three to five contracts in a hundred at thirty seconds, against three
+ * in a thousand. The previous values are history — PH-26.3's 0.42%–0.53%,
+ * PH-34's 0.085%–0.267% at 1.7× the real instrument, PH-35's 0.167%–0.435%
+ * back at its level — and every one of them was a lattice kept rather than
+ * chosen.
  */
 export const MEASURED_LATTICE_TIE_RATES = {
-  'eurusd-otc': 0.00324,
-  'gbpusd-otc': 0.00384,
-  'usdjpy-otc': 0.00296,
-  'audusd-otc': 0.00249,
-  'usdchf-otc': 0.00384,
-  'eurgbp-otc': 0.00343,
-  'gbpjpy-otc': 0.00167,
-  'eurjpy-otc': 0.00299,
-  'aapl-otc': 0.00327,
-  'msft-otc': 0.00392,
-  'nvda-otc': 0.00399,
-  'tsla-otc': 0.0042,
-  'meta-otc': 0.00373,
-  'amzn-otc': 0.00309,
-  'pbr-otc': 0.00406,
-  'nu-otc': 0.00277,
-  'btcusdt-otc': 0.00339,
-  'ethusdt-otc': 0.00251,
-  'bnbusdt-otc': 0.00257,
-  'solusdt-otc': 0.00316,
-  'xrpusdt-otc': 0.00285,
-  'dogeusdt-otc': 0.00224,
-  'mmx-idx-otc': 0.0043,
-  'cgx-idx-otc': 0.00202,
-  'aix-idx-otc': 0.00371,
-  'tcx-idx-otc': 0.0034,
-  'scx-idx-otc': 0.00435,
-  'gmx-idx-otc': 0.00239,
-  'evx-idx-otc': 0.00417,
-  'brx-idx-otc': 0.00309,
+  'eurusd-otc': 0.0353,
+  'gbpusd-otc': 0.04305,
+  'usdjpy-otc': 0.04273,
+  'audusd-otc': 0.04504,
+  'usdchf-otc': 0.03852,
+  'eurgbp-otc': 0.04079,
+  'gbpjpy-otc': 0.03867,
+  'eurjpy-otc': 0.04768,
+  'aapl-otc': 0.03447,
+  'msft-otc': 0.03857,
+  'nvda-otc': 0.03683,
+  'tsla-otc': 0.04305,
+  'meta-otc': 0.03939,
+  'amzn-otc': 0.03948,
+  'pbr-otc': 0.04142,
+  'nu-otc': 0.04215,
+  'btcusdt-otc': 0.03782,
+  'ethusdt-otc': 0.04343,
+  'bnbusdt-otc': 0.03499,
+  'solusdt-otc': 0.03991,
+  'xrpusdt-otc': 0.04053,
+  'dogeusdt-otc': 0.03969,
+  'mmx-idx-otc': 0.03735,
+  'cgx-idx-otc': 0.03603,
+  'aix-idx-otc': 0.03587,
+  'tcx-idx-otc': 0.03886,
+  'scx-idx-otc': 0.04005,
+  'gmx-idx-otc': 0.03809,
+  'evx-idx-otc': 0.04235,
+  'brx-idx-otc': 0.03601,
 } as const;
 
 /** Horizon the quantum is calibrated against: the shortest contract. */
@@ -389,20 +399,45 @@ function* realisedTieRatesCore(
   factors: readonly number[],
   chunkTicks: number,
 ): Generator<void, readonly number[]> {
-  const magnitude = new ModulatedMagnitudeModel(
-    new CascadeMagnitudeModel(
-      config.baseVolatility,
-      config.cascade,
-      derive('refund-cascade'),
-      derive('refund-shock'),
-    ),
-    [
-      new VolatilityRegimeModulator(config.regimes, derive('refund-regime')),
-      new StructurePhaseModulator(config.structure, derive('refund-structure')),
-      new DurationCouplingModulator(config.durationCoupling, config.arrival.baseIntervalMs),
-    ],
+  // The engine's own stack, floor included. **The floor is why this had to be
+  // built here rather than borrowed from `horizonReturnsCore`:** that helper
+  // omits it, so the market it measures is quieter in its calm stretches than
+  // the one the engine runs, and a quieter market ties more. Measured against
+  // `evidence:ties` on the first build, the fit read about 1.3 points high on
+  // every asset, which is texture given away. (That `horizonReturnsCore` is
+  // missing the floor is a finding about the *quantile* too, and a larger one:
+  // it is recorded in the decision log rather than fixed here, because moving
+  // it moves every asset's volatility.)
+  const inner = new CascadeMagnitudeModel(
+    config.baseVolatility,
+    config.cascade,
+    derive('refund-cascade'),
+    derive('refund-shock'),
   );
-  const arrival = new HawkesArrivalModel(config.arrival, derive('refund-arrival'));
+  const regime = new VolatilityRegimeModulator(config.regimes, derive('refund-regime'));
+  const structure = new StructurePhaseModulator(config.structure, derive('refund-structure'));
+  const modulators: Modulator[] = [
+    regime,
+    structure,
+    new DurationCouplingModulator(config.durationCoupling, config.arrival.baseIntervalMs),
+  ];
+  if (config.volatilityFloor !== null) {
+    modulators.push(
+      new VolatilityFloorModulator(config.volatilityFloor, {
+        regimeLevel: () => regime.levelInForce,
+        cascadeProduct: () => inner.cascade.current(),
+        structureMultiplier: () => structure.multiplierInForce,
+      }),
+    );
+  }
+  const magnitude = new ModulatedMagnitudeModel(inner, modulators);
+  // The regime drives the arrival rate too, exactly as `createMarketEngine`
+  // wires it: half of what a regime does is more ticks (PH-34, and a quarter of
+  // it since PH-37.1). Without this the fit measured a market whose agitated
+  // stretches were quieter than the engine's — the second layer this helper had
+  // to stop omitting, after the floor, and the one that kept EUR/GBP's lattice
+  // above the ceiling on the independent verification.
+  const arrival = new HawkesArrivalModel(config.arrival, derive('refund-arrival'), regime);
   const sign = derive('refund-sign');
   const rounding = derive('refund-rounding');
   const referenceUnit = config.baseVolatility;
@@ -620,15 +655,49 @@ function* calibrateAssetCore(
     throw new RangeError(`Max refund rate must be in (0, 1), received ${maxRefundRate}.`);
   }
   const factors = REFUND_CANDIDATE_FACTORS;
-  const realised = yield* realisedTieRatesCore(
-    config,
-    derive,
-    horizonMs,
-    options.refundHorizons ?? REFUND_FIT_HORIZONS,
-    startingQuantum,
-    factors,
-    options.chunkTicks ?? CALIBRATION_CHUNK_TICKS,
-  );
+  // **One walk was not enough, and the measurement says why.** At 8,000
+  // horizons a walk covers 66 hours, and the slowest cascade component of a
+  // catalogue asset turns over in about 41: one and a half turnovers, so what
+  // the fit measured was largely which state that component happened to sit in.
+  // Verified against `evidence:ties` — twelve replicates on a stream family the
+  // calibration never uses — GBP/USD chose its lattice on 4.44% and settles
+  // 1.73%, which left it three steps finer than the ceiling allows, and the
+  // texture this phase exists for is exactly what those steps are.
+  //
+  // So the fit runs the calibration's own replicate count, each on its own
+  // streams, and averages. It is the same trade the quantile above already
+  // makes, for the same reason.
+  const refundHorizons = options.refundHorizons ?? REFUND_FIT_HORIZONS;
+  const perReplicateRates: number[][] = [];
+  for (let replicate = 0; replicate < replicates; replicate += 1) {
+    perReplicateRates.push([
+      ...(yield* realisedTieRatesCore(
+        config,
+        (purpose: string) => derive(`${purpose}-r${replicate}`),
+        horizonMs,
+        refundHorizons,
+        startingQuantum,
+        factors,
+        options.chunkTicks ?? CALIBRATION_CHUNK_TICKS,
+      )),
+    ]);
+  }
+  // **The ceiling is honoured with the measurement's own error, not at its
+  // point estimate.** With the fit measuring the engine's real stack it lands
+  // *on* the ceiling, and half of a distribution centred on a ceiling is above
+  // it: verified against `evidence:ties`, five of the thirty came back at
+  // 5.00%–5.30% where 5% is the bound. A ceiling something crosses is not a
+  // ceiling, so a candidate has to clear it by the standard error of its own
+  // replicates — which is self-calibrating: a noisy asset is held further back
+  // than a quiet one, and no constant has to be guessed.
+  const realised: readonly number[] = factors.map((_, k) => {
+    const rates = perReplicateRates.map((row) => row[k]!);
+    const mean = rates.reduce((sum, r) => sum + r, 0) / rates.length;
+    if (rates.length < 2) return mean;
+    const variance =
+      rates.reduce((sum, r) => sum + (r - mean) * (r - mean), 0) / (rates.length - 1);
+    return mean + Math.sqrt(variance / rates.length);
+  });
   let chosen = 0;
   for (let k = 0; k < factors.length; k += 1) {
     if (realised[k]! <= maxRefundRate) chosen = k;
@@ -646,7 +715,10 @@ function* calibrateAssetCore(
     );
   }
   const logQuantum = startingQuantum * factors[chosen]!;
-  const realisedRefundRate = realised[chosen]!;
+  // What is recorded is the rate itself; the error was the margin the choice
+  // was made with, not a property of the market.
+  const realisedRefundRate =
+    perReplicateRates.reduce((sum, row) => sum + row[chosen]!, 0) / perReplicateRates.length;
 
   const displayPrecision = displayPrecisionFor(logQuantum, definition.referencePrice);
 
