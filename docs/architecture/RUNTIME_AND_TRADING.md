@@ -123,7 +123,8 @@ socket, against a spawned service killed with `SIGKILL`, in
 (INV-001).
 
 **And the record remembers its discontinuities** (PH-31, Cycle Audit 10). A
-restart past the catch-up bound seams a market, and the record then holds both
+restart past the catch-up bound seams a market — as does the market's own
+reopening when nobody restarts it (ADR-0020) — and the record then holds both
 sides of an interval nobody generated. The jump is detected where it enters the
 record — an appended sequence that is not the previous one plus one — and
 written, inside the same transaction as the ticks, to a second table: asset,

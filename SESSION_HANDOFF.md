@@ -6,32 +6,45 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                                                                         |
-| ------------------ | ------------------------------------------------------------------------------------------------------------- |
-| Last clean session | 2026-09-22                                                                                                    |
-| Branch             | `feature/ph-34-the-markets-tempo`, worktree `~/.otc-ph34`                                                     |
-| Remote             | `origin` → NovaHub2026/otcv6, public                                                                          |
-| Active cycle       | Cycle 12, **2 of 3** — PH-34 and PH-35 approved. Cycle 11 stays open: PH-32 and PH-33 rerun on this catalogue |
-| Active phase       | none                                                                                                          |
-| Active subphase    | none                                                                                                          |
-| Cycle Audit        | **010 closed** — 98 claims, 86 confirmed, 12 partial; fixes on `audit/ca10-fixes`                             |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                                                            |
+| Field              | Value                                                                                                                       |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| Last clean session | 2026-09-23                                                                                                                  |
+| Branch             | `feature/ph-36-a-stall-reopens-itself`, worktree `~/.otc-ph36`                                                              |
+| Remote             | `origin` → NovaHub2026/otcv6, public                                                                                        |
+| Active cycle       | Cycle 12, **2 of 3** — PH-34 and PH-35 approved, PH-36 active. Cycle 11 stays open: PH-32 and PH-33 rerun on this catalogue |
+| Active phase       | PH-36 — A stalled market reopens itself                                                                                     |
+| Active subphase    | PH-36.1 — The reopening, its bounds, and what a broker sees of it                                                           |
+| Cycle Audit        | **010 closed** — 98 claims, 86 confirmed, 12 partial; fixes on `audit/ca10-fixes`                                           |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                                                                          |
 
 ---
 
-## Right now (2026-09-22)
+## Right now (2026-09-23)
 
-- **`v2.1.0` is released**: the ADR-0019 fix, tagged on `d8aba15` after hosted
-  CI went green on both jobs, with `docs/evidence/RELEASE-2.1.0.md` beside it.
-  It is the version a broker should be running until PH-34 ships.
-- **PH-34 is APPROVED** on `GATE_EXIT=0` at `3412049` (unit 168 files / 3,478
-  tests; statistical 47 / 411 with a real browser), with the per-asset evidence
-  in `docs/evidence/PH-34-THE-MARKETS-TEMPO.md`. What is left is the merge to
-  `main`, hosted CI on it, and `v2.2.0` tagged after it is green — then PH-32
-  and PH-33 rerun on this catalogue, which is what the held supervisor is
-  waiting for.
+- **`v2.3.0` is released and tagged** on `e9b6966` (the PH-35 merge) after
+  hosted CI went green on both jobs, with `docs/evidence/RELEASE-2.3.0.md`
+  beside it. The market now runs at the level of the real instrument it is
+  named for (0.99× over sixty simulated days), with a gentler regime ladder.
+- **`v2.3.1` is the panel's quiet notice** — twenty mean intervals with a
+  fifteen-second floor, against three, which was firing 193–1,096 times an hour
+  on ordinary silence. It is on `fix/panel-quiet-notice` in `~/.otc-ph35`, and
+  its gate is the one to read before tagging: `~/.otc-local/ph34/gate-quiet3.log`.
+  An earlier gate on the same tree is **void** — the host suspended for 2 h 51 m
+  in the middle of it and the conformance file timed out across the jump.
+- **PH-36 is active in `~/.otc-ph36`**: a market past its catch-up bound reopens
+  itself as a recorded seam (ADR-0020), because that same host suspension left
+  all thirty markets frozen for the third time. Built and unit-verified —
+  `packages/runtime/src/reopen.ts`, `Venue.reopen`, the decision and its two
+  bounds in `VenueService`, `OTC_AUTO_REOPEN=0` to switch it off — with ten
+  cases in `apps/api/src/venueReopen.test.ts` and seven in
+  `packages/runtime/src/reopen.test.ts`, and nine planted defects each watched
+  failing. What is left is the phase gate, the merge, and `v2.4.0`.
+- **The engine the Human Owner watches runs from `~/.otc-ph35`** on ports
+  7300/7301 (`OTC_TREE=$HOME/.otc-ph35 bash ~/.otc-local/start.sh`). It was
+  restarted at 12:30 UTC after the suspension: 30/30 markets recovered by seam.
 - **The long measurements stay held** (`~/.otc-local/ph33/.hold`): PH-32's
-  fifty-eight-year run and PH-33's scales measure the catalogue PH-34 replaces.
+  fifty-eight-year run and PH-33's scales measure a catalogue two
+  recalibrations old, and rerun on the current one.
 - `~/Projects/orbit-otc-node` is the Human Owner's own broker stack (systemd
   user services on 3010/3100/3030) — background load, never ours to stop.
 

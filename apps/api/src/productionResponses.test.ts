@@ -109,6 +109,10 @@ const METRIC_NAMES = new Set([
   // serving cannot look identical to one that is idle. A count of failures is
   // the operator's business and carries no engine state.
   'otc_tick_pass_failures_total',
+  // ADR-0020: markets this process reopened past their catch-up bound. A count
+  // of outages, which is the operator's business and carries no engine state —
+  // the price it reopened from is the one already published.
+  'otc_market_reopenings_total',
 ]);
 /** The only label a sample may carry, and its value is an asset id. */
 const METRIC_LABELS = new Set(['asset']);
@@ -312,6 +316,11 @@ describe('no production response carries an engine snapshot, by value (INV-010)'
       null,
       null,
       new MemoryTickRecord(),
+      undefined,
+      null,
+      // This route guard needs a market that stays stalled, so the automatic
+      // reopening (ADR-0020) is switched off rather than raced.
+      false,
     );
     started.push(venue);
     await venue.start();
