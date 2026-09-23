@@ -184,3 +184,54 @@ describe('a button that cannot be pressed looks like one (PH-31)', () => {
     expect(controls).toMatch(/border:\s*`1px solid \$\{disabled \? T\.line : tone\.border\}`/);
   });
 });
+
+/**
+ * The quiet notice is about the engine, not about the market (2026-09-23).
+ *
+ * The Human Owner watched the panel blink between `en vivo` and a warning
+ * about the engine's health while the price was rolling normally. It was the
+ * notice firing on the market's own quiet: a Hawkes process leaves a gap of
+ * three mean intervals about five per cent of the time, and at PH-34's tick
+ * rates that is often enough to see. Measured on the catalogue's own arrivals,
+ * 400,000 ticks per asset, gaps longer than `k` mean intervals per hour:
+ *
+ * | asset    | k=3   | k=5   | k=10 | k=15 | k=20 |
+ * | -------- | ----- | ----- | ---- | ---- | ---- |
+ * | eurusd   | 193.4 | 31.7  | 0.3  | 0.0  | 0.0  |
+ * | aapl     | 385.0 | 68.9  | 1.3  | 0.0  | 0.0  |
+ * | dogeusdt | 1,095.7 | 283.5 | 14.1 | 0.9 | 0.0 |
+ *
+ * The longest natural gap in that run was 15.9 s of EUR/USD, sixteen times its
+ * mean. So the threshold is twenty means and never under the catch-up bound,
+ * which is the point past which the runtime itself calls a market behind.
+ */
+describe('the panel calls a market quiet only when the engine has stopped', () => {
+  const chart = readFileSync(path.join(app, 'preview', 'PreviewChart.tsx'), 'utf8');
+
+  it('waits at least twenty mean intervals, and at least the catch-up bound', () => {
+    const multiple = /export const STALL_MULTIPLE = (\d+);/.exec(chart);
+    expect(multiple, 'STALL_MULTIPLE is no longer declared where this reads it').not.toBeNull();
+    expect(
+      Number(multiple![1]),
+      'a gap of ten means is ordinary on this catalogue',
+    ).toBeGreaterThanOrEqual(20);
+    const floor = /export const MIN_QUIET_MS = ([\d_]+);/.exec(chart);
+    expect(floor, 'MIN_QUIET_MS is no longer declared where this reads it').not.toBeNull();
+    expect(
+      Number(floor![1]!.replace(/_/g, '')),
+      'below the catch-up bound nothing is behind',
+    ).toBeGreaterThanOrEqual(15_000);
+  });
+
+  it('takes both into account rather than the multiple alone', () => {
+    expect(chart).toMatch(
+      /Math\.max\(\s*STALL_MULTIPLE \* asset\.meanIntervalMs,\s*MIN_QUIET_MS,?\s*\)/,
+    );
+  });
+
+  it('says it in Spanish, like every other status', () => {
+    const es = readFileSync(path.join(app, '..', 'lib', 'es.ts'), 'utf8');
+    expect(es).toMatch(/quiet: \(seconds: number\)/);
+    expect(chart).toMatch(/es\.preview\.status\.quiet\(/);
+  });
+});
