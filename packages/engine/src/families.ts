@@ -460,7 +460,12 @@ const ARCHETYPE_DEFINITIONS: readonly ArchetypeDefinition[] = [
     // volatility floor. The floor removes the low tail of the level, so a
     // shallow cascade carries less tail above it: at the old floor of 85
     // 43% of 300 draws were clamped, the lowest reaching 39.9.
-    excessKurtosis: { min: 35, max: 130 },
+    // PH-35 lowered it again with the ladder: the rungs above normal are
+    // compressed (85 before, 35 after PH-34's floor), so the regime layer
+    // carries less tail and a shallow cascade reaches less above the volatility
+    // floor. 4 of 300 draws clamped at the old figure, the lowest
+    // reaching 31.7.
+    excessKurtosis: { min: 30, max: 130 },
     traits: {
       burstiness: { min: 0.55, max: 0.7 },
       regimeSpread: { min: 1.05, max: 1.3 },
@@ -546,7 +551,12 @@ const ARCHETYPE_DEFINITIONS: readonly ArchetypeDefinition[] = [
     // volatility floor. The floor removes the low tail of the level, so a
     // shallow cascade carries less tail above it: at the old floor of 100
     // 40% of 300 draws were clamped, the lowest reaching 48.0.
-    excessKurtosis: { min: 45, max: 145 },
+    // PH-35 lowered it again with the ladder: the rungs above normal are
+    // compressed (100 before, 45 after PH-34's floor), so the regime layer
+    // carries less tail and a shallow cascade reaches less above the volatility
+    // floor. 33 of 300 draws clamped at the old figure, the lowest
+    // reaching 35.9.
+    excessKurtosis: { min: 33, max: 145 },
     traits: {
       burstiness: { min: 0.65, max: 0.8 },
       regimeSpread: { min: 1.2, max: 1.45 },
@@ -588,7 +598,12 @@ const ARCHETYPE_DEFINITIONS: readonly ArchetypeDefinition[] = [
     // volatility floor. The floor removes the low tail of the level, so a
     // shallow cascade carries less tail above it: at the old floor of 130
     // 27% of 300 draws were clamped, the lowest reaching 71.8.
-    excessKurtosis: { min: 65, max: 165 },
+    // PH-35 lowered it again with the ladder: the rungs above normal are
+    // compressed (130 before, 65 after PH-34's floor), so the regime layer
+    // carries less tail and a shallow cascade reaches less above the volatility
+    // floor. 17 of 300 draws clamped at the old figure, the lowest
+    // reaching 55.4.
+    excessKurtosis: { min: 52, max: 165 },
     traits: {
       // **Cycle Audit 6, CA6-23.** This was the narrowest box in the
       // catalogue, and its siblings were not distinguishable from three clones

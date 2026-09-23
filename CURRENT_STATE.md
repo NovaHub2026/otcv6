@@ -23,10 +23,10 @@ Last synchronized: 2026-09-06
 
 | Field                  | Value                                                      |
 | ---------------------- | ---------------------------------------------------------- |
-| Active phase           | none                                                       |
-| Phase lifecycle        | none                                                       |
-| Active subphase        | none                                                       |
-| Subphase lifecycle     | none                                                       |
+| Active phase           | PH-35 — The level the market runs at                       |
+| Phase lifecycle        | ACTIVE                                                     |
+| Active subphase        | PH-35.1 — The level, the ladder, and the thirty on them    |
+| Subphase lifecycle     | ACTIVE                                                     |
 | Last approved phase    | PH-34 — The market's tempo follows its state               |
 | Last approved subphase | PH-34.2 — Integrated verification and the broker's upgrade |
 

@@ -177,46 +177,46 @@ export const TARGET_TIE_RATE = 0.01;
  * because a tie is an integer-price event and the calibration measures a
  * continuous proxy for it.
  *
- * **Re-measured on 2026-09-22 (PH-34), and they roughly halved**: 0.085% to
- * 0.267%, against 0.42% to 0.53% before. The lattice each asset publishes on
- * is the one PH-26.3 recorded — a recalibration keeps it, so a running
- * market's prices keep their meaning — and PH-34 put the market at 1.7 times
- * the real instrument on that same lattice, so a thirty-second contract
- * crosses more of it and lands exactly at the money less often. A tie is
- * refunded (ADR-0007), so this is the refund rate a broker sees, and it is
- * lower than it was.
+ * **Re-measured on 2026-09-23 (PH-35)**: 0.167% to 0.435%, median 0.327%. The
+ * lattice each asset publishes on is the one PH-26.3 recorded — a
+ * recalibration keeps it, so a running market's prices keep their meaning —
+ * and the rate on it follows how far the market travels over a contract.
+ * PH-34 put that at 1.7 times the real instrument and the rates halved to
+ * 0.085%-0.267%; PH-35 brought the market back to the real instrument's own
+ * level and they came back with it, near the 0.42%-0.53% of before both. A tie
+ * is refunded (ADR-0007), so this is the refund rate a broker sees.
  */
 export const MEASURED_LATTICE_TIE_RATES = {
-  'eurusd-otc': 0.00165,
-  'gbpusd-otc': 0.00225,
-  'usdjpy-otc': 0.0022,
-  'audusd-otc': 0.0013,
-  'usdchf-otc': 0.00267,
-  'eurgbp-otc': 0.00184,
-  'gbpjpy-otc': 0.00124,
-  'eurjpy-otc': 0.00152,
-  'aapl-otc': 0.00218,
-  'msft-otc': 0.00184,
-  'nvda-otc': 0.00192,
-  'tsla-otc': 0.00181,
-  'meta-otc': 0.00189,
-  'amzn-otc': 0.00143,
-  'pbr-otc': 0.00243,
-  'nu-otc': 0.00154,
-  'btcusdt-otc': 0.00138,
-  'ethusdt-otc': 0.0012,
-  'bnbusdt-otc': 0.00144,
-  'solusdt-otc': 0.00179,
-  'xrpusdt-otc': 0.00124,
-  'dogeusdt-otc': 0.00146,
-  'mmx-idx-otc': 0.00118,
-  'cgx-idx-otc': 0.00085,
-  'aix-idx-otc': 0.00213,
-  'tcx-idx-otc': 0.00222,
-  'scx-idx-otc': 0.00203,
-  'gmx-idx-otc': 0.00176,
-  'evx-idx-otc': 0.00207,
-  'brx-idx-otc': 0.00189,
+  'eurusd-otc': 0.00324,
+  'gbpusd-otc': 0.00384,
+  'usdjpy-otc': 0.00296,
+  'audusd-otc': 0.00249,
+  'usdchf-otc': 0.00384,
+  'eurgbp-otc': 0.00343,
+  'gbpjpy-otc': 0.00167,
+  'eurjpy-otc': 0.00299,
+  'aapl-otc': 0.00327,
+  'msft-otc': 0.00392,
+  'nvda-otc': 0.00399,
+  'tsla-otc': 0.0042,
+  'meta-otc': 0.00373,
+  'amzn-otc': 0.00309,
+  'pbr-otc': 0.00406,
+  'nu-otc': 0.00277,
+  'btcusdt-otc': 0.00339,
+  'ethusdt-otc': 0.00251,
+  'bnbusdt-otc': 0.00257,
+  'solusdt-otc': 0.00316,
+  'xrpusdt-otc': 0.00285,
+  'dogeusdt-otc': 0.00224,
+  'mmx-idx-otc': 0.0043,
+  'cgx-idx-otc': 0.00202,
+  'aix-idx-otc': 0.00371,
+  'tcx-idx-otc': 0.0034,
+  'scx-idx-otc': 0.00435,
+  'gmx-idx-otc': 0.00239,
+  'evx-idx-otc': 0.00417,
+  'brx-idx-otc': 0.00309,
 } as const;
 
 /** Horizon the quantum is calibrated against: the shortest contract. */

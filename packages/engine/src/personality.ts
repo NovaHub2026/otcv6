@@ -721,21 +721,27 @@ export function meanRegimeActivity(config: RegimeConfig): number {
 }
 
 /**
- * How much more the OTC market moves than the real instrument, on average
- * (PH-34): a seat's reference dispersion times this is the budget the
- * calibration rescales to — exactly, for every asset.
+ * How much the OTC market moves against the real instrument it is named for,
+ * on average: a seat's reference dispersion times this is the budget the
+ * calibration rescales to, exactly, for every asset.
  *
- * **1.7, the Human Owner's number** (2026-09-22). It was first derived from
- * the layered model, typical against typical — calm 20% above the real
- * market's ordinary day, normal 50% — and measured over sixty simulated days
- * per asset that put the whole market at 2.0× the real one (1.45–2.48), calm's
- * typical five minutes at 1.6× a real ordinary day's: the floor and the
- * structure phases raise the typical level more than the analytic estimate
- * saw. Put to them with both anchors, the Human Owner chose the market as a
- * whole at 1.7×. Calm's typical five minutes then sit near 1.4× the real
- * market's ordinary day, and its quietest tenth near the ordinary day itself.
+ * **1.0 since PH-35, the Human Owner's decision of 2026-09-22.** PH-34 set it
+ * at 1.7 — "typical against typical", calm above a real ordinary day — and the
+ * market that came out was measured at 1.86× the real instrument's average
+ * over sixty simulated days per asset: EUR/USD's median five-minute candle
+ * spanned 0.039% of price (about 4.5 pips) against 2–3 for the real pair, its
+ * median day 1.28%, and after a year the price stood ±14% from where it began
+ * against ±7.7% for the real one. Watching that, the Human Owner asked for the
+ * market to move like the instrument it is named for.
+ *
+ * The consequence they were shown and accepted: with the average anchored at
+ * the real instrument's, a *typical* five minutes of this market is quieter
+ * than a typical five minutes of the real one — a market with fat tails spends
+ * most of its time below its own average — and the calm regime sits below a
+ * real ordinary day rather than above it. The floor under calm is unchanged in
+ * what it does: nothing takes the level below the calm rung.
  */
-export const OTC_DISPERSION_FACTOR = 1.7;
+export const OTC_DISPERSION_FACTOR = 1.0;
 
 /**
  * Predicted excess kurtosis of the increment distribution.
