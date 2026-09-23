@@ -6,6 +6,7 @@ import {
   parseCursor,
   type Clock,
   type Environment,
+  type LogPrice,
   type MasterKeyring,
   type RandomSource,
   type Tick,
@@ -444,6 +445,29 @@ function seamPastRecord(options: ResumeOptions, published: Tick): ResumeResult {
  * but the internal state genuinely restarts, and calling that "resumed" would be
  * a lie an operator would later have to debug.
  */
+/**
+ * A published price, re-expressed on the lattice this market now publishes on.
+ *
+ * **PH-37.2.** A price is an integer count of quanta, so a seam that carries it
+ * onto a different lattice must convert it or it means something else: the
+ * recalibration that made this necessary moved EUR/USD twelve steps coarser,
+ * which would have divided every resumed price by twelve. The conversion is a
+ * rounding to the nearest point of the new lattice, so the price a broker sees
+ * moves by at most half a new quantum — 0.02 pips on EUR/USD, below what its
+ * own display shows.
+ *
+ * A record from before the field has no quantum to convert from. Its lattice is
+ * then assumed to be the one in force, which is true unless the lattice has
+ * changed — and if it has, this is a market whose checkpoint predates the
+ * field *and* whose lattice moved, so the price is the one thing about it that
+ * cannot be recovered. It is left as it is, and the release notes carry it.
+ */
+function onLattice(price: LogPrice, from: number | undefined, asset: RegisteredAsset): LogPrice {
+  const to = configFor(asset).instrument.logQuantum;
+  if (from === undefined || from === to || !(from > 0) || !(to > 0)) return price;
+  return logPrice(Math.round((price * from) / to));
+}
+
 function seamFrom(
   options: ResumeOptions,
   record: MarketStateRecord,
@@ -528,7 +552,7 @@ function seamFrom(
         }
       : {
           instant: epochMillis(Math.max(record.lastPublished.instant, now)),
-          price: record.lastPublished.price,
+          price: onLattice(record.lastPublished.price, record.logQuantum, options.asset),
           // The reserved number, not the recorded one: the record is stale by
           // construction after an unclean crash.
           // Past everything anyone is known to have seen: the lease, the
@@ -558,7 +582,18 @@ function seamFrom(
       clock: options.clock,
       personality: personalityFingerprint(options.asset),
       keyEpoch,
-      ...(record.lastPublished === null ? {} : { resumeLastPublished: record.lastPublished }),
+      // On this market's own lattice, like the price the engine starts from.
+      // Reporting the pre-seam integer here would have been the same defect one
+      // step further on: the next checkpoint writes what this returns, against
+      // the new quantum.
+      ...(record.lastPublished === null
+        ? {}
+        : {
+            resumeLastPublished: {
+              ...record.lastPublished,
+              price: onLattice(record.lastPublished.price, record.logQuantum, options.asset),
+            },
+          }),
       ...(options.maxCatchUpMs === undefined ? {} : { maxCatchUpMs: options.maxCatchUpMs }),
       ...(options.retractable === undefined ? {} : { retractable: options.retractable }),
     }),
@@ -612,6 +647,7 @@ export function checkpointMarket(
     version: STATE_RECORD_VERSION,
     assetId,
     ...(market.personality === null ? {} : { personality: market.personality }),
+    logQuantum: market.logQuantum,
     savedAt,
     snapshot,
     pending: market.pending,

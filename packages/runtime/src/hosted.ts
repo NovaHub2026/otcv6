@@ -184,6 +184,18 @@ export class HostedMarket {
     return this.#keyEpoch;
   }
 
+  /**
+   * The lattice this market publishes on (PH-37.2).
+   *
+   * A published price is an integer, and an integer means nothing without the
+   * quantum it counts. A checkpoint writes this so a seam onto a *different*
+   * lattice can re-express the last published price instead of reinterpreting
+   * it — a factor of twelve, on the recalibration that made this necessary.
+   */
+  get logQuantum(): number {
+    return this.#engine.instrument.logQuantum;
+  }
+
   get lastPublished(): Tick | null {
     return this.#lastPublished;
   }

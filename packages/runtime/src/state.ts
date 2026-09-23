@@ -43,6 +43,18 @@ export interface MarketStateRecord {
    * seamed too, because nothing can say what wrote it. See `personality.ts`.
    */
   readonly personality?: string;
+  /**
+   * The lattice `lastPublished.price` counts in (PH-37.2).
+   *
+   * The fingerprint above already makes a lattice change a seam, but a seam
+   * continues *from the last published price*, and that price is an integer:
+   * read on a lattice twelve times coarser it is a twelfth of the price. So the
+   * quantum is written down, and `resumeMarket` re-expresses the price when it
+   * differs. Absent in a record from before this field, which is the same
+   * market it always was as long as its lattice has not moved — and if it has,
+   * the fingerprint has already turned the resume into a seam.
+   */
+  readonly logQuantum?: number;
   readonly savedAt: EpochMillis;
   readonly snapshot: EngineSnapshot;
   readonly pending: Tick | null;
