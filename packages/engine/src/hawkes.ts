@@ -145,6 +145,22 @@ const MIN_REFERENCE_MAGNITUDE = 1e-9;
 export interface HawkesSnapshot {
   readonly excitation: number;
   readonly averageMagnitude: number;
+  /**
+   * Whether the running average has seen a magnitude (PH-37.1).
+   *
+   * **It has to be in the snapshot, and the record caught that it was not.** A
+   * market checkpointed before its first tick carries the seeded average, and a
+   * resume that assumed it had observed *blended* its first magnitude where the
+   * original *replaced* it — a different magnitude, a different interval, and a
+   * tick at the same price four milliseconds later. `venue.service` refused it
+   * as a fork in the record, which is exactly what it was: two streams claiming
+   * one asset (INV-009).
+   *
+   * Absent means observed, which is true of every snapshot written before this
+   * field existed — those all seam anyway, because the engine model is part of
+   * the personality fingerprint.
+   */
+  readonly observed?: boolean;
 }
 
 /**
@@ -275,7 +291,11 @@ export class HawkesArrivalModel implements ArrivalModel {
   }
 
   snapshot(): HawkesSnapshot {
-    return { excitation: this.#excitation, averageMagnitude: this.#averageMagnitude };
+    return {
+      excitation: this.#excitation,
+      averageMagnitude: this.#averageMagnitude,
+      observed: this.#observed,
+    };
   }
 
   restore(state: unknown): void {
@@ -288,9 +308,7 @@ export class HawkesArrivalModel implements ArrivalModel {
     }
     this.#excitation = typed.excitation;
     this.#averageMagnitude = typed.averageMagnitude;
-    // A restored average is a measurement, not a guess: this engine has
-    // observed, whatever this instance has seen.
-    this.#observed = true;
+    this.#observed = typed.observed ?? true;
   }
 }
 

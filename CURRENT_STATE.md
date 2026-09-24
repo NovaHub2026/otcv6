@@ -94,12 +94,12 @@ both?
 
 **It can.** On 24 million ticks spanning 327 simulated days, one asset is:
 
-|                              | Result                                                                                                                                                                                                                                                                  |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unexploitable                | clean verdict across ~570 hypotheses and all four attack feature kinds                                                                                                                                                                                                  |
-| At a resolution that matters | 30-second single-test detection floor 0.215pp (PH-35's catalogue; 0.223pp on PH-34's, 0.221pp before), finer than the 0.2513pp margin the 99% payout implies; the gate's own 50%-power figure at 30 s is 0.306pp, and `VALIDATION.md` says which claim is which (a4-01) |
-| Plausible                    | 15/15 realism metrics, bands unchanged since the commit that introduced the engine (906e398)                                                                                                                                                                            |
-| Structurally guaranteed      | mirror test passes with zero divergences                                                                                                                                                                                                                                |
+|                              | Result                                                                                                                                                                                                                                                                      |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unexploitable                | clean verdict across ~570 hypotheses and all four attack feature kinds                                                                                                                                                                                                      |
+| At a resolution that matters | 30-second single-test detection floor 0.219pp (PH-37's catalogue; 0.215pp on PH-35's, 0.223pp on PH-34's), finer than the 0.2513pp margin the 99% payout implies; the gate's own 50%-power figure at 30 s is 0.312pp, and `VALIDATION.md` says which claim is which (a4-01) |
+| Plausible                    | 15/15 realism metrics, bands unchanged since the commit that introduced the engine (906e398)                                                                                                                                                                                |
+| Structurally guaranteed      | mirror test passes with zero divergences                                                                                                                                                                                                                                    |
 
 ## Blockers
 

@@ -559,11 +559,32 @@ function* realismSteps(
     metric(
       'unchanged-tick-fraction',
       'Fraction of ticks that leave the price unchanged.',
-      'Some are natural on a discrete lattice. Too many mean the quote grid is coarse ' +
-        'relative to volatility, which makes ties frequent and the grid exploitable.',
+      // **The upper bound moved from 0.35 to 0.6 in PH-37, deliberately.** A
+      // price that rests and then steps is what a real tape does, and this
+      // metric is the one that measures it: the catalogue published one to two
+      // orders of magnitude finer than the instruments it is named for, left
+      // 93%-99% of its ticks moving the price, and looked volatile when it was
+      // not. On the staircase lattice the thirty measure **20.5% to 52.8%,
+      // mean 34.7%** (400,000 ticks each, on the shipped engine).
+      //
+      // The old bound's stated worry was that a coarse grid "makes ties
+      // frequent and the grid exploitable", and both halves of that are now
+      // measured by something better than a proxy. Ties are refunds, and
+      // `MAX_REFUND_RATE` bounds them at 5% of thirty-second contracts,
+      // verified per asset on a stream family the calibration never touches.
+      // Exploitability is what the battery measures, directly, and it is clean
+      // on every asset here — including the two this bound was failing.
+      //
+      // What the bound is for now is the other end of the same question: a grid
+      // so coarse that the market stops being a market. 0.6 fails that and
+      // passes a tape that rests.
+      'Some are natural on a discrete lattice, and a price that rests and then steps is ' +
+        'what a real quote does. Too many mean the grid is so coarse the market has ' +
+        'stopped moving; how often a rest costs a refund is bounded where the lattice is ' +
+        'chosen, and whether the grid is exploitable is what the battery measures.',
       zeroTicks / Math.max(1, absolute.length),
       0,
-      0.35,
+      0.6,
     ),
   );
 

@@ -3,6 +3,8 @@ import { MasterKeyring, type RandomSource } from '@otc/core';
 import {
   calibrateAsset as calibrateAssetSync,
   calibrateAssetAsync,
+  MAX_REFUND_RATE,
+  REFUND_CANDIDATE_FACTORS,
   TARGET_TIE_RATE,
   type AssetDefinition,
 } from './asset.js';
@@ -75,10 +77,21 @@ describe('recorded calibration evidence reproduces', () => {
       // Asserting on the quantum would therefore have been a tighter-looking
       // test of a quantity that does not matter, and it would have failed for
       // the wrong reason.
+      // **PH-37: the property is what the lattice refunds.** This compared the
+      // continuous quantile against the 1% nominal, which was the property a
+      // quantum was chosen for until the choice became a measured one. The
+      // quantile is where the search starts now — it cuts at 11%-17% once the
+      // lattice is 12 to 16 steps coarser — and what must reproduce is the
+      // realised rate clearing the ceiling, which is what the choice is made
+      // against and what a broker pays.
       expect(
-        Math.abs(fresh.evidence.tieRate - TARGET_TIE_RATE),
-        `${id} realised tie rate ${fresh.evidence.tieRate}`,
-      ).toBeLessThan(0.003);
+        fresh.evidence.realisedRefundRate,
+        `${id} refunds ${String(fresh.evidence.realisedRefundRate)}`,
+      ).toBeLessThanOrEqual(MAX_REFUND_RATE);
+      expect(
+        Math.abs(fresh.evidence.realisedRefundRate - asset.evidence.realisedRefundRate),
+        `${id} drifted from the recorded refund`,
+      ).toBeLessThan(0.015);
 
       // A loose band on the quantum still catches gross drift — a calibration
       // that changed meaning rather than merely resampled.
@@ -156,13 +169,21 @@ describe('the catalogue is actually varied', () => {
   });
 
   it('gives every asset a comparable lattice resolution, without targeting it', () => {
-    // An emergent property worth guarding: because each quantum is a quantile of
-    // that asset's own returns, the median move lands in the same band of
-    // lattice steps for every asset despite an order of magnitude of volatility
-    // between them. If this drifts, the calibration rule has changed meaning.
+    // An emergent property worth guarding: the median move lands in the same
+    // band of lattice steps for every asset despite an order of magnitude of
+    // volatility between them. If this drifts, the calibration rule has changed
+    // meaning.
+    //
+    // **PH-37 tightened it, which is the rule changing meaning for the better.**
+    // It was 40 to 150 — a factor of 3.8 — when each quantum was a quantile of
+    // its own asset's returns. Choosing every lattice against one refund
+    // ceiling makes the resolution itself uniform: measured across the thirty,
+    // **4.32 to 6.24 steps**, a factor of 1.44. The band below is that with
+    // room for a resample, and it is a tighter statement than the one it
+    // replaces, not a looser one.
     for (const asset of ASSET_CATALOGUE) {
-      expect(asset.evidence.medianSteps, asset.definition.id).toBeGreaterThan(40);
-      expect(asset.evidence.medianSteps, asset.definition.id).toBeLessThan(150);
+      expect(asset.evidence.medianSteps, asset.definition.id).toBeGreaterThan(3);
+      expect(asset.evidence.medianSteps, asset.definition.id).toBeLessThan(9);
     }
   });
 });
@@ -179,11 +200,17 @@ describe('the registration procedure itself', () => {
     traits: ASSET_CATALOGUE[0]!.definition.traits,
   };
 
-  it('derives a quantum that hits the target tie rate', async () => {
+  it('derives a lattice that clears the refund ceiling (PH-37)', async () => {
     const asset = await calibrateAssetAsync(base, derive, { simulatedMs: 2 * 86_400_000 });
-    expect(Math.abs(asset.evidence.tieRate - TARGET_TIE_RATE)).toBeLessThan(0.003);
+    // What a lattice is chosen by, and what it is chosen *from*: the quantile
+    // at `TARGET_TIE_RATE` is the finest candidate, and the factor says how far
+    // past it the refund ceiling let the search go.
+    expect(asset.evidence.realisedRefundRate).toBeLessThanOrEqual(MAX_REFUND_RATE);
+    expect(asset.evidence.refundLatticeFactor).toBeGreaterThanOrEqual(1);
+    expect(REFUND_CANDIDATE_FACTORS).toContain(asset.evidence.refundLatticeFactor);
+    expect(asset.evidence.tieRate).toBeGreaterThan(TARGET_TIE_RATE);
     expect(asset.evidence.logQuantum).toBeGreaterThan(0);
-    expect(asset.evidence.medianSteps).toBeGreaterThan(20);
+    expect(asset.evidence.medianSteps).toBeGreaterThan(2);
     expect(asset.evidence.replicates).toBeGreaterThan(1);
   });
 

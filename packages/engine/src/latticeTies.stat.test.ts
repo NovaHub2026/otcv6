@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, MasterKeyring } from '@otc/core';
 import { yieldToLoop } from '@otc/core';
-import { CALIBRATION_CHUNK_TICKS, MEASURED_LATTICE_TIE_RATES, TARGET_TIE_RATE } from './asset.js';
+import { CALIBRATION_CHUNK_TICKS, MAX_REFUND_RATE, MEASURED_LATTICE_TIE_RATES } from './asset.js';
 import { ASSET_CATALOGUE, configFor } from './catalogue.js';
 import { HEAVY_SUITE_SAMPLE, sampleCatalogue } from './catalogueSample.js';
 import { seatById } from './seats.js';
@@ -59,8 +59,13 @@ const HORIZONS_PER_REPLICATE = 8_000;
 const REPLICATES = 12;
 
 /**
- * Three standard errors on a 12-replicate mean, at the worst measured
- * between-replicate spread (0.19pp, eurusd), plus the recorded mean's own error.
+ * A floor under the per-asset error band, for an asset whose replicates happen
+ * to agree unusually well.
+ *
+ * It was the whole band — three standard errors at the worst spread measured
+ * when the rates were about 0.3% — and at the rates a refund ceiling produces
+ * it would fail a market behaving exactly as recorded. The band is computed
+ * from the run's own replicates now; this only keeps it from collapsing.
  */
 const TOLERANCE = 0.002;
 
@@ -175,14 +180,25 @@ describe('the recorded lattice tie rates reproduce', () => {
           `at 3se over ${REPLICATES} replicates)`,
       );
 
-      expect(Math.abs(mean - recorded), `${id} drifted from its recorded rate`).toBeLessThan(
-        TOLERANCE,
-      );
+      // **Against this run's own error, not a constant (PH-37.2).** The
+      // constant was three standard errors at the worst spread measured when
+      // the rates were about 0.3%; they are about 4% now — a lattice chosen by
+      // a 5% refund ceiling rather than by a 1% quantile — and the spread grew
+      // with them, to ±0.27pp–±0.63pp at 3se. The recorded value came from this
+      // same procedure, so what separates two of them is the error of a
+      // difference of means: sqrt(2) times one, and three of those is 4.25.
+      // Written that way it needs no re-measurement when the rates move again,
+      // and it holds a quiet asset tighter than a noisy one.
+      expect(
+        Math.abs(mean - recorded),
+        `${id} drifted from its recorded rate by more than the measurement's own error`,
+      ).toBeLessThan(Math.max(TOLERANCE, 4.25 * standardError));
 
       // The qualitative claim the constant exists to make, asserted rather than
-      // narrated: the realised rate sits below the nominal target, so the error
-      // is in the safe direction — fewer refunds than the calibration implies.
-      expect(mean, `${id} realised rate above nominal`).toBeLessThan(TARGET_TIE_RATE);
+      // narrated: the realised rate clears the ceiling a lattice is chosen
+      // against (PH-37), so a broker is refunded no more often than the Human
+      // Owner accepted when they set it.
+      expect(mean, `${id} refunds past the ceiling`).toBeLessThanOrEqual(MAX_REFUND_RATE);
     },
   );
 });
