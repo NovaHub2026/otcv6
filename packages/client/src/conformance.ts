@@ -1,4 +1,4 @@
-import type { Tick } from '@otc/core';
+import { exp, type Tick } from '@otc/core';
 import {
   verifyCommitment,
   verifyInclusion,
@@ -390,7 +390,12 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
         typeof q === 'number' && typeof ref === 'number' && typeof price === 'number';
       // The venue states its own precision by how it wrote the string.
       const decimals = datedBody.displayPrice.split('.')[1]?.length ?? 0;
-      const own = derivable ? (ref * Math.exp(q * price)).toFixed(decimals) : null;
+      // The portable `exp`, not the platform one. This check compares a number
+      // it derives against a string the venue derived, so a transcendental that
+      // differs in its last bits between engines would make the broker's
+      // verdict depend on which runtime ran it — which is the whole reason the
+      // kernel carries its own (ADR-0004).
+      const own = derivable ? (ref * exp(q * price)).toFixed(decimals) : null;
       check(
         'a recorded price states the frame it counts in',
         derivable && own === datedBody.displayPrice,
