@@ -62,11 +62,37 @@ const MARKET: Shape = {
   recovery: 'object|null',
 };
 
+/**
+ * A published tick, and the frame its integer counts in (PH-38.3).
+ *
+ * `price` is a count of log quanta above a reference, so it is not a price
+ * until it is paired with the two numbers that make it one. Until 3.0.0 those
+ * were served only by `/catalogue`, as the values in force **now**, and every
+ * recorded tick was rendered with them — so when a release moved a lattice the
+ * whole retained past began answering with prices nobody had published.
+ *
+ * `logQuantum` and `referencePrice` are therefore carried with the tick, and
+ * `displayPrice` is **null** when the venue cannot say what the integer counted
+ * in, rather than a number derived from today's frame. The integer is never
+ * null: it is the settlement primitive and it is not in doubt.
+ */
 const PUBLISHED: Shape = {
   sequence: 'integer',
   instant: 'integer',
   price: 'integer',
-  displayPrice: 'string',
+  logQuantum: 'number|null',
+  referencePrice: 'number|null',
+  displayPrice: 'string|null',
+};
+
+/** A frame in force from a sequence onward, as `GET /markets/:id/lattices` lists it. */
+const LATTICE: Shape = {
+  assetId: 'string',
+  fromSequence: 'integer',
+  fromInstant: 'integer',
+  logQuantum: 'number',
+  referencePrice: 'number',
+  displayPrecision: 'integer',
 };
 
 /**
@@ -265,6 +291,15 @@ export const API_ROUTES: readonly RouteContract[] = [
   },
   {
     method: 'GET',
+    path: '/markets/:id/lattices',
+    summary:
+      "Every frame this market's integers have counted in, oldest first. Half-open by sequence: an epoch covers up to the next one's fromSequence, and the last is in force. The join table for a broker that archived raw integers.",
+    params: { id: "a known asset id; a retired market's record still answers" },
+    response: { array: LATTICE },
+    refusals: { '404': 'the asset is unknown, or this deployment keeps no record' },
+  },
+  {
+    method: 'GET',
     path: '/markets/:id/proof/:sequence',
     summary:
       'The inclusion proof of a published sequence: the signed commitment of its window, the Merkle path and the publisher key.',
@@ -405,6 +440,29 @@ export const CONTRACT_HISTORY: readonly { readonly version: string; readonly dig
   // answered with a silent jump — now gets the `400` the same table already
   // lists for a sequence the venue cannot replay.
   { version: '2.1.0', digest: '76df7ddf99783c45' },
+  // PH-38.3: a published price says what it counts in, and `GET
+  // /markets/:id/lattices` lists every frame the record has held.
+  //
+  // **Major, and the reason is a correction rather than a feature.** A
+  // canonical price is an integer count of log quanta above a reference, so it
+  // is not a price until it is paired with those two numbers — and until now
+  // they were served only by `/catalogue`, as the values in force *now*. Every
+  // recorded tick was rendered with them, so when v2.4.0 moved all thirty
+  // lattices the whole retained past began answering with prices nobody had
+  // ever published: measured on the live venue, 3,728,119 of 7,500,278 retained
+  // ticks, on 30 of 30 assets, a median error of 31.8% and a worst case of
+  // 1,483% (Cycle Audit 12, finding 3).
+  //
+  // Two changes a broker must be told about by a version. `PUBLISHED` carries
+  // `logQuantum` and `referencePrice`, so a client that archived integers can
+  // render them for itself rather than one request per tick. And
+  // `displayPrice` is now `string|null`: a venue that cannot say what an
+  // integer counted in answers **null** instead of a number derived from a
+  // frame nobody published it on. A broker whose parser rejects null will fail
+  // on exactly the deep-history requests it makes to reconcile a statement —
+  // which is the change being announced, and is why this is 3.0.0 and not
+  // 2.2.0.
+  { version: '3.0.0', digest: 'd205f4f674c19cfa' },
 ];
 
 export const API_VERSION: string = CONTRACT_HISTORY[CONTRACT_HISTORY.length - 1]!.version;

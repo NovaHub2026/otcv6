@@ -13,7 +13,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Remote             | `origin` → NovaHub2026/otcv6, public                                                                |
 | Active cycle       | Cycle 13, **1 of 3** — PH-37 approved. Cycle Audit 12 gated, merged and closed; Cycle 11 stays open |
 | Active phase       | PH-38 — the frame a stored price counts in                                                          |
-| Active subphase    | PH-38.2 — the past is declared, and only what can be evidenced                                      |
+| Active subphase    | PH-38.3 — every read route renders on the frame the price was written in                            |
 | Cycle Audit        | **012 closed** — 15 findings, 13 fixed with a guard each, 2 carried as phases                       |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                                                  |
 

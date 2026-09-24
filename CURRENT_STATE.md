@@ -21,14 +21,14 @@ Last synchronized: 2026-09-24
 
 ## Phase and subphase
 
-| Field                  | Value                                                          |
-| ---------------------- | -------------------------------------------------------------- |
-| Active phase           | PH-38 — The frame a stored price counts in                     |
-| Phase lifecycle        | ACTIVE                                                         |
-| Active subphase        | PH-38.2 — The past is declared, and only what can be evidenced |
-| Subphase lifecycle     | ACTIVE                                                         |
-| Last approved phase    | PH-37 — The staircase: a price you can read tick by tick       |
-| Last approved subphase | PH-38.1 — A stored price states the frame it counts in         |
+| Field                  | Value                                                                    |
+| ---------------------- | ------------------------------------------------------------------------ |
+| Active phase           | PH-38 — The frame a stored price counts in                               |
+| Phase lifecycle        | ACTIVE                                                                   |
+| Active subphase        | PH-38.3 — Every read route renders on the frame the price was written in |
+| Subphase lifecycle     | ACTIVE                                                                   |
+| Last approved phase    | PH-37 — The staircase: a price you can read tick by tick                 |
+| Last approved subphase | PH-38.2 — The past is declared, and only what can be evidenced           |
 
 **Cycle 12 is audited and closed.** PH-34 (the market's tempo follows its
 state), PH-35 (the level the market runs at) and PH-36 (a stalled market

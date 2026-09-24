@@ -22,6 +22,7 @@ import {
   resumeMarket,
   Venue,
   type AssetBatch,
+  type LatticeEpoch,
   type PriceFrame,
   type HostedMarket,
   type AssetFailure,
@@ -854,6 +855,24 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
   seams(assetId: string): Promise<readonly RecordedSeam[]> {
     if (this.record === null) return Promise.resolve([]);
     return this.record.seams(assetId);
+  }
+
+  /**
+   * Every frame this record can say its integers counted in (PH-38.3).
+   *
+   * Empty when the deployment keeps no record, and empty when the record was
+   * written before frames existed and nobody has declared its past. Both are
+   * answered as "undeclared" rather than as the current frame.
+   */
+  frames(assetId: string): Promise<readonly LatticeEpoch[]> {
+    if (this.record === null) return Promise.resolve([]);
+    return this.record.frames(assetId);
+  }
+
+  /** The frame a recorded sequence was published on, or null when undeclared. */
+  frameAt(assetId: string, sequence: number): Promise<LatticeEpoch | null> {
+    if (this.record === null) return Promise.resolve(null);
+    return this.record.frameAt(assetId, sequence);
   }
 
   /** The recorded seam whose interval contains an instant, or null (PH-31). */
