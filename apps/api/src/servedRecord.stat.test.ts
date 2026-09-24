@@ -11,14 +11,17 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { assertTickOrder, timeframe, type Candle } from '@otc/core';
+import { assertTickOrder, epochMillis, timeframe, type Candle } from '@otc/core';
 import { ASSET_CATALOGUE } from '@otc/engine';
 import {
+  horizonByLabel,
   joinServedRecords,
+  minimumSpanForDecidedOutcome,
   readServedRecord,
   seamIndicesOf,
   servedAssurance,
   type ServedRecord,
+  type StopRule,
 } from '@otc/lab';
 
 /**
@@ -39,7 +42,25 @@ const ASSET = [...ASSET_CATALOGUE].sort(
   (a, b) => a.evidence.meanIntervalMs - b.evidence.meanIntervalMs,
 )[0]!.definition.id;
 /** Enough ticks on the fastest tape to close whole one-minute candles. */
-const SPAN_TICKS = 1_800;
+/**
+ * The market time the first read must span, not the number of ticks it must
+ * hold (hosted CI on the Cycle Audit 12 merge, `CURRENT_STATE.md`).
+ *
+ * This read feeds the battery, and the battery decides a horizon only when the
+ * horizon fits inside the evaluation split — 35% of the record at the default
+ * fractions, so a 30-second horizon needs about 86 seconds of market time.
+ * Reading a fixed 1,800 ticks controlled none of that: since PH-24.17 the
+ * engine prints three to four times as many ticks per candle and PH-34 made the
+ * tempo follow the regime, so the same count spans minutes when the market is
+ * calm and under a minute when it is busy. It read 1,800 ticks, asserted only
+ * that "at least one whole minute was read" — sixty seconds against a
+ * requirement of eighty-six — and CI failed with an empty horizon list on the
+ * first busy stretch it met.
+ *
+ * Three times the minimum, so the shortest two horizons are decided with room
+ * rather than exactly one entry landing on the boundary.
+ */
+const SPAN_MS = Math.ceil(minimumSpanForDecidedOutcome(horizonByLabel('30s').durationMs) * 3);
 const RESUME_TICKS = 300;
 
 interface Running {
@@ -121,6 +142,8 @@ async function bootOn(stateDir: string, port: number): Promise<Running> {
 
 interface MarketView {
   readonly sequence: number | null;
+  /** The instant of the tick in force — the venue's own clock, not this one's. */
+  readonly instant: number | null;
   readonly recovery:
     | { kind: 'fresh' }
     | { kind: 'resumed'; fromSequence: number }
@@ -143,12 +166,12 @@ async function waitForTicks(running: Running, minSequence: number): Promise<Mark
   }
 }
 
-function read(running: Running, from: number, ticks: number): Promise<ServedRecord> {
+function read(running: Running, from: number, stopAfter: StopRule): Promise<ServedRecord> {
   return readServedRecord({
     baseUrl: running.base,
     assetId: ASSET,
     from,
-    stopAfter: { ticks },
+    stopAfter,
     signal: AbortSignal.timeout(480_000),
   });
 }
@@ -185,17 +208,24 @@ describe('the served record, read from outside the process', () => {
     expect(live.recovery?.kind).toBe('fresh');
     const from = live.sequence! + 1;
 
-    // Two connections, opened together, asking for the same next sequence.
+    // Two connections, opened together, asking for the same next sequence and
+    // stopping at the same market instant — so both hold the same ticks (INV-002)
+    // and the record spans what the battery needs rather than a count that
+    // happens to be whatever the current regime prints.
+    const until = epochMillis(live.instant! + SPAN_MS);
     const [a, b] = await Promise.all([
-      read(first, from, SPAN_TICKS),
-      read(first, from, SPAN_TICKS),
+      read(first, from, { instant: until }),
+      read(first, from, { instant: until }),
     ]);
     for (const record of [a, b]) {
       expect(record.endedBy).toBe('rule');
       expect(record.gaps).toEqual([]);
       expect(record.closes).toEqual([]);
       expect(record.discontinuities).toEqual([]);
-      expect(record.ticks).toHaveLength(SPAN_TICKS);
+      // A count is no longer fixed, so what is asserted is the behaviour: the
+      // read spanned what was asked of it and held enough ticks to fold.
+      expect(record.ticks.length).toBeGreaterThan(60);
+      expect(record.ticks[record.ticks.length - 1]!.instant).toBeGreaterThanOrEqual(until);
       expect(record.ticks[0]!.sequence).toBe(from);
     }
     // INV-002: the same market, tick for tick, and the same dataset byte for byte.
@@ -262,7 +292,7 @@ describe('the served record, read from outside the process', () => {
     // resume point. PH-28.1 persists the published record and primes the feed
     // from it at boot, so the resume is honoured — asserted here as a read
     // that must not be refused, from a sequence the *first* process served.
-    const c = await read(second, last + 1, RESUME_TICKS);
+    const c = await read(second, last + 1, { ticks: RESUME_TICKS });
     expect(c.gaps, 'the resume was refused or told a gap').toEqual([]);
 
     // Finding c, closed the same way: the minute the kill fell in was open in
@@ -346,8 +376,17 @@ describe('the served record, read from outside the process', () => {
     // would be vacuous. The assertion is the exact shape of that verdict.
     expect(alone.hypothesesTested).toBe(0);
     expect(alone.outcome).toBe('undecided');
-    expect(alone.ticks).toBe(SPAN_TICKS);
-    expect(alone.horizons.length).toBeGreaterThan(0);
+    expect(alone.ticks).toBe(a.ticks.length);
+    // The assertion that failed on hosted CI, now with what it rests on in the
+    // message: an empty horizon list means every horizon was skipped for want
+    // of a decided outcome, which is a statement about market time, not ticks.
+    const spanned = a.ticks[a.ticks.length - 1]!.instant - a.ticks[0]!.instant;
+    expect(
+      alone.horizons.length,
+      `no horizon was decided: the record spans ${String(Math.round(spanned / 1000))}s of market ` +
+        `time over ${String(a.ticks.length)} ticks, and the shortest horizon needs ` +
+        `${String(Math.round(minimumSpanForDecidedOutcome(horizonByLabel('30s').durationMs) / 1000))}s`,
+    ).toBeGreaterThan(0);
     for (const horizon of alone.horizons) expect(horizon.detectionFloorPp).toBeGreaterThan(0);
     // No seam in a single uninterrupted read, and the verdict says which
     // family it therefore could not build rather than running it on nothing.
@@ -357,17 +396,17 @@ describe('the served record, read from outside the process', () => {
     // — a told gap or a declared seam — reaching the battery as a seam index
     // read off the record itself, so the withheld seam family is built.
     const joined = joinServedRecords(a, c);
-    expect(joined.ticks).toHaveLength(SPAN_TICKS + RESUME_TICKS);
+    expect(joined.ticks).toHaveLength(a.ticks.length + c.ticks.length);
     const seams = seamIndicesOf(joined);
     if (c.gaps.length > 0 || c.discontinuities.length > 0) {
-      expect(seams).toEqual([SPAN_TICKS]);
+      expect(seams).toEqual([a.ticks.length]);
     } else {
       expect(seams).toEqual([]);
     }
     const across = await servedAssurance(joined, { at: Date.now(), battery });
     expect(across.hypothesesTested).toBe(0);
     expect(across.outcome).toBe('undecided');
-    expect(across.ticks).toBe(SPAN_TICKS + RESUME_TICKS);
+    expect(across.ticks).toBe(a.ticks.length + c.ticks.length);
     if (seams.length > 0) {
       expect(across.families).toContain('wh-seam-proximity');
       expect(across.withheldUnavailable).not.toContain('wh-seam-proximity');
