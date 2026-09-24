@@ -175,15 +175,58 @@ export function defaultFamilies(): AttackFamily[] {
  * synchronously for a small dataset and cooperatively for a large one, with no
  * second implementation to keep in step.
  */
+export const DEFAULT_TRAINING_FRACTION = 0.4;
+export const DEFAULT_CONFIRMATION_FRACTION = 0.75;
+
+/**
+ * The market time a record must span before a horizon can be decided at all.
+ *
+ * The battery splits a record by **fraction**, not by duration: training is
+ * everything below `trainingFraction`, the evaluation split runs from there to
+ * `confirmationFraction`, and an entry is decided only when its expiry falls
+ * inside that split. So the evaluation window is
+ * `(confirmationFraction - trainingFraction)` of the whole span, and a horizon
+ * longer than that window produces **no decided outcome**, the horizon is
+ * skipped, and a verdict comes back carrying no horizons at all.
+ *
+ * At the defaults the window is 35% of the record, so the shortest binary
+ * horizon — thirty seconds — needs a record spanning about **86 seconds of
+ * market time**. A caller that reads a fixed number of *ticks* controls none of
+ * this: since PH-24.17 the engine prints three to four times as many ticks per
+ * candle and PH-34 made the tempo follow the regime, so the same tick count can
+ * span minutes in a calm stretch and under a minute in an active one.
+ *
+ * That is not hypothetical. `servedRecord.stat.test.ts` read 1,800 ticks and
+ * asserted only that "at least one whole minute was read" — sixty seconds
+ * against a requirement of eighty-six — and hosted CI failed on the Cycle Audit
+ * 12 merge when the venue happened to be busy, with an empty horizon list and
+ * nothing in the failure to say why (`CURRENT_STATE.md`, "Hosted CI, honestly").
+ */
+export function minimumSpanForDecidedOutcome(
+  horizonMs: number,
+  options: { trainingFraction?: number; confirmationFraction?: number } = {},
+): number {
+  const training = options.trainingFraction ?? DEFAULT_TRAINING_FRACTION;
+  const confirmation = options.confirmationFraction ?? DEFAULT_CONFIRMATION_FRACTION;
+  const window = confirmation - training;
+  if (!(window > 0)) {
+    throw new RangeError(
+      `The evaluation window must be positive; received trainingFraction ${training} and ` +
+        `confirmationFraction ${confirmation}.`,
+    );
+  }
+  return horizonMs / window;
+}
+
 function* batteryCore(
   dataset: ObserverDataset,
   options: BatteryOptions = {},
 ): Generator<void, Verdict> {
-  const trainingFraction = options.trainingFraction ?? 0.4;
+  const trainingFraction = options.trainingFraction ?? DEFAULT_TRAINING_FRACTION;
   if (!(trainingFraction > 0 && trainingFraction < 1)) {
     throw new RangeError(`trainingFraction must lie in (0, 1), received ${trainingFraction}.`);
   }
-  const confirmationFraction = options.confirmationFraction ?? 0.75;
+  const confirmationFraction = options.confirmationFraction ?? DEFAULT_CONFIRMATION_FRACTION;
   if (!(confirmationFraction > trainingFraction && confirmationFraction < 1)) {
     throw new RangeError(
       `confirmationFraction must lie in (trainingFraction, 1), received ${confirmationFraction}.`,

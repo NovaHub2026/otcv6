@@ -1,6 +1,9 @@
 export {
+  DEFAULT_CONFIRMATION_FRACTION,
+  DEFAULT_TRAINING_FRACTION,
   defaultFamilies,
   formatVerdict,
+  minimumSpanForDecidedOutcome,
   runBattery,
   runBatteryAsync,
   type AttackFinding,
