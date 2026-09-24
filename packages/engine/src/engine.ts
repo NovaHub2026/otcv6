@@ -145,15 +145,34 @@ export class MarketEngine implements TickSource {
     // Quantise the MAGNITUDE, before the sign. Rounding a magnitude is a
     // symmetric operation; rounding a signed price is not, and that asymmetry is
     // worth up to 22 percentage points of directional edge (ADR-0004).
-    const steps = Math.floor(
-      magnitude / this.instrument.logQuantum + this.options.streams.rounding.nextFloat64(),
-    );
+    const quanta = magnitude / this.instrument.logQuantum;
+    const steps = Math.floor(quanta + this.options.streams.rounding.nextFloat64());
 
     // The only line in the engine that touches direction.
     const sign = this.options.streams.sign.nextBoolean() ? 1 : -1;
 
     this.#price += sign * steps;
-    this.#previousMagnitude = steps;
+    // **The layers above are told the magnitude, not its rounding (PH-37.1).**
+    // This was `steps`, and `steps` is how the price is *published*: a magnitude
+    // below one quantum rounds to zero, and a zero excites no arrival and does
+    // not even enter the running average Hawkes normalises against. So the
+    // publication lattice reached the generator — coarsening it cut the tick
+    // rate by a quarter on EUR/USD and by 60% on BNB, measured, for no reason
+    // anyone chose. The calibration never had this coupling: it has no quantum
+    // yet and feeds base-volatility units (`asset.ts`), so the two have been
+    // exciting on different quantities since PH-4. That is *not* the root of
+    // PH-34's pace error, which was checked: with this coupling gone the pace
+    // formula still misses by x0.94 to x2.93, in the exact order of how close
+    // each asset's stationary multiplier `1/(1 - n)` sits to the intensity
+    // clamp of 8 (DOGE 7.68, BTC 3.60, EUR/USD 2.32). The clamp is deliberate
+    // and the measured fit loop stays.
+    //
+    // Both consumers normalise against their own running average — Hawkes by
+    // `#averageMagnitude`, the structure layer by `#averagePathRate` — so the
+    // unit here cancels and only the zeros and the discreteness were ever
+    // doing anything. Still an absolute size, so nothing here sees a sign
+    // (ADR-0003).
+    this.#previousMagnitude = quanta;
     this.#previousIntervalMs = intervalMs;
 
     return {

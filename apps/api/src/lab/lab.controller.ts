@@ -729,7 +729,11 @@ export class LabController {
       }
     }
     const unit = units === null ? null : this.distanceUnit(id);
-    const targetSteps = units === null || unit === null ? null : Math.abs(units) * unit.unitSteps;
+    // Floored at one step: the unit is fractional (PH-37.2), so a fraction of
+    // a unit on a coarse lattice can ask for less than the market's smallest
+    // move, and a push that cannot move is not a push.
+    const targetSteps =
+      units === null || unit === null ? null : Math.max(1, Math.abs(units) * unit.unitSteps);
     let count = Math.abs(ticks);
     const running = this.pushes.get(id);
     const extended = running !== undefined && running.direction === direction;

@@ -95,12 +95,13 @@ describe('PH-3 acceptance: the canonical engine', () => {
     // on: the largest tested bucket reaching the corrected and confirmation
     // thresholds, at 50% power (a4-01). The first is finer than the margin; the
     // second is not, and the documents say which is which.
-    // Re-measured on PH-35's engine, 2026-09-23 (0.223 and 0.319 on PH-34's,
-    // 0.221 and 0.315 before both): the market at the real instrument's own
-    // level moves less per contract, and the same tick budget spans more of
-    // them.
-    expect(shortest.minimumDetectableEffectPoints).toBeCloseTo(0.215, 3);
-    expect(shortest.gateMinimumDetectableEffectPoints).toBeCloseTo(0.306, 3);
+    // Re-measured on PH-37's engine, 2026-09-24 (0.215 and 0.306 on PH-35's,
+    // 0.223 and 0.319 on PH-34's, 0.221 and 0.315 before all three): the
+    // staircase lattice barely moves it, which is the point — what changed is
+    // how the price is published, not how far it travels, and the floor is a
+    // property of the travel.
+    expect(shortest.minimumDetectableEffectPoints).toBeCloseTo(0.219, 3);
+    expect(shortest.gateMinimumDetectableEffectPoints).toBeCloseTo(0.312, 3);
     expect(shortest.gateSufficientForPayout).toBe(false);
 
     // Every attack family must actually have run.

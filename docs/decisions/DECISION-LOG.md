@@ -1161,3 +1161,39 @@ and nothing more.
 **Why it is a phase and not a fix.** It changes what a broker sees in normal
 operation — seams stop being an operator-only event — so it carries a phase
 document, an ADR, the broker-facing text in `INTEGRATION.md`, and a phase gate.
+
+## 2026-09-23 — The calibration simulates a market the engine does not run
+
+**Found in PH-37.2**, measuring the lattice by what it refunds.
+
+`createMarketEngine` builds its magnitude stack as regime → structure →
+duration coupling → **volatility floor** (PH-34: no combination of the layers
+takes the level below the calm regime's), and hands the **regime to the arrival
+model as its activity source**, which is how half of a regime arrives as more
+ticks. `horizonReturnsCore` in `asset.ts` — the walk the whole calibration is
+derived from — omits **both**: no floor, and an arrival process that does not
+know what regime the market is in.
+
+So every number the calibration produces describes a market quieter in its calm
+stretches than the one the engine runs: the lattice quantile, the variance per
+millisecond, the median steps, the kurtosis. Measured on PH-37's first build,
+the refund fit read about **1.3 percentage points high** on every asset against
+`evidence:ties` on the real engine, all in the same direction.
+
+It is worth asking, and nobody has, whether this is what PH-34's pace fit has
+been correcting: the calibration predicts an interval for a market whose
+arrivals never speed up, so the engine's realised rate cannot match it, and the
+fit measures the difference away without naming it.
+
+**Decision.** PH-37.2 builds its refund measurement on the engine's own stack,
+floor and regime-driven arrivals included, because the refund is the number this phase chooses a lattice
+by and a systematic bias in it is texture given away. The **quantile** is left
+where it is, deliberately: it feeds the dispersion budget and every recorded
+trait, so correcting it moves every asset's volatility, and that is a phase of
+its own rather than a change smuggled into this one.
+
+**What to do with it.** It goes to Cycle Audit 12 as a finding. The question the
+audit should settle is not whether the floor belongs in the calibration — it
+does — but what its absence has been worth: the dispersion fit and the pace fit
+both correct against the real engine afterwards, so part of the bias is already
+absorbed, and how much is a measurement nobody has made.

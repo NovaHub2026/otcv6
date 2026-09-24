@@ -218,11 +218,26 @@ describe('a venue hosts the catalogue', () => {
       assets.reduce((sum, a) => sum + counts.get(a.definition.id)!, 0);
     const fastFive = total(byPace.slice(0, 5));
     const slowFive = total(byPace.slice(-5));
-    // The recorded mean intervals put the two groups more than six apart;
-    // three is the floor with the bursts allowed for.
-    expect(fastFive, `fast ${String(fastFive)} vs slow ${String(slowFive)}`).toBeGreaterThan(
-      slowFive * 3,
-    );
+    // **Against the catalogue's own separation, not a constant (PH-37.2).**
+    // This asserted `fast > slow × 3` when the recorded intervals put the
+    // groups more than six apart. PH-37 recalibrated them to 3.83 apart —
+    // 4.25 to 3.50 ticks a second for the fastest five, 1.21 to 0.91 for the
+    // slowest — and one hour of one realisation came in at 2.75, so a constant
+    // floor of three failed a market that is behaving exactly as its catalogue
+    // says. What this guard is about is that the venue paces each market by its
+    // own tempo rather than advancing them alike, so it is written against the
+    // tempo the catalogue records, with half of it as the room bursts need.
+    const recordedRatio =
+      byPace.slice(0, 5).reduce((sum, a) => sum + 1000 / a.evidence.meanIntervalMs, 0) /
+      byPace.slice(-5).reduce((sum, a) => sum + 1000 / a.evidence.meanIntervalMs, 0);
+    expect(
+      recordedRatio,
+      'the catalogue no longer separates fast from slow at all',
+    ).toBeGreaterThan(2);
+    expect(
+      fastFive / slowFive,
+      `fast ${String(fastFive)} vs slow ${String(slowFive)}, recorded ratio ${recordedRatio.toFixed(2)}`,
+    ).toBeGreaterThan(recordedRatio / 2);
   });
 
   it('waits for the soonest deadline across all assets', () => {

@@ -24,7 +24,7 @@ import type { MarketEngine } from './engine.js';
  * past 120000 ticks, while the one that matters most —
  * `productionComposition.test.ts`, the only caller that drives the shipped
  * factory under `environment: 'production'` — runs 10000. At dogeusdt-otc's
- * recorded mean interval of 233 ms — the fastest tape in the catalogue, so the
+ * recorded mean interval of 235 ms — the fastest tape in the catalogue, so the
  * least market time a fixed window buys — that is about 38.8 minutes at the
  * narrow end and 7.8 hours at the wide one, against markets that run for months
  * with a monotonic sequence.

@@ -89,7 +89,28 @@ export const REGIME_LEVELS: Readonly<Record<VolatilityRegime, number>> = {
   stressed: 1.6,
 };
 
-export const REGIME_ACTIVITY_SHARE = 0.5;
+/**
+ * How much of a regime's volatility arrives as ticks rather than as size.
+ *
+ * `activity = level^(2·share)`, so at ½ the tick rate carries the whole of the
+ * level and the per-tick step barely moves; at 0 the rate is flat and the level
+ * is entirely in the step.
+ *
+ * **PH-37 lowered it from ½ to ¼.** Measured on PH-35's catalogue, a stressed
+ * tick stepped ×1.41 of a calm one on EUR/USD, ×1.34 on BTC and **×1.03 on
+ * TSLA** — agitation arrived almost entirely as *more ticks*, which is the
+ * opposite of the instinct and of what the Human Owner asked for when they
+ * said a bigger move per tick "dependiendo del regimen sí haría sentido".
+ *
+ * The step from calm to stressed is `span^(1 − share)` — the duration coupling
+ * cancels out of it — so the ladder's span of 1.6/0.8 = ×2 gives ×1.41 at a
+ * half, which is what EUR/USD measured, and **×1.68** at a quarter, while the
+ * rate still rises with the regime by ×1.41 instead of ×2.
+ *
+ * It costs nothing: `splitRegimeLevel` holds variance per unit time at `level²`
+ * whatever the share is, so the candle a regime produces is the size PH-35 set.
+ */
+export const REGIME_ACTIVITY_SHARE = 0.25;
 
 /** A regime's level relative to normal: what its multipliers are built from. */
 export function relativeRegimeLevel(regime: VolatilityRegime): number {

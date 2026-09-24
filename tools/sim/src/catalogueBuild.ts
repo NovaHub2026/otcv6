@@ -34,6 +34,17 @@ export interface Options {
   label: string;
   seats: string[] | null;
   replicates: number;
+  /**
+   * Take the freshly measured lattice instead of the recorded one.
+   *
+   * Off by default, and that default is load-bearing: a recalibration keeps
+   * each asset's lattice so a running market's published prices keep meaning
+   * what they meant, which is what PH-34 and PH-35 did. PH-37 is the phase that
+   * changes the lattice on purpose — it is what the phase is *about* — so it
+   * asks for it by name, and the release notes carry what it does to a running
+   * deployment.
+   */
+  relattice: boolean;
 }
 
 export function parse(argv: readonly string[]): Options {
@@ -43,11 +54,15 @@ export function parse(argv: readonly string[]): Options {
     label: 'catalogue-of-thirty',
     seats: null,
     replicates: 3,
+    relattice: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
     const value = argv[i + 1];
     switch (flag) {
+      case '--relattice':
+        options.relattice = true;
+        break;
       case '--out':
         options.out = value ?? null;
         i += 1;
@@ -212,6 +227,8 @@ export function entry(seat: AssetSeat, asset: RegisteredAsset): string {
       predictedExcessKurtosis: ${e.predictedExcessKurtosis},
       logQuantum: ${e.logQuantum},
       tieRate: ${e.tieRate},
+      realisedRefundRate: ${e.realisedRefundRate},
+      refundLatticeFactor: ${e.refundLatticeFactor},
       medianSteps: ${e.medianSteps},
       meanIntervalMs: ${e.meanIntervalMs},
       logVariancePerMs: ${e.logVariancePerMs},
@@ -247,6 +264,8 @@ export function evidenceRow(options: {
     `| ${seat.id} | ${seat.archetype} | ${sample.excessKurtosis.toFixed(1)} → ` +
     `${asset.authored.excessKurtosis.toFixed(1)} (${String(retreats)} retreats${clamped}) ` +
     `| ${asset.evidence.logQuantum.toExponential(4)} | ${String(asset.instrument.displayPrecision)} ` +
+    `| ${((asset.evidence.realisedRefundRate ?? 0) * 100).toFixed(2)}% ` +
+    `| x${String(asset.evidence.refundLatticeFactor ?? 1)} ` +
     `| ${(asset.evidence.tieRate * 100).toFixed(3)}% | ${asset.evidence.medianSteps.toFixed(0)} ` +
     `| ${asset.evidence.meanIntervalMs.toFixed(1)} | ${(simulatedMs / 86_400_000).toFixed(1)} d × ` +
     `${String(replicates)} | ${String(seconds)}s |`

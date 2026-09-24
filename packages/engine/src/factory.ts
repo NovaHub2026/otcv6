@@ -85,7 +85,7 @@ export const DEFAULT_ENGINE_CONFIG: Omit<MarketEngineConfig, 'instrument'> = {
  * snapshot restored across that line would continue a market with one model's
  * latent state under another's rules.
  */
-export const ENGINE_MODEL = 'ph-34';
+export const ENGINE_MODEL = 'ph-37';
 
 /** Stream purposes the engine derives. Each gets its own key. */
 export const ENGINE_STREAM_PURPOSES = [

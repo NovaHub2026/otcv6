@@ -12,23 +12,23 @@ Last synchronized: 2026-09-06
 
 ## Development cycle
 
-| Field                            | Value                                                                                                                                                                                                         |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 12 — **3 of 3** phases approved (PH-34, PH-35, PH-36): the Cycle Audit is the next legal action (§28). Cycle 11 is left open: PH-32 and PH-33 are paused on their branches, and rerun on this catalogue |
-| Approved phases in current cycle | **3 of 3** — PH-34, PH-35, PH-36. Cycle 12 is complete and the Cycle Audit is the next legal action (§28)                                                                                                     |
-| Cycle Audit state                | **010 closed** — 98 claims, 86 confirmed, 12 partial, 0 refuted; 45 plants, 23 survived and are closed; fixes gated green on `audit/ca10-fixes`                                                               |
-| Last Cycle Audit                 | [Cycle Audit 009](docs/audits/CYCLE-AUDIT-009.md) — 2026-09-05, eight independent auditors, one worktree each, every finding refuted independently; closed                                                    |
+| Field                            | Value                                                                                                                                                      |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Active development cycle         | Cycle 13 — **1 of 3** phases approved (PH-37). Cycle 12 is full and unaudited; Cycle 11 stays open                                                         |
+| Approved phases in current cycle | **1 of 3** — PH-37. Cycle 12 is complete and **Cycle Audit 12 is still due** (§28)                                                                         |
+| Cycle Audit state                | **010 closed** — 98 claims, 86 confirmed, 12 partial, 0 refuted; 45 plants, 23 survived and are closed; fixes gated green on `audit/ca10-fixes`            |
+| Last Cycle Audit                 | [Cycle Audit 009](docs/audits/CYCLE-AUDIT-009.md) — 2026-09-05, eight independent auditors, one worktree each, every finding refuted independently; closed |
 
 ## Phase and subphase
 
-| Field                  | Value                                                             |
-| ---------------------- | ----------------------------------------------------------------- |
-| Active phase           | none                                                              |
-| Phase lifecycle        | none                                                              |
-| Active subphase        | none                                                              |
-| Subphase lifecycle     | none                                                              |
-| Last approved phase    | PH-36 — A stalled market reopens itself                           |
-| Last approved subphase | PH-36.1 — The reopening, its bounds, and what a broker sees of it |
+| Field                  | Value                                                                |
+| ---------------------- | -------------------------------------------------------------------- |
+| Active phase           | none                                                                 |
+| Phase lifecycle        | none                                                                 |
+| Active subphase        | none                                                                 |
+| Subphase lifecycle     | none                                                                 |
+| Last approved phase    | PH-37 — The staircase: a price you can read tick by tick             |
+| Last approved subphase | PH-37.2 — The lattice by refund ceiling, and the thirty assets on it |
 
 **Cycle 12 is full and unaudited: Cycle Audit 12 is the next legal action
 (GOVERNANCE §28).** PH-34 (the market's tempo follows its state), PH-35 (the
@@ -94,12 +94,12 @@ both?
 
 **It can.** On 24 million ticks spanning 327 simulated days, one asset is:
 
-|                              | Result                                                                                                                                                                                                                                                                  |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unexploitable                | clean verdict across ~570 hypotheses and all four attack feature kinds                                                                                                                                                                                                  |
-| At a resolution that matters | 30-second single-test detection floor 0.215pp (PH-35's catalogue; 0.223pp on PH-34's, 0.221pp before), finer than the 0.2513pp margin the 99% payout implies; the gate's own 50%-power figure at 30 s is 0.306pp, and `VALIDATION.md` says which claim is which (a4-01) |
-| Plausible                    | 15/15 realism metrics, bands unchanged since the commit that introduced the engine (906e398)                                                                                                                                                                            |
-| Structurally guaranteed      | mirror test passes with zero divergences                                                                                                                                                                                                                                |
+|                              | Result                                                                                                                                                                                                                                                                      |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unexploitable                | clean verdict across ~570 hypotheses and all four attack feature kinds                                                                                                                                                                                                      |
+| At a resolution that matters | 30-second single-test detection floor 0.219pp (PH-37's catalogue; 0.215pp on PH-35's, 0.223pp on PH-34's), finer than the 0.2513pp margin the 99% payout implies; the gate's own 50%-power figure at 30 s is 0.312pp, and `VALIDATION.md` says which claim is which (a4-01) |
+| Plausible                    | 15/15 realism metrics, bands unchanged since the commit that introduced the engine (906e398)                                                                                                                                                                                |
+| Structurally guaranteed      | mirror test passes with zero divergences                                                                                                                                                                                                                                    |
 
 ## Blockers
 
@@ -240,14 +240,14 @@ minutes it cost are recorded rather than the run quietly repeated.
 
 ## EXACT NEXT LEGAL ACTION
 
-**Run Cycle Audit 12.** The cycle is full — three phases approved and merged,
-with `v2.2.0`, `v2.3.0` and `v2.3.1` tagged on the commits hosted CI
-corroborated — and no audit record names this cycle, so GOVERNANCE §28 stops
-normal development here. It runs on the catalogue and the runtime that are in
-`main` today: the staircase phase now open rebuilds the catalogue, and an audit
-that runs after it would describe a market that no longer exists. The long
-measurements paused on their branches rerun on whatever catalogue that phase
-leaves; the paragraph below them is history.
+**Run Cycle Audit 12.** It was due before the staircase phase and it is due
+now: the cycle before this one is full — three phases approved and merged, with
+`v2.2.0`, `v2.3.0` and `v2.3.1` tagged on the commits hosted CI corroborated —
+and no audit record names it. The phase that ran ahead of it did so on the
+Human Owner's direction, and it hands the audit three things to start from: a
+catalogue rebuilt on a lattice chosen by measurement, a runtime that reopens a
+market by itself, and a finding in the decision log that the calibration
+simulates a market the engine does not run.
 
 **Open PH-32 — the market time at which the anti-predictability claim stops resting on an hour.** The detection floor is `140.1 / sqrt(windows)`, so a year settles 30s (0.186pp gated) and leaves 15m at 1.018pp; every horizon crosses the 0.25pp product margin at about **seventeen years** of market time, which is 33 CPU-hours to generate and cannot be held in memory (936 GB). The phase makes the battery accumulate over chunks, proves the chunked path gives the same verdict as the whole-array one, and runs the thirty. Design notes: `~/.otc-local/ph32/DESIGN.md`. Cycle 11 is open and its first phase came from the Human Owner operating the Lab and saying what was wrong with it — the pace default, the push scale, a way to stop, and levels bounded by the market's own state. Cycle 10 is complete and audited; `v2.0.0` is the release that stands. Cycle 10 is complete and audited: three phases approved, Cycle Audit 10 closed (98 claims, 86 confirmed, 12 partial; every critical and material finding fixed in two gated waves, fourteen minor carried by name in the record), `v2.0.0` tagged on the commit hosted CI corroborated, and the integration package regenerated from that tag and verified inside itself. The roadmap's Cycle 10 section names what is deferred: Issue #9 (the multi-node composition), the engine's next stylised facts, jumps and volume; Issues #3 and #14 are the Human Owner's. The audit record's carried list is the first page of the next cycle's work.
 

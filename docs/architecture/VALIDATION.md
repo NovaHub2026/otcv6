@@ -163,7 +163,7 @@ The largest tested bucket is the whole sample because the `unconditional`
 family now exists; before it, the gate figure at 30 s would have been about
 0.45pp. On the PH-3 acceptance run (24 million ticks, 327 simulated days,
 `tools/sim/src/phaseAcceptance.stat.test.ts`, 2026-09-02) the 30-second figures
-are **0.215pp** single-test and **0.306pp** gate, and both are asserted there to
+are **0.219pp** single-test and **0.312pp** gate, and both are asserted there to
 three decimals (0.223 and 0.319 on PH-34's catalogue, 0.221 and 0.315 before
 it; PH-35 put the market at the real instrument's own level on 2026-09-23 and
 the same tick budget then spans more contracts). The single-test floor is still

@@ -438,7 +438,18 @@ describe('the Lab is marked wherever it appears', () => {
 
   it("states every distance in the market's unit and converts on the screen (PH-24.18)", () => {
     const cierre = code('lab/Cierre.tsx');
-    expect(cierre.match(/onDelta\(d \* unitSteps, true\)/g) ?? []).toHaveLength(2);
+    // **Through `stepsFor`, and that is the point (PH-37.2).** The buttons read
+    // `onDelta(d * unitSteps, true)` until the unit stopped being rounded to
+    // whole lattice steps: a unit is a tenth of the candle, so "+1" began
+    // asking for 1.8 steps and a lattice target is whole. What this guard is
+    // about is unchanged — every relative button states its distance in the
+    // market's unit, and the screen is where it becomes steps — so it asserts
+    // that both still go through the one place that converts, and that the
+    // conversion rounds and never vanishes.
+    expect(cierre.match(/onDelta\(stepsFor\(d\), true\)/g) ?? []).toHaveLength(2);
+    expect(cierre).toMatch(
+      /const stepsFor = \(d: number\): number =>\s*Math\.sign\(d\) \* Math\.max\(1, Math\.round\(Math\.abs\(d\) \* unitSteps\)\)/,
+    );
     const escenarios = code('lab/Escenarios.tsx');
     expect(escenarios).toMatch(
       /DISTANCE_PARAMS = new Set\(\['net', 'range', 'rise', 'fall', 'level', 'hold'\]\)/,
