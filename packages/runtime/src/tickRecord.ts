@@ -2,6 +2,13 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import { epochMillis, logPrice, type EpochMillis, type Tick } from '@otc/core';
+import {
+  frameAtOrBefore,
+  malformedFrame,
+  sameFrame,
+  type LatticeEpoch,
+  type PriceFrame,
+} from './priceFrame.js';
 import { malformedBatch, malformedPass, RecordForkError, sameTick } from './replication.js';
 import {
   assertSchemaNotNewer,
@@ -93,6 +100,22 @@ export interface TickRecord {
    * expiry > lastInstant`), narrowed to a point.
    */
   seamAt(assetId: string, instant: number): Promise<RecordedSeam | null>;
+  /**
+   * Every frame this record can say its integers counted in, oldest first
+   * (PH-38.1). Half-open by sequence: an epoch covers up to the next one's
+   * `fromSequence`, and the newest is in force.
+   */
+  frames(assetId: string): Promise<readonly LatticeEpoch[]>;
+  /**
+   * The frame in force at `sequence`, or **null when the range is
+   * undeclared** — the record holds a tick there but was written before it
+   * could say what the tick counted in.
+   *
+   * Null is an answer, not an absence to paper over. Rendering an undeclared
+   * price on the current frame is exactly the defect Cycle Audit 12 found, so a
+   * caller says "undeclared" rather than guessing.
+   */
+  frameAt(assetId: string, sequence: number): Promise<LatticeEpoch | null>;
 }
 
 /**
@@ -157,6 +180,15 @@ function seamBetween(assetId: string, previous: Tick, next: Tick): RecordedSeam 
 export interface AssetBatch {
   readonly assetId: string;
   readonly ticks: readonly Tick[];
+  /**
+   * What this batch's integers count in (PH-38.1).
+   *
+   * Required rather than optional, and the compiler is the guard: a caller that
+   * omits a frame writes no epoch **silently**, which is the defect this field
+   * exists to end wearing a new hat. The cost of requiring it was assumed to be
+   * a wide mechanical diff and measured instead at one production call site.
+   */
+  readonly frame: PriceFrame;
 }
 
 /**
@@ -217,8 +249,21 @@ export const MEASURED_RECORD_BYTES_PER_TICK = 61.2;
  * Forward is automatic: a version-1 file gains the table on open and is
  * stamped 2, and its seams are whatever it can still observe — nothing before
  * the upgrade, every one after it.
+ *
+ * **3 (PH-38.1):** the `lattice` table. Version 2's argument applies again and
+ * harder: a reader that cannot see this table renders every price on the
+ * current frame, which is how a release that passed its gate and hosted CI
+ * moved thirty live markets by a median of 31.7% (Cycle Audit 12, findings 2
+ * and 3). So a downgrade fails closed at open.
+ *
+ * Forward is **not** automatic here, and that is deliberate. The v2 to v3
+ * migration writes nothing: no sequence jump can say which lattice was in force
+ * on either side of it, and seeding every asset from the catalogue's own
+ * `LATTICE_BEFORE_PH37` would be wrong in a new direction on a record that
+ * already holds post-change ticks. An upgraded file reports its pre-upgrade
+ * range as undeclared and PH-38.2 is what lets an operator declare it.
  */
-export const RECORD_SCHEMA_VERSION = 2;
+export const RECORD_SCHEMA_VERSION = 3;
 
 /** A record kept in one SQLite file, opened the way the candle history is. */
 export class SqliteTickRecord implements TickRecord {
@@ -237,6 +282,8 @@ export class SqliteTickRecord implements TickRecord {
   readonly #insertSeam: StatementSync;
   readonly #readSeams: StatementSync;
   readonly #readSeamAt: StatementSync;
+  readonly #insertLattice: StatementSync;
+  readonly #readLattices: StatementSync;
 
   constructor(location: string) {
     if (location !== ':memory:' && !location.startsWith('file:')) {
@@ -283,6 +330,26 @@ export class SqliteTickRecord implements TickRecord {
         PRIMARY KEY (asset_id, resumes_at_sequence)
       ) WITHOUT ROWID
     `);
+    // What the integers count in, one row per frame per asset (PH-38.1).
+    // Smaller than the seam table by construction — a frame moves on a release,
+    // a seam on a restart — and keyed so an epoch cannot be written twice at
+    // one sequence.
+    this.#db.exec(`
+      CREATE TABLE IF NOT EXISTS lattice (
+        asset_id TEXT NOT NULL,
+        from_sequence INTEGER NOT NULL,
+        from_instant INTEGER NOT NULL,
+        log_quantum REAL NOT NULL,
+        reference_price REAL NOT NULL,
+        display_precision INTEGER NOT NULL,
+        PRIMARY KEY (asset_id, from_sequence)
+      ) WITHOUT ROWID
+    `);
+    // There is deliberately no v2 to v3 migration body. See
+    // `RECORD_SCHEMA_VERSION`: nothing in this repository can soundly date the
+    // rows that already exist, and a guess written durably is worse than an
+    // honest refusal to answer.
+    //
     // The migration `sqlite.ts` said would be asked for here one day. A file
     // written before this version holds its seams already — as jumps between
     // consecutive sequences — and they are the seams of every deploy this
@@ -334,6 +401,14 @@ export class SqliteTickRecord implements TickRecord {
     // `OR REPLACE`: the same gap written twice is the same true fact, and a
     // constraint failure here would roll back the ticks of a whole pass and
     // stall a market over a row that already says what we were about to say.
+    this.#insertLattice = this.#db.prepare(
+      'INSERT OR IGNORE INTO lattice (asset_id, from_sequence, from_instant, log_quantum, ' +
+        'reference_price, display_precision) VALUES (?, ?, ?, ?, ?, ?)',
+    );
+    this.#readLattices = this.#db.prepare(
+      'SELECT asset_id, from_sequence, from_instant, log_quantum, reference_price, ' +
+        'display_precision FROM lattice WHERE asset_id = ? ORDER BY from_sequence',
+    );
     this.#insertSeam = this.#db.prepare(
       'INSERT OR REPLACE INTO seam (asset_id, last_sequence, last_instant, ' +
         'resumes_at_sequence, resumes_at_instant) VALUES (?, ?, ?, ?, ?)',
@@ -366,13 +441,19 @@ export class SqliteTickRecord implements TickRecord {
       // sees a pass half-applied.
       this.#db.exec('BEGIN IMMEDIATE');
       try {
-        for (const { assetId, ticks } of batches) {
+        for (const { assetId, ticks, frame } of batches) {
+          const malformedShapeOfFrame = malformedFrame(frame, assetId);
+          if (malformedShapeOfFrame !== null) throw malformedShapeOfFrame;
           if (ticks.length === 0) {
             fresh.set(assetId, []);
             continue;
           }
           const malformed = malformedBatch(assetId, ticks);
           if (malformed !== null) throw malformed;
+          // The frame in force before this pass, so a change is noticed once
+          // rather than compared per tick.
+          const declared = this.#frames(assetId);
+          let inForce = declared.length === 0 ? null : declared[declared.length - 1]!;
           const head = this.#head(assetId);
           // The tick the record ends at, so a jump away from it is seen and
           // written down rather than left as a hole (PH-31). `head` is the
@@ -401,6 +482,26 @@ export class SqliteTickRecord implements TickRecord {
               continue;
             }
             this.#insert.run(assetId, tick.sequence, tick.instant, tick.price);
+            // Inside the same transaction as the tick it explains, so two
+            // things hold by construction rather than by convention: an epoch
+            // row can never exist without a tick at it, and a tick can never be
+            // written under a frame the log does not state.
+            if (inForce === null || !sameFrame(inForce, frame)) {
+              this.#insertLattice.run(
+                assetId,
+                tick.sequence,
+                tick.instant,
+                frame.logQuantum,
+                frame.referencePrice,
+                frame.displayPrecision,
+              );
+              inForce = {
+                assetId,
+                fromSequence: tick.sequence,
+                fromInstant: tick.instant,
+                ...frame,
+              };
+            }
             const seam = previous === null ? null : seamBetween(assetId, previous, tick);
             if (seam !== null) {
               this.#insertSeam.run(
@@ -488,6 +589,20 @@ export class SqliteTickRecord implements TickRecord {
     return Promise.resolve(row === undefined ? null : toSeam(row));
   }
 
+  frames(assetId: string): Promise<readonly LatticeEpoch[]> {
+    return Promise.resolve(this.#frames(assetId));
+  }
+
+  frameAt(assetId: string, sequence: number): Promise<LatticeEpoch | null> {
+    const bad = badSequence(sequence);
+    if (bad !== null) return Promise.reject(bad);
+    return Promise.resolve(frameAtOrBefore(this.#frames(assetId), sequence));
+  }
+
+  #frames(assetId: string): readonly LatticeEpoch[] {
+    return this.#readLattices.all(assetId).map((row) => toEpoch(row));
+  }
+
   #head(assetId: string): number | null {
     const row = this.#headOf.get(assetId);
     return nullableNumber(row?.['head']);
@@ -498,6 +613,7 @@ export class SqliteTickRecord implements TickRecord {
 export class MemoryTickRecord implements TickRecord {
   readonly #ticks = new Map<string, Tick[]>();
   readonly #seams = new Map<string, RecordedSeam[]>();
+  readonly #frames = new Map<string, LatticeEpoch[]>();
 
   append(batches: readonly AssetBatch[]): Promise<ReadonlyMap<string, readonly Tick[]>> {
     const malformedShape = malformedPass(batches);
@@ -505,9 +621,18 @@ export class MemoryTickRecord implements TickRecord {
     const fresh = new Map<string, readonly Tick[]>();
     const staged = new Map<string, Tick[]>();
     const stagedSeams = new Map<string, RecordedSeam[]>();
-    for (const { assetId, ticks } of batches) {
+    const stagedFrames = new Map<string, LatticeEpoch[]>();
+    for (const { assetId, ticks, frame } of batches) {
+      const malformedShapeOfFrame = malformedFrame(frame, assetId);
+      if (malformedShapeOfFrame !== null) return Promise.reject(malformedShapeOfFrame);
       const malformed = malformedBatch(assetId, ticks);
       if (malformed !== null) return Promise.reject(malformed);
+      const declared = this.#frames.get(assetId) ?? [];
+      // The same rule the SQLite record runs, on the same comparison: the two
+      // implementations must agree about what the record can say (PH-38.1).
+      let inForce: LatticeEpoch | null =
+        declared.length === 0 ? null : declared[declared.length - 1]!;
+      const epochs: LatticeEpoch[] = [];
       const held = this.#ticks.get(assetId) ?? [];
       const head = held.length === 0 ? null : held[held.length - 1]!.sequence;
       // The same jump detection the SQLite record runs, on the same rule: the
@@ -532,6 +657,16 @@ export class MemoryTickRecord implements TickRecord {
           }
           continue;
         }
+        if (inForce === null || !sameFrame(inForce, frame)) {
+          const epoch: LatticeEpoch = {
+            assetId,
+            fromSequence: tick.sequence,
+            fromInstant: tick.instant,
+            ...frame,
+          };
+          epochs.push(epoch);
+          inForce = epoch;
+        }
         const seam = previous === null ? null : seamBetween(assetId, previous, tick);
         if (seam !== null) seams.push(seam);
         previous = tick;
@@ -539,6 +674,7 @@ export class MemoryTickRecord implements TickRecord {
       }
       staged.set(assetId, added);
       stagedSeams.set(assetId, seams);
+      stagedFrames.set(assetId, epochs);
       fresh.set(assetId, added);
     }
     // Applied only once every batch passed, so a refusal leaves everything as
@@ -547,6 +683,13 @@ export class MemoryTickRecord implements TickRecord {
       const held = this.#ticks.get(assetId) ?? [];
       held.push(...added);
       this.#ticks.set(assetId, held);
+    }
+    for (const [assetId, added] of stagedFrames) {
+      if (added.length === 0) continue;
+      const held = this.#frames.get(assetId) ?? [];
+      held.push(...added);
+      held.sort((a, b) => a.fromSequence - b.fromSequence);
+      this.#frames.set(assetId, held);
     }
     for (const [assetId, added] of stagedSeams) {
       if (added.length === 0) continue;
@@ -632,6 +775,16 @@ export class MemoryTickRecord implements TickRecord {
     );
   }
 
+  frames(assetId: string): Promise<readonly LatticeEpoch[]> {
+    return Promise.resolve([...(this.#frames.get(assetId) ?? [])]);
+  }
+
+  frameAt(assetId: string, sequence: number): Promise<LatticeEpoch | null> {
+    const bad = badSequence(sequence);
+    if (bad !== null) return Promise.reject(bad);
+    return Promise.resolve(frameAtOrBefore(this.#frames.get(assetId) ?? [], sequence));
+  }
+
   /**
    * Replace a held tick's price, its instant, or both — to plant a fork.
    *
@@ -702,6 +855,17 @@ function toSeam(row: Record<string, unknown>): RecordedSeam {
     lastInstant: epochMillis(asNumber(row['last_instant'])),
     resumesAtSequence: asNumber(row['resumes_at_sequence']),
     resumesAtInstant: epochMillis(asNumber(row['resumes_at_instant'])),
+  };
+}
+
+function toEpoch(row: Record<string, unknown>): LatticeEpoch {
+  return {
+    assetId: String(row['asset_id']),
+    fromSequence: asNumber(row['from_sequence']),
+    fromInstant: epochMillis(asNumber(row['from_instant'])),
+    logQuantum: asNumber(row['log_quantum']),
+    referencePrice: asNumber(row['reference_price']),
+    displayPrecision: asNumber(row['display_precision']),
   };
 }
 

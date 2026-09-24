@@ -27,6 +27,11 @@ afterAll(async () => {
 });
 
 const GENESIS = 1_776_000_000_000;
+
+// What a batch's integers count in (PH-38.1). A frame is required, so every
+// batch here states one; the value is eurusd-otc's, and the tests that care
+// about a frame *changing* say so by passing a different one.
+const FRAME = { logQuantum: 4.044597092506429e-6, referencePrice: 1.1, displayPrecision: 5 };
 function tick(sequence: number, price = 1000 + sequence): Tick {
   return { sequence, instant: epochMillis(GENESIS + sequence * 500), price: logPrice(price) };
 }
@@ -44,13 +49,13 @@ const implementations: [string, () => Promise<TickRecord>][] = [
 describe.each(implementations)('%s', (_name, open) => {
   it('returns as fresh exactly the ticks it did not hold, and holds them after', async () => {
     const record = await open();
-    const first = await record.append([{ assetId: 'a', ticks: run(1, 5) }]);
+    const first = await record.append([{ assetId: 'a', ticks: run(1, 5), frame: FRAME }]);
     expect(first.get('a')).toEqual(run(1, 5));
     expect(await record.head('a')).toBe(5);
     expect(await record.oldest('a')).toBe(1);
     // A resumed market republishes 3..5 and goes on to 8: the replay is
     // verified, not returned; only 6..8 are new.
-    const second = await record.append([{ assetId: 'a', ticks: run(3, 8) }]);
+    const second = await record.append([{ assetId: 'a', ticks: run(3, 8), frame: FRAME }]);
     expect(second.get('a')).toEqual(run(6, 8));
     expect(await record.since('a', 1, 100)).toEqual(run(1, 8));
   });
@@ -58,15 +63,15 @@ describe.each(implementations)('%s', (_name, open) => {
   it('refuses a fork by name and writes nothing for any asset in the pass (INV-002)', async () => {
     const record = await open();
     await record.append([
-      { assetId: 'a', ticks: run(1, 5) },
-      { assetId: 'b', ticks: run(1, 2) },
+      { assetId: 'a', ticks: run(1, 5), frame: FRAME },
+      { assetId: 'b', ticks: run(1, 2), frame: FRAME },
     ]);
     const forked = [...run(4, 6)];
     forked[0] = { ...forked[0]!, price: logPrice(1) };
     await expect(
       record.append([
-        { assetId: 'b', ticks: run(3, 4) },
-        { assetId: 'a', ticks: forked },
+        { assetId: 'b', ticks: run(3, 4), frame: FRAME },
+        { assetId: 'a', ticks: forked, frame: FRAME },
       ]),
     ).rejects.toBeInstanceOf(RecordForkError);
     expect(await record.head('a'), 'a unchanged').toBe(5);
@@ -75,19 +80,19 @@ describe.each(implementations)('%s', (_name, open) => {
 
   it('refuses a sequence at or below the head that it does not hold, rather than guessing', async () => {
     const record = await open();
-    await record.append([{ assetId: 'a', ticks: run(1, 10) }]);
+    await record.append([{ assetId: 'a', ticks: run(1, 10), frame: FRAME }]);
     await record.trim('a', 3);
     expect(await record.oldest('a')).toBe(8);
-    await expect(record.append([{ assetId: 'a', ticks: run(5, 11) }])).rejects.toThrow(
-      /holds no tick there to compare/,
-    );
+    await expect(
+      record.append([{ assetId: 'a', ticks: run(5, 11), frame: FRAME }]),
+    ).rejects.toThrow(/holds no tick there to compare/);
     expect(await record.head('a')).toBe(10);
   });
 
   it('accepts a gap above the head — a seam — and the tail is the run after it', async () => {
     const record = await open();
-    await record.append([{ assetId: 'a', ticks: run(1, 5) }]);
-    await record.append([{ assetId: 'a', ticks: run(100_006, 100_009) }]);
+    await record.append([{ assetId: 'a', ticks: run(1, 5), frame: FRAME }]);
+    await record.append([{ assetId: 'a', ticks: run(100_006, 100_009), frame: FRAME }]);
     expect(await record.head('a')).toBe(100_009);
     expect(await record.tail('a', 50)).toEqual(run(100_006, 100_009));
     expect(await record.tail('a', 2)).toEqual(run(100_008, 100_009));
@@ -103,9 +108,9 @@ describe.each(implementations)('%s', (_name, open) => {
   it('writes down the seam an accepted gap leaves, in sequences and in instants (PH-31)', async () => {
     const record = await open();
     expect(await record.seams('a'), 'nothing recorded, no seams').toEqual([]);
-    await record.append([{ assetId: 'a', ticks: run(1, 5) }]);
+    await record.append([{ assetId: 'a', ticks: run(1, 5), frame: FRAME }]);
     expect(await record.seams('a'), 'a contiguous record has no seams').toEqual([]);
-    await record.append([{ assetId: 'a', ticks: run(100_006, 100_009) }]);
+    await record.append([{ assetId: 'a', ticks: run(100_006, 100_009), frame: FRAME }]);
     const expected = {
       assetId: 'a',
       lastSequence: 5,
@@ -115,10 +120,10 @@ describe.each(implementations)('%s', (_name, open) => {
     };
     expect(await record.seams('a')).toEqual([expected]);
     // Appending on past the seam adds no second one.
-    await record.append([{ assetId: 'a', ticks: run(100_010, 100_012) }]);
+    await record.append([{ assetId: 'a', ticks: run(100_010, 100_012), frame: FRAME }]);
     expect(await record.seams('a')).toEqual([expected]);
     // A second seam is a second row, oldest first.
-    await record.append([{ assetId: 'a', ticks: run(200_000, 200_001) }]);
+    await record.append([{ assetId: 'a', ticks: run(200_000, 200_001), frame: FRAME }]);
     expect((await record.seams('a')).map((seam) => seam.resumesAtSequence)).toEqual([
       100_006, 200_000,
     ]);
@@ -143,7 +148,7 @@ describe.each(implementations)('%s', (_name, open) => {
   it('refuses a batch that repeats or reorders a sequence, whole', async () => {
     const record = await open();
     await expect(
-      record.append([{ assetId: 'a', ticks: [tick(1), tick(3), tick(2)] }]),
+      record.append([{ assetId: 'a', ticks: [tick(1), tick(3), tick(2)], frame: FRAME }]),
     ).rejects.toThrow(/not strictly ordered/);
     expect(await record.head('a')).toBeNull();
     expect(await record.assets()).toEqual([]);
@@ -162,12 +167,12 @@ describe.each(implementations)('%s', (_name, open) => {
    */
   it('refuses a fork that keeps the price and only moves the instant (a2-07)', async () => {
     const record = await open();
-    await record.append([{ assetId: 'a', ticks: run(1, 5) }]);
+    await record.append([{ assetId: 'a', ticks: run(1, 5), frame: FRAME }]);
     const moved = [...run(4, 6)];
     moved[0] = { ...moved[0]!, instant: epochMillis(moved[0]!.instant + 1) };
-    await expect(record.append([{ assetId: 'a', ticks: moved }])).rejects.toBeInstanceOf(
-      RecordForkError,
-    );
+    await expect(
+      record.append([{ assetId: 'a', ticks: moved, frame: FRAME }]),
+    ).rejects.toBeInstanceOf(RecordForkError);
     expect(await record.head('a'), 'the record was not modified').toBe(5);
     expect(await record.since('a', 4, 1)).toEqual([tick(4)]);
   });
@@ -190,9 +195,9 @@ describe.each(implementations)('%s', (_name, open) => {
     const record = await open();
     await expect(
       record.append([
-        { assetId: 'a', ticks: run(1, 5) },
-        { assetId: 'b', ticks: run(1, 2) },
-        { assetId: 'a', ticks: run(3, 8) },
+        { assetId: 'a', ticks: run(1, 5), frame: FRAME },
+        { assetId: 'b', ticks: run(1, 2), frame: FRAME },
+        { assetId: 'a', ticks: run(3, 8), frame: FRAME },
       ]),
     ).rejects.toThrow(/names a twice/);
     expect(await record.head('a'), 'nothing written for a').toBeNull();
@@ -203,9 +208,9 @@ describe.each(implementations)('%s', (_name, open) => {
   it('trims to the newest `keep` and lists the assets it holds', async () => {
     const record = await open();
     await record.append([
-      { assetId: 'b', ticks: run(1, 20) },
-      { assetId: 'a', ticks: run(1, 4) },
-      { assetId: 'c', ticks: [] },
+      { assetId: 'b', ticks: run(1, 20), frame: FRAME },
+      { assetId: 'a', ticks: run(1, 4), frame: FRAME },
+      { assetId: 'c', ticks: [], frame: FRAME },
     ]);
     await record.trim('b', 5);
     expect(await record.oldest('b')).toBe(16);
@@ -220,7 +225,7 @@ describe.each(implementations)('%s', (_name, open) => {
     // Two ticks in one millisecond: the later sequence is the one in force.
     const twin: Tick = { ...tick(4), sequence: 5 };
     await record.append([
-      { assetId: 'a', ticks: [tick(1), tick(2), tick(3), tick(4), twin, tick(6)] },
+      { assetId: 'a', ticks: [tick(1), tick(2), tick(3), tick(4), twin, tick(6)], frame: FRAME },
     ]);
     expect(await record.atOrBefore('a', tick(1).instant - 1), 'before the record').toBeNull();
     expect(await record.atOrBefore('a', tick(1).instant), 'exactly on the first').toEqual(tick(1));
@@ -248,7 +253,7 @@ describe('the SQLite record, as a file', () => {
   it('survives the process that wrote it: what one handle appended another reads back', async () => {
     const file = path.join(await scratch(), 'record.db');
     const writer = new SqliteTickRecord(file);
-    await writer.append([{ assetId: 'eurusd-otc', ticks: run(1, 1_000) }]);
+    await writer.append([{ assetId: 'eurusd-otc', ticks: run(1, 1_000), frame: FRAME }]);
     writer.close();
     const reader = new SqliteTickRecord(file);
     expect(await reader.head('eurusd-otc')).toBe(1_000);
@@ -275,10 +280,25 @@ describe('the SQLite record, as a file', () => {
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
       .all()
       .map((row) => String(row['name']));
-    // The record's two tables and no third: what was published, and where it
-    // stopped and started again (PH-31). Both are sequences, instants and
-    // prices — nothing an observer could not have read for themselves.
-    expect(tables.sort()).toEqual(['seam', 'tick']);
+    // The record's three tables and no fourth: what was published, where it
+    // stopped and started again (PH-31), and what the integers count in
+    // (PH-38.1). All three are sequences, instants, prices and the frame the
+    // catalogue already serves at `GET /catalogue` — nothing an observer could
+    // not have read for themselves, which is the INV-010 property this
+    // assertion exists to hold and not merely a list to widen.
+    expect(tables.sort()).toEqual(['lattice', 'seam', 'tick']);
+    const latticeColumns = db
+      .prepare("SELECT name FROM pragma_table_info('lattice')")
+      .all()
+      .map((row) => String(row['name']));
+    expect(latticeColumns.sort()).toEqual([
+      'asset_id',
+      'display_precision',
+      'from_instant',
+      'from_sequence',
+      'log_quantum',
+      'reference_price',
+    ]);
     expect(Number(db.prepare('PRAGMA user_version').get()!['user_version'])).toBe(
       RECORD_SCHEMA_VERSION,
     );
@@ -356,7 +376,7 @@ describe('the SQLite record, as a file', () => {
     const file = path.join(await scratch(), 'record.db');
     const record = new SqliteTickRecord(file);
     const n = 20_000;
-    await record.append([{ assetId: 'eurusd-otc', ticks: run(1, n) }]);
+    await record.append([{ assetId: 'eurusd-otc', ticks: run(1, n), frame: FRAME }]);
     record.close();
     const bytes = (await stat(file)).size;
     const perTick = bytes / n;

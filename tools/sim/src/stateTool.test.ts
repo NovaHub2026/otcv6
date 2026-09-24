@@ -27,6 +27,9 @@ afterAll(() => {
   for (const d of directories) rmSync(d, { recursive: true, force: true });
 });
 
+// What a batch's integers count in (PH-38.1); required, so a fixture states one.
+const FRAME = { logQuantum: 4.044597092506429e-6, referencePrice: 1.1, displayPrecision: 5 };
+
 async function stateDir(published: number, recorded: number): Promise<string> {
   const directory = scratch();
   const tick = (s: number): Tick => ({
@@ -50,7 +53,11 @@ async function stateDir(published: number, recorded: number): Promise<string> {
   });
   const record = new SqliteTickRecord(path.join(directory, RECORD_DB));
   await record.append([
-    { assetId: 'eurusd', ticks: Array.from({ length: recorded }, (_, i) => tick(i + 1)) },
+    {
+      assetId: 'eurusd',
+      ticks: Array.from({ length: recorded }, (_, i) => tick(i + 1)),
+      frame: FRAME,
+    },
   ]);
   record.close();
   return directory;
