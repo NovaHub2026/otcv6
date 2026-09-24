@@ -25,8 +25,8 @@ Last synchronized: 2026-09-24
 | ---------------------- | -------------------------------------------------------------------- |
 | Active phase           | PH-38 — The frame a stored price counts in                           |
 | Phase lifecycle        | ACTIVE                                                               |
-| Active subphase        | none — PH-38.1 is the next to open                                   |
-| Subphase lifecycle     | none                                                                 |
+| Active subphase        | PH-38.1 — A stored price states the frame it counts in               |
+| Subphase lifecycle     | ACTIVE                                                               |
 | Last approved phase    | PH-37 — The staircase: a price you can read tick by tick             |
 | Last approved subphase | PH-37.2 — The lattice by refund ceiling, and the thirty assets on it |
 
@@ -247,9 +247,12 @@ ceiling.
 
 ## EXACT NEXT LEGAL ACTION
 
-**Open PH-38.1 — a stored price states the frame it counts in.** PH-38 is
-ACTIVE ([phase document](docs/phases/PH-38-the-frame-a-price-counts-in.md)) and
-its first subphase is the next legal action. Cycle Audit 12 is closed: gated
+**Implement PH-38.1 — a stored price states the frame it counts in**
+([technical document](docs/phases/PH-38.1-a-stored-price-states-its-frame.md)).
+PH-38 is ACTIVE ([phase document](docs/phases/PH-38-the-frame-a-price-counts-in.md))
+and its first subphase is open: a `lattice` table in the record, schema version
+2 to 3, a required `AssetBatch.frame`, the epoch written inside the append
+transaction, and the guard fed the previous release's own artefact. Cycle Audit 12 is closed: gated
 green at `5edcc85`, merged, and hosted CI is the corroboration owed on the
 merge commit. Thirteen of its fifteen findings
 are fixed with a guard each; the two that are phases rather than patches are

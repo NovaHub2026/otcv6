@@ -1007,7 +1007,7 @@ that bind the Human Owner outside the repository are escalated
 | -------- | ------------------------------------------------------------------------ | -------- |
 | PH-37.1  | The arrival process stops seeing the lattice, and the regime splits 0.25 | APPROVED |
 | PH-37.2  | The lattice by refund ceiling, and the thirty assets on it               | APPROVED |
-| PH-38.1  | A stored price states the frame it counts in                             | PLANNED  |
+| PH-38.1  | A stored price states the frame it counts in                             | ACTIVE   |
 | PH-38.2  | The past is declared or refused, never guessed                           | PLANNED  |
 | PH-38.3  | Every read route renders on the frame the price was in                   | PLANNED  |
 | PH-38.4  | A candle never spans two frames                                          | PLANNED  |
