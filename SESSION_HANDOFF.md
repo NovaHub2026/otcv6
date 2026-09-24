@@ -9,11 +9,11 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Field              | Value                                                                                               |
 | ------------------ | --------------------------------------------------------------------------------------------------- |
 | Last clean session | 2026-09-24                                                                                          |
-| Branch             | `main` — Cycle Audit 12 merged from `audit/ca12-fixes`                                              |
+| Branch             | `feature/ph-38-the-frame`, worktree `~/.otc-ph38`, off `main` at `88292d0`                          |
 | Remote             | `origin` → NovaHub2026/otcv6, public                                                                |
 | Active cycle       | Cycle 13, **1 of 3** — PH-37 approved. Cycle Audit 12 gated, merged and closed; Cycle 11 stays open |
-| Active phase       | none                                                                                                |
-| Active subphase    | none                                                                                                |
+| Active phase       | PH-38 — the frame a stored price counts in                                                          |
+| Active subphase    | none — PH-38.1 is the next to open                                                                  |
 | Cycle Audit        | **012 closed** — 15 findings, 13 fixed with a guard each, 2 carried as phases                       |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                                                  |
 

@@ -23,9 +23,9 @@ Last synchronized: 2026-09-24
 
 | Field                  | Value                                                                |
 | ---------------------- | -------------------------------------------------------------------- |
-| Active phase           | none                                                                 |
-| Phase lifecycle        | none                                                                 |
-| Active subphase        | none                                                                 |
+| Active phase           | PH-38 — The frame a stored price counts in                           |
+| Phase lifecycle        | ACTIVE                                                               |
+| Active subphase        | none — PH-38.1 is the next to open                                   |
 | Subphase lifecycle     | none                                                                 |
 | Last approved phase    | PH-37 — The staircase: a price you can read tick by tick             |
 | Last approved subphase | PH-37.2 — The lattice by refund ceiling, and the thirty assets on it |
@@ -247,9 +247,11 @@ ceiling.
 
 ## EXACT NEXT LEGAL ACTION
 
-**Open PH-38 — the durable stores learn the lattice they were written on.**
-Cycle Audit 12 is closed: gated green at `5edcc85`, merged, and hosted CI is
-the corroboration owed on the merge commit. Thirteen of its fifteen findings
+**Open PH-38.1 — a stored price states the frame it counts in.** PH-38 is
+ACTIVE ([phase document](docs/phases/PH-38-the-frame-a-price-counts-in.md)) and
+its first subphase is the next legal action. Cycle Audit 12 is closed: gated
+green at `5edcc85`, merged, and hosted CI is the corroboration owed on the
+merge commit. Thirteen of its fifteen findings
 are fixed with a guard each; the two that are phases rather than patches are
 Cycle 13's remaining work, and the order between them is a decision, not an
 accident. **Finding 3 comes first**: it finishes what PH-37 began — the
@@ -261,6 +263,14 @@ converted on read. **Finding 7 comes after it**: correcting the calibration
 moves every asset's volatility and seams every live market, and doing that
 first would migrate a catalogue whose stores still cannot say which lattice
 they were written on — the same defect twice, on more data.
+
+**PH-38's premise is measured, not inherited.** Through a consistent snapshot
+of the live venue (`state:backup`, which also gave the record its first backup
+— it had none): **3,664,367 of 7,500,278 retained ticks, 48.9%, predate the
+relattice seam of 2026-09-24 04:44:49 UTC and render wrong today**, on 30 of 30
+assets, median error 31.7%, worst 1,472%. `eurusd-otc`'s last pre-seam tick was
+published at `1.163184` and the venue renders it `1.201802`. The median
+independently reproduces the 31.7% the audit measured by another route.
 
 **Open PH-32 — the market time at which the anti-predictability claim stops resting on an hour.** The detection floor is `140.1 / sqrt(windows)`, so a year settles 30s (0.186pp gated) and leaves 15m at 1.018pp; every horizon crosses the 0.25pp product margin at about **seventeen years** of market time, which is 33 CPU-hours to generate and cannot be held in memory (936 GB). The phase makes the battery accumulate over chunks, proves the chunked path gives the same verdict as the whole-array one, and runs the thirty. Design notes: `~/.otc-local/ph32/DESIGN.md`. Cycle 11 is open and its first phase came from the Human Owner operating the Lab and saying what was wrong with it — the pace default, the push scale, a way to stop, and levels bounded by the market's own state. Cycle 10 is complete and audited; `v2.0.0` is the release that stands. Cycle 10 is complete and audited: three phases approved, Cycle Audit 10 closed (98 claims, 86 confirmed, 12 partial; every critical and material finding fixed in two gated waves, fourteen minor carried by name in the record), `v2.0.0` tagged on the commit hosted CI corroborated, and the integration package regenerated from that tag and verified inside itself. The roadmap's Cycle 10 section names what is deferred: Issue #9 (the multi-node composition), the engine's next stylised facts, jumps and volume; Issues #3 and #14 are the Human Owner's. The audit record's carried list is the first page of the next cycle's work.
 

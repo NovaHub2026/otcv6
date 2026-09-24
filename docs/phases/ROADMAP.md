@@ -1001,11 +1001,27 @@ that bind the Human Owner outside the repository are escalated
 | Phase | Title                                            | State    |
 | ----- | ------------------------------------------------ | -------- |
 | PH-37 | The staircase: a price you can read tick by tick | APPROVED |
+| PH-38 | The frame a stored price counts in               | ACTIVE   |
 
 | Subphase | Title                                                                    | State    |
 | -------- | ------------------------------------------------------------------------ | -------- |
 | PH-37.1  | The arrival process stops seeing the lattice, and the regime splits 0.25 | APPROVED |
 | PH-37.2  | The lattice by refund ceiling, and the thirty assets on it               | APPROVED |
+| PH-38.1  | A stored price states the frame it counts in                             | PLANNED  |
+| PH-38.2  | The past is declared or refused, never guessed                           | PLANNED  |
+| PH-38.3  | Every read route renders on the frame the price was in                   | PLANNED  |
+| PH-38.4  | A candle never spans two frames                                          | PLANNED  |
+
+**PH-38** is Cycle Audit 12's finding 3, carried as a phase because it is one:
+the durable stores keep an integer and throw away the pair that makes it a
+price, so when PH-37 moved all thirty lattices the whole retained past started
+rendering on a lattice it was never written on. Measured on the live venue
+through a consistent snapshot: **3,664,367 of 7,500,278 retained ticks (48.9%)
+render wrong today, on 30 of 30 assets, with a median error of 31.7% and a
+worst case of 1,472%.** No stored integer may be rewritten — coarsening
+collapses distinct prices into ties and would change settled outcomes, which is
+INV-009 — so the fix is a frame history per asset, converted on read. The phase
+document is [PH-38](PH-38-the-frame-a-price-counts-in.md).
 
 **Cycle 12 is full and its audit is due.** GOVERNANCE §28 puts the Cycle Audit
 before any new phase; this one opened ahead of it on the Human Owner's
