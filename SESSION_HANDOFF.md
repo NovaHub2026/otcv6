@@ -6,47 +6,83 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                                                                 |
-| ------------------ | ----------------------------------------------------------------------------------------------------- |
-| Last clean session | 2026-09-23                                                                                            |
-| Branch             | `main`                                                                                                |
-| Remote             | `origin` → NovaHub2026/otcv6, public                                                                  |
-| Active cycle       | Cycle 13, **1 of 3** — PH-37 approved. Cycle 12 is complete and its audit is due; Cycle 11 stays open |
-| Active phase       | none                                                                                                  |
-| Active subphase    | none                                                                                                  |
-| Cycle Audit        | **012 open** — 15 findings, 13 closed on `audit/ca12-fixes`, 2 carried as phases                      |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                                                    |
+| Field              | Value                                                                                                           |
+| ------------------ | --------------------------------------------------------------------------------------------------------------- |
+| Last clean session | 2026-09-24                                                                                                      |
+| Branch             | `audit/ca12-fixes`, worktree `~/.otc-ph37`, pushed; `main` is `8bcd00f`                                         |
+| Remote             | `origin` → NovaHub2026/otcv6, public                                                                            |
+| Active cycle       | Cycle 13, **1 of 3** — PH-37 approved. Cycle Audit 12 has run and its fixes await the gate; Cycle 11 stays open |
+| Active phase       | none                                                                                                            |
+| Active subphase    | none                                                                                                            |
+| Cycle Audit        | **012 open** — 15 findings, 13 closed on `audit/ca12-fixes`, 2 carried as phases                                |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                                                              |
 
 ---
 
-## Right now (2026-09-23)
+## Right now (2026-09-24)
 
-- **`v2.3.0` is released and tagged** on `e9b6966` (the PH-35 merge) after
-  hosted CI went green on both jobs, with `docs/evidence/RELEASE-2.3.0.md`
-  beside it. The market now runs at the level of the real instrument it is
-  named for (0.99× over sixty simulated days), with a gentler regime ladder.
-- **`v2.3.1` is the panel's quiet notice** — twenty mean intervals with a
-  fifteen-second floor, against three, which was firing 193–1,096 times an hour
-  on ordinary silence. It is on `fix/panel-quiet-notice` in `~/.otc-ph35`, and
-  its gate is the one to read before tagging: `~/.otc-local/ph34/gate-quiet3.log`.
-  An earlier gate on the same tree is **void** — the host suspended for 2 h 51 m
-  in the middle of it and the conformance file timed out across the jump.
-- **PH-36 is active in `~/.otc-ph36`**: a market past its catch-up bound reopens
-  itself as a recorded seam (ADR-0020), because that same host suspension left
-  all thirty markets frozen for the third time. Built and unit-verified —
-  `packages/runtime/src/reopen.ts`, `Venue.reopen`, the decision and its two
-  bounds in `VenueService`, `OTC_AUTO_REOPEN=0` to switch it off — with ten
-  cases in `apps/api/src/venueReopen.test.ts` and seven in
-  `packages/runtime/src/reopen.test.ts`, and nine planted defects each watched
-  failing. What is left is the phase gate, the merge, and `v2.4.0`.
-- **The engine the Human Owner watches runs from `~/.otc-ph35`** on ports
-  7300/7301 (`OTC_TREE=$HOME/.otc-ph35 bash ~/.otc-local/start.sh`). It was
-  restarted at 12:30 UTC after the suspension: 30/30 markets recovered by seam.
-- **The long measurements stay held** (`~/.otc-local/ph33/.hold`): PH-32's
-  fifty-eight-year run and PH-33's scales measure a catalogue two
-  recalibrations old, and rerun on the current one.
-- `~/Projects/orbit-otc-node` is the Human Owner's own broker stack (systemd
-  user services on 3010/3100/3030) — background load, never ours to stop.
+**The next action is one command.** Cycle Audit 12's fixes are committed and
+pushed on `audit/ca12-fixes`, and the only thing between them and `main` is the
+full gate, which has not been run on them:
+
+```
+cd ~/.otc-ph37 && LD_LIBRARY_PATH=$HOME/.otc-local/browser-prefix/usr/lib/x86_64-linux-gnu npm run gate
+```
+
+About 90 minutes. Run it in the background, not under a command timeout, and
+read `GATE_EXIT` rather than the summary above it. If it is 0: merge to `main`
+in `~/.otc-genesis`, run `npm run state:check` **before** the merge commit, push,
+and wait for hosted CI on both jobs. No tag: these are audit fixes, not a
+release, and `v2.4.0` is what a broker runs.
+
+What is already green on that branch, at `227b831`: format, lint,
+`typecheck:web`, `state:check`, and `npm run test:unit` — **173 files, 3,540
+tests**. What the gate adds is the statistical half and the two browser suites,
+which is where a lattice change or a panel change would show.
+
+**Cycle Audit 12 is recorded and open**:
+[`docs/audits/CYCLE-AUDIT-012.md`](docs/audits/CYCLE-AUDIT-012.md). Eight
+auditors in a worktree each, three independent refuters. Fifteen findings,
+thirteen closed on this branch, **two carried as phases** and not started:
+
+1. **The durable stores keep integers with no lattice.** The checkpoint was
+   fixed in PH-37; the tick record and the candle history were not, so every
+   historical price a read route renders uses today's quantum. Confirmed end to
+   end on a real `MarketController`. The record cannot be rewritten — a client
+   holds those integers — so the fix is a lattice history per asset, converted
+   on read.
+2. **The calibration simulates a market the engine does not run** — no
+   volatility floor, no regime-driven arrivals — and the dispersion and pace
+   fits absorb **none** of the bias, because both read the same biased walk.
+   Measured: the lattice search starts from a quantile ×1.62–1.71 too fine and
+   the refund estimate is biased **+1.91pp**. Fixing it moves every asset's
+   volatility and seams every live market.
+
+The auditors' raw findings and the refutations are under
+`~/.otc-audit12/findings/` and `~/.otc-audit12/refutations/`, with eight
+worktrees beside them. They are disposable: the record is the record.
+
+**The Human Owner's engine is up and is what they watch**: `~/.otc-genesis` on
+`main`, ports 7300 (engine) and 7301 (panel), started with
+`OTC_TREE=$HOME/.otc-genesis bash ~/.otc-local/start.sh`. It serves `v2.4.0`'s
+catalogue — the staircase — and its prices were repaired by hand after the
+lattice upgrade moved them: see the release record. **Do not restart it to test
+something**; a restart costs a recorded seam per asset.
+
+**Its candle history was converted** so nineteen days of chart draw on the
+current lattice, with a consistent backup at
+`~/.otc-local/state/history.db.bak-pre-relattice`. Ten candles between 04:45 and
+04:54 UTC are left as published: the venue really served those prices, both
+edges are recorded seams.
+
+**Still paused** (`~/.otc-local/ph33/.hold`): PH-32's long run and PH-33's venue
+scales. PH-32 is what would make the anti-predictability claim as strong at
+1m–15m as it is at 30s — today the battery's own note says a clean verdict at
+those horizons means "no edge above the stated resolution", not "no edge".
+
+`~/Projects/orbit-otc-node` is the Human Owner's own broker stack (systemd user
+services on 3010/3100/3030) — background load, never ours to stop. The untracked
+`docs/governance-template/` in `~/Projects/otcv6` predates this session.
 
 ## Continuation point
 

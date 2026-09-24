@@ -240,14 +240,14 @@ minutes it cost are recorded rather than the run quietly repeated.
 
 ## EXACT NEXT LEGAL ACTION
 
-**Run Cycle Audit 12.** It was due before the staircase phase and it is due
-now: the cycle before this one is full — three phases approved and merged, with
-`v2.2.0`, `v2.3.0` and `v2.3.1` tagged on the commits hosted CI corroborated —
-and no audit record names it. The phase that ran ahead of it did so on the
-Human Owner's direction, and it hands the audit three things to start from: a
-catalogue rebuilt on a lattice chosen by measurement, a runtime that reopens a
-market by itself, and a finding in the decision log that the calibration
-simulates a market the engine does not run.
+**Gate `audit/ca12-fixes` and merge it.** Cycle Audit 12 has run — eight
+auditors in a worktree each, three independent refuters, the record is
+[`CYCLE-AUDIT-012.md`](docs/audits/CYCLE-AUDIT-012.md) — and thirteen of its
+fifteen findings are fixed and committed on that branch with the unit half
+green. What is owed is the full gate on it, the merge, and hosted CI. The two
+findings it carries are phases and are named in the record and the handoff: the
+durable stores keep integers with no lattice, and the calibration simulates a
+market the engine does not run.
 
 **Open PH-32 — the market time at which the anti-predictability claim stops resting on an hour.** The detection floor is `140.1 / sqrt(windows)`, so a year settles 30s (0.186pp gated) and leaves 15m at 1.018pp; every horizon crosses the 0.25pp product margin at about **seventeen years** of market time, which is 33 CPU-hours to generate and cannot be held in memory (936 GB). The phase makes the battery accumulate over chunks, proves the chunked path gives the same verdict as the whole-array one, and runs the thirty. Design notes: `~/.otc-local/ph32/DESIGN.md`. Cycle 11 is open and its first phase came from the Human Owner operating the Lab and saying what was wrong with it — the pace default, the push scale, a way to stop, and levels bounded by the market's own state. Cycle 10 is complete and audited; `v2.0.0` is the release that stands. Cycle 10 is complete and audited: three phases approved, Cycle Audit 10 closed (98 claims, 86 confirmed, 12 partial; every critical and material finding fixed in two gated waves, fourteen minor carried by name in the record), `v2.0.0` tagged on the commit hosted CI corroborated, and the integration package regenerated from that tag and verified inside itself. The roadmap's Cycle 10 section names what is deferred: Issue #9 (the multi-node composition), the engine's next stylised facts, jumps and volume; Issues #3 and #14 are the Human Owner's. The audit record's carried list is the first page of the next cycle's work.
 
