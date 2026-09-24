@@ -121,11 +121,33 @@ export interface PositionRequest {
   readonly payoutRatio?: number;
 }
 
-/** A `TickRecord` over the ticks a Lab feed retains, for `settle`. */
-export function recordOf(ticks: readonly Tick[]): { instants: Float64Array; prices: Int32Array } {
+/**
+ * A `TickRecord` over the ticks a Lab feed retains, for `settle`.
+ *
+ * **The seams come from the ticks themselves (Cycle Audit 12).** `settle`
+ * required them to be stated and this builder said nothing, which is the input
+ * that lets a contract settle straight across a discontinuity. It needs no
+ * outside knowledge to do better: a seam is an append whose sequence is not the
+ * previous one plus one — the same rule `tickRecord.ts` detects one by — so the
+ * window states exactly the discontinuities it contains.
+ */
+export function recordOf(ticks: readonly Tick[]): {
+  instants: Float64Array;
+  prices: Int32Array;
+  seams: readonly { lastInstant: number; resumesAtInstant: number }[];
+} {
+  const seams: { lastInstant: number; resumesAtInstant: number }[] = [];
+  for (let i = 1; i < ticks.length; i += 1) {
+    const previous = ticks[i - 1]!;
+    const next = ticks[i]!;
+    if (next.sequence !== previous.sequence + 1) {
+      seams.push({ lastInstant: previous.instant, resumesAtInstant: next.instant });
+    }
+  }
   return {
     instants: Float64Array.from(ticks.map((t) => t.instant)),
     prices: Int32Array.from(ticks.map((t) => t.price)),
+    seams,
   };
 }
 

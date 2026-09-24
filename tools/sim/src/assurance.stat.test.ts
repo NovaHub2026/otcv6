@@ -103,7 +103,13 @@ describe('a verdict is derivable from the published record alone', () => {
         horizonMs: durationMillis(30_000),
         payoutRatio: 0.85,
       };
-      const operator = settle(contract, { instants: dataset.instants, prices: dataset.prices });
+      const operator = settle(contract, {
+        instants: dataset.instants,
+        prices: dataset.prices,
+        // One uninterrupted generated dataset: it says so rather than staying
+        // silent (Cycle Audit 12).
+        seams: [],
+      });
       // The counterparty resolves both ends from the journal, with no engine.
       const entry = journalPriceAt(restored, contract.entryInstant)!;
       const expiry = journalPriceAt(

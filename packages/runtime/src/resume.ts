@@ -416,7 +416,15 @@ function seamPastRecord(options: ResumeOptions, published: Tick): ResumeResult {
     ...engineStreams(options, keyEpoch),
     start: {
       instant,
-      price: published.price,
+      // **On this market's lattice, not the one the tick was written on
+      // (Cycle Audit 12).** This path takes its price straight from the
+      // published record, and the record stores an integer with no quantum
+      // beside it — so a reopening onto a coarser lattice reopened the market
+      // at a different price: measured at -9.8%, -26.8% and -46.9% for
+      // integers meaning 1.15, 1.13 and 1.10. There is no checkpoint here by
+      // definition, which is why the conversion has to fall back to the
+      // lattice the release carries.
+      price: onLattice(published.price, undefined, options.asset),
       sequence: published.sequence + DEFAULT_SEQUENCE_LEASE,
     },
   });
@@ -426,7 +434,10 @@ function seamPastRecord(options: ResumeOptions, published: Tick): ResumeResult {
       clock: options.clock,
       personality: personalityFingerprint(options.asset),
       keyEpoch,
-      resumeLastPublished: published,
+      resumeLastPublished: {
+        ...published,
+        price: onLattice(published.price, undefined, options.asset),
+      },
       ...(options.maxCatchUpMs === undefined ? {} : { maxCatchUpMs: options.maxCatchUpMs }),
       ...(options.retractable === undefined ? {} : { retractable: options.retractable }),
     }),
