@@ -2,7 +2,8 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-37
-Status: ACTIVE
+Status: APPROVED
+Approved: 2026-09-24 — on the integrated verification in PH-37.2 (`GATE_EXIT=0` on `0abaf26`)
 Cycle: 13 (phase 1)
 Created: 2026-09-23
 Branch: `feature/ph-37-the-staircase`, cut from `main`

@@ -6,16 +6,16 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                                                               |
-| ------------------ | --------------------------------------------------------------------------------------------------- |
-| Last clean session | 2026-09-23                                                                                          |
-| Branch             | `feature/ph-37-the-staircase`, worktree `~/.otc-ph37`                                               |
-| Remote             | `origin` → NovaHub2026/otcv6, public                                                                |
-| Active cycle       | Cycle 13, **0 of 3** — PH-37 active. Cycle 12 is complete and its audit is due; Cycle 11 stays open |
-| Active phase       | PH-37 — The staircase: a price you can read tick by tick                                            |
-| Active subphase    | PH-37.2 — The lattice by refund ceiling, and the thirty assets on it                                |
-| Cycle Audit        | **010 closed** — 98 claims, 86 confirmed, 12 partial; fixes on `audit/ca10-fixes`                   |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                                                  |
+| Field              | Value                                                                                                 |
+| ------------------ | ----------------------------------------------------------------------------------------------------- |
+| Last clean session | 2026-09-23                                                                                            |
+| Branch             | `main`                                                                                                |
+| Remote             | `origin` → NovaHub2026/otcv6, public                                                                  |
+| Active cycle       | Cycle 13, **1 of 3** — PH-37 approved. Cycle 12 is complete and its audit is due; Cycle 11 stays open |
+| Active phase       | none                                                                                                  |
+| Active subphase    | none                                                                                                  |
+| Cycle Audit        | **010 closed** — 98 claims, 86 confirmed, 12 partial; fixes on `audit/ca10-fixes`                     |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                                                    |
 
 ---
 
