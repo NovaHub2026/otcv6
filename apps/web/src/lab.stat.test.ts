@@ -386,7 +386,17 @@ describe('Candle Close Control, from the panel', () => {
         /llegadas/,
       );
       await page.click('[data-testid="lab-scenario-bullish-trend"]');
-      await page.fill('[data-testid="lab-scenario-param-net"]', '3');
+      // **The value the screen offers, not a typed one (PH-37.2).** This filled
+      // `3` units, and a unit is a tenth of the market's recent candle — which
+      // the tests before this one have spent pushing. Inheriting a market with
+      // a violent minute behind it, three units asked for fifteen thousand
+      // lattice steps inside a sixty-second window, the scenario refused as it
+      // should, and the failure read as a scenario that would not arm. The
+      // screen's own default is the scenario's default distance expressed in
+      // that market's units, which is what an operator opening the tab sees and
+      // is reachable by construction.
+      const net = await page.inputValue('[data-testid="lab-scenario-param-net"]');
+      expect(Number(net)).toBeGreaterThan(0);
       await page.click('[data-testid="lab-scenario-preview"]');
       await page.waitForSelector('[data-testid="lab-scenario-plan"]', { timeout: 30_000 });
       expect(await text(page, 'lab-scenario-plan')).toMatch(/armado\nno/);

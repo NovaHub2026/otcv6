@@ -74,6 +74,20 @@ export function Cierre({
     if (/No ticks remain|No tick falls/.test(p.impossible)) return es.lab.close.noTicks;
     return es.lab.close.noneFound;
   };
+  /**
+   * Los pasos de red que pide un botón relativo, enteros (PH-37.2).
+   *
+   * La unidad de distancia es un décimo de la vela y **ya no se redondea a
+   * pasos enteros**: a dieciocho pasos por vela, redondearla se llevaba por
+   * delante hasta un tercio de lo que «+10 es una vela» promete. Pero un
+   * objetivo en la red sí es entero — es un precio publicado —, así que el
+   * redondeo vive aquí, donde se pide, y nunca por debajo de un paso: un botón
+   * que no mueve el mercado no es un botón.
+   *
+   * Sin esto, «+1» pedía 1,8 pasos y la pantalla no llegaba a dar plan.
+   */
+  const stepsFor = (d: number): number =>
+    Math.sign(d) * Math.max(1, Math.round(Math.abs(d) * unitSteps));
   return (
     <Section title={es.lab.close.title} info={es.lab.close.info}>
       <div style={{ display: 'flex', alignItems: 'flex-end', flexWrap: 'wrap', gap: 4 }}>
@@ -169,7 +183,7 @@ export function Cierre({
             kind="danger"
             testId={`lab-close-delta-${String(d)}`}
             disabled={busy !== null}
-            onClick={() => void onDelta(d * unitSteps, true)}
+            onClick={() => void onDelta(stepsFor(d), true)}
           >
             {String(d)}
           </Button>
@@ -182,7 +196,7 @@ export function Cierre({
             kind="primary"
             testId={`lab-close-delta-+${String(d)}`}
             disabled={busy !== null}
-            onClick={() => void onDelta(d * unitSteps, true)}
+            onClick={() => void onDelta(stepsFor(d), true)}
           >
             +{String(d)}
           </Button>
