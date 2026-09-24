@@ -57,12 +57,34 @@ of ×1.41, and the rate still rises with the regime.
 five contracts in a hundred at thirty seconds, against three in a thousand. It
 buys a price that rests and then steps.
 
-**One seam per asset, and the price does not jump.** A published price is an
-integer count of quanta, so a market resumed onto a different lattice has its
-last published price re-expressed on the new one — a rounding, at most half a
-new quantum, 0.02 pips on EUR/USD. The discontinuity is recorded, published by
-`GET /markets/:id/seams`, and respected by `settle`: a contract whose window
-touches it does not settle.
+**One seam per asset, and the price does not jump — which took two attempts.**
+A published price is an integer count of quanta, so a market resumed onto a
+different lattice has its last published price re-expressed on the new one: a
+rounding, at most half a new quantum, 0.02 pips on EUR/USD. The discontinuity is
+recorded, published by `GET /markets/:id/seams`, and respected by `settle`: a
+contract whose window touches it does not settle.
+
+**The first attempt shipped a conversion that could not run.** It read the
+quantum a price counted in from the checkpoint — a field this same release adds,
+so on the one upgrade that needs it no checkpoint declares one. The code called
+that a rare corner. It is the upgrade path of every deployment that was running,
+and on the live venue it moved thirty markets by a median of **31.7%** and as
+much as **1,474%**: TSLA from 305.99 to 65.56, DOGE from 0.0895 to 1.4084. The
+seams were recorded and `settle` refused across them, so nothing settled
+wrongly; what was wrong was every price published afterwards.
+
+Three sources could have answered and none does — the checkpoint predates the
+field, the tick record stores integers, and so does the candle history. So
+**this release carries the lattice it moved from**, per asset, taken from the
+catalogue `v2.3.1` shipped. A checkpoint that declares its own quantum uses that
+and never reaches the table; the table answers only for one written before the
+field existed, which is the last time it can be needed for these values.
+
+The repair of the venue that hit it used the system's own mechanism: one
+recorded seam per asset, each opening at the price it had, recomputed from the
+index it occupied on its old lattice. Measured after: **0.066% maximum
+deviation** across the thirty, which is half a new quantum plus the seconds of
+market that passed.
 
 **The Lab's distance unit is a true tenth of the candle.** It was rounded to
 whole lattice steps, which was harmless at two hundred steps a candle and takes
@@ -97,6 +119,11 @@ round where the ask is made, never below one step.
   The checkpoint records the quantum its price counts in.
 - **A checkpoint taken before the first tick did not replay.** The record caught
   it as two streams claiming one asset, which is what it was (INV-009).
+- **And one this release found in itself**, after the gate and on a live venue:
+  the lattice conversion above, which could not read what it needed on the only
+  upgrade that needs it. The gate could not have caught it — every test in it
+  writes its checkpoints with the field already present, which is why the guard
+  that now exists drops the field deliberately.
 
 ## 6. Why 2.4.0 and not 3.0.0
 
@@ -111,6 +138,10 @@ seam, is a mechanism the contract already publishes.
 
 Replace the binary and restart with the state directory intact. Each market
 takes one seam, visible at `GET /markets/:id/seams`; the price it continues from
-is the one it published, re-expressed on the new lattice. Nothing else is
+is the one it published, re-expressed on the new lattice — from the quantum the
+checkpoint declares, or, for a checkpoint written by `v2.3.1` or earlier, from
+the table this release carries. **Upgrade from `v2.3.1` or later**: a deployment
+that skips it cannot be converted from a checkpoint older than the table's
+values, and its prices would be reinterpreted rather than carried. Nothing else is
 required, and a client needs no change — but a broker showing prices should
 confirm it reads `displayPrecision` per asset rather than assuming the old one.
