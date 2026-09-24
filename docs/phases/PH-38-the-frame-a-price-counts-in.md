@@ -53,23 +53,32 @@ nowhere else.
 
 v2.4.0 moved all thirty lattices. The record retains 250,000 ticks per asset,
 which on this venue reaches back to 2026-09-06 — seventeen days, because the
-host suspended repeatedly and the markets froze with it. The relattice seam
-sits at **2026-09-24 04:44:49 UTC** on all thirty assets.
+host suspended repeatedly and the markets froze with it. The relattice boundary
+is the seam at **2026-09-24 04:54:38–04:54:43 UTC**, one per asset, across which
+`eurusd-otc`'s integer drops 8795 → 675.
 
-| | |
-| --- | --- |
-| Pre-relattice ticks still retained | **3,664,367 of 7,500,278 — 48.9%** |
-| Assets affected | **30 of 30** |
-| Rendering error, median | **31.7%** |
-| Rendering error, range | 0.77% (msft) to **1,472%** (dogeusdt) |
+|                                    |                                       |
+| ---------------------------------- | ------------------------------------- |
+| Pre-relattice ticks still retained | **3,728,119 of 7,500,278 — 49.7%**    |
+| Assets affected                    | **30 of 30**                          |
+| Rendering error, median            | **31.8%**                             |
+| Rendering error, range             | 0.76% (msft) to **1,483%** (dogeusdt) |
 
-Worked example, `eurusd-otc`, the last tick before the seam: published as
-`1.163184`, rendered by the venue today as `1.201802`. `gbpjpy-otc`: published
-`220.31`, rendered `357.88`.
+Worked example, `eurusd-otc`, the last tick before the boundary: published as
+`1.163199`, rendered by the venue today as `1.202006`.
+
+**A first pass at this measured the wrong seam**, and the correction is kept
+rather than tidied away because it is the whole reason §3's declaration rule
+changed. There are two seams ten minutes apart — 04:44:49 and 04:54:43 — and
+only the later one is the relattice. At the earlier one the integer is
+unchanged (`8753 → 8753`); at the later one it drops by the coarsening factor.
+Picking a seam by its position in a time window rather than by what happens to
+the integers across it is exactly the "detection can find the wrong seam"
+failure one of this phase's designs warned about, and it found it here first.
 
 **Half of the published record renders wrong right now**, and the median
 figure independently reproduces the 31.7% Cycle Audit 12 measured by a
-different route for finding 2 — as does the 1,472% against its 1,474%.
+different route for finding 2 — as does the 1,483% against its 1,474%.
 
 This answers the question the audit left open and two of three independent
 designs flagged they could not settle: the defect is not theoretical, and it
@@ -105,16 +114,31 @@ moved. A grep for `referencePrice` across the non-test runtime sources returns
 exactly one hit. Storing only the quantum would be the same defect one release
 later.
 
-**The migration refuses to guess.** Nothing in the repository can soundly date
-the rows that already exist: a sequence jump says a seam happened, not what the
-lattice was on either side. An undeclared range is reported as undeclared, not
-silently rendered on the current frame. Seeding every asset from
-`LATTICE_BEFORE_PH37` would be wrong in a new direction, because the live
-record already holds post-change ticks.
+**The migration refuses to guess — and a declaration must be evidenced.** An
+automatic migration at open time has no catalogue, no operator and no way to
+check itself, so it writes nothing and an undeclared range is reported as
+undeclared rather than silently rendered on the current frame.
+
+But the stronger claim this document first made — that _nothing_ in the
+repository can soundly date the rows that already exist — is **measured false**,
+and the measurement is what the Human Owner's instruction of 2026-09-24 rests
+on. The record can corroborate `LATTICE_BEFORE_PH37` against itself:
+
+> At the relattice boundary the resume re-expressed the price, so the last tick
+> before it read on the **old** frame must agree with the first tick after it
+> read on the **current** one. Across all thirty assets it does, to a **median
+> gap of 0.0066%, within 0.1% on 30 of 30**. At an ordinary restart seam the
+> same test is off by ~30%.
+
+Four orders of magnitude separate the right boundary from a wrong one, so the
+criterion identifies the boundary _and_ proves the old frame in one step. That
+is what makes declaring the past a record of evidence rather than a durable
+guess, and PH-38.2 is the subphase that does it — deliberately, by an operator,
+per asset, refusing any asset whose boundary does not pass.
 
 **The guard is fed the previous release's artefact.** This is the audit's own
 headline: the defect that shipped was not a missing test but a missing test
-*input*, because every test in the repository builds its artefacts with the
+_input_, because every test in the repository builds its artefacts with the
 code under test. PH-38's guards materialise `v2.4.0` from git, build it, write
 a `record.db` with it, and open that file with this build — the recipe already
 proven at `packages/engine/src/lattices.test.ts`.
@@ -138,12 +162,12 @@ proven at `packages/engine/src/lattices.test.ts`.
 
 ## 5. Subphases
 
-| Subphase | Title                                                     |
-| -------- | --------------------------------------------------------- |
-| PH-38.1  | A stored price states the frame it counts in              |
-| PH-38.2  | The past is declared or refused, never guessed            |
-| PH-38.3  | Every read route renders on the frame the price was in    |
-| PH-38.4  | A candle never spans two frames                           |
+| Subphase | Title                                                  |
+| -------- | ------------------------------------------------------ |
+| PH-38.1  | A stored price states the frame it counts in           |
+| PH-38.2  | The past is declared or refused, never guessed         |
+| PH-38.3  | Every read route renders on the frame the price was in |
+| PH-38.4  | A candle never spans two frames                        |
 
 PH-38.1 comes first because nothing else can be built on a store that cannot
 record a frame. PH-38.2 is separate from it because the migration is where this

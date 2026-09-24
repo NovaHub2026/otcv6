@@ -1016,9 +1016,12 @@ that bind the Human Owner outside the repository are escalated
 the durable stores keep an integer and throw away the pair that makes it a
 price, so when PH-37 moved all thirty lattices the whole retained past started
 rendering on a lattice it was never written on. Measured on the live venue
-through a consistent snapshot: **3,664,367 of 7,500,278 retained ticks (48.9%)
-render wrong today, on 30 of 30 assets, with a median error of 31.7% and a
-worst case of 1,472%.** No stored integer may be rewritten — coarsening
+through a consistent snapshot: **3,728,119 of 7,500,278 retained ticks (49.7%)
+render wrong today, on 30 of 30 assets, with a median error of 31.8% and a
+worst case of 1,483%.** The undated past is **declared** rather than left to
+age out (the Human Owner, 2026-09-24), and it can be: the record corroborates
+`LATTICE_BEFORE_PH37` against itself at the relattice boundary to a median gap
+of 0.0066% on 30 of 30. No stored integer may be rewritten — coarsening
 collapses distinct prices into ties and would change settled outcomes, which is
 INV-009 — so the fix is a frame history per asset, converted on read. The phase
 document is [PH-38](PH-38-the-frame-a-price-counts-in.md).
