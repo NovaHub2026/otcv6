@@ -41,7 +41,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "gate": "npm run format:check && npm run build && npm run typecheck:web && npm run typecheck:config && npm run lint && npm run test:unit && npm run test:cov:unit && OTC_REQUIRE_BROWSER=1 npm run test:stat && echo 'GATE COMPLETE: unit, coverage floors and statistical suites all ran, with a real browser'",
-    "test:unit": "vitest run --project unit --reporter=default --reporter=./vitest.reporter.probe.ts --reporter=json --outputFile=artifacts/unit-results.json; code=$?; mkdir -p artifacts && echo $code > artifacts/unit-exit-code; exit $code"
+    "test:unit": "vitest run --project unit --reporter=default --reporter=./vitest.reporter.probe.ts --reporter=json --outputFile=artifacts/unit-results.json; code=$?; mkdir -p artifacts && echo $code > artifacts/unit-exit-code; exit $code",
+    "state:lattice": "npm run build && node tools/sim/dist/latticeTool.js"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

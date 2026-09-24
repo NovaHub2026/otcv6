@@ -233,6 +233,10 @@ const AMBIENT_STATE_ALLOWLIST = [
   // its arguments and writes its report; it verifies and copies files and
   // never reaches a draw.
   'tools/sim/src/stateTool.ts',
+  // PH-38.2: the operator's tool for the record's frame log, the same shape —
+  // it reads its arguments, proposes a declaration the record corroborates, and
+  // writes only epochs. It never reaches a draw.
+  'tools/sim/src/latticeTool.ts',
   // PH-29.3: the conformance command, the same shape.
   'tools/sim/src/conformanceTool.ts',
   // PH-30.3: the observer fleet, a driver that spawns workers and an entry point each.

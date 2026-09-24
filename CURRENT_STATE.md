@@ -21,14 +21,14 @@ Last synchronized: 2026-09-24
 
 ## Phase and subphase
 
-| Field                  | Value                                                                |
-| ---------------------- | -------------------------------------------------------------------- |
-| Active phase           | PH-38 — The frame a stored price counts in                           |
-| Phase lifecycle        | ACTIVE                                                               |
-| Active subphase        | PH-38.1 — A stored price states the frame it counts in               |
-| Subphase lifecycle     | ACTIVE                                                               |
-| Last approved phase    | PH-37 — The staircase: a price you can read tick by tick             |
-| Last approved subphase | PH-37.2 — The lattice by refund ceiling, and the thirty assets on it |
+| Field                  | Value                                                          |
+| ---------------------- | -------------------------------------------------------------- |
+| Active phase           | PH-38 — The frame a stored price counts in                     |
+| Phase lifecycle        | ACTIVE                                                         |
+| Active subphase        | PH-38.2 — The past is declared, and only what can be evidenced |
+| Subphase lifecycle     | ACTIVE                                                         |
+| Last approved phase    | PH-37 — The staircase: a price you can read tick by tick       |
+| Last approved subphase | PH-38.1 — A stored price states the frame it counts in         |
 
 **Cycle 12 is audited and closed.** PH-34 (the market's tempo follows its
 state), PH-35 (the level the market runs at) and PH-36 (a stalled market
@@ -247,7 +247,14 @@ ceiling.
 
 ## EXACT NEXT LEGAL ACTION
 
-**Implement PH-38.1 — a stored price states the frame it counts in**
+**Run `state:lattice check` on the live venue and show the Human Owner the
+thirty rows before declaring anything.** PH-38.2 is built
+([technical document](docs/phases/PH-38.2-the-past-is-declared.md)): a two-leg
+criterion the record corroborates, `list`/`check` that cannot upgrade the file
+they inspect, and `declare` that writes two epochs per asset and refuses by
+name what it cannot evidence. On a copy of the live backup it declares **30 of
+30**. Applying it to `~/.otc-local/state` touches the record of the engine the
+Human Owner watches, so it waits on them. PH-38.1 is done
 ([technical document](docs/phases/PH-38.1-a-stored-price-states-its-frame.md)).
 PH-38 is ACTIVE ([phase document](docs/phases/PH-38-the-frame-a-price-counts-in.md))
 and its first subphase is open: a `lattice` table in the record, schema version

@@ -116,6 +116,23 @@ export interface TickRecord {
    * caller says "undeclared" rather than guessing.
    */
   frameAt(assetId: string, sequence: number): Promise<LatticeEpoch | null>;
+  /**
+   * Declare what an already-written range counted in (PH-38.2).
+   *
+   * Insert-only into the frame log: no `tick`, `seam` or `candle` row is read
+   * or touched, because re-expressing a stored integer would change settled
+   * outcomes (INV-009). Refuses when the asset already has epochs unless
+   * `replace` is given, so a second run is not a silent no-op and not a silent
+   * overwrite.
+   *
+   * The caller is expected to have evidenced the epochs — `proposeDeclaration`
+   * is what does that. This method is the writing, not the deciding.
+   */
+  declareLattice(
+    assetId: string,
+    epochs: readonly LatticeEpoch[],
+    replace?: boolean,
+  ): Promise<void>;
 }
 
 /**
@@ -268,24 +285,42 @@ export const RECORD_SCHEMA_VERSION = 3;
 /** A record kept in one SQLite file, opened the way the candle history is. */
 export class SqliteTickRecord implements TickRecord {
   readonly #db: DatabaseSync;
-  readonly #insert: StatementSync;
-  readonly #readAt: StatementSync;
-  readonly #readSince: StatementSync;
-  readonly #readNewest: StatementSync;
-  readonly #readAtOrBefore: StatementSync;
-  readonly #headOf: StatementSync;
-  readonly #oldestOf: StatementSync;
-  readonly #countOf: StatementSync;
-  readonly #nthNewest: StatementSync;
-  readonly #deleteBelow: StatementSync;
-  readonly #assets: StatementSync;
-  readonly #insertSeam: StatementSync;
-  readonly #readSeams: StatementSync;
-  readonly #readSeamAt: StatementSync;
-  readonly #insertLattice: StatementSync;
-  readonly #readLattices: StatementSync;
+  #insert!: StatementSync;
+  #readAt!: StatementSync;
+  #readSince!: StatementSync;
+  #readNewest!: StatementSync;
+  #readAtOrBefore!: StatementSync;
+  #headOf!: StatementSync;
+  #oldestOf!: StatementSync;
+  #countOf!: StatementSync;
+  #nthNewest!: StatementSync;
+  #deleteBelow!: StatementSync;
+  #assets!: StatementSync;
+  #insertSeam!: StatementSync;
+  #readSeams!: StatementSync;
+  #readSeamAt!: StatementSync;
+  #insertLattice!: StatementSync;
+  #readLattices!: StatementSync;
+  #deleteLattice!: StatementSync;
 
-  constructor(location: string) {
+  readonly #readOnly: boolean;
+  #hasLattice = true;
+  #hasSeam = true;
+
+  /**
+   * @param readOnly Open without upgrading the file: no table is created and
+   * the schema version is not stamped.
+   *
+   * **This exists because opening was a write, and that is a hazard on a live
+   * venue (PH-38.2).** The constructor creates the version's tables and stamps
+   * `user_version`, so an operator running a *read-only-looking* command
+   * against a running deployment's directory would silently move its record to
+   * version 3 — and the service holding that file is by definition an older
+   * build, which `assertSchemaNotNewer` makes refuse the file on its next
+   * restart. An inspection that bricks the next boot is not an inspection.
+   */
+  constructor(location: string, { readOnly = false }: { readOnly?: boolean } = {}) {
+    this.#readOnly = readOnly;
     if (location !== ':memory:' && !location.startsWith('file:')) {
       mkdirSync(path.dirname(path.resolve(location)), { recursive: true });
     }
@@ -299,6 +334,12 @@ export class SqliteTickRecord implements TickRecord {
     // holds the ticks a resumed market regenerates anyway.
     this.#db.exec('PRAGMA synchronous = NORMAL');
     assertSchemaNotNewer(this.#db, RECORD_SCHEMA_VERSION, 'tick record');
+    // Read-only stops here: the file is left exactly as it was found, at
+    // whatever version wrote it.
+    if (readOnly) {
+      this.#prepareStatements();
+      return;
+    }
     const foundVersion = Number(
       this.#db.prepare('PRAGMA user_version').get()?.['user_version'] ?? 0,
     );
@@ -370,6 +411,20 @@ export class SqliteTickRecord implements TickRecord {
       `);
     }
     stampSchemaVersion(this.#db, RECORD_SCHEMA_VERSION);
+    this.#prepareStatements();
+  }
+
+  #prepareStatements(): void {
+    // A version-2 file opened read-only has no frame log, and that is a legal
+    // state that answers "undeclared" rather than throwing at open.
+    const hasTable = (name: string): boolean =>
+      this.#db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+        .get(name) !== undefined;
+    this.#hasLattice = hasTable('lattice');
+    // A file older than PH-31 has no seam table either. Only a read-only open
+    // can meet one, because every other path creates what it is missing.
+    this.#hasSeam = hasTable('seam');
     this.#insert = this.#db.prepare(
       'INSERT INTO tick (asset_id, sequence, instant, price) VALUES (?, ?, ?, ?)',
     );
@@ -401,14 +456,23 @@ export class SqliteTickRecord implements TickRecord {
     // `OR REPLACE`: the same gap written twice is the same true fact, and a
     // constraint failure here would roll back the ticks of a whole pass and
     // stall a market over a row that already says what we were about to say.
+    if (this.#hasLattice) this.#prepareLatticeStatements();
+    if (this.#hasSeam) this.#prepareRest();
+  }
+
+  #prepareLatticeStatements(): void {
     this.#insertLattice = this.#db.prepare(
       'INSERT OR IGNORE INTO lattice (asset_id, from_sequence, from_instant, log_quantum, ' +
         'reference_price, display_precision) VALUES (?, ?, ?, ?, ?, ?)',
     );
+    this.#deleteLattice = this.#db.prepare('DELETE FROM lattice WHERE asset_id = ?');
     this.#readLattices = this.#db.prepare(
       'SELECT asset_id, from_sequence, from_instant, log_quantum, reference_price, ' +
         'display_precision FROM lattice WHERE asset_id = ? ORDER BY from_sequence',
     );
+  }
+
+  #prepareRest(): void {
     this.#insertSeam = this.#db.prepare(
       'INSERT OR REPLACE INTO seam (asset_id, last_sequence, last_instant, ' +
         'resumes_at_sequence, resumes_at_instant) VALUES (?, ?, ?, ?, ?)',
@@ -428,6 +492,7 @@ export class SqliteTickRecord implements TickRecord {
   }
 
   append(batches: readonly AssetBatch[]): Promise<ReadonlyMap<string, readonly Tick[]>> {
+    if (this.#readOnly) return Promise.reject(new RangeError(READ_ONLY_REFUSAL));
     const fresh = new Map<string, readonly Tick[]>();
     // Before the transaction, so the two stores refuse a repeated asset with
     // the same words and neither writes (Cycle Audit 10, a2-13).
@@ -576,6 +641,7 @@ export class SqliteTickRecord implements TickRecord {
   }
 
   seams(assetId: string): Promise<readonly RecordedSeam[]> {
+    if (!this.#hasSeam) return Promise.resolve([]);
     return Promise.resolve(this.#readSeams.all(assetId).map(toSeam));
   }
 
@@ -593,6 +659,35 @@ export class SqliteTickRecord implements TickRecord {
     return Promise.resolve(this.#frames(assetId));
   }
 
+  declareLattice(assetId: string, epochs: readonly LatticeEpoch[], replace = false): Promise<void> {
+    if (this.#readOnly) return Promise.reject(new RangeError(READ_ONLY_REFUSAL));
+    const refusal = malformedDeclaration(assetId, epochs);
+    if (refusal !== null) return Promise.reject(refusal);
+    const held = this.#frames(assetId);
+    if (held.length > 0 && !replace) {
+      return Promise.reject(new RangeError(declaredAlready(assetId, held.length)));
+    }
+    this.#db.exec('BEGIN IMMEDIATE');
+    try {
+      if (replace) this.#deleteLattice.run(assetId);
+      for (const epoch of epochs) {
+        this.#insertLattice.run(
+          epoch.assetId,
+          epoch.fromSequence,
+          epoch.fromInstant,
+          epoch.logQuantum,
+          epoch.referencePrice,
+          epoch.displayPrecision,
+        );
+      }
+      this.#db.exec('COMMIT');
+    } catch (error) {
+      this.#db.exec('ROLLBACK');
+      throw error;
+    }
+    return Promise.resolve();
+  }
+
   frameAt(assetId: string, sequence: number): Promise<LatticeEpoch | null> {
     const bad = badSequence(sequence);
     if (bad !== null) return Promise.reject(bad);
@@ -600,6 +695,7 @@ export class SqliteTickRecord implements TickRecord {
   }
 
   #frames(assetId: string): readonly LatticeEpoch[] {
+    if (!this.#hasLattice) return [];
     return this.#readLattices.all(assetId).map((row) => toEpoch(row));
   }
 
@@ -779,6 +875,18 @@ export class MemoryTickRecord implements TickRecord {
     return Promise.resolve([...(this.#frames.get(assetId) ?? [])]);
   }
 
+  declareLattice(assetId: string, epochs: readonly LatticeEpoch[], replace = false): Promise<void> {
+    const refusal = malformedDeclaration(assetId, epochs);
+    if (refusal !== null) return Promise.reject(refusal);
+    const held = this.#frames.get(assetId) ?? [];
+    if (held.length > 0 && !replace) {
+      return Promise.reject(new RangeError(declaredAlready(assetId, held.length)));
+    }
+    const written = [...epochs].sort((a, b) => a.fromSequence - b.fromSequence);
+    this.#frames.set(assetId, written);
+    return Promise.resolve();
+  }
+
   frameAt(assetId: string, sequence: number): Promise<LatticeEpoch | null> {
     const bad = badSequence(sequence);
     if (bad !== null) return Promise.reject(bad);
@@ -856,6 +964,52 @@ function toSeam(row: Record<string, unknown>): RecordedSeam {
     resumesAtSequence: asNumber(row['resumes_at_sequence']),
     resumesAtInstant: epochMillis(asNumber(row['resumes_at_instant'])),
   };
+}
+
+const READ_ONLY_REFUSAL =
+  'This record was opened read-only, so that inspecting a running deployment could not upgrade ' +
+  'its file underneath it (PH-38.2). Nothing was modified.';
+
+function declaredAlready(assetId: string, held: number): string {
+  return (
+    `${assetId} already has ${String(held)} declared frame(s). Declaring again would be either a ` +
+    `silent no-op or a silent overwrite, and both hide which answer the record is giving. Pass ` +
+    `replace to mean it. Nothing was modified.`
+  );
+}
+
+/** Why these epochs are not a declaration, or null when they are. */
+function malformedDeclaration(assetId: string, epochs: readonly LatticeEpoch[]): RangeError | null {
+  if (epochs.length === 0) {
+    return new RangeError(`A declaration for ${assetId} must carry at least one frame.`);
+  }
+  let previous = -Infinity;
+  for (const epoch of epochs) {
+    if (epoch.assetId !== assetId) {
+      return new RangeError(
+        `A declaration for ${assetId} carries a frame for ${epoch.assetId}. The record was not ` +
+          `modified.`,
+      );
+    }
+    const malformed = malformedFrame(epoch, assetId);
+    if (malformed !== null) return malformed;
+    if (!Number.isSafeInteger(epoch.fromSequence) || epoch.fromSequence < 0) {
+      return new RangeError(
+        `${assetId}'s declaration starts a frame at sequence ${String(epoch.fromSequence)}, which ` +
+          `is not a sequence. The record was not modified.`,
+      );
+    }
+    // Strictly increasing, so an epoch series always has one answer for a
+    // sequence and `frameAtOrBefore` cannot be asked to choose.
+    if (epoch.fromSequence <= previous) {
+      return new RangeError(
+        `${assetId}'s declaration is not ordered: a frame starts at ${String(epoch.fromSequence)} ` +
+          `at or below the one before it. The record was not modified.`,
+      );
+    }
+    previous = epoch.fromSequence;
+  }
+  return null;
 }
 
 function toEpoch(row: Record<string, unknown>): LatticeEpoch {
