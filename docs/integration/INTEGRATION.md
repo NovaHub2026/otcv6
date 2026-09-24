@@ -146,11 +146,11 @@ arquetipo, carácter y fuente del precio de referencia — y nada privado:
   "live": true,
   "retired": false,
   "referencePrice": 1.16,
-  "displayPrecision": 7,
-  "logQuantum": 3.131447750503912e-7,
-  "meanIntervalMs": 348.0060488739902,
-  "tieRate": 0.00949646086803194,
-  "excessKurtosis": 47.668265194532125,
+  "displayPrecision": 6,
+  "logQuantum": 0.000004044597092506429,
+  "meanIntervalMs": 972.3127707827689,
+  "tieRate": 0.12880677095140936,
+  "excessKurtosis": 51.74839887934475,
   "dispersion": { "quarterlyLogSigma": 0.038, "quarterlyPercent": 0.03804117794545922 }
 }
 ```
@@ -205,7 +205,17 @@ activo. La conversión es:
 precioMostrado = referencePrice * exp(logQuantum * price)
 ```
 
-redondeado a `displayPrecision` decimales. En TypeScript:
+redondeado a `displayPrecision` decimales.
+
+> **Lee `logQuantum` y `displayPrecision` de la API, nunca de un ejemplo.** Los
+> números de arriba son los de hoy y se mueven: PH-37 engrosó la retícula de los
+> treinta activos entre ×9,1 y ×23, y esta guía se quedó con los valores
+> anteriores hasta que la Auditoría de Ciclo 12 lo encontró. Un entero publicado
+> **no significa nada sin el quantum en el que cuenta**: leído con otro da otro
+> precio, y el error crece con la distancia al `referencePrice`. `GET /catalogue`
+> y `GET /markets/:id` los sirven por activo.
+
+En TypeScript:
 
 ```ts
 import { displayPrice } from '@otc/chart';
@@ -515,8 +525,8 @@ Cada entrada de `GET /catalogue` lleva:
   "live": true,
   "retired": false,
   "referencePrice": 1.16,
-  "displayPrecision": 7,
-  "logQuantum": 3.13e-7,
+  "displayPrecision": 6,
+  "logQuantum": 4.04e-6,
   "meanIntervalMs": 348,
   "tieRate": 0.0095,
   "excessKurtosis": 51.7,

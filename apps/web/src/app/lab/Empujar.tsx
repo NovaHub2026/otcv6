@@ -6,6 +6,9 @@ import { Badge, Button, Info, Notice, T } from '../ui/kit.js';
 import { formatCountdown } from '../../lib/countdown.js';
 import type { Control, LabState, Pace, PushResult } from './labApi.js';
 
+/** A unit is a tenth of the candle (PH-31); the API states it and the screen must use it. */
+const UNITS_PER_CANDLE = 10;
+
 export const PUSH_SIZES = [1, 3, 5, 10] as const;
 
 /**
@@ -117,7 +120,14 @@ export function Empujar({
           <Info
             text={p.unitInfo(
               state.distance.unitPrice,
-              (Number(state.distance.unitPrice) * 4).toFixed(
+              // **`UNITS_PER_CANDLE`, not a 4 (Cycle Audit 12).** PH-31 moved a
+              // unit from a quarter of the candle to a tenth and rewrote the
+              // first half of this tooltip; the arithmetic here and the last
+              // clause of the sentence were left at the quarter. The tooltip
+              // has been understating every asset's candle by exactly 2.5x ever
+              // since — telling an operator BTC's minute candle is ~32 when it
+              // is ~80 — and nothing tests it.
+              (Number(state.distance.unitPrice) * UNITS_PER_CANDLE).toFixed(
                 state.distance.unitPrice.split('.')[1]?.length ?? 0,
               ),
             )}

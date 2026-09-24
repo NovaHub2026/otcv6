@@ -32,6 +32,14 @@ one whose realised rate at thirty seconds clears a ceiling — **5%, the Human
 Owner's number**, set with the measured cost of each alternative in front of
 them. The 1% quantile that used to choose it is only where the search starts.
 
+**How much coarser, and against what.** Two numbers get confused and the
+distinction matters: each asset's lattice is **×12 or ×16 of the quantile the
+search starts from** (8 assets and 22 assets), and that makes it **×9.10 to
+×22.97 — median ×13.69 — coarser than the lattice `v2.3.1` published on.** The
+first is the search; the second is what a broker's prices actually do. Earlier
+drafts of this record and of the code's own comments said "×12 to ×16" for
+both, which is false for fourteen of the thirty (Cycle Audit 12).
+
 **Anchoring to the real instrument was measured and rejected.** It is not
 uniform: at a one-cent lattice, PBR and NU — an 18-dollar and a 14-dollar stock
 — leave 92% and 97% of their ticks unchanged and refund 26% and 45% of
@@ -49,7 +57,7 @@ of ×1.41, and the rate still rises with the regime.
 | Ticks that leave the price unchanged        |             1%–7% |                         **20.5%–52.8%** |
 | Median thirty-second move, in lattice steps |         40 to 150 |                          **4.3 to 6.2** |
 | Published decimals (EUR/USD, TSLA, BTC)     |         7 / 4 / 1 |                           **6 / 3 / 0** |
-| At-the-money refunds at 30 s                |     0.167%–0.435% |                         **3.31%–4.77%** |
+| At-the-money refunds at 30 s                |     0.167%–0.435% |                         **3.45%–4.77%** |
 | 30-second detection floor (single test)     |           0.215pp | **0.219pp** — still finer than 0.2513pp |
 | API contract                                |           `2.1.0` |                      `2.1.0`, unchanged |
 
@@ -95,7 +103,7 @@ round where the ask is made, never below one step.
 
 | Measure                                                     | Result                                                                                                           |
 | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Refund per asset, on a family the calibration never touches | 3.31%–4.77%, mean 3.96%, twelve replicates each — [`PH-37-TIE-RATES.md`](PH-37-TIE-RATES.md)                     |
+| Refund per asset, on a family the calibration never touches | 3.45%–4.77%, mean 3.96%, twelve replicates each — [`PH-37-TIE-RATES.md`](PH-37-TIE-RATES.md)                     |
 | The build that chose each lattice                           | [`PH-37-THE-STAIRCASE.md`](PH-37-THE-STAIRCASE.md)                                                               |
 | Ticks at rest, on the shipped engine                        | 20.5%–52.8%, mean 34.7% (400,000 ticks per asset)                                                                |
 | Lattice resolution across the thirty                        | 4.32–6.24 steps, a factor of 1.44 where it was 3.8                                                               |

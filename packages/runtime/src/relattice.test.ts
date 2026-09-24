@@ -167,7 +167,11 @@ describe('a seam onto a different lattice keeps the price it continues from', ()
     // or stale entry is silent: it would convert a price to somewhere nobody
     // published. What is checkable without the old catalogue in hand is that it
     // covers the catalogue and that every entry is the *finer* lattice the
-    // coarsening moved from — measured across the thirty at x12 to x16.
+    // coarsening moved from — measured across the thirty at **x9.10 to
+    // x22.97, median x13.69** (Cycle Audit 12: "x12 to x16" was written from
+    // the two commonest rungs, and fourteen of thirty fall outside it, which
+    // is how the band below came to be wide enough to admit a 2.58x-wrong
+    // value in the audit's plant).
     for (const a of ASSET_CATALOGUE) {
       const previous = LATTICE_BEFORE_PH37[a.definition.id];
       expect(previous, `${a.definition.id} has no previous lattice`).toBeDefined();

@@ -134,6 +134,37 @@ describe('StreamCursor serialisation', () => {
 });
 
 describe('RandomStream — uniform primitives', () => {
+  it('nextBoolean is a fair coin, which is the line ADR-0003 rests on', () => {
+    // **The one line with no guard, until Cycle Audit 12.** ADR-0003's theorem
+    // is that an increment is `sign x magnitude` where the sign is an
+    // *independent fair coin*, and everything the product sells rests on it:
+    // flip every future sign and the market is measure-preserving, so
+    // `P(up) = P(down)` exactly, at every horizon, under every public
+    // conditioning. The magnitude side is guarded by the mirror test, which
+    // inverts this very call — so it is structurally unable to see a coin that
+    // is not fair, and `entropy.stat.test.ts` chi-squares `nextFloat64` and
+    // `nextBoundedUint32` and never draws a boolean.
+    //
+    // A 52/48 coin planted here is worth a 2.05pp per-tick directional edge,
+    // eight times the 0.2513pp a 99% payout implies. Several suites do notice
+    // it — the battery's own unit test catches it in milliseconds — but none is
+    // *named* for this, and the recipe `CLAUDE.md` gives for an engine change
+    // (`--project unit packages/engine`) does not include any of them. A
+    // chi-square costs a second and says what is meant.
+    //
+    // Deterministic: one derived stream, a fixed count. The 1% two-sided
+    // critical value at one degree of freedom is 6.635, and the measured
+    // statistic on this stream is 0.014 (1,000,244 heads of 2,000,000).
+    const s = stream();
+    const draws = 2_000_000;
+    let heads = 0;
+    for (let i = 0; i < draws; i += 1) if (s.nextBoolean()) heads += 1;
+    const tails = draws - heads;
+    const expected = draws / 2;
+    const chiSquare = ((heads - expected) ** 2 + (tails - expected) ** 2) / expected;
+    expect(chiSquare, `${String(heads)} heads of ${String(draws)}`).toBeLessThan(6.635);
+  });
+
   it('nextFloat64 stays inside [0, 1)', () => {
     const s = stream();
     let outOfRange = 0;

@@ -397,6 +397,21 @@ describe('the Lab is marked wherever it appears', () => {
     // PH-24.18: the buttons send distances in the market's unit.
     expect(lab).toMatch(/push\?distance=\$\{String\(ticks\)\}&pace=\$\{pace\}/);
     expect(strip).toMatch(/(data-testid|testId)="lab-push-unit"/);
+    // **And the tooltip's arithmetic agrees with the unit (Cycle Audit 12).**
+    // It multiplied by a literal 4 — a unit was a quarter of the candle before
+    // PH-31 — while the API has made it a tenth since. The tooltip understated
+    // every asset's candle by exactly 2.5x for two cycles, and the only thing
+    // that could have caught it is this line, because a screen's arithmetic is
+    // not covered by anything that runs.
+    expect(strip).toMatch(/const UNITS_PER_CANDLE = 10;/);
+    expect(strip).toMatch(/Number\(state\.distance\.unitPrice\) \* UNITS_PER_CANDLE/);
+    expect(strip, 'the candle is derived from a literal again').not.toMatch(
+      /Number\(state\.distance\.unitPrice\) \* \d/,
+    );
+    // The sentence beside it says the same thing as the arithmetic.
+    const es = code('../lib/es.ts');
+    expect(es).toMatch(/\+10 es una vela/);
+    expect(es).not.toMatch(/dos velas y media/);
   });
 
   it('offers sube / baja as toggles that go to the bias route (PH-24.16)', () => {

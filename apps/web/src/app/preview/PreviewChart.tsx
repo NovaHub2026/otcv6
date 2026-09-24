@@ -331,6 +331,14 @@ export function PreviewChart({
      * rates is an ordinary pause on a calm asset, and was rare enough before
      * them that the browser suite caught it only here.
      */
+    // **Carried by every status, not by three of seven (Cycle Audit 12).** A
+    // hole is a fact about the record this chart is reading, and it does not
+    // stop being true because the connection dropped or the history is
+    // reloading — the reconnect countdown alone can hold the screen for thirty
+    // seconds per attempt. Reverting this to three sites passed the whole web
+    // unit suite, and the browser case cannot discriminate it because its own
+    // scenario reaches the screen through `liveStatus()`, which carries the
+    // suffix either way.
     const holeSuffix = (): string =>
       hole === null ? '' : ` — ${es.preview.status.holeBounded(hole.from, hole.to)}`;
     const liveStatus = (): string => {
@@ -354,7 +362,9 @@ export function PreviewChart({
       failures += 1;
       afterGap = true;
       const inMs = Math.min(RECONNECT_BACKOFF_MS * 2 ** (failures - 1), MAX_RECONNECT_BACKOFF_MS);
-      setStatus(`${why} — reconectando en ${(inMs / 1000).toFixed(0)} s (intento ${failures})`);
+      setStatus(
+        `${why} — reconectando en ${(inMs / 1000).toFixed(0)} s (intento ${failures})${holeSuffix()}`,
+      );
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null;
         void run().catch((error: unknown) => {
@@ -369,7 +379,9 @@ export function PreviewChart({
       const self = { joinExact: true };
       connection = self;
       stopReseeding();
-      setStatus(afterGap ? es.preview.status.reloadingHistory : es.preview.status.loadingHistory);
+      setStatus(
+        `${afterGap ? es.preview.status.reloadingHistory : es.preview.status.loadingHistory}${holeSuffix()}`,
+      );
       const to = Date.now();
       const from = to - frame.defaultSpanMs;
       const history = await fetchHistory(
@@ -485,7 +497,7 @@ export function PreviewChart({
       applySeed();
 
       if (!asset.live) {
-        setStatus(`solo historial — ${es.preview.status.notHosted}`);
+        setStatus(`solo historial — ${es.preview.status.notHosted}${holeSuffix()}`);
         return;
       }
 
