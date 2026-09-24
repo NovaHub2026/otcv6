@@ -924,11 +924,12 @@ and finding, first, that every market replayed itself on a five-minute chart
 (fixed and released as `v2.1.0`, ADR-0019), and then that the tick rate
 belonged to the asset's family rather than to its character and its state.
 
-| Phase | Title                                | State    |
-| ----- | ------------------------------------ | -------- |
-| PH-34 | The market's tempo follows its state | APPROVED |
-| PH-35 | The level the market runs at         | APPROVED |
-| PH-36 | A stalled market reopens itself      | APPROVED |
+| Phase | Title                                                                            | State                                                                                                                             |
+| ----- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| PH-34 | The market's tempo follows its state                                             | APPROVED                                                                                                                          |
+| PH-35 | The level the market runs at                                                     | APPROVED                                                                                                                          |
+| PH-36 | A stalled market reopens itself                                                  | APPROVED                                                                                                                          |
+| —     | **Cycle Audit 12** — eight worktrees, eight auditors, three independent refuters | **APPROVED** — [record](../audits/CYCLE-AUDIT-012.md): 15 findings, 13 fixed with a guard each, 2 carried as phases into Cycle 13 |
 
 | Subphase | Title                                                          | State    |
 | -------- | -------------------------------------------------------------- | -------- |

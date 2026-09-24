@@ -39,10 +39,17 @@ export interface TickRecord {
    * `priceAt` returned null for that instant while the contract settled as a
    * loss against the last pre-seam tick, for real money.
    *
-   * Optional so every existing caller keeps working; a record that carries no
-   * seams behaves exactly as before.
+   * **Required since Cycle Audit 12, and that is the fix.** It was optional
+   * "so every existing caller keeps working", which made silence and "this
+   * record has no seams" the same input. A caller that *has* seams and forgets
+   * to pass them settles straight across one — and after PH-37 a seam can also
+   * be a lattice change, so the two integers being compared are counted in
+   * different quanta and the comparison is meaningless as well as unobserved.
+   *
+   * A deployment that keeps no seams passes `[]` and says so. Omitting it is
+   * refused at runtime too, for a caller without types.
    */
-  readonly seams?: readonly RecordSeam[];
+  readonly seams: readonly RecordSeam[];
 }
 
 export class NotSettleableError extends Error {
@@ -72,6 +79,16 @@ export function settle(
   policy: AtMoneyPolicy = DEFAULT_AT_MONEY_POLICY,
 ): Settlement {
   assertContract(contract);
+  // Silence is not an answer about discontinuities: a record that has none says
+  // so with an empty array (Cycle Audit 12).
+  if (record.seams === undefined) {
+    throw new NotSettleableError(
+      contract.id,
+      'the record did not state its discontinuities: pass `seams: []` if this deployment ' +
+        'keeps none, or the seams it holds. A contract settled across an unstated seam ' +
+        'compares two prices nobody published together',
+    );
+  }
   const expiryInstant = epochMillis(contract.entryInstant + contract.horizonMs);
 
   const entry = priceAtOrBefore(record.instants, record.prices, contract.entryInstant);
@@ -90,7 +107,7 @@ export function settle(
   // ADR-0010's rule, applied to a read. An interval nobody observed is refused,
   // not invented, and a contract that touches one cannot be settled against a
   // price that was in force before it.
-  const touched = (record.seams ?? []).find(
+  const touched = record.seams.find(
     (seam) => contract.entryInstant < seam.resumesAtInstant && expiryInstant > seam.lastInstant,
   );
   if (touched !== undefined) {

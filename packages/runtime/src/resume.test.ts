@@ -11,7 +11,12 @@ import {
   SteppableClock,
   type Tick,
 } from '@otc/core';
-import { ASSET_CATALOGUE, type PersonalityTraits, type RegisteredAsset } from '@otc/engine';
+import {
+  ASSET_CATALOGUE,
+  type PersonalityTraits,
+  type RegisteredAsset,
+  LATTICE_BEFORE_PH37,
+} from '@otc/engine';
 import { FileStateStore, MemoryStateStore } from './fileStore.js';
 import { startKeyEpoch } from './genesis.js';
 import { personalityFingerprint } from './personality.js';
@@ -119,7 +124,15 @@ describe('a recovery with no trustworthy cursor evidence moves to a new key epoc
     expect(outcome.kind === 'seam' ? outcome.fromSequence : null).toBe(407);
     expect(outcome.kind === 'seam' ? outcome.reason : '').toMatch(/no checkpoint names this asset/);
     // Past the record, by a whole sequence lease, and carrying its price.
-    expect(market.lastPublishedState).toMatchObject({ sequence: 407, price: 1_234 });
+    // The sequence is the record's; the **price** is the record's price
+    // re-expressed on the lattice this market publishes on (Cycle Audit 12).
+    // It used to be the integer verbatim, which reopened a market at a
+    // different price whenever the lattice had moved under it.
+    expect(market.lastPublishedState?.sequence).toBe(407);
+    const converted = Math.round(
+      (1_234 * LATTICE_BEFORE_PH37[asset.definition.id]!) / asset.instrument.logQuantum,
+    );
+    expect(market.lastPublishedState?.price).toBe(converted);
     clock.advance(durationMillis(60_000));
     const after = market.advance();
     expect(after.length).toBeGreaterThan(0);

@@ -235,3 +235,37 @@ describe('the panel calls a market quiet only when the engine has stopped', () =
     expect(chart).toMatch(/es\.preview\.status\.quiet\(/);
   });
 });
+
+describe('a hole in the record is named by every status that follows it (Cycle Audit 12)', () => {
+  const chart = readFileSync(path.join(app, 'preview', 'PreviewChart.tsx'), 'utf8');
+
+  it('appends the bounds at every setStatus, not at three of seven', () => {
+    // **A hole is a fact about the record, not about the connection.** PH-34
+    // added the suffix and reached three of the seven statuses; the reconnect
+    // countdown — which can hold the screen for thirty seconds an attempt —
+    // the history reload and the history-only status all dropped it. Reverting
+    // that fix passed the whole web unit suite, and the browser case cannot
+    // discriminate it: its own scenario reaches the screen through
+    // `liveStatus()`, which carries the suffix by another path.
+    //
+    // So this counts. Every `setStatus` either calls `liveStatus()` — which
+    // appends the suffix itself — or appends `holeSuffix()` in its own
+    // template.
+    const calls = chart.match(/setStatus\(/g) ?? [];
+    expect(calls.length, 'the count moved; check each new status names the hole').toBeGreaterThan(
+      5,
+    );
+    const bodies = chart.split('setStatus(').slice(1);
+    const silent = bodies.filter((body) => {
+      const call = body.slice(0, body.indexOf(';'));
+      return !/holeSuffix\(\)/.test(call) && !/liveStatus\(\)/.test(call);
+    });
+    expect(silent, `${String(silent.length)} status(es) drop the hole bounds`).toHaveLength(0);
+  });
+
+  it('states the bounds rather than calling it a gap', () => {
+    const es = readFileSync(path.join(app, '..', 'lib', 'es.ts'), 'utf8');
+    expect(es).toMatch(/holeBounded: \(/);
+    expect(chart).toMatch(/es\.preview\.status\.holeBounded\(hole\.from, hole\.to\)/);
+  });
+});

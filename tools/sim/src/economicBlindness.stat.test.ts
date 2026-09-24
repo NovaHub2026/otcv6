@@ -117,6 +117,7 @@ function tradedRun(assetIndex: number): TradedRun {
     const record: TickRecord = {
       instants: new Float64Array(ticks.map((t) => t.instant)),
       prices: Int32Array.from(ticks.map((t) => t.price)),
+      seams: [],
     };
     for (let i = open.length - 1; i >= 0; i -= 1) {
       const contract = open[i]!;
@@ -202,6 +203,7 @@ describe('settlement is blind too, on real market data', () => {
     const record: TickRecord = {
       instants: new Float64Array(traded.ticks.map((t) => t.instant)),
       prices: Int32Array.from(traded.ticks.map((t) => t.price)),
+      seams: [],
     };
 
     let mirrored = 0;

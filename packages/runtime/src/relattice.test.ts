@@ -1,8 +1,16 @@
 // Invariant evidence: INV-002 (shared market), INV-003 (single underlying stream), INV-009 (reproducible settlement).
 import { describe, expect, it } from 'vitest';
-import { durationMillis, epochMillis, MasterKeyring, SteppableClock } from '@otc/core';
+import {
+  durationMillis,
+  epochMillis,
+  logPrice,
+  MasterKeyring,
+  SteppableClock,
+  type Tick,
+} from '@otc/core';
 import { ASSET_CATALOGUE, LATTICE_BEFORE_PH37, type RegisteredAsset } from '@otc/engine';
 import { MemoryStateStore } from './fileStore.js';
+import type { HostedMarket } from './hosted.js';
 import { checkpointMarket, resumeMarket } from './resume.js';
 
 /**
@@ -27,6 +35,16 @@ function onCoarserLattice(asset: RegisteredAsset, factor: number): RegisteredAss
     logQuantum: asset.instrument.logQuantum * factor,
   };
   return { ...asset, instrument };
+}
+
+/** Advance in steps inside the catch-up bound until `count` ticks have landed. */
+function pump(market: HostedMarket, clock: SteppableClock, count: number): Tick[] {
+  const ticks: Tick[] = [];
+  while (ticks.length < count) {
+    clock.advance(durationMillis(5_000));
+    ticks.push(...market.advance());
+  }
+  return ticks;
 }
 
 function options(asset: RegisteredAsset, store: MemoryStateStore, clock: SteppableClock) {
@@ -108,12 +126,52 @@ describe('a seam onto a different lattice keeps the price it continues from', ()
     expect(Math.abs(after - before)).toBeLessThanOrEqual(coarse.instrument.logQuantum / 2);
   });
 
+  it('converts on the path with no checkpoint at all (Cycle Audit 12)', async () => {
+    // `seamPastRecord`: the record holds ticks and no checkpoint names the
+    // asset, because the process that served them died inside its first
+    // checkpoint interval. It took the record's integer verbatim, so a
+    // reopening onto a coarser lattice reopened the market at a different
+    // price — live, not merely rendered.
+    const store = new MemoryStateStore();
+    const clock = new SteppableClock(GENESIS);
+    const coarse = onCoarserLattice(base, COARSER);
+    const published = {
+      sequence: 4_096,
+      instant: epochMillis(GENESIS - 60_000),
+      price: logPrice(-1_877),
+    };
+    const { market, outcome } = await resumeMarket({
+      ...options(coarse, store, clock),
+      published,
+    });
+    expect(outcome.kind).toBe('seam');
+    const before = published.price * LATTICE_BEFORE_PH37[base.definition.id]!;
+    // **What the market publishes, not what it reports.** The first version of
+    // this read `lastPublishedState`, which the same change also converts — so
+    // planting the defect back on the engine's start price left it green. A
+    // guard that cannot fail on the defect it names is worth nothing; this
+    // reads the first tick a broker would receive.
+    const published5s = pump(market, clock, 1);
+    const after = published5s[0]!.price * coarse.instrument.logQuantum;
+    // One tick of ordinary movement away from where it continued, no more.
+    expect(Math.abs(after - before)).toBeLessThan(coarse.instrument.logQuantum * 50);
+    // And what the market reports agrees with what it published: the same
+    // change converts both, so this is the half the first version tested and
+    // the line above is the half that can fail on the defect.
+    const last = published5s[published5s.length - 1]!;
+    expect(market.lastPublishedState!.price).toBe(last.price);
+  });
+
   it('ships a previous lattice for every asset, finer than the one in force', () => {
     // The table answers for checkpoints nothing else can describe, so a wrong
     // or stale entry is silent: it would convert a price to somewhere nobody
     // published. What is checkable without the old catalogue in hand is that it
     // covers the catalogue and that every entry is the *finer* lattice the
-    // coarsening moved from — measured across the thirty at x12 to x16.
+    // coarsening moved from — measured across the thirty at **x9.10 to
+    // x22.97, median x13.69** (Cycle Audit 12: "x12 to x16" was written from
+    // the two commonest rungs, and fourteen of thirty fall outside it, which
+    // is how the band below came to be wide enough to admit a 2.58x-wrong
+    // value in the audit's plant).
     for (const a of ASSET_CATALOGUE) {
       const previous = LATTICE_BEFORE_PH37[a.definition.id];
       expect(previous, `${a.definition.id} has no previous lattice`).toBeDefined();

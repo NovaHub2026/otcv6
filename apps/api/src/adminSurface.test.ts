@@ -32,6 +32,7 @@ import {
 } from './adminAuth.guard.js';
 import {
   adminTokenFromEnvironment,
+  autoReopenFromEnvironment,
   backfillDaysFromEnvironment,
   MAX_BACKFILL_DAYS,
 } from './app.module.js';
@@ -564,6 +565,27 @@ describe('the write surface needs the operator token (a6-01)', () => {
     );
     const exact = 't'.repeat(MIN_ADMIN_TOKEN_LENGTH);
     expect(adminTokenFromEnvironment({ OTC_ADMIN_TOKEN: exact })).toBe(exact);
+  });
+
+  it('reads the one switch that turns the automatic reopening off (Cycle Audit 12)', () => {
+    // **ADR-0020's fifth bound, and the only one with no test.** The audit
+    // planted `value === '1' || value === '0'` — a lint-clean change that makes
+    // `OTC_AUTO_REOPEN=0` a silent no-op, so an operator who switched the
+    // feature off keeps getting seams — and the whole unit suite stayed green:
+    // 172 files, 3,529 tests. `venueReopen.test.ts` covers the constructor
+    // flag; nothing covered the thing that sets it in production.
+    expect(autoReopenFromEnvironment({})).toBe(true);
+    expect(autoReopenFromEnvironment({ OTC_AUTO_REOPEN: '' })).toBe(true);
+    expect(autoReopenFromEnvironment({ OTC_AUTO_REOPEN: '1' })).toBe(true);
+    expect(autoReopenFromEnvironment({ OTC_AUTO_REOPEN: '0' })).toBe(false);
+    expect(autoReopenFromEnvironment({ OTC_AUTO_REOPEN: ' 0 ' })).toBe(false);
+    // Read strictly, like the backfill: a typo must not decide this quietly in
+    // either direction.
+    for (const bad of ['false', 'no', 'off', '00', '2', '-0']) {
+      expect(() => autoReopenFromEnvironment({ OTC_AUTO_REOPEN: bad }), bad).toThrow(
+        /OTC_AUTO_REOPEN must be 0 or 1/,
+      );
+    }
   });
 });
 

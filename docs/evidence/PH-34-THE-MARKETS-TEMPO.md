@@ -7,6 +7,13 @@ Gate: `GATE_EXIT=0` on `ed7064f` — unit 168 files / 3,475 tests (32 s); covera
 
 ---
 
+> **Every tick-rate figure below is from PH-34's engine and split, and both
+> have moved (Cycle Audit 12).** PH-35 relevelled the ladder, PH-37.1 lowered
+> `REGIME_ACTIVITY_SHARE` from ½ to ¼ and moved the arrival excitation onto the
+> magnitude, and PH-37.2 rebuilt the catalogue. What this record is evidence of
+> is what PH-34 measured on the day; for the rates a deployment runs today see
+> [`PH-37-THE-STAIRCASE.md`](PH-37-THE-STAIRCASE.md).
+
 ## 1. What was measured, and how
 
 Each of the thirty assets was run on its catalogue configuration for **sixty

@@ -19,6 +19,18 @@ spans.
 
 ## 2. Per asset
 
+> **The `ticks/s` column is stale, and knowingly so (Cycle Audit 12).** It was
+> measured with `REGIME_ACTIVITY_SHARE` at ½; PH-37.1 lowered it to ¼ so a
+> regime would arrive as a bigger step rather than almost entirely as more
+> ticks, and PH-37.2 then rebuilt the catalogue. Re-measured at the shipped ¼,
+> the calm rate is 10–15% higher, elevated 5.5–9.0% lower and stressed 11–23%
+> lower than the column below; the stressed/calm _rate_ ratio is 1.50–1.71
+> where this table implies 2.13. Nothing caught it because the split preserves
+> variance per unit time: **the level, day-range, `avg × real`, refund and
+> kurtosis columns are unaffected and still reproduce.** The current rates are
+> the `mean interval ms` column of
+> [`PH-37-THE-STAIRCASE.md`](PH-37-THE-STAIRCASE.md).
+
 | Asset        | ticks/s (calm / normal / elevated / stressed) | 5m candle % (calm / normal / elevated / stressed) | day range % | level × real (calm / normal / elev / stress) | avg × real |        regime median (min) |
 | ------------ | --------------------------------------------: | ------------------------------------------------: | ----------: | -------------------------------------------: | ---------: | -------------------------: |
 | eurusd-otc   |                     0.79 / 0.99 / 1.25 / 1.60 |                     0.019 / 0.022 / 0.028 / 0.038 |        0.59 |                    1.00 / 1.26 / 1.61 / 2.10 |       1.17 |         92 / 154 / 55 / 25 |

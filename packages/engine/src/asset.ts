@@ -228,7 +228,7 @@ export const REFUND_FIT_HORIZONS = 8_000;
  * starts, because a tie is an integer-price event and the quantile measures a
  * continuous proxy for it.
  *
- * **Re-measured on 2026-09-23 (PH-37.2)**: **3.31% to 4.77%, mean 3.96%**, and
+ * **Re-measured on 2026-09-23 (PH-37.2)**: **3.45% to 4.77%, mean 3.96%**, and
  * that is the headline of the phase rather than a side effect of it. The
  * lattices were between 6 and 356 times finer than the instruments the assets
  * are named for, so the price moved on 93–99% of ticks and the market looked

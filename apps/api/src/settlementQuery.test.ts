@@ -227,6 +227,7 @@ describe('the settlement query (PH-29.1)', () => {
     const record = {
       instants: Float64Array.from(served.map((t) => t.instant)),
       prices: Int32Array.from(served.map((t) => t.price)),
+      seams: [],
     };
     for (const entryAt of [first.instant + 7_000, first.instant + 31_337, first.instant + 60_001]) {
       const settlement = settle(
@@ -330,13 +331,18 @@ describe('the settlement query (PH-29.1)', () => {
         horizonMs: durationMillis(expiryInstant - entryInstant),
         payoutRatio: 0.85,
       };
-      // The record a broker could build from the API before this route
-      // existed: the ticks, and no seams.
-      const blind = settle(contract, { instants, prices });
+      // **The record a broker could build before this route existed: the ticks,
+      // and silence about seams.** It used to settle — against the last tick
+      // before a gap nobody generated, for real money. Since Cycle Audit 12
+      // silence is not an answer: `seams` is required, and a caller that says
+      // nothing is refused instead of being served a number. Asserting the
+      // refusal is asserting the fix; the old behaviour is what the sentence
+      // above describes.
+      const blind = { instants, prices } as unknown as Parameters<typeof settle>[1];
+      expect(() => settle(contract, blind)).toThrow(NotSettleableError);
+      expect(() => settle(contract, blind)).toThrow(/did not state its discontinuities/);
       const lastBeforeTheGap = ticks.find((t) => t.sequence === seam.lastSequence)!;
-      expect(blind.expiryPrice, 'settled against the last tick before a gap nobody generated').toBe(
-        lastBeforeTheGap.price,
-      );
+      expect(lastBeforeTheGap, 'the gap this contract straddles is in the record').toBeDefined();
       // The record the route now lets it build.
       const seams = ((await controller.seams(ID)) as SeamBody[]).map((one) => ({
         lastInstant: one.lastInstant,

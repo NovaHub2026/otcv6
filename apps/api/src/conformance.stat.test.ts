@@ -127,6 +127,7 @@ describe('the shipped venue conforms to its own contract', () => {
     const settlement = settle(contract, {
       instants: Float64Array.from(ticks.map((t) => t.instant)),
       prices: Int32Array.from(ticks.map((t) => t.price)),
+      seams: [],
     });
     const entry = await client.priceAt(id, entryAt);
     const expiry = await client.priceAt(id, entryAt + horizon);

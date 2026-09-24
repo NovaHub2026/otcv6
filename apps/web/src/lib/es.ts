@@ -222,7 +222,7 @@ export const es = {
       down: 'bajar',
       unit: 'unidades',
       unitInfo: (price: string, range: string) =>
-        `1 unidad = una décima del rango mediano de la vela de 1 minuto de este mercado ≈ ${price} (la vela mide ≈ ${range}). Medido sobre la última media hora de este mercado — las velas que estás viendo — y solo sobre una copia de su futuro si el mercado aún no tiene media hora de registro; +10 son unas dos velas y media.`,
+        `1 unidad = una décima del rango mediano de la vela de 1 minuto de este mercado ≈ ${price} (la vela mide ≈ ${range}). Medido sobre la última media hora de este mercado — las velas que estás viendo — y solo sobre una copia de su futuro si el mercado aún no tiene media hora de registro; +10 es una vela.`,
       unitLabel: (price: string) => `1 = 1/10 vela ≈ ${price}`,
       stop: 'parar',
       stopInfo:

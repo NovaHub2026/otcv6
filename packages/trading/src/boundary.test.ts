@@ -47,6 +47,7 @@ function recordOf(ticks: readonly Tick[]) {
   return {
     instants: Float64Array.from(ticks.map((t) => t.instant)),
     prices: Int32Array.from(ticks.map((t) => t.price)),
+    seams: [],
   };
 }
 

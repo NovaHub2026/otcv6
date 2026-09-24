@@ -14,6 +14,7 @@ function record(prices: number[], startMs = 1_000_000): TickRecord {
   return {
     instants: new Float64Array(prices.map((_, i) => startMs + i * 1_000)),
     prices: Int32Array.from(prices),
+    seams: [],
   };
 }
 
@@ -370,7 +371,7 @@ describe('Cycle Audit 5: settlement refuses a window that touches a seam', () =>
     // contract on a record with no seam at all.
     for (const window of [spanning(0, 2_000), spanning(95_000, 1_000)] as const) {
       const withSeam = settle(window, { instants, prices, seams });
-      const without = settle(window, { instants, prices });
+      const without = settle(window, { instants, prices, seams: [] });
       expect(withSeam.outcome, 'a seam elsewhere in the record changed the outcome').toBe(
         without.outcome,
       );
@@ -391,8 +392,22 @@ describe('Cycle Audit 5: settlement refuses a window that touches a seam', () =>
     }
   });
 
-  it('a record with no seams behaves exactly as before', () => {
-    const settled = settle(spanning(1_000, 30_000), { instants, prices });
+  it('refuses a record that says nothing about its discontinuities (Cycle Audit 12)', () => {
+    // **The input that made the guard opt-in.** `seams` was optional "so every
+    // existing caller keeps working", which made *silence* and *no seams* the
+    // same statement — so a caller holding seams and forgetting to pass them
+    // settled straight across one. Since PH-37 that is worse than an unobserved
+    // interval: a seam can be a lattice change, and then the two integers being
+    // compared are counted in different quanta.
+    const silent = { instants, prices } as unknown as Parameters<typeof settle>[1];
+    expect(() => settle(spanning(1_000, 30_000), silent)).toThrow(NotSettleableError);
+    expect(() => settle(spanning(1_000, 30_000), silent)).toThrow(
+      /did not state its discontinuities/,
+    );
+  });
+
+  it('a record that states it holds no seams settles as it always did', () => {
+    const settled = settle(spanning(1_000, 30_000), { instants, prices, seams: [] });
     expect(settled.outcome).toBe(
       settled.expiryPrice > settled.entryPrice
         ? 'win'

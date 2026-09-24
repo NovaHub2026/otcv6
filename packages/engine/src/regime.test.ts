@@ -120,6 +120,31 @@ describe('the regime chain', () => {
     expect(((occupancy.compressed ?? 0) + (occupancy.normal ?? 0)) / steps).toBeGreaterThan(0.4);
   });
 
+  it('reports the level of the regime that produced the tick, not the next one', () => {
+    // **`levelInForce` was referenced by no test at all (Cycle Audit 12).** A
+    // plant swapping it for the *current* regime's level survived all 709
+    // engine tests; paired against identical seeds it shifts a market's
+    // realised pace by over a point and pushes one asset out of its own pace
+    // tolerance. It is read by the volatility floor, which applies to the same
+    // tick the multiplier above came from — so if the two disagree about which
+    // regime produced the tick, the floor is computed against a level that was
+    // not in force.
+    //
+    // The contract is the one `advance` states: the multiplier is the regime in
+    // force at the START of this tick, a transition takes effect from the next.
+    const modulator = new VolatilityRegimeModulator(DEFAULT_REGIMES, derive('in-force'));
+    let transitions = 0;
+    for (let i = 1; i <= 200_000 && transitions < 25; i += 1) {
+      const producing = modulator.regime;
+      modulator.advance(context(1_000, i));
+      expect(modulator.levelInForce, `tick ${String(i)} was produced by ${producing}`).toBe(
+        DEFAULT_REGIMES[producing].level,
+      );
+      if (modulator.regime !== producing) transitions += 1;
+    }
+    expect(transitions, 'no transition happened, so nothing was tested').toBeGreaterThan(5);
+  });
+
   it('returns the configured multiplier for the current regime', () => {
     const modulator = new VolatilityRegimeModulator(DEFAULT_REGIMES, derive('multiplier'));
     let mismatches = 0;

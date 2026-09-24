@@ -60,7 +60,10 @@ starved it: 1.00 ticks a second against 0.74 across a factor of 27 on EUR/USD,
 
 ## 4. The build
 
-Every asset under the ceiling, coarsened ×6 to ×16. `median steps` is the
+Every asset under the ceiling. The `lattice` column is the factor against the
+quantile the search starts from — **×12 on eight assets, ×16 on twenty-two** —
+which is ×9.10 to ×22.97 (median ×13.69) against the lattice `v2.3.1`
+published on. `median steps` is the
 median thirty-second move in lattice steps: EUR/USD's is **4**, where the old
 lattice made it about seventy.
 
