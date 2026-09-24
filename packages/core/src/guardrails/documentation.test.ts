@@ -742,3 +742,62 @@ describe('a "closed by" annotation names an approved phase', () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe('a gate a document claims to have run names a commit that exists', () => {
+  /**
+   * **Cycle Audit 12.** A phase document carrying `GATE_EXIT=0` on `deadbee`
+   * passed all eleven guardrail files and `state:check` — nothing in the
+   * repository resolved a gate hash against the object database. The audit also
+   * found a real instance of the same shape, one step subtler: `v2.4.0`'s
+   * record names the gate that ran on `0abaf26`, and the released tree was
+   * `dbf3bf6` with three more source files in it. Hosted CI did run the full
+   * gate on the released tree, so the release was verified — but the hash a
+   * reader is given is not the tree that shipped, and nothing said so.
+   *
+   * This catches the fabricated half. The superseded half is a judgement a
+   * reader has to make, and can only make if the hash resolves.
+   */
+  const gateHashes = (): { file: string; hash: string }[] => {
+    const found: { file: string; hash: string }[] = [];
+    for (const dir of ['docs/phases', 'docs/evidence', 'docs/audits']) {
+      if (!existsSync(path.join(repoRoot, dir))) continue;
+      for (const name of listMarkdown(dir)) {
+        const text = read(path.join(dir, name));
+        for (const match of text.matchAll(/GATE_EXIT=0\D{0,40}?`([0-9a-f]{7,40})`/g)) {
+          found.push({ file: `${dir}/${name}`, hash: match[1]! });
+        }
+      }
+    }
+    return found;
+  };
+
+  it('finds the gate hashes it is holding', () => {
+    expect(gateHashes().length).toBeGreaterThan(3);
+  });
+
+  it('every one of them resolves to a commit in this repository', () => {
+    let shallow = 'false';
+    try {
+      shallow = execFileSync('git', ['rev-parse', '--is-shallow-repository'], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+    } catch {
+      return; // No git: an integration package, which carries no phase documents either.
+    }
+    if (shallow === 'true') return;
+    const unresolved: string[] = [];
+    for (const { file, hash } of gateHashes()) {
+      try {
+        execFileSync('git', ['cat-file', '-e', `${hash}^{commit}`], {
+          cwd: repoRoot,
+          stdio: 'ignore',
+        });
+      } catch {
+        unresolved.push(`${file} names ${hash}`);
+      }
+    }
+    expect(unresolved, 'a document claims a gate ran on a commit that does not exist').toEqual([]);
+  });
+});

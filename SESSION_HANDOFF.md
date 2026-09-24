@@ -14,7 +14,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Active cycle       | Cycle 13, **1 of 3** — PH-37 approved. Cycle 12 is complete and its audit is due; Cycle 11 stays open |
 | Active phase       | none                                                                                                  |
 | Active subphase    | none                                                                                                  |
-| Cycle Audit        | **010 closed** — 98 claims, 86 confirmed, 12 partial; fixes on `audit/ca10-fixes`                     |
+| Cycle Audit        | **012 open** — 15 findings, 13 closed on `audit/ca12-fixes`, 2 carried as phases                      |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                                                    |
 
 ---

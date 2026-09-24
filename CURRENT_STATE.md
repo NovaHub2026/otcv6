@@ -16,8 +16,8 @@ Last synchronized: 2026-09-06
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Active development cycle         | Cycle 13 — **1 of 3** phases approved (PH-37). Cycle 12 is full and unaudited; Cycle 11 stays open                                                         |
 | Approved phases in current cycle | **1 of 3** — PH-37. Cycle 12 is complete and **Cycle Audit 12 is still due** (§28)                                                                         |
-| Cycle Audit state                | **010 closed** — 98 claims, 86 confirmed, 12 partial, 0 refuted; 45 plants, 23 survived and are closed; fixes gated green on `audit/ca10-fixes`            |
-| Last Cycle Audit                 | [Cycle Audit 009](docs/audits/CYCLE-AUDIT-009.md) — 2026-09-05, eight independent auditors, one worktree each, every finding refuted independently; closed |
+| Cycle Audit state                | **012 open** — 15 findings, 13 closed in two waves, 2 carried as phases; 3 severities cut by refutation and 1 raised                                       |
+| Last Cycle Audit                 | [Cycle Audit 012](docs/audits/CYCLE-AUDIT-012.md) — 2026-09-24, eight independent auditors, one worktree each, every finding put to an independent refuter |
 
 ## Phase and subphase
 
