@@ -88,7 +88,11 @@ python3 - "$out" <<'PYEOF'
 import os, pathlib, sys, zipfile
 out = pathlib.Path(sys.argv[1]).resolve()
 skip = {'node_modules', 'dist', 'coverage', '.next', '.next-stat', '.git', '.otc-state'}
-archive = out.with_suffix('.zip')
+# `out.name + '.zip'`, never `with_suffix`: a version is full of dots, so
+# `with_suffix` replaces the patch number instead of appending — every package
+# since v1.0.0 was written to `otc-engine-v2.4.zip` while the line this script
+# ends with announced `otc-engine-v2.4.0.zip`, a file that does not exist.
+archive = out.parent / (out.name + '.zip')
 archive.unlink(missing_ok=True)
 with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as zf:
     for root, dirs, files in os.walk(out):
