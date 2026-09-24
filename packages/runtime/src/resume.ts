@@ -14,6 +14,7 @@ import {
 import {
   configFor,
   createMarketEngine,
+  LATTICE_BEFORE_PH37,
   ENGINE_STREAM_PURPOSES,
   type RegisteredAsset,
 } from '@otc/engine';
@@ -472,8 +473,16 @@ function seamPastRecord(options: ResumeOptions, published: Tick): ResumeResult {
  */
 function onLattice(price: LogPrice, from: number | undefined, asset: RegisteredAsset): LogPrice {
   const to = configFor(asset).instrument.logQuantum;
-  if (from === undefined || from === to || !(from > 0) || !(to > 0)) return price;
-  return logPrice(Math.round((price * from) / to));
+  // **A checkpoint with no quantum is not a checkpoint on this lattice.** The
+  // field ships in the same release as the lattice change that needs it, so on
+  // the upgrade where it matters every checkpoint predates it — which the first
+  // version of this function called a rare corner and is in fact the upgrade
+  // path of every running deployment. Measured when that was believed rather
+  // than checked: thirty markets moved by a median of 31.7% and as much as
+  // 1,474%. The release that moves a lattice carries the one it moved from.
+  const source = from ?? LATTICE_BEFORE_PH37[asset.definition.id];
+  if (source === undefined || source === to || !(source > 0) || !(to > 0)) return price;
+  return logPrice(Math.round((price * source) / to));
 }
 
 function seamFrom(
