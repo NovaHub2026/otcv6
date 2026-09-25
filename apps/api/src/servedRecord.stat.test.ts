@@ -263,9 +263,25 @@ describe('the served record, read from outside the process', () => {
       // instants, not sequences), so the shape is compared on the fold and the
       // sequences against the wire's own: the stored candle's first and last
       // ticks must be the served ticks at those positions.
-      const { firstSequence, lastSequence, ...shape } = candle;
+      // The frame is compared separately from the bar (PH-38.4): the venue
+      // states what a candle's integers count in and a local fold of the served
+      // ticks cannot, so stripping it keeps the shape comparison field for field
+      // and adds a check the fold could not make — the stored bar must state the
+      // instrument the wire itself carried.
+      const { firstSequence, lastSequence, logQuantum, referencePrice, ...shape } =
+        candle as typeof candle & {
+          logQuantum?: number | null;
+          referencePrice?: number | null;
+        };
       const { firstSequence: _f, lastSequence: _l, ...ownShape } = own!;
       expect(ownShape).toEqual(shape);
+      expect(
+        { logQuantum, referencePrice },
+        `frame of the stored candle at ${String(candle.openInstant)}`,
+      ).toEqual({
+        logQuantum: a.instrument.logQuantum,
+        referencePrice: a.instrument.referencePrice,
+      });
       const first = a.ticks.find((t) => t.sequence === firstSequence);
       const last = a.ticks.find((t) => t.sequence === lastSequence);
       expect(first?.price, `first tick of ${String(candle.openInstant)}`).toBe(candle.open);
