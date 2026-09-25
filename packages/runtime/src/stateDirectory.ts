@@ -333,13 +333,32 @@ export async function verifyStateDirectory(directory: string): Promise<StateDire
             `older backup than the checkpoint looks like this.`,
         });
       }
-      if (historyHead !== null && recordHead !== null && historyHead > recordHead) {
+      // **A live directory advances between these two reads, and it used to be
+      // called damaged for it.** `recordHead` is taken before `historyHead`, so
+      // a venue that publishes in between leaves the history legitimately ahead
+      // of the record it was folded from — the reading is stale, not the
+      // directory. It fired twice in PH-38.4's gate on the suite written for
+      // exactly this case ("calls a database a second process is writing
+      // healthy, not damaged"), on a host slow enough to widen the gap.
+      //
+      // So the record is asked once more before the accusation is made. A live
+      // writer will have passed the history by then; a directory whose history
+      // really was restored from a newer backup will not, because nothing is
+      // advancing it. The check keeps its teeth and loses the race.
+      const settledRecordHead =
+        historyHead !== null &&
+        recordHead !== null &&
+        historyHead > recordHead &&
+        openRecord !== null
+          ? await headOf(RECORD_DB, () => openRecord.head(assetId))
+          : recordHead;
+      if (historyHead !== null && settledRecordHead !== null && historyHead > settledRecordHead) {
         problems.push({
           file: HISTORY_DB,
           assetId,
           detail:
             `the candle history reaches sequence ${historyHead} and the record ends at ` +
-            `${recordHead}: bars were folded from ticks the record does not hold. A history ` +
+            `${settledRecordHead}: bars were folded from ticks the record does not hold. A history ` +
             `restored from a newer backup than the record looks like this.`,
         });
       }

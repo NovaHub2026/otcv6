@@ -640,6 +640,25 @@ describe('a state directory is backed up consistently and verified on the way ou
    * would be worse than the hole it closes, because it would refuse the boot
    * that follows a kill.
    */
+  it('still names a history genuinely ahead of a record nothing is advancing', async () => {
+    // **The teeth of the check the race fix touches, and they had none.**
+    // `verifyStateDirectory` reads the record's head before the history's, so a
+    // live venue publishing in between leaves the history legitimately ahead —
+    // it called such a directory damaged twice in PH-38.4's gate, and the fix
+    // asks the record once more before accusing it. Nothing tested the other
+    // half: that a history which really is ahead, of a record nothing is
+    // advancing, is still reported. Without this, the fix could have silenced
+    // the check and every suite would have stayed green.
+    //
+    // This is the restore-from-a-newer-backup shape: bars folded from ticks the
+    // record does not hold.
+    const directory = await directoryWith({ published: 100, recorded: 200, stored: 400 });
+    const report = await verifyStateDirectory(directory);
+    const named = report.problems.filter((problem) => problem.file === HISTORY_DB);
+    expect(named, 'a history ahead of a static record is a problem').toHaveLength(1);
+    expect(named[0]!.detail).toMatch(/bars were folded from ticks the record does not hold/);
+  });
+
   it('calls a database a second process is writing healthy, not damaged', async () => {
     const recorded = 30_000;
     const directory = await directoryWith({ published: 100, recorded, stored: 120 });
