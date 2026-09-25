@@ -1245,3 +1245,45 @@ entry in `LATTICE_BEFORE_PH37` and is refused by name rather than defaulted.
 boundary is not undone; the venue becomes right about its history, and a client
 that already derived and stored a display price stays wrong. The levers for that
 remain the contract version and the conformance suite.
+
+---
+
+## 2026-09-25 — A market that starves before its first tick never reopens again
+
+**Found on the live venue, not in a test.** Thirty markets stalled past their
+catch-up bound, reopened themselves as PH-36 says they should — sixty
+reopenings, recorded — and then stalled again twenty-two seconds later under the
+same load. Twenty-three minutes later, with the machine idle at a load average
+of 0.50, they were still stalled and the record's head had not moved. The venue
+did not recover by itself; it needed an operator to restart it.
+
+The cause is the first of ADR-0020's two bounds, in `VenueService.#reopen`:
+
+```ts
+if (this.awaitingFirstTick.has(assetId)) return false;
+```
+
+The bound exists so that a process starving on every pass stalls by name instead
+of writing a seam per pass, which is right. But a market that is reopened and
+then starves _before publishing its first tick_ stays in `awaitingFirstTick` for
+ever, so every later reopening is refused — including the ones that would
+succeed once the load has passed. The guard outlives the condition it guards
+against.
+
+**Not fixed here, and that is deliberate.** It is PH-36's mechanism, the second
+bound (`MIN_REOPEN_INTERVAL_MS`) already limits seam-per-pass on its own, and
+changing a bound on automatic reopening without measuring what it then does
+under sustained starvation is the shape of error this session has already paid
+for twice. It needs a phase with a reproduction, not a patch at the end of
+another one.
+
+**What an operator should know now.** A venue that goes `degraded` with every
+asset stalled and a non-advancing record does not heal; restart it. The
+`otc_market_reopenings_total` metric shows whether the mechanism fired at all —
+it read 60 here, so the reopening worked and the _recovery from a second stall_
+is what did not.
+
+The load that caused it was self-inflicted: builds and test suites running on
+the same host as the venue. That is a fair reproduction of a production load
+spike, and the failure to recover afterwards is the defect rather than the
+stall.
