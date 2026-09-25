@@ -1,5 +1,6 @@
 // Invariant evidence: INV-001 (economic independence).
 import { describe, expect, it } from 'vitest';
+import { yieldToLoop } from '@otc/lab';
 import { durationMillis, epochMillis, logPrice, MasterKeyring, type Tick } from '@otc/core';
 import { ASSET_CATALOGUE, configFor, createMarketEngine } from '@otc/engine';
 import { ExposureBook, type Contract } from '@otc/trading';
@@ -54,7 +55,14 @@ function drive(assetIndex: number, onTick: (tick: Tick) => void): Tick[] {
 describe('an enforcing venue produces the same market as a passive one', () => {
   it.each(ASSET_CATALOGUE.map((a, i) => [a.definition.id, i] as const))(
     '%s is bit-identical with the limiter enforcing',
-    (id, index) => {
+    async (id, index) => {
+      // **Thirty synchronous tests in a row are one synchronous stretch.**
+      // No single case here is long, but the worker sends an `onTaskUpdate`
+      // at every test boundary and never turns the loop, so the main thread
+      // answers none of them until all thirty have run. The rpc probe measured
+      // 31.0s on this file and failed it by name, with every test passing
+      // (CLAUDE.md §5).
+      await yieldToLoop();
       // Passive: nobody trades, nothing is evaluated.
       const quiet = drive(index, () => {});
 

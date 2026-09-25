@@ -1,5 +1,6 @@
 // Invariant evidence: INV-001 (economic independence).
 import { describe, expect, it } from 'vitest';
+import { yieldToLoop } from '@otc/lab';
 import {
   durationMillis,
   epochMillis,
@@ -137,7 +138,14 @@ function tradedRun(assetIndex: number): TradedRun {
 describe('the market cannot see that it is being traded', () => {
   it.each(ASSET_CATALOGUE.map((a, i) => [a.definition.id, i] as const))(
     '%s produces identical ticks whether or not it is traded',
-    (id, index) => {
+    async (id, index) => {
+      // **Thirty synchronous tests in a row are one synchronous stretch.**
+      // No single case here is long, but the worker sends an `onTaskUpdate`
+      // at every test boundary and never turns the loop, so the main thread
+      // answers none of them until all thirty have run. The rpc probe measured
+      // 31.0s on this file and failed it by name, with every test passing
+      // (CLAUDE.md §5).
+      await yieldToLoop();
       const quiet = quietRun(index);
       const traded = tradedRun(index);
 

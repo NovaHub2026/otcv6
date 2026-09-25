@@ -1405,13 +1405,25 @@ export class MarketController implements BeforeApplicationShutdown {
     // separate artefacts precisely because they can move apart.
     const epochs = await this.history!.frames(id);
     const live = this.venue.assetFor(id)?.instrument;
-    // An empty log is a store written before it had one, and every reader of
-    // it already assumed the instrument in force. Falling back to that is what
-    // the chart did yesterday, so the upgrade changes nothing until the store
-    // starts declaring — and it starts on the next flush.
-    const epochsEmpty = epochs.length === 0;
+    // **A store that has recorded no frame CHANGE states one frame for all of
+    // it**, and that is a narrower rule than it first looks.
+    //
+    // A log with no epochs is a store written before it had one, and every
+    // reader of it already assumed the instrument in force. A log with exactly
+    // one epoch is a store that has been writing under one frame and has never
+    // seen it move — but its oldest rows can sit below that epoch's sequence,
+    // because `prime` fills history from the record at boot and the first
+    // declaration is anchored at the first flush after it. The panel suite
+    // caught that: every candle came back `logQuantum: null` and the chart drew
+    // nothing where it should have drawn forty-eight bars.
+    //
+    // So a bar is refused a frame only when the store itself records a change —
+    // two epochs or more — and then only if it falls below the first or
+    // straddles two. That is the case where the venue genuinely cannot say, and
+    // it is the case this subphase exists for.
+    const settled = epochs.length <= 1;
     const fallback: PriceFrame | null =
-      epochsEmpty && live !== undefined
+      settled && live !== undefined
         ? {
             logQuantum: live.logQuantum,
             referencePrice: live.referencePrice,
@@ -1419,8 +1431,11 @@ export class MarketController implements BeforeApplicationShutdown {
           }
         : null;
     return candles.map((candle) => {
-      const first = frameAtOrBefore(epochs, candle.firstSequence) ?? fallback;
-      const last = frameAtOrBefore(epochs, candle.lastSequence) ?? fallback;
+      // One declared frame answers for the whole store; more than one is
+      // resolved per bar and a bar below the first, or across two, gets neither.
+      const only = settled ? (epochs[0] ?? fallback) : null;
+      const first = settled ? only : frameAtOrBefore(epochs, candle.firstSequence);
+      const last = settled ? only : frameAtOrBefore(epochs, candle.lastSequence);
       const one = first !== null && last !== null && sameFrame(first, last) ? first : null;
       return {
         ...candle,

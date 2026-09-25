@@ -198,6 +198,15 @@ describe('the panel and the engine agree across the process boundary', () => {
     const fine = await getJson<{ candles: Candle[] }>(historyPath('5m', window.from, window.to));
     const coarse = await getJson<{ candles: Candle[] }>(historyPath('1h', window.from, window.to));
     const folded = foldCandles(timeframeById('1h'), fine.candles);
+    // What the fine tier says its integers count in. Every bar of a store that
+    // has recorded no frame change states the same one, and a null here would
+    // mean the chart draws nothing — which is how the panel suite caught the
+    // first version of this.
+    const fineFrame = fine.candles[0] as unknown as {
+      logQuantum: number | null;
+      referencePrice: number | null;
+    };
+    expect(fineFrame.logQuantum, 'the fine tier states a frame').not.toBeNull();
 
     // Aligned by open instant, not by index. Both series are filtered to the
     // same window, but the hour containing `from` starts before it: the coarse
@@ -213,7 +222,21 @@ describe('the panel and the engine agree across the process boundary', () => {
     const inner = folded.slice(1, -1);
     expect(inner.length).toBeGreaterThan(40);
     for (const bar of inner) {
-      expect(byInstant.get(bar.openInstant), `hour ${bar.openInstant}`).toEqual(bar);
+      const served = byInstant.get(bar.openInstant) as
+        (Candle & { logQuantum?: number | null; referencePrice?: number | null }) | undefined;
+      expect(served, `hour ${bar.openInstant}`).toBeDefined();
+      // The frame is compared separately from the bar, because `foldCandles`
+      // produces a bar and the venue produces a bar *and* what it counts in
+      // (PH-38.4). Stripping it and asserting it is stronger than either half:
+      // the shape still has to match field for field, and the two timeframes
+      // still have to agree about the lattice — which is INV-004 applied to the
+      // frame rather than only to the prices.
+      const { logQuantum, referencePrice, ...shape } = served!;
+      expect(shape, `hour ${bar.openInstant}`).toEqual(bar);
+      expect({ logQuantum, referencePrice }, `frame at hour ${bar.openInstant}`).toEqual({
+        logQuantum: fineFrame.logQuantum,
+        referencePrice: fineFrame.referencePrice,
+      });
     }
   }, 120_000);
 

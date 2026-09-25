@@ -804,3 +804,47 @@ describe('every workspace is scanned or excused (CA9 a2-04)', () => {
     }
   });
 });
+
+/**
+ * A statistical suite that runs one test per asset must let the loop turn.
+ *
+ * **This has now cost two full gate runs, on two different files, in one
+ * night.** No single case is long — a mirror test is ~450 ms, a limiter
+ * comparison less — but Vitest sends an `onTaskUpdate` to the main thread at
+ * every test boundary and waits sixty seconds for the reply to be *read*. A
+ * synchronous body never turns the loop, so thirty of them in a row are one
+ * synchronous stretch: the main thread answers none of the updates until the
+ * last case finishes. The rpc probe measured 32.0 s on
+ * `multiAsset.stat.test.ts` and 31.0 s on `limiterBlindness.stat.test.ts`, and
+ * both failed the file by name **with every test passing** — the shape
+ * CLAUDE.md §5 calls the most confusing this project produces.
+ *
+ * The fix is one line in the body, so the cost of this defect is entirely in
+ * finding it: ninety minutes of gate to learn something a regex knows. Hence
+ * this.
+ */
+describe('a per-asset statistical suite yields between its cases', () => {
+  it('has no catalogue-wide `it.each` with a synchronous body', () => {
+    const offenders: string[] = [];
+    for (const { file, source } of sourcesUnder(['packages', 'apps', 'tools']).concat(
+      ['packages', 'apps', 'tools']
+        .flatMap((root) => listSourceFiles(root, { includeTests: true }))
+        .filter((file) => file.endsWith('.stat.test.ts'))
+        .map((file) => ({ file, source: readRepositoryFile(file) })),
+    )) {
+      if (!file.endsWith('.stat.test.ts')) continue;
+      // `it.each(ASSET_CATALOGUE…)('…', (a, b) => {` — an arrow that is not
+      // `async` is a case that cannot yield.
+      const pattern = /it\.each\(\s*ASSET_CATALOGUE[\s\S]{0,400}?\n\s*(async\s+)?\([^)]*\)\s*=>/g;
+      for (const match of source.matchAll(pattern)) {
+        if (match[1] === undefined) offenders.push(file);
+      }
+    }
+    expect(
+      [...new Set(offenders)],
+      'a catalogue-wide statistical suite whose case body is synchronous: make it `async` and ' +
+        '`await yieldToLoop()` first, or the whole file is one synchronous stretch and the rpc ' +
+        'probe fails it with every test passing',
+    ).toEqual([]);
+  });
+});
