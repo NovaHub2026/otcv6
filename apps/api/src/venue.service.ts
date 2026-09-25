@@ -148,6 +148,23 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
   private readonly awaitingFirstTick = new Set<string>();
   /** Automatic reopenings this process has taken, every asset, for `/metrics`. */
   private reopenings = 0;
+  /**
+   * Re-armings this process has taken, every asset, for `/metrics` (PH-39).
+   *
+   * Counted apart from `reopenings` because they are a different event and an
+   * operator needs to tell them apart: a reopening is an outage this venue
+   * accepted and recorded as a seam, a re-arming is an outage it has not got out
+   * of yet. A venue accumulating these is a venue that cannot keep up with its
+   * host, and it is stalled by name the whole time.
+   */
+  private rearms = 0;
+  /**
+   * Re-armings taken in the current run, per asset (PH-39).
+   *
+   * Cleared when the market publishes, so it counts one starvation rather than
+   * the life of the process. It is what `/health`'s stall reason reports.
+   */
+  private readonly rearmRun = new Map<string, number>();
   private lastCheckpointAt = 0;
   /** The advance currently running, so shutdown can wait for it. */
   private inFlight: Promise<void> = Promise.resolve();
@@ -166,6 +183,18 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
    * what readiness reads and is cleared by the first pass that completes.
    */
   private readonly passFailures = { total: 0, consecutive: 0 };
+  /**
+   * The instant the last **completed** pass looked at the clock (PH-39).
+   *
+   * The catch-up bound is defined on exactly this quantity — `advanceTo` refuses
+   * when `now - #lastAdvancedAt` exceeds it — and until now nothing exported it,
+   * so an operator could not tell a venue running a pass every 250 ms from one
+   * running a pass every fourteen seconds. The first is healthy; the second is
+   * one pass away from stalling every market it hosts, and that is what happened
+   * three times on 2026-09-25. `otc_seconds_since_last_pass` is the warning the
+   * incident did not have.
+   */
+  private lastPassAt: EpochMillis | null = null;
   /** The message of the last pass that threw, or null when the last one completed. */
   private lastPassError: string | null = null;
   /** The `name` of that error, so the log line is written once per kind. */
@@ -456,6 +485,8 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     readonly subscribers: number;
     readonly failedPasses: number;
     readonly reopenings: number;
+    readonly rearms: number;
+    readonly msSinceLastPass: number | null;
   } {
     let subscribers = 0;
     for (const id of this.assetIds) subscribers += this.feed.subscriberCount(id);
@@ -465,6 +496,8 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       subscribers,
       failedPasses: this.passFailures.total,
       reopenings: this.reopenings,
+      rearms: this.rearms,
+      msSinceLastPass: this.lastPassAt === null ? null : this.clock.now() - this.lastPassAt,
     };
   }
 
@@ -699,6 +732,12 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     this.stalledLogged.delete(assetId);
     this.latest.delete(assetId);
     this.recovery.delete(assetId);
+    // Including what it remembers about reopening it (PH-39). These outlived
+    // CA7-15's sweep: an asset registered again under the same id inherited a
+    // reopening it never had.
+    this.awaitingFirstTick.delete(assetId);
+    this.reopenedAt.delete(assetId);
+    this.rearmRun.delete(assetId);
     // And the feed's window, which is 5 MB per asset (CA7-35). Its subscribers
     // are told rather than left holding a stream that will never tick again.
     this.feed.forget(assetId, 'asset retired');
@@ -932,12 +971,19 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
    * not the only trace any more.
    */
   async tick(): Promise<void> {
+    // Read before the pass, because this is the instant the pass advances every
+    // market to and therefore the one the catch-up bound measures from.
+    const lookedAtTheClock = epochMillis(this.clock.now());
     try {
       await this.#pass();
     } catch (error) {
       this.#passFailed(error);
       throw error;
     }
+    // Only a completed pass. A pass that threw may have advanced some markets
+    // and not others, and over-reporting the gap is the safe direction for a
+    // number an operator watches to see a stall coming.
+    this.lastPassAt = lookedAtTheClock;
     this.passFailures.consecutive = 0;
     this.lastPassError = null;
     this.lastPassErrorKind = null;
@@ -970,7 +1016,9 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
    * Reopen a market its catch-up bound refused, or leave it stalled.
    *
    * Returns whether it was reopened, so the caller can skip the stall it would
-   * otherwise record. Everything a boot seam does for the surfaces around the
+   * otherwise record. A **re-arming** returns `false` although it did act: the
+   * market is armed again at the clock but has still served nothing, and the
+   * stall is what an operator must go on seeing (PH-39). Everything a boot seam does for the surfaces around the
    * market is done here too, in one act: the feed is told where its window
    * begins, the commitment chain is sealed and restarted past the gap, and the
    * recovery an observer reads stops describing a process that ended hours ago.
@@ -985,11 +1033,53 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     if (!(failure.error instanceof CatchUpTooLargeError)) return false;
     const assetId = failure.assetId;
     const now = epochMillis(this.clock.now());
-    // Published since the last reopening, and not too soon after it: a process
-    // starving on every pass stalls by name instead of writing a seam per pass.
-    if (this.awaitingFirstTick.has(assetId)) return false;
-    const previous = this.reopenedAt.get(assetId);
-    if (previous !== undefined && now - previous < MIN_REOPEN_INTERVAL_MS) return false;
+    // **A reopening that has served nothing is not an outage of its own
+    // (PH-39).** The outage it was taken for is still running: the process was
+    // starved again before the reopened market could publish its first tick.
+    //
+    // This used to be `if (this.awaitingFirstTick.has(assetId)) return false`,
+    // and the bound outlived what it guards against. `awaitingFirstTick` is only
+    // ever cleared by a publication, so a market starved twice inside one outage
+    // stayed in it for the life of the process and every later reopening was
+    // refused — including the ones that would have succeeded the moment the load
+    // passed. Measured twice on the live venue on 2026-09-25: thirty markets
+    // reopened, starved again, and were still stalled with the machine idle
+    // twenty-three minutes later. The venue needed an operator.
+    //
+    // So the two cases part company here. A market that has published since its
+    // reopening and falls behind again has had a *new* outage, and takes the
+    // whole seam below, rate-limited by `MIN_REOPEN_INTERVAL_MS`. A market still
+    // awaiting its first tick is **re-armed**: the same market, at the clock, on
+    // a fresh key epoch, carrying the same price and the same reserved sequence,
+    // with the feed, the chain, the counter and the stall left exactly as the
+    // first reopening left them. Nothing published means nothing to be
+    // discontinuous with, so one outage still leaves one seam — and the market
+    // goes on reporting itself stalled until it publishes, which is the honest
+    // report of a host this venue cannot keep up with.
+    //
+    // **The feed's own declaration is checked, not assumed.** A re-arming may
+    // only stay silent if the market still resumes where the feed was already
+    // told it would, and that is read from the feed rather than inferred: the
+    // declaration is made with `publishedThrough` set to the tick the reopening
+    // carried, and `TickFeed.publish` clears it the moment a window exists. So a
+    // declaration that still names the tick the market still carries is exactly
+    // the case where the first reopening's statement is current.
+    //
+    // It can disagree. A market whose ticks the **record refused** is still
+    // awaiting its first recorded tick, but it carries a later one, so its
+    // reserved sequence has moved and the declarations have to move with it. That
+    // case takes the whole seam below, interval and all.
+    const declaredSeam = this.feed.declaredSeam(assetId);
+    const carried = this.venue.marketFor(assetId).lastPublishedSequence;
+    const rearm =
+      this.awaitingFirstTick.has(assetId) &&
+      declaredSeam !== null &&
+      carried !== null &&
+      declaredSeam.publishedThrough === carried;
+    if (!rearm) {
+      const previous = this.reopenedAt.get(assetId);
+      if (previous !== undefined && now - previous < MIN_REOPEN_INTERVAL_MS) return false;
+    }
 
     let reopened;
     try {
@@ -1018,6 +1108,40 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     this.venue.reopen(assetId, reopened.market);
     reopened.market.prime();
     this.recovery.set(assetId, reopened.outcome);
+
+    if (rearm) {
+      this.rearms += 1;
+      const run = (this.rearmRun.get(assetId) ?? 0) + 1;
+      this.rearmRun.set(assetId, run);
+      // **Still stalled, and the reason says how long this has been going on.**
+      // The `stalled` entry is what `/health` hands an operator, and during the
+      // live incident of 2026-09-25 the reason was the only thing they had: it
+      // named the lag and nothing else, so "the mechanism fired and stopped" and
+      // "the mechanism is trying" read identically. The count goes in the
+      // sentence they already read, and `otc_market_rearms_total` carries it for
+      // a scrape.
+      this.stalled.set(
+        assetId,
+        `${failure.error.message} Reopened and re-armed ${run}x at the clock, still awaiting ` +
+          `its first tick, so nothing has been served since sequence ${reopened.from.sequence}.`,
+      );
+      // Logged once per run rather than once per pass: under a sustained
+      // starvation this path runs on every pass, and the mark is what stops the
+      // caller adding a second line about the same thing (a6-05).
+      if (run === 1) {
+        this.stalledLogged.set(assetId, failure.error.name);
+        this.logger.warn(
+          `${assetId}: RE-ARMED — ${failure.error.message} It has published nothing since it ` +
+            `reopened, so this is the same outage rather than a new one: the market is re-armed ` +
+            `at the clock on key epoch ${reopened.market.keyEpoch}, still resuming at sequence ` +
+            `${reopened.outcome.resumesAtSequence}, and no second seam is recorded. It stays ` +
+            `stalled until it publishes (logged once per run; the count is in ` +
+            `otc_market_rearms_total).`,
+        );
+      }
+      return true;
+    }
+
     // The feed is left exactly as a boot seam leaves it: an empty window with
     // its bounds declared. It refuses a batch whose sequence jumps — a gap here
     // would reach every observer — so publishing the reopened market into the
@@ -1039,8 +1163,20 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     this.reopenedAt.set(assetId, now);
     this.awaitingFirstTick.add(assetId);
     this.reopenings += 1;
-    this.stalled.delete(assetId);
-    this.stalledLogged.delete(assetId);
+    // **The stall stays until it publishes (PH-39).** This used to be
+    // `this.stalled.delete(assetId)`, which called a market healthy on the
+    // strength of having been reopened — and a reopened market has served
+    // nothing yet. One pass is short, but it is the pass in which a checkpoint
+    // may be written (`checkpoint()` skips a market only while it is stalled),
+    // and Cycle Audit 6's rule has no exception for a market that is about to
+    // publish. `#pass` clears it, and logs `publishing again`, when the record
+    // accepts the first tick.
+    //
+    // Marked as logged because the `REOPENED` line below carries the same lag
+    // the `STALLED` line would: one event, one line (a6-05).
+    this.stalled.set(assetId, failure.error.message);
+    this.stalledLogged.set(assetId, failure.error.name);
+    this.rearmRun.delete(assetId);
     // One line per reopening, and it names everything needed to find the seam
     // in the record afterwards. Not deduped: a reopening is rare by
     // construction, and each one is a discontinuity somebody may settle across.
@@ -1106,7 +1242,9 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       }
       // The second bound on an automatic reopening: a market must have
       // published since the last one before it may take another (ADR-0020).
+      // With it goes the re-arming run, so the next one is logged again (PH-39).
       this.awaitingFirstTick.delete(assetId);
+      this.rearmRun.delete(assetId);
       const last = generated[generated.length - 1];
       if (last !== undefined) this.latest.set(assetId, last);
       if (ticks.length === 0) continue;

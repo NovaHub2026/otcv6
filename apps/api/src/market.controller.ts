@@ -245,12 +245,37 @@ export class MarketController implements BeforeApplicationShutdown {
       '# HELP otc_tick_pass_failures_total Publish passes that threw, since boot.',
       '# TYPE otc_tick_pass_failures_total counter',
       `otc_tick_pass_failures_total ${String(counters.failedPasses)}`,
-      // ADR-0020: a market that reopens itself leaves a seam in the record, so
-      // a deployment accumulating these has a host that keeps stopping it —
-      // which is a thing to fix, and this is what says so.
+      // ADR-0020: a market that reopens itself and then publishes leaves a seam
+      // in the record, so a deployment accumulating these has a host that keeps
+      // stopping it — which is a thing to fix, and this is what says so. It
+      // counts reopenings rather than seams: an outage the venue never got out of
+      // is counted here and appears in no record, which is what
+      // `otc_market_rearms_total` below is for (PH-39).
       '# HELP otc_market_reopenings_total Markets reopened past their catch-up bound, since boot.',
       '# TYPE otc_market_reopenings_total counter',
       `otc_market_reopenings_total ${String(counters.reopenings)}`,
+      // PH-39: a re-arming is an outage this venue has **not** got out of yet —
+      // the market was reopened, starved again before its first tick, and was
+      // re-armed at the clock without a second seam. It is stalled while this
+      // rises, so a venue showing both a rising count here and
+      // `otc_markets_stalled` above zero is a venue losing its host, not a venue
+      // recovering from one.
+      '# HELP otc_market_rearms_total Reopened markets re-armed before their first tick, since boot.',
+      '# TYPE otc_market_rearms_total counter',
+      `otc_market_rearms_total ${String(counters.rearms)}`,
+      // PH-39: the quantity the catch-up bound is defined on, which nothing
+      // exported until a venue had stalled on it three times in one day. A
+      // healthy venue reads well under a second here; anything approaching the
+      // fifteen-second bound is a venue one pass away from stalling every market
+      // it hosts. Omitted before the first completed pass rather than reported
+      // as zero, because zero would be a claim.
+      ...(counters.msSinceLastPass === null
+        ? []
+        : [
+            '# HELP otc_seconds_since_last_pass Seconds since the last completed publish pass looked at the clock.',
+            '# TYPE otc_seconds_since_last_pass gauge',
+            `otc_seconds_since_last_pass ${(counters.msSinceLastPass / 1_000).toFixed(3)}`,
+          ]),
       '# HELP otc_stream_subscribers Open stream subscriptions, every market.',
       '# TYPE otc_stream_subscribers gauge',
       `otc_stream_subscribers ${String(counters.subscribers)}`,

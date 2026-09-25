@@ -57,6 +57,20 @@ The reopening is exactly the one a restart performs:
    `MIN_REOPEN_INTERVAL_MS` must have passed since its last automatic seam.
    A process starving on every pass therefore stalls by name instead of writing
    a seam per pass.
+
+   **Clarified 2026-09-25 (PH-39), without moving the bound.** The sentence is a
+   correct definition of when a reopening is a _new_ seam, and it was attached to
+   the wrong act: the code refused to reopen at all, so a market starved twice
+   inside one outage was refused for the life of the process and the venue needed
+   an operator. What the bound means is that a reopening that **served nothing**
+   may not be recorded, declared or counted a second time — and it need not be,
+   because it reserves the same sequence from the same carried tick. So such a
+   market is **re-armed** at the clock on a fresh key epoch instead: nothing is
+   written to the record, the feed's window and the sealed chain are the ones
+   already declared, `otc_market_reopenings_total` does not move, and the market
+   goes on reporting itself stalled until it publishes. A process starving on
+   every pass still writes no seam per pass, which is what this bound is for.
+
 3. **A market that has never published is not reopened.** There is no price to
    carry over; that case is a genesis, and it is the boot path's business.
 4. **The bound itself does not move.** Fifteen seconds, half the shortest

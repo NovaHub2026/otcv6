@@ -113,6 +113,14 @@ const METRIC_NAMES = new Set([
   // of outages, which is the operator's business and carries no engine state —
   // the price it reopened from is the one already published.
   'otc_market_reopenings_total',
+  // PH-39: reopened markets re-armed before their first tick. A count of
+  // attempts to get out of one outage, which carries no engine state either —
+  // nothing has been drawn that anybody was served.
+  'otc_market_rearms_total',
+  // PH-39: seconds since the last completed publish pass — the quantity the
+  // catch-up bound is defined on. A latency of this process's own loop, which is
+  // as public as uptime.
+  'otc_seconds_since_last_pass',
 ]);
 /** The only label a sample may carry, and its value is an asset id. */
 const METRIC_LABELS = new Set(['asset']);

@@ -123,6 +123,36 @@ describe('a market past its catch-up bound reopens itself', () => {
     expect(agreed).toBeLessThan(0.6);
   });
 
+  it('reserves the same sequence again when it published nothing in between', async () => {
+    // The property the venue's re-arming rests on (PH-39). A reopened market
+    // that starves again before its first tick is reopened a second time, and
+    // that second reopening must be indistinguishable from the first as far as
+    // anything outside the market can see: the same carried tick, the same
+    // reserved sequence, the same window the feed and the commitment chain were
+    // already told about. If it moved, the venue would have to declare a second
+    // seam for an outage that never ended.
+    const { market, clock } = await running();
+    clock.advance(durationMillis(3_600_000));
+    expect(() => market.advance()).toThrow(CatchUpTooLargeError);
+    const first = reopenStalledMarket({ ...baseOptions(clock), market });
+    first.market.prime();
+
+    // Starved again, and further into the outage than the first time.
+    clock.advance(durationMillis(3_600_000));
+    expect(() => first.market.advance()).toThrow(CatchUpTooLargeError);
+    const second = reopenStalledMarket({ ...baseOptions(clock), market: first.market });
+
+    expect(second.from.sequence).toBe(first.from.sequence);
+    expect(second.from.price).toBe(first.from.price);
+    expect(second.outcome.fromSequence).toBe(first.outcome.fromSequence);
+    expect(second.outcome.resumesAtSequence).toBe(first.outcome.resumesAtSequence);
+    // On a keystream of its own all the same: the first reopening drew a tick
+    // nobody was served, and a discontinuity never reuses an epoch (ADR-0019).
+    expect(second.market.keyEpoch).toBeGreaterThan(first.market.keyEpoch);
+    // And it opens at the clock, so it is inside the bound and can publish.
+    expect(pump(second.market, clock, 1).length).toBeGreaterThan(0);
+  });
+
   it('keeps the bound it was refused by, so the next outage is refused too', async () => {
     const { market, clock } = await running();
     clock.advance(durationMillis(3_600_000));
