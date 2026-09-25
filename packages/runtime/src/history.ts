@@ -11,6 +11,7 @@ import {
   type Tick,
   type TimeframeId,
 } from '@otc/core';
+import { sameFrame, type LatticeEpoch, type PriceFrame } from './priceFrame.js';
 
 /**
  * Long history, stored as candles rather than as ticks.
@@ -79,7 +80,26 @@ export class HistoryError extends Error {
  */
 export interface CandleHistory {
   /** Append closed candles, in order, after everything already stored. */
-  append(assetId: string, timeframe: TimeframeId, candles: readonly Candle[]): Promise<void>;
+  /**
+   * @param frame What these candles' integers count in (PH-38.4).
+   *
+   * Optional, and the candle store keeps its **own** frame log rather than
+   * reading the record's. The two artefacts can be re-expressed
+   * independently and on the live venue they were: `history.db` was converted
+   * onto the current lattice by hand after v2.4.0 while `record.db` was not, so
+   * for one sequence the stored candle close was 677 and the stored tick price
+   * 8797 — the same price, in different units. Deriving a candle's frame from
+   * the record would have rendered nineteen days of chart 0.25% wrong on
+   * eurusd-otc and far worse on the assets that coarsened most.
+   */
+  append(
+    assetId: string,
+    timeframe: TimeframeId,
+    candles: readonly Candle[],
+    frame?: PriceFrame,
+  ): Promise<void>;
+  /** Every frame this store can say its candles counted in, oldest first. */
+  frames(assetId: string): Promise<readonly LatticeEpoch[]>;
   /** Candles whose open instant is in `[from, to)`. */
   read(
     assetId: string,
@@ -110,12 +130,35 @@ function unstoredTimeframe(timeframe: TimeframeId): HistoryError | null {
 /** The reference `CandleHistory`, in memory. */
 export class InMemoryCandleHistory implements CandleHistory {
   readonly #series = new Map<string, Candle[]>();
+  readonly #frames = new Map<string, LatticeEpoch[]>();
 
   #key(assetId: string, timeframe: TimeframeId): string {
     return `${assetId} ${timeframe}`;
   }
 
-  append(assetId: string, timeframe: TimeframeId, candles: readonly Candle[]): Promise<void> {
+  frames(assetId: string): Promise<readonly LatticeEpoch[]> {
+    return Promise.resolve([...(this.#frames.get(assetId) ?? [])]);
+  }
+
+  append(
+    assetId: string,
+    timeframe: TimeframeId,
+    candles: readonly Candle[],
+    frame?: PriceFrame,
+  ): Promise<void> {
+    if (frame !== undefined && candles.length > 0) {
+      const held = this.#frames.get(assetId) ?? [];
+      const inForce = held.length === 0 ? null : held[held.length - 1]!;
+      if (inForce === null || !sameFrame(inForce, frame)) {
+        held.push({
+          assetId,
+          fromSequence: candles[0]!.firstSequence,
+          fromInstant: epochMillis(candles[0]!.openInstant),
+          ...frame,
+        });
+        this.#frames.set(assetId, held);
+      }
+    }
     const unstored = unstoredTimeframe(timeframe);
     if (unstored !== null) return Promise.reject(unstored);
     const key = this.#key(assetId, timeframe);

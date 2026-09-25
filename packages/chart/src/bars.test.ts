@@ -39,6 +39,46 @@ function tick(sequence: number, instant: number, price: number) {
   return { sequence, instant, price } as never;
 }
 
+describe('a bar is drawn on the frame it states, and not on one it does not (PH-38.4)', () => {
+  // The lattice eurusd-otc published on before PH-37, and the one it publishes
+  // on now: a coarsening of 12.92x. Reading a pre-change integer with the
+  // current quantum is what moved nineteen days of chart.
+  const OLD = 3.131447750503912e-7;
+  const NOW = 4.044597092506429e-6;
+
+  it('draws a bar on its own frame rather than the caller instrument', () => {
+    const stated = candle(0, { logQuantum: OLD, referencePrice: instrument.referencePrice });
+    const bars = toBars([stated], instrument);
+    expect(bars).toHaveLength(1);
+    // Drawn on the frame the bar states...
+    expect(bars[0]!.open).toBe(displayPrice(1_000, { ...instrument, logQuantum: OLD }));
+    // ...which is a different number from the caller's instrument, or this test
+    // would pass with the frame ignored.
+    expect(bars[0]!.open).not.toBe(displayPrice(1_000, instrument));
+  });
+
+  it("skips a bar that states no frame rather than drawing it on today's", () => {
+    // What a bar folded across a lattice boundary carries: its open is in one
+    // unit and its close in another, so it is not a price in either and the
+    // venue says so with a null.
+    const straddling = candle(1, { logQuantum: null, referencePrice: null });
+    const bars = toBars(
+      [candle(0, { logQuantum: NOW, referencePrice: instrument.referencePrice }), straddling],
+      instrument,
+    );
+    expect(bars, 'the straddling bar is not drawn').toHaveLength(1);
+    expect(bars[0]!.time).toBe(Math.floor(candle(0).openInstant / 1000));
+  });
+
+  it('falls back to the instrument for a venue that states nothing per bar', () => {
+    // A venue older than this: `logQuantum` is absent rather than null, and the
+    // caller's instrument is the only answer there is.
+    const bars = toBars([candle(0)], instrument);
+    expect(bars).toHaveLength(1);
+    expect(bars[0]!.open).toBe(displayPrice(1_000, instrument));
+  });
+});
+
 describe('the bridge from the record to a chart library', () => {
   it('carries every extreme the record holds', () => {
     // The record's high and low are prices the market actually visited, never

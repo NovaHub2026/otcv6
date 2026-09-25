@@ -9,14 +9,29 @@ import {
   enableWriteAheadLog,
   stampSchemaVersion,
 } from './sqlite.js';
+import { type LatticeEpoch, type PriceFrame } from './priceFrame.js';
 
 /**
  * Schema version stamped into a candle history database (`PRAGMA user_version`).
  *
  * Bump when the `candle` table changes shape, and add the migration
  * `sqlite.ts` asks for.
+ *
+ * **2 (PH-38.4):** the `lattice` table — what a candle's four integers count
+ * in. Its own, and deliberately not the record's: the two artefacts can be
+ * re-expressed independently, and on the live venue they were. After v2.4.0
+ * moved every lattice, `history.db` was converted by hand onto the new one and
+ * `record.db` was not, so at one sequence the stored candle close was 677 and
+ * the stored tick price 8797 — the same price in different units. A reader that
+ * dated a candle from the record's log would have drawn nineteen days of chart
+ * on the wrong lattice.
+ *
+ * A reader that cannot see this table falls back to the instrument in force,
+ * which is what every reader did before it existed, so the downgrade is a
+ * wrong chart rather than a wrong settlement and the version does not fail
+ * closed the way the record's does.
  */
-export const HISTORY_SCHEMA_VERSION = 1;
+export const HISTORY_SCHEMA_VERSION = 2;
 
 /**
  * Candle history on disk.
@@ -53,6 +68,8 @@ export const HISTORY_SCHEMA_VERSION = 1;
  */
 export class SqliteCandleHistory implements CandleHistory {
   readonly #db: DatabaseSync;
+  readonly #insertLattice!: StatementSync;
+  readonly #readLattices!: StatementSync;
   readonly #insert: StatementSync;
   readonly #read: StatementSync;
   readonly #head: StatementSync;
@@ -87,7 +104,32 @@ export class SqliteCandleHistory implements CandleHistory {
         PRIMARY KEY (asset_id, timeframe, open_instant)
       ) WITHOUT ROWID
     `);
+    // What the candles count in (PH-38.4). Same shape as the record's, and a
+    // separate log for the reason the version note above gives.
+    this.#db.exec(`
+      CREATE TABLE IF NOT EXISTS lattice (
+        asset_id TEXT NOT NULL,
+        from_sequence INTEGER NOT NULL,
+        from_instant INTEGER NOT NULL,
+        log_quantum REAL NOT NULL,
+        reference_price REAL NOT NULL,
+        display_precision INTEGER NOT NULL,
+        PRIMARY KEY (asset_id, from_sequence)
+      ) WITHOUT ROWID
+    `);
+    // No v1 to v2 body, for the reason the record has none: nothing here can
+    // say what an existing candle counted in, and a guess written durably is
+    // worse than an honest silence. An empty log reads as "the instrument in
+    // force", which is exactly what this store's readers already assumed.
     stampSchemaVersion(this.#db, HISTORY_SCHEMA_VERSION);
+    this.#insertLattice = this.#db.prepare(
+      'INSERT OR IGNORE INTO lattice (asset_id, from_sequence, from_instant, log_quantum, ' +
+        'reference_price, display_precision) VALUES (?, ?, ?, ?, ?, ?)',
+    );
+    this.#readLattices = this.#db.prepare(
+      'SELECT asset_id, from_sequence, from_instant, log_quantum, reference_price, ' +
+        'display_precision FROM lattice WHERE asset_id = ? ORDER BY from_sequence',
+    );
     this.#insert = this.#db.prepare(`
       INSERT INTO candle (
         asset_id, timeframe, open_instant, open, high, low, close,
@@ -109,10 +151,47 @@ export class SqliteCandleHistory implements CandleHistory {
     this.#db.close();
   }
 
-  append(assetId: string, timeframe: TimeframeId, candles: readonly Candle[]): Promise<void> {
+  frames(assetId: string): Promise<readonly LatticeEpoch[]> {
+    return Promise.resolve(
+      this.#readLattices.all(assetId).map((row) => ({
+        assetId: String(row['asset_id']),
+        fromSequence: Number(row['from_sequence']),
+        fromInstant: epochMillis(Number(row['from_instant'])),
+        logQuantum: Number(row['log_quantum']),
+        referencePrice: Number(row['reference_price']),
+        displayPrecision: Number(row['display_precision']),
+      })),
+    );
+  }
+
+  append(
+    assetId: string,
+    timeframe: TimeframeId,
+    candles: readonly Candle[],
+    frame?: PriceFrame,
+  ): Promise<void> {
     const unstored = unstoredTimeframe(timeframe);
     if (unstored !== null) return Promise.reject(unstored);
     if (candles.length === 0) return Promise.resolve();
+    if (frame !== undefined) {
+      const held = this.#readLattices.all(assetId);
+      const inForce = held.length === 0 ? null : held[held.length - 1]!;
+      const same =
+        inForce !== null &&
+        Number(inForce['log_quantum']) === frame.logQuantum &&
+        Number(inForce['reference_price']) === frame.referencePrice &&
+        Number(inForce['display_precision']) === frame.displayPrecision;
+      if (!same) {
+        this.#insertLattice.run(
+          assetId,
+          candles[0]!.firstSequence,
+          candles[0]!.openInstant,
+          frame.logQuantum,
+          frame.referencePrice,
+          frame.displayPrecision,
+        );
+      }
+    }
     try {
       // One transaction for the batch, so a bad candle in the middle rolls the
       // whole append back. A half-written history is one that no longer matches

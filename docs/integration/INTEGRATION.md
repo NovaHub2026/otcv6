@@ -235,6 +235,27 @@ redondeado a `displayPrecision` decimales.
 > regido, medio abierto por secuencia (una época cubre hasta el `fromSequence`
 > de la siguiente, y la última está en vigor). Con eso interpretas un año de
 > ticks guardados con una petición en lugar de una por tick.
+>
+> **Y lo mismo vale para las velas, con un aviso.** Cada vela de
+> `GET /markets/:id/history` trae su propio `logQuantum` y `referencePrice`. Una
+> vela cuyo primer y último tick caen en marcos distintos trae **ambos a `null`**:
+> su apertura está en una unidad y su cierre en otra, así que sus cuatro enteros
+> no son precios en ninguna de las dos. No la dibujes — el cliente de referencia
+> la salta.
+>
+> El registro de marcos de las velas es **propio del almacén de velas**, no el
+> del registro de ticks, y esa separación no es un detalle: los dos artefactos se
+> pueden re-expresar por separado y en un despliegue real se hicieron. Después de
+> `v2.4.0` las velas se convirtieron a mano a la retícula nueva y el registro de
+> ticks no, así que para una misma secuencia el cierre guardado era `677` y el
+> precio del tick `8797` — el mismo precio en unidades distintas. Fechar una vela
+> con el registro de ticks habría dibujado diecinueve días de gráfico en la
+> retícula equivocada.
+>
+> Un almacén de velas anterior a esto no declara nada y sus velas no traen esas
+> claves; entonces el marco vigente del catálogo es la única respuesta que hay, y
+> es la que el cliente de referencia usa. Es lo que hacía antes, así que nada
+> cambia hasta que el almacén empieza a declarar, y empieza en el primer volcado.
 
 En TypeScript:
 

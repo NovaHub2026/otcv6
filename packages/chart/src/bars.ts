@@ -44,6 +44,18 @@ export interface HistoryCandle {
   readonly tickCount: number;
   readonly firstSequence: number;
   readonly lastSequence: number;
+  /**
+   * The frame these four integers count in (PH-38.4), as the venue states it.
+   *
+   * Present and non-null: the bar was published under this lattice and is drawn
+   * on it. Present and **null**: the bar's first and last sequences resolve to
+   * different frames, or to none, so its open is in one unit and its close in
+   * another — four integers that are not prices in either. Absent entirely: a
+   * venue older than contract 3.1.0, which said nothing per bar, and the
+   * caller's instrument is the only answer available.
+   */
+  readonly logQuantum?: number | null;
+  readonly referencePrice?: number | null;
 }
 
 export interface InstrumentView {
@@ -97,12 +109,39 @@ export function toBars(candles: readonly HistoryCandle[], instrument: Instrument
       );
     }
     previous = candle.openInstant;
+    // **Each bar on the frame it states, and no bar on a frame it does not**
+    // (PH-38.4). Drawing everything on the caller's instrument is what made a
+    // relattice move nineteen days of chart: the integers were right and the
+    // lattice they were read with was not. A bar that states no frame is
+    // skipped rather than drawn on today's, because a wrong candle is
+    // indistinguishable from a real one and a missing one is not.
+    const stated = 'logQuantum' in candle;
+    const quantum = candle.logQuantum;
+    const reference = candle.referencePrice;
+    if (
+      stated &&
+      (quantum === null || quantum === undefined || reference === null || reference === undefined)
+    ) {
+      continue;
+    }
+    const frame: InstrumentView =
+      stated &&
+      quantum !== null &&
+      quantum !== undefined &&
+      reference !== null &&
+      reference !== undefined
+        ? {
+            logQuantum: quantum,
+            referencePrice: reference,
+            displayPrecision: instrument.displayPrecision,
+          }
+        : instrument;
     bars.push({
       time: Math.floor(candle.openInstant / 1000),
-      open: displayPrice(candle.open, instrument),
-      high: displayPrice(candle.high, instrument),
-      low: displayPrice(candle.low, instrument),
-      close: displayPrice(candle.close, instrument),
+      open: displayPrice(candle.open, frame),
+      high: displayPrice(candle.high, frame),
+      low: displayPrice(candle.low, frame),
+      close: displayPrice(candle.close, frame),
     });
   }
   return bars;

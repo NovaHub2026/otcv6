@@ -36,13 +36,21 @@ import {
   type AssetBrief,
   type RegisteredAsset,
 } from '@otc/engine';
-import { epochMillis, isTimeframeId, timeframe as timeframeById, type Tick } from '@otc/core';
+import {
+  epochMillis,
+  isTimeframeId,
+  timeframe as timeframeById,
+  type Candle,
+  type Tick,
+} from '@otc/core';
 import {
   assertOverlay,
   HistoryError,
   HISTORY_BASE_TIMEFRAME,
   ImmutableFieldError,
   OVERLAY_FIELDS,
+  frameAtOrBefore,
+  sameFrame,
   type AssetRegistry,
   type PriceFrame,
 } from '@otc/runtime';
@@ -1076,7 +1084,13 @@ export class MarketController implements BeforeApplicationShutdown {
     }
     try {
       const candles = await this.history.read(id, timeframe, fromInstant, toInstant);
-      return { assetId: id, timeframe, from: fromInstant, to: toInstant, candles };
+      return {
+        assetId: id,
+        timeframe,
+        from: fromInstant,
+        to: toInstant,
+        candles: await this.dated(id, candles),
+      };
     } catch (error) {
       if (error instanceof HistoryError) throw new BadRequestException(error.message);
       throw error;
@@ -1361,6 +1375,59 @@ export class MarketController implements BeforeApplicationShutdown {
           ? null
           : renderPrice(tick.price, frame.logQuantum, frame.referencePrice, frame.displayPrecision),
     };
+  }
+
+  /**
+   * Stamp each candle with the frame its four integers count in (PH-38.4).
+   *
+   * A bar keeps the first and last sequence it was folded from — a rolled-up
+   * 1d bar too — and the record's frame log is keyed by sequence, so a bar's
+   * frame is exact rather than inferred. A bar whose first and last resolve to
+   * **different** frames has an open in one unit and a close in the other, and
+   * a high and low that are the extremes of a mixture: four integers that are
+   * not prices in either frame. It states neither, the way a tick from an
+   * undeclared range does.
+   *
+   * The epochs are read once per request. A window may hold twenty thousand
+   * bars and an asset has a handful of frames, so this is an array scan over
+   * the handful rather than two point queries per bar.
+   */
+  private async dated(
+    id: string,
+    candles: readonly Candle[],
+  ): Promise<readonly Record<string, unknown>[]> {
+    // **The candle store's own log, not the record's** (PH-38.4). Measured on
+    // the live venue: after v2.4.0 the candles were converted onto the new
+    // lattice by hand and the record was not, so at one sequence the stored
+    // candle close was 677 and the stored tick price 8797 — the same price in
+    // different units. Dating a candle from the record would have drawn
+    // nineteen days of chart on the wrong lattice, and the two stores are
+    // separate artefacts precisely because they can move apart.
+    const epochs = await this.history!.frames(id);
+    const live = this.venue.assetFor(id)?.instrument;
+    // An empty log is a store written before it had one, and every reader of
+    // it already assumed the instrument in force. Falling back to that is what
+    // the chart did yesterday, so the upgrade changes nothing until the store
+    // starts declaring — and it starts on the next flush.
+    const epochsEmpty = epochs.length === 0;
+    const fallback: PriceFrame | null =
+      epochsEmpty && live !== undefined
+        ? {
+            logQuantum: live.logQuantum,
+            referencePrice: live.referencePrice,
+            displayPrecision: live.displayPrecision,
+          }
+        : null;
+    return candles.map((candle) => {
+      const first = frameAtOrBefore(epochs, candle.firstSequence) ?? fallback;
+      const last = frameAtOrBefore(epochs, candle.lastSequence) ?? fallback;
+      const one = first !== null && last !== null && sameFrame(first, last) ? first : null;
+      return {
+        ...candle,
+        logQuantum: one?.logQuantum ?? null,
+        referencePrice: one?.referencePrice ?? null,
+      };
+    });
   }
 
   /**

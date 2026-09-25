@@ -1010,7 +1010,7 @@ that bind the Human Owner outside the repository are escalated
 | PH-38.1  | A stored price states the frame it counts in                             | APPROVED |
 | PH-38.2  | The past is declared or refused, never guessed                           | APPROVED |
 | PH-38.3  | Every read route renders on the frame the price was in                   | APPROVED |
-| PH-38.4  | A candle never spans two frames                                          | PLANNED  |
+| PH-38.4  | A candle states its frame, and one that spans two states neither         | ACTIVE   |
 
 **PH-38** is Cycle Audit 12's finding 3, carried as a phase because it is one:
 the durable stores keep an integer and throw away the pair that makes it a

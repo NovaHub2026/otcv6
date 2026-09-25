@@ -21,6 +21,7 @@ import {
   type HostedMarket,
   type StateStore,
   type TickRecord,
+  type LatticeEpoch,
 } from '@otc/runtime';
 
 /**
@@ -249,13 +250,35 @@ export class HistoryService implements OnApplicationShutdown {
    * recorder was primed from the persisted tick record ({@link
    * HistoryService.prime}, PH-28.1), which the shipped composition does.
    */
+  /** Every frame the candle store can say its bars counted in (PH-38.4). */
+  frames(assetId: string): Promise<readonly LatticeEpoch[]> {
+    return this.history.frames(assetId);
+  }
+
   async flush(): Promise<void> {
     for (const [assetId, recorder] of this.recorders) {
       if (!recorder.started) {
         recorder.continueAfter(await lastStoredSequence(this.history, assetId));
       }
       const closed = recorder.drain();
-      if (closed.length > 0) await this.history.append(assetId, closed[0]!.timeframe, closed);
+      if (closed.length > 0) {
+        // The frame these bars count in, declared with them (PH-38.4). The
+        // candle store keeps its own log because it can be re-expressed
+        // independently of the record, and on the live venue it was.
+        const live = this.#assets.find((a) => a.definition.id === assetId)?.instrument;
+        await this.history.append(
+          assetId,
+          closed[0]!.timeframe,
+          closed,
+          live === undefined
+            ? undefined
+            : {
+                logQuantum: live.logQuantum,
+                referencePrice: live.referencePrice,
+                displayPrecision: live.displayPrecision,
+              },
+        );
+      }
       const withheld = recorder.withheld;
       if (withheld !== null && !this.reportedWithheld.has(assetId)) {
         this.reportedWithheld.add(assetId);
