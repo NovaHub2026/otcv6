@@ -21,7 +21,9 @@ import {
   type HostedMarket,
   type StateStore,
   type TickRecord,
+  sameFrame,
   type LatticeEpoch,
+  type PriceFrame,
 } from '@otc/runtime';
 
 /**
@@ -60,11 +62,33 @@ export class HistoryService implements OnApplicationShutdown {
 
   readonly #assets: RegisteredAsset[];
 
+  /**
+   * What frame the record says a sequence was published under (PH-38.4).
+   *
+   * A candle is folded from the record's ticks, so the frame it counts in is
+   * the record's frame at those sequences — not the instrument in force when
+   * the bar happens to be flushed. Those differ exactly when bars are primed
+   * from a record written under an older lattice, which is the case that put
+   * nineteen days of wrong prices on a live chart.
+   *
+   * Left unset by a deployment with no record: then nothing is declared and a
+   * reader answers "undeclared" rather than guessing.
+   */
+  #frameOfSequence: ((assetId: string, sequence: number) => Promise<PriceFrame | null>) | null =
+    null;
+
   constructor(
     private readonly history: CandleHistory,
     assets: readonly RegisteredAsset[],
   ) {
     this.#assets = [...assets];
+  }
+
+  /** Tell the service how to ask the record what a sequence counted in. */
+  resolveFramesWith(
+    resolve: (assetId: string, sequence: number) => Promise<PriceFrame | null>,
+  ): void {
+    this.#frameOfSequence = resolve;
   }
 
   /**
@@ -262,22 +286,36 @@ export class HistoryService implements OnApplicationShutdown {
       }
       const closed = recorder.drain();
       if (closed.length > 0) {
-        // The frame these bars count in, declared with them (PH-38.4). The
-        // candle store keeps its own log because it can be re-expressed
-        // independently of the record, and on the live venue it was.
-        const live = this.#assets.find((a) => a.definition.id === assetId)?.instrument;
-        await this.history.append(
-          assetId,
-          closed[0]!.timeframe,
-          closed,
-          live === undefined
-            ? undefined
-            : {
-                logQuantum: live.logQuantum,
-                referencePrice: live.referencePrice,
-                displayPrecision: live.displayPrecision,
-              },
-        );
+        // **The frame the RECORD says these ticks were published under**, not
+        // the instrument in force at flush time (PH-38.4). A primed bar is
+        // folded from ticks that may predate the current lattice, and declaring
+        // the live frame for it is how a chart comes to show a price nobody
+        // published.
+        //
+        // Split into runs that share a frame, so a flush spanning a lattice
+        // change declares both sides rather than one of them.
+        let run: typeof closed = [];
+        let runFrame: PriceFrame | null = null;
+        const writeRun = async (): Promise<void> => {
+          if (run.length === 0) return;
+          await this.history.append(
+            assetId,
+            run[0]!.timeframe,
+            run,
+            runFrame === null ? undefined : runFrame,
+          );
+          run = [];
+        };
+        for (const bar of closed) {
+          const frame =
+            this.#frameOfSequence === null
+              ? null
+              : await this.#frameOfSequence(assetId, bar.lastSequence);
+          if (run.length > 0 && !framesMatch(runFrame, frame)) await writeRun();
+          if (run.length === 0) runFrame = frame;
+          run = [...run, bar];
+        }
+        await writeRun();
       }
       const withheld = recorder.withheld;
       if (withheld !== null && !this.reportedWithheld.has(assetId)) {
@@ -341,4 +379,10 @@ const PRIME_PAGE = 100_000;
 
 function isClosable(value: object): value is { close(): void } {
   return 'close' in value && typeof value.close === 'function';
+}
+
+/** Whether two possibly-absent frames are the same one. */
+function framesMatch(a: PriceFrame | null, b: PriceFrame | null): boolean {
+  if (a === null || b === null) return a === b;
+  return sameFrame(a, b);
 }

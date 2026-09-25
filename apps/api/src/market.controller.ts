@@ -49,8 +49,7 @@ import {
   HISTORY_BASE_TIMEFRAME,
   ImmutableFieldError,
   OVERLAY_FIELDS,
-  frameAtOrBefore,
-  sameFrame,
+  frameOfSpan,
   type AssetRegistry,
   type PriceFrame,
 } from '@otc/runtime';
@@ -1405,23 +1404,28 @@ export class MarketController implements BeforeApplicationShutdown {
     // separate artefacts precisely because they can move apart.
     const epochs = await this.history!.frames(id);
     const live = this.venue.assetFor(id)?.instrument;
-    // **A store that has recorded no frame CHANGE states one frame for all of
-    // it**, and that is a narrower rule than it first looks.
+    // **A bar below the store's earliest declaration is undeclared, and saying
+    // otherwise was a real defect that reached a running venue.**
     //
-    // A log with no epochs is a store written before it had one, and every
-    // reader of it already assumed the instrument in force. A log with exactly
-    // one epoch is a store that has been writing under one frame and has never
-    // seen it move — but its oldest rows can sit below that epoch's sequence,
-    // because `prime` fills history from the record at boot and the first
-    // declaration is anchored at the first flush after it. The panel suite
-    // caught that: every candle came back `logQuantum: null` and the chart drew
-    // nothing where it should have drawn forty-eight bars.
+    // The first version of this said a store with one epoch states that frame
+    // for all of it. It does not: `prime` fills history from the record at boot
+    // and a reboot anchors the first declaration at the first NEW bar, so the
+    // rows below it were written by an earlier build and can be on an older
+    // frame. On the live venue they were — the candle history had been
+    // re-expressed by hand after v2.4.0 — and the shortcut stamped nineteen days
+    // of old-frame bars with today's quantum. Eight independent refuters were
+    // asked to break the verdict and this is what they found: the chart drew
+    // 94,170.55 for a btcusdt bar the record renders 71,534.00, on 27 of 30
+    // assets, up to 452%, and the same moment came back at three different
+    // prices at four timeframes — INV-004, broken by the fix meant to protect
+    // it.
     //
-    // So a bar is refused a frame only when the store itself records a change —
-    // two epochs or more — and then only if it falls below the first or
-    // straddles two. That is the case where the venue genuinely cannot say, and
-    // it is the case this subphase exists for.
-    const settled = epochs.length <= 1;
+    // The shortcut existed to satisfy the panel suite, which had demanded
+    // non-null frames. Satisfying a guard is not the same as being right, and
+    // the guard was answered the wrong way. The writer now declares from the
+    // record instead, so the rows a build of this code wrote are covered and a
+    // bar that genuinely predates any declaration says so.
+    const settled = epochs.length === 0;
     const fallback: PriceFrame | null =
       settled && live !== undefined
         ? {
@@ -1431,12 +1435,16 @@ export class MarketController implements BeforeApplicationShutdown {
           }
         : null;
     return candles.map((candle) => {
-      // One declared frame answers for the whole store; more than one is
-      // resolved per bar and a bar below the first, or across two, gets neither.
-      const only = settled ? (epochs[0] ?? fallback) : null;
-      const first = settled ? only : frameAtOrBefore(epochs, candle.firstSequence);
-      const last = settled ? only : frameAtOrBefore(epochs, candle.lastSequence);
-      const one = first !== null && last !== null && sameFrame(first, last) ? first : null;
+      // **A bar is refused when any frame boundary falls inside it**, not when
+      // its two ends happen to differ. Comparing the ends was the first version
+      // and it is not the same test: a rolled-up hour can begin and end on the
+      // current frame with an old-frame window in the middle, because the venue
+      // published under the old lattice for ten minutes inside that hour. Its
+      // open comes from one unit and its high and low from another, and it read
+      // 5.16% away from the record on aix-idx-otc's 1h series with both ends
+      // agreeing. Caught by cross-checking every served bar against the tick the
+      // record holds at its last sequence — not by any assertion in the suite.
+      const one = frameOfSpan(epochs, candle.firstSequence, candle.lastSequence, fallback);
       return {
         ...candle,
         logQuantum: one?.logQuantum ?? null,

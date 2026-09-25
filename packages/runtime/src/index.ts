@@ -136,6 +136,7 @@ export {
 } from './tickRecord.js';
 export {
   frameAtOrBefore,
+  frameOfSpan,
   malformedFrame,
   sameFrame,
   type LatticeEpoch,
@@ -143,6 +144,7 @@ export {
 } from './priceFrame.js';
 export {
   CONTINUITY_BAND_PERCENT,
+  dateCandlesAgainstRecord,
   epochsOf,
   proposeBackfill,
   proposeDeclaration,

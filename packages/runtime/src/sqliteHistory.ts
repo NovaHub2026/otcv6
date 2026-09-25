@@ -190,6 +190,47 @@ export class SqliteCandleHistory implements CandleHistory {
     this.#db.close();
   }
 
+  /**
+   * Declare what an already-stored range of bars counted in (PH-38.4).
+   *
+   * Insert-only into the frame log; no candle row is read or touched. The
+   * caller is expected to have dated the bars against the record —
+   * `dateCandlesAgainstRecord` is what does that — because this store's rows
+   * can have been re-expressed independently of the record and nothing in the
+   * store itself can say so.
+   */
+  declareFrames(assetId: string, epochs: readonly LatticeEpoch[], replace = false): Promise<void> {
+    if (this.#readOnly) {
+      return Promise.reject(
+        new HistoryError('This candle history was opened read-only. Nothing was modified.'),
+      );
+    }
+    if (!this.#hasLattice) {
+      return Promise.reject(
+        new HistoryError('This candle history has no frame log to declare into.'),
+      );
+    }
+    this.#db.exec('BEGIN IMMEDIATE');
+    try {
+      if (replace) this.#db.prepare('DELETE FROM lattice WHERE asset_id = ?').run(assetId);
+      for (const epoch of epochs) {
+        this.#insertLattice.run(
+          epoch.assetId,
+          epoch.fromSequence,
+          epoch.fromInstant,
+          epoch.logQuantum,
+          epoch.referencePrice,
+          epoch.displayPrecision,
+        );
+      }
+      this.#db.exec('COMMIT');
+    } catch (error) {
+      this.#db.exec('ROLLBACK');
+      throw error;
+    }
+    return Promise.resolve();
+  }
+
   frames(assetId: string): Promise<readonly LatticeEpoch[]> {
     if (!this.#hasLattice) return Promise.resolve([]);
     return Promise.resolve(

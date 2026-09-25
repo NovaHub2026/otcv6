@@ -274,6 +274,18 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
      */
     private readonly autoReopen = true,
   ) {
+    // **The candle history asks the record what a sequence counted in**
+    // (PH-38.4). A bar is folded from the record's ticks, so its frame is the
+    // record's frame at those sequences and not the instrument in force when the
+    // bar is flushed. Those differ exactly when bars are primed from a record
+    // written under an older lattice, which is how a live chart came to show
+    // prices nobody published.
+    this.history?.resolveFramesWith(async (assetId, sequence) => {
+      const epoch = await this.frameAt(assetId, sequence);
+      if (epoch === null) return null;
+      const { logQuantum, referencePrice, displayPrecision } = epoch;
+      return { logQuantum, referencePrice, displayPrecision };
+    });
     engineAccess?.(
       new EngineAccess({
         marketFor: (assetId) => this.#marketOrNull(assetId),

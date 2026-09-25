@@ -1,5 +1,5 @@
 import { exp } from '@otc/core';
-import { type PriceFrame } from './priceFrame.js';
+import { frameAtOrBefore, sameFrame, type LatticeEpoch, type PriceFrame } from './priceFrame.js';
 import { type TickRecord } from './tickRecord.js';
 
 /**
@@ -285,6 +285,102 @@ export async function proposeBackfill(
       ticksCovered: earliest.fromSequence - oldest,
     },
   };
+}
+
+/**
+ * Date an existing candle store's bars against the record they were folded from
+ * (PH-38.4).
+ *
+ * A bar's four integers came from the record's ticks, so the record can say what
+ * they counted in — unless the bar was re-expressed afterwards, which is exactly
+ * what happened on the live venue when the candle history was converted by hand
+ * after v2.4.0 and the record was not. That leaves a store whose rows are on two
+ * different lattices with nothing saying which is which, and a reader that
+ * guesses draws prices nobody published.
+ *
+ * So each bar is compared against the record's own tick at its last sequence,
+ * and there are exactly three answers:
+ *
+ * - the bar's close **equals** that tick's price — the bar is on the record's
+ *   frame for that sequence, untouched;
+ * - it equals that price **re-expressed** onto another declared frame — the bar
+ *   was converted onto that one;
+ * - neither — the bar cannot be dated, and nothing is declared over it.
+ *
+ * A bar whose sequence the record no longer holds cannot be dated either. Both
+ * refusals leave the range undeclared, which a read route answers as null rather
+ * than as a guess.
+ */
+export async function dateCandlesAgainstRecord(
+  record: TickRecord,
+  assetId: string,
+  bars: readonly {
+    readonly firstSequence: number;
+    readonly lastSequence: number;
+    readonly close: number;
+  }[],
+  candidates: readonly PriceFrame[],
+): Promise<{
+  readonly epochs: readonly LatticeEpoch[];
+  readonly dated: number;
+  readonly undatable: number;
+}> {
+  const epochs: LatticeEpoch[] = [];
+  let dated = 0;
+  let undatable = 0;
+  let inForce: PriceFrame | null = null;
+  for (const bar of bars) {
+    const [tick] = await record.since(assetId, bar.lastSequence, 1);
+    const recorded = tick !== undefined && tick.sequence === bar.lastSequence ? tick : null;
+    const recordFrame =
+      recorded === null ? null : frameAtOrBefore(await record.frames(assetId), bar.lastSequence);
+    let frame: PriceFrame | null = null;
+    if (recorded !== null && recordFrame !== null) {
+      if (bar.close === recorded.price) {
+        frame = recordFrame;
+      } else {
+        for (const candidate of candidates) {
+          // What the record's integer becomes on the candidate frame. This is
+          // `onLattice`'s arithmetic, and a converted bar matches it exactly
+          // because that is how it was converted.
+          const ratio = recordFrame.logQuantum / candidate.logQuantum;
+          if (bar.close === Math.round(recorded.price * ratio)) {
+            frame = candidate;
+            break;
+          }
+        }
+      }
+    }
+    if (frame === null) {
+      undatable += 1;
+      // A gap in the dating ends the run: the next dated bar starts a new epoch
+      // rather than extending one across rows nobody could read.
+      inForce = null;
+      continue;
+    }
+    dated += 1;
+    if (inForce === null || !sameFrame(inForce, frame)) {
+      const [first] = await record.since(assetId, bar.firstSequence, 1);
+      // **Only the three frame fields, never a spread.** `frameAtOrBefore`
+      // returns a `LatticeEpoch`, which extends `PriceFrame`, so `...frame` put
+      // the RECORD epoch's own fromSequence back over this bar's — the new epoch
+      // was created at the record's boundary instead of the bar's, collided with
+      // an existing row, and `INSERT OR IGNORE` dropped it. The types could not
+      // see it because the wider shape is assignable to the narrower one, and
+      // the tool's own report looked right: three epochs, plausible sequences.
+      // Reading the live chart back through the API is what caught it.
+      epochs.push({
+        assetId,
+        fromSequence: bar.firstSequence,
+        fromInstant: first?.instant ?? recorded!.instant,
+        logQuantum: frame.logQuantum,
+        referencePrice: frame.referencePrice,
+        displayPrecision: frame.displayPrecision,
+      });
+      inForce = frame;
+    }
+  }
+  return { epochs, dated, undatable };
 }
 
 /** The two epochs a proposal becomes: the old frame below the boundary, the current one from it. */

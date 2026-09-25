@@ -1,11 +1,18 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { epochMillis } from '@otc/core';
+
+/** The largest instant the kernel accepts, as an upper read bound. */
+const MAX_INSTANT = epochMillis(8_640_000_000_000_000);
 import { ASSET_CATALOGUE, LATTICE_BEFORE_PH37 } from '@otc/engine';
 import {
+  dateCandlesAgainstRecord,
   epochsOf,
+  HISTORY_DB,
   proposeBackfill,
   proposeDeclaration,
   RECORD_DB,
+  SqliteCandleHistory,
   SqliteTickRecord,
   type FrameProposal,
   type FrameVerdict,
@@ -45,6 +52,8 @@ export interface LatticeToolOptions {
   readonly fromRelease?: string;
   readonly asset?: string;
   readonly replace: boolean;
+  /** Which store to act on: the tick record (default) or the candle history. */
+  readonly store: 'tick' | 'candle';
 }
 
 export function parseLatticeToolArgs(argv: readonly string[]): LatticeToolOptions {
@@ -59,6 +68,7 @@ export function parseLatticeToolArgs(argv: readonly string[]): LatticeToolOption
   let fromRelease: string | undefined;
   let asset: string | undefined;
   let replace = false;
+  let store: 'tick' | 'candle' = 'tick';
   for (let i = 0; i < rest.length; i += 1) {
     const flag = rest[i];
     if (flag === '--replace') {
@@ -71,7 +81,12 @@ export function parseLatticeToolArgs(argv: readonly string[]): LatticeToolOption
     if (flag === '--dir') dir = value;
     else if (flag === '--from-release') fromRelease = value;
     else if (flag === '--asset') asset = value;
-    else throw new RangeError(`Unknown option ${String(flag)}.`);
+    else if (flag === '--store') {
+      if (value !== 'tick' && value !== 'candle') {
+        throw new RangeError(`--store is tick or candle, received ${value}.`);
+      }
+      store = value;
+    } else throw new RangeError(`Unknown option ${String(flag)}.`);
   }
   if (dir === undefined) throw new RangeError('--dir is required.');
   if (command !== 'list' && fromRelease === undefined) {
@@ -90,6 +105,7 @@ export function parseLatticeToolArgs(argv: readonly string[]): LatticeToolOption
     ...(fromRelease === undefined ? {} : { fromRelease }),
     ...(asset === undefined ? {} : { asset }),
     replace,
+    store,
   };
 }
 
@@ -150,6 +166,66 @@ export async function runLatticeTool(
   // next restart, so an inspection that stamps the version bricks the next boot.
   const record = new SqliteTickRecord(file, { readOnly: options.command !== 'declare' });
   try {
+    // ---- the candle store, dated against the record it was folded from -----
+    if (options.store === 'candle') {
+      const historyFile = path.join(options.dir, HISTORY_DB);
+      if (!existsSync(historyFile))
+        return { code: 1, output: `No candle history at ${historyFile}.` };
+      const history = new SqliteCandleHistory(historyFile, {
+        readOnly: options.command !== 'declare',
+      });
+      try {
+        const lines: string[] = [`Candle history: ${historyFile}`];
+        if (options.command !== 'declare') lines.push('Nothing is written by check.');
+        let any = false;
+        for (const id of (await record.assets()).filter(
+          (a) => options.asset === undefined || a === options.asset,
+        )) {
+          const current = currentFrame(id);
+          if (current === null) {
+            lines.push(`  ${id.padEnd(15)} not in this build's catalogue; skipped`);
+            continue;
+          }
+          const table =
+            options.fromRelease === undefined ? undefined : RELEASES[options.fromRelease];
+          const older = table?.[id];
+          const candidates = [
+            current,
+            ...(older === undefined ? [] : [{ ...current, logQuantum: older }]),
+          ];
+          // The whole stored series, bounded by the largest instant the kernel
+          // accepts rather than by a clock: this file is scanned for ambient
+          // time, and an operator tool has no business reading one.
+          const bars = await history.read(id, '1m', epochMillis(0), MAX_INSTANT);
+          if (bars.length === 0) {
+            lines.push(`  ${id.padEnd(15)} no stored bars`);
+            continue;
+          }
+          const { epochs, dated, undatable } = await dateCandlesAgainstRecord(
+            record,
+            id,
+            bars,
+            candidates,
+          );
+          const held = await history.frames(id);
+          lines.push(
+            `  ${id.padEnd(15)} ${String(bars.length).padStart(7)} bars  dated ${String(dated).padStart(7)}  ` +
+              `undatable ${String(undatable).padStart(7)}  epochs ${String(epochs.length)}` +
+              (held.length > 0 ? `  (holds ${String(held.length)})` : ''),
+          );
+          if (options.command === 'declare' && epochs.length > 0) {
+            await history.declareFrames(id, epochs, true);
+            any = true;
+          }
+        }
+        if (options.command === 'declare') {
+          lines.push(any ? 'Declared.' : 'Nothing was declared.');
+        }
+        return { code: 0, output: lines.join('\n') };
+      } finally {
+        history.close();
+      }
+    }
     const assets = (await record.assets()).filter(
       (id) => options.asset === undefined || id === options.asset,
     );

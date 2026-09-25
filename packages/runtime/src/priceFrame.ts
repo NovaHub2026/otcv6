@@ -114,3 +114,32 @@ export function frameAtOrBefore(
   }
   return found;
 }
+
+/**
+ * The frame a span of sequences counts in, or null when it counts in more than
+ * one (PH-38.4).
+ *
+ * A candle is four integers folded from a run of ticks, so it has one frame
+ * only if no frame change happened anywhere inside that run. **Comparing the
+ * two ends is not that test**, and the difference is not academic: a rolled-up
+ * hour can begin and end on the current frame with an old-frame window in the
+ * middle, because the venue published under the old lattice for ten minutes
+ * inside that hour. Its open then comes from one unit and its high and low from
+ * another. Measured on a live venue with the ends-only test in place: a 1h bar
+ * reading 5.16% away from the tick the record holds at its own last sequence.
+ *
+ * `fallback` answers when the log is empty — a store written before it had one,
+ * where every reader already assumed the instrument in force.
+ */
+export function frameOfSpan(
+  epochs: readonly LatticeEpoch[],
+  firstSequence: number,
+  lastSequence: number,
+  fallback: PriceFrame | null,
+): PriceFrame | null {
+  if (epochs.length === 0) return fallback;
+  for (const epoch of epochs) {
+    if (epoch.fromSequence > firstSequence && epoch.fromSequence <= lastSequence) return null;
+  }
+  return frameAtOrBefore(epochs, firstSequence);
+}

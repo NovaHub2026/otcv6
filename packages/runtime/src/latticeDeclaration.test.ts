@@ -7,12 +7,13 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { epochMillis, logPrice, type Tick } from '@otc/core';
 import {
   CONTINUITY_BAND_PERCENT,
+  dateCandlesAgainstRecord,
   epochsOf,
   proposeBackfill,
   proposeDeclaration,
   RESCALE_TOLERANCE,
 } from './latticeDeclaration.js';
-import { type PriceFrame } from './priceFrame.js';
+import { frameAtOrBefore, frameOfSpan, type PriceFrame } from './priceFrame.js';
 import { SqliteTickRecord } from './tickRecord.js';
 
 const directories: string[] = [];
@@ -358,5 +359,71 @@ describe('inspecting a record never upgrades it (PH-38.2)', () => {
       after.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='lattice'").get(),
     ).toBeUndefined();
     after.close();
+  });
+});
+
+describe('a span that crosses a frame change counts in neither (PH-38.4)', () => {
+  const epochs = [
+    { assetId: 'a', fromSequence: 100, fromInstant: epochMillis(1000), ...NEW },
+    { assetId: 'a', fromSequence: 500, fromInstant: epochMillis(5000), ...OLD },
+    { assetId: 'a', fromSequence: 600, fromInstant: epochMillis(6000), ...NEW },
+  ];
+
+  it('refuses a span with a change inside it even when both ends agree', () => {
+    // **The test that ends-comparison fails.** 400..700 begins and ends inside
+    // a NEW-frame epoch, so comparing the two ends says "one frame" — but the
+    // venue published under OLD for sequences 500..599 in the middle, so the
+    // bar's open is in one unit and its high and low in another. Measured on a
+    // live venue with the ends-only test in place: a 1h bar 5.16% away from the
+    // tick the record holds at its own last sequence.
+    expect(frameOfSpan(epochs, 400, 700, null)).toBeNull();
+    // Both ends really do agree, or this test would pass for the wrong reason.
+    expect(frameAtOrBefore(epochs, 400)?.logQuantum).toBe(NEW.logQuantum);
+    expect(frameAtOrBefore(epochs, 700)?.logQuantum).toBe(NEW.logQuantum);
+  });
+
+  it('answers a span that sits inside one epoch', () => {
+    expect(frameOfSpan(epochs, 520, 580, null)?.logQuantum).toBe(OLD.logQuantum);
+    expect(frameOfSpan(epochs, 610, 700, null)?.logQuantum).toBe(NEW.logQuantum);
+  });
+
+  it('refuses a span below the earliest declaration rather than extending it down', () => {
+    // The over-reach that put nineteen days of old-frame bars on today's
+    // lattice: a store whose rows start below its first declared epoch.
+    expect(frameOfSpan(epochs, 10, 50, null)).toBeNull();
+  });
+
+  it('falls back only when the log is empty', () => {
+    expect(frameOfSpan([], 10, 50, NEW)?.logQuantum).toBe(NEW.logQuantum);
+    expect(frameOfSpan([], 10, 50, null)).toBeNull();
+  });
+});
+
+describe('dating candles against the record anchors each epoch at the BAR (PH-38.4)', () => {
+  it('starts the epoch at the bar that changed frame, not at the record’s own boundary', async () => {
+    const { record } = await recordWithBoundary();
+    try {
+      const verdict = await proposeDeclaration(record, 'a', OLD, NEW);
+      if (!verdict.ok) return;
+      await record.declareLattice('a', epochsOf(verdict.proposal));
+      // A bar folded from ticks below the boundary, whose close equals the
+      // record's own tick there: it is on the record's frame at that sequence.
+      // Inside the OLD run (the fixture publishes 1..400 there), not just below
+      // the boundary: `since` returns the first tick at or AFTER the sequence,
+      // so asking near the boundary hands back the first NEW-frame tick.
+      const [tick] = await record.since('a', 300, 1);
+      const bar = { firstSequence: 260, lastSequence: tick!.sequence, close: tick!.price };
+      const out = await dateCandlesAgainstRecord(record, 'a', [bar], [NEW, OLD]);
+      expect(out.dated).toBe(1);
+      // **The spread bug.** `frameAtOrBefore` returns a LatticeEpoch, which
+      // extends PriceFrame, so `{...frame}` put the RECORD epoch's fromSequence
+      // back over the bar's — the epoch was written at the record's boundary,
+      // collided with an existing row and was dropped by INSERT OR IGNORE. The
+      // types could not see it and the tool's own report looked right.
+      expect(out.epochs[0]!.fromSequence).toBe(bar.firstSequence);
+      expect(out.epochs[0]!.logQuantum).toBe(OLD.logQuantum);
+    } finally {
+      record.close();
+    }
   });
 });
