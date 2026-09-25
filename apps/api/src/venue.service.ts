@@ -22,6 +22,8 @@ import {
   resumeMarket,
   Venue,
   type AssetBatch,
+  type LatticeEpoch,
+  type PriceFrame,
   type HostedMarket,
   type AssetFailure,
   type RecordedSeam,
@@ -855,6 +857,24 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     return this.record.seams(assetId);
   }
 
+  /**
+   * Every frame this record can say its integers counted in (PH-38.3).
+   *
+   * Empty when the deployment keeps no record, and empty when the record was
+   * written before frames existed and nobody has declared its past. Both are
+   * answered as "undeclared" rather than as the current frame.
+   */
+  frames(assetId: string): Promise<readonly LatticeEpoch[]> {
+    if (this.record === null) return Promise.resolve([]);
+    return this.record.frames(assetId);
+  }
+
+  /** The frame a recorded sequence was published on, or null when undeclared. */
+  frameAt(assetId: string, sequence: number): Promise<LatticeEpoch | null> {
+    if (this.record === null) return Promise.resolve(null);
+    return this.record.frameAt(assetId, sequence);
+  }
+
   /** The recorded seam whose interval contains an instant, or null (PH-31). */
   seamAt(assetId: string, instant: number): Promise<RecordedSeam | null> {
     if (this.record === null) return Promise.resolve(null);
@@ -1165,13 +1185,47 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
    * would be a second market under one id, which is INV-002 broken where a
    * client cannot see it.
    */
+  /**
+   * What an asset's stored integers count in (PH-38.1).
+   *
+   * Read from `assetFor`, which is the same single authority the checkpoint's
+   * `logQuantum` is written from, so the record and the checkpoint can never
+   * disagree about a frame they were written under in the same pass.
+   */
+  #frameFor(assetId: string): PriceFrame | null {
+    const asset = this.assetFor(assetId);
+    if (asset === null) return null;
+    const { logQuantum, referencePrice, displayPrecision } = asset.instrument;
+    return { logQuantum, referencePrice, displayPrecision };
+  }
+
   async #recordPass(
     published: readonly { assetId: string; ticks: readonly Tick[] }[],
   ): Promise<ReadonlyMap<string, readonly Tick[]>> {
     if (this.record === null) {
       return new Map(published.map(({ assetId, ticks }) => [assetId, ticks]));
     }
-    const batches: AssetBatch[] = published.map(({ assetId, ticks }) => ({ assetId, ticks }));
+    const batches: AssetBatch[] = [];
+    for (const { assetId, ticks } of published) {
+      const frame = this.#frameFor(assetId);
+      if (frame === null) {
+        // Only a hosted market publishes, so an asset the venue cannot resolve
+        // here is a contradiction rather than an input. It is refused with the
+        // same words a record refusal uses instead of being written under a
+        // guessed frame: a wrong frame recorded durably is worse than a tick
+        // not recorded at all (PH-38.1).
+        const message = 'the venue does not know it, so it cannot say what its prices count in';
+        this.stalled.set(assetId, `refused by the record — ${message}`);
+        this.stalledLogged.set(assetId, 'RecordRefusal');
+        this.venue?.unhost(assetId);
+        this.logger.error(
+          `${assetId}: REFUSED BY THE RECORD and unhosted — ${message} ` +
+            `(nothing was published for it; the record was not modified)`,
+        );
+        continue;
+      }
+      batches.push({ assetId, ticks, frame });
+    }
     try {
       return await this.record.append(batches);
     } catch {

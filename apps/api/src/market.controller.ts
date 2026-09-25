@@ -44,6 +44,7 @@ import {
   ImmutableFieldError,
   OVERLAY_FIELDS,
   type AssetRegistry,
+  type PriceFrame,
 } from '@otc/runtime';
 import { displayPrice } from '@otc/chart';
 import { API_VERSION, contractDocument } from './contract.js';
@@ -779,7 +780,7 @@ export class MarketController implements BeforeApplicationShutdown {
           : `Sequence ${wanted} of ${id} is not in the record, which holds ${bounds.oldest}–${bounds.newest}.`,
       );
     }
-    return { assetId: id, ...this.published(asset, tick) };
+    return { assetId: id, ...this.published(asset, tick, await this.frameOf(asset, tick)) };
   }
 
   /**
@@ -855,7 +856,7 @@ export class MarketController implements BeforeApplicationShutdown {
       assetId: id,
       at: instant,
       rule: 'last-tick-at-or-before',
-      ...this.published(asset, tick),
+      ...this.published(asset, tick, await this.frameOf(asset, tick)),
     };
   }
 
@@ -892,6 +893,41 @@ export class MarketController implements BeforeApplicationShutdown {
       lastInstant: seam.lastInstant,
       resumesAtSequence: seam.resumesAtSequence,
       resumesAtInstant: seam.resumesAtInstant,
+    }));
+  }
+
+  /**
+   * Every frame this market's integers have counted in, oldest first (PH-38.3).
+   *
+   * The join table for a broker that archived raw integers, which
+   * `price: 'integer'` invited them to do. Half-open by sequence: an epoch
+   * covers `[fromSequence, nextFromSequence)` and the last one is in force, so
+   * interpreting a year of stored ticks is one request rather than one per
+   * tick.
+   *
+   * Empty is a real answer and not an error: a venue whose lattice has never
+   * moved and whose record was written entirely by a build that states its
+   * frame has exactly one epoch, and a record written before frames existed and
+   * never declared has none at all. In the second case `/ticks/:sequence`
+   * answers `displayPrice: null` for those sequences rather than rendering them
+   * on a frame nobody published them on.
+   */
+  @Get('markets/:id/lattices')
+  async lattices(@Param('id') id: string): Promise<unknown> {
+    this.knownAsset(id);
+    if (!this.venue.keepsRecord) {
+      throw new NotFoundException(
+        'This deployment keeps no tick record; only the live stream is served.',
+      );
+    }
+    const frames = await this.venue.frames(id);
+    return frames.map((frame) => ({
+      assetId: frame.assetId,
+      fromSequence: frame.fromSequence,
+      fromInstant: frame.fromInstant,
+      logQuantum: frame.logQuantum,
+      referencePrice: frame.referencePrice,
+      displayPrecision: frame.displayPrecision,
     }));
   }
 
@@ -1290,18 +1326,56 @@ export class MarketController implements BeforeApplicationShutdown {
   }
 
   /** A published tick as the read routes render it: the canonical integer and its display price. */
-  private published(asset: RegisteredAsset, tick: Tick): Record<string, unknown> {
+  /**
+   * A published tick, rendered on the frame it was written on (PH-38.3).
+   *
+   * **This used to render every recorded price on today's frame**, taken from
+   * the live catalogue entry rather than from anything stored beside the row,
+   * so the moment PH-37 moved all thirty lattices the whole retained past
+   * started answering with prices nobody ever published. Measured on the live
+   * venue: 3,728,119 of 7,500,278 retained ticks, on 30 of 30 assets, a median
+   * error of 31.8% and a worst case of 1,483% (Cycle Audit 12, finding 3).
+   *
+   * `frame` is the epoch the record holds for this tick's sequence, or null
+   * when the range is undeclared — a record written before frames existed and
+   * never declared. Undeclared is answered as **null**, not as the current
+   * frame: the venue does not know what the integer counted in, and saying so
+   * is the whole point. The integer itself is always returned, because it is
+   * the settlement primitive and is not in doubt.
+   */
+  private published(
+    asset: RegisteredAsset,
+    tick: Tick,
+    frame: PriceFrame | null,
+  ): Record<string, unknown> {
     return {
       sequence: tick.sequence,
       instant: tick.instant,
       price: tick.price,
-      displayPrice: renderPrice(
-        tick.price,
-        asset.instrument.logQuantum,
-        asset.instrument.referencePrice,
-        asset.instrument.displayPrecision,
-      ),
+      // The frame the integer counts in, so a broker that archived integers can
+      // render them for itself without one request per tick.
+      logQuantum: frame?.logQuantum ?? null,
+      referencePrice: frame?.referencePrice ?? null,
+      displayPrice:
+        frame === null
+          ? null
+          : renderPrice(tick.price, frame.logQuantum, frame.referencePrice, frame.displayPrecision),
     };
+  }
+
+  /**
+   * The frame a recorded tick was published on.
+   *
+   * A record that declares nothing for the sequence answers null. A deployment
+   * that keeps no record at all answers with the live instrument, because there
+   * the only ticks a route can reach are ones this process published under the
+   * frame it is running now.
+   */
+  private async frameOf(asset: RegisteredAsset, tick: Tick): Promise<PriceFrame | null> {
+    const declared = await this.venue.frameAt(asset.definition.id, tick.sequence);
+    if (declared !== null) return declared;
+    const { logQuantum, referencePrice, displayPrecision } = asset.instrument;
+    return this.venue.keepsRecord ? null : { logQuantum, referencePrice, displayPrecision };
   }
 
   private describe(id: string): unknown {

@@ -1197,3 +1197,51 @@ audit should settle is not whether the floor belongs in the calibration — it
 does — but what its absence has been worth: the dispersion fit and the pace fit
 both correct against the real engine afterwards, so part of the bias is already
 absorbed, and how much is a measurement nobody has made.
+
+---
+
+## 2026-09-24 — The undated past is declared from `LATTICE_BEFORE_PH37`, not left to age out
+
+**The Human Owner's decision**, made when PH-38.1 was built and the choice was
+put to them: the 3.7 million ticks the live record holds from before the v2.4.0
+relattice are **declared** with the frame they were published on, rather than
+left to render wrong until the 250,000-tick trim window carries them away.
+
+**Why the choice existed.** PH-38.1 stops the bleeding for everything written
+from now on but deliberately does not reach backwards, and this phase's own
+rule is that a migration may not guess. The two honest options were therefore to
+declare the past from `LATTICE_BEFORE_PH37` — the only surviving description of
+what those markets published on — or to let it age out silently. They differ in
+what a broker reading last week's history sees: today `eurusd-otc`'s last
+pre-boundary tick was published at `1.163199` and the venue renders it
+`1.202006`, and half the retained record is in that state.
+
+**Why declaring is sound here, and was not obviously so.** The phase document
+first claimed that nothing in the repository could soundly date those rows. That
+claim is **measured false**. At the relattice boundary the resume re-expressed
+the price, so the last tick before it read on the old frame must agree with the
+first tick after it read on the current one — and across the catalogue it does,
+to a **median gap of 0.0066%, within 0.1% on 30 of 30 assets**. At an ordinary
+restart seam the same test is off by about 30%. Four orders of magnitude
+separate the relattice boundary from any other seam, so the criterion finds the
+boundary and corroborates `LATTICE_BEFORE_PH37` in one step.
+
+Finding that required correcting a measurement of my own: a first pass took the
+seam at 04:44:49 for the boundary when the relattice is the one at 04:54:43 ten
+minutes later. At the earlier seam the integer does not move (`8753 → 8753`); at
+the later one it drops by the coarsening factor. The published figures were
+corrected with it — 49.7% rather than 48.9%, a median error of 31.8% rather than
+31.7%, a worst case of 1,483% rather than 1,472%.
+
+**What follows.** PH-38.2 declares the past per asset, from the release the
+frame belongs to, and **refuses any asset whose boundary does not pass the
+continuity check** rather than declaring it anyway. The declaration is
+insert-only into the `lattice` table; no `tick`, `seam` or `candle` row is
+touched, because re-expressing a stored integer would change settled outcomes
+(INV-009). An operator-registered asset outside the compiled thirty has no
+entry in `LATTICE_BEFORE_PH37` and is refused by name rather than defaulted.
+
+**What this does not fix.** The jump a broker's own books recorded at the
+boundary is not undone; the venue becomes right about its history, and a client
+that already derived and stored a display price stays wrong. The levers for that
+remain the contract version and the conformance suite.

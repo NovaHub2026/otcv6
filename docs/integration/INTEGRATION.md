@@ -121,7 +121,7 @@ Cuatro hechos generales antes de las rutas:
 ```
 GET /health
 → { "status": "ok" | "degraded", "assets": 30, "stalled": [], "bootNonce": null,
-    "apiVersion": "2.1.0", "ready": true }
+    "apiVersion": "3.0.0", "ready": true }
 ```
 
 `degraded` significa que algún mercado dejó de imprimir ticks; `stalled` los nombra.
@@ -214,6 +214,27 @@ redondeado a `displayPrecision` decimales.
 > **no significa nada sin el quantum en el que cuenta**: leído con otro da otro
 > precio, y el error crece con la distancia al `referencePrice`. `GET /catalogue`
 > y `GET /markets/:id` los sirven por activo.
+
+> **Y para un tick del pasado, `/catalogue` es la respuesta equivocada.** Sirve
+> el marco **en vigor ahora**, no aquel en el que se publicó el tick. Mientras la
+> retícula no se mueva son el mismo número; en cuanto se mueve, dejan de serlo
+> para todo el histórico retenido a la vez. Medido en un despliegue real cuando
+> `v2.4.0` movió las treinta: **3.728.119 de 7.500.278 ticks retenidos, el 49,7%,
+> en 30 de 30 activos, con un error mediano del 31,8% y un peor caso del 1.483%**
+> (Auditoría de Ciclo 12, hallazgo 3).
+>
+> Desde la versión **3.0.0** del contrato cada tick publicado lleva su propio
+> `logQuantum` y `referencePrice`, y son esos los que hay que usar. Si el venue
+> no puede decir en qué contaba un entero, responde `displayPrice: null` en vez
+> de un número derivado de un marco que nadie publicó: **un nulo es una
+> afirmación, un número equivocado no**. Trata ese nulo como "sin precio
+> mostrable", nunca como cero.
+>
+> Si archivas enteros en bruto — que es justo lo que `price: integer` invita a
+> hacer — pide `GET /markets/:id/lattices` una vez: devuelve cada marco que ha
+> regido, medio abierto por secuencia (una época cubre hasta el `fromSequence`
+> de la siguiente, y la última está en vigor). Con eso interpretas un año de
+> ticks guardados con una petición en lugar de una por tick.
 
 En TypeScript:
 

@@ -31,6 +31,9 @@ import {
 } from './stateDirectory.js';
 import { SqliteTickRecord } from './tickRecord.js';
 
+// What a batch's integers count in (PH-38.1); required, so a fixture states one.
+const FRAME = { logQuantum: 4.044597092506429e-6, referencePrice: 1.1, displayPrecision: 5 };
+
 const GENESIS = 1_776_000_000_000;
 const directories: string[] = [];
 function scratch(): string {
@@ -88,7 +91,7 @@ async function directoryWith(options: {
     const record = new SqliteTickRecord(path.join(directory, RECORD_DB));
     const ticks: Tick[] = [];
     for (let s = 1; s <= options.recorded; s += 1) ticks.push(tick(s));
-    await record.append([{ assetId: id, ticks }]);
+    await record.append([{ assetId: id, ticks, frame: FRAME }]);
     record.close();
   }
   if (options.stored !== null) {
@@ -261,7 +264,7 @@ describe('a state directory is verified as one thing (PH-28.3)', () => {
     const store = new FileStateStore(directory);
     await store.save({ ...stubRecord('usdjpy', epochMillis(GENESIS)), leasedBlocks: {} });
     const record = new SqliteTickRecord(path.join(directory, RECORD_DB));
-    await record.append([{ assetId: 'usdjpy', ticks: [tick(1)] }]);
+    await record.append([{ assetId: 'usdjpy', ticks: [tick(1)], frame: FRAME }]);
     record.close();
     const report = await verifyStateDirectory(directory);
     expect(report.problems).toEqual([]);
@@ -305,7 +308,7 @@ describe('a state directory is verified as one thing (PH-28.3)', () => {
     // a warning too, and not the same sentence.
     const empty = await directoryWith({ published: 100, recorded: null, stored: 90 });
     const other = new SqliteTickRecord(path.join(empty, RECORD_DB));
-    await other.append([{ assetId: 'gbpusd', ticks: [tick(1)] }]);
+    await other.append([{ assetId: 'gbpusd', ticks: [tick(1)], frame: FRAME }]);
     other.close();
     const second = await verifyStateDirectory(empty);
     expect(second.problems).toEqual([]);
@@ -448,7 +451,7 @@ describe('a state directory is verified as one thing (PH-28.3)', () => {
   it('warns about a record holding ticks for an asset no checkpoint names (a6-06)', async () => {
     const directory = await directoryWith({ published: 100, recorded: 100, stored: null });
     const record = new SqliteTickRecord(path.join(directory, RECORD_DB));
-    await record.append([{ assetId: 'gbpusd', ticks: [tick(1), tick(2), tick(3)] }]);
+    await record.append([{ assetId: 'gbpusd', ticks: [tick(1), tick(2), tick(3)], frame: FRAME }]);
     record.close();
     const report = await verifyStateDirectory(directory);
     expect(report.problems).toEqual([]);
@@ -489,7 +492,7 @@ describe('a state directory is verified as one thing (PH-28.3)', () => {
     // One tick served in the restored directory and it is no longer a copy of
     // anything: the heads have moved past what the manifest recorded.
     const record = new SqliteTickRecord(path.join(target, RECORD_DB));
-    await record.append([{ assetId: 'eurusd', ticks: [tick(131)] }]);
+    await record.append([{ assetId: 'eurusd', ticks: [tick(131)], frame: FRAME }]);
     record.close();
     expect((await verifyStateDirectory(target)).backup).toEqual({
       takenAt: GENESIS + 5,
@@ -552,7 +555,7 @@ describe('a state directory is backed up consistently and verified on the way ou
     ).toEqual(manifest);
     // The source moves on; the backup does not.
     const live = new SqliteTickRecord(path.join(directory, RECORD_DB));
-    await live.append([{ assetId: 'eurusd', ticks: [tick(131), tick(132)] }]);
+    await live.append([{ assetId: 'eurusd', ticks: [tick(131), tick(132)], frame: FRAME }]);
     live.close();
     const copy = new SqliteTickRecord(path.join(target, RECORD_DB));
     expect(await copy.head('eurusd')).toBe(130);

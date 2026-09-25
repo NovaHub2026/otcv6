@@ -21,14 +21,14 @@ Last synchronized: 2026-09-24
 
 ## Phase and subphase
 
-| Field                  | Value                                                                |
-| ---------------------- | -------------------------------------------------------------------- |
-| Active phase           | none                                                                 |
-| Phase lifecycle        | none                                                                 |
-| Active subphase        | none                                                                 |
-| Subphase lifecycle     | none                                                                 |
-| Last approved phase    | PH-37 — The staircase: a price you can read tick by tick             |
-| Last approved subphase | PH-37.2 — The lattice by refund ceiling, and the thirty assets on it |
+| Field                  | Value                                                                    |
+| ---------------------- | ------------------------------------------------------------------------ |
+| Active phase           | PH-38 — The frame a stored price counts in                               |
+| Phase lifecycle        | ACTIVE                                                                   |
+| Active subphase        | none — PH-38.4 is the next to open                                       |
+| Subphase lifecycle     | none                                                                     |
+| Last approved phase    | PH-37 — The staircase: a price you can read tick by tick                 |
+| Last approved subphase | PH-38.3 — Every read route renders on the frame the price was written in |
 
 **Cycle 12 is audited and closed.** PH-34 (the market's tempo follows its
 state), PH-35 (the level the market runs at) and PH-36 (a stalled market
@@ -192,15 +192,26 @@ the record should say that the audited commit itself was never green.
 
 ## Verification state
 
-Executed on `audit/ca12-fixes` at `5edcc85`, 2026-09-24, with
-`OTC_REQUIRE_BROWSER=1` and the browser prefix — the Cycle Audit 12 gate:
+Executed on `feature/ph-38-the-frame` at `db34894`, 2026-09-25, with
+`OTC_REQUIRE_BROWSER=1` and the browser prefix — the PH-38 gate:
 
 ```
-npm run gate  ->  GATE_EXIT=0        (19:12-20:21Z)
-  unit         173 files, 3,540 tests         142.1s
-  coverage     173 files, 3,540 tests         317.0s   (floors enforced)
-  statistical   47 files,   411 tests       3,622.7s
+npm run gate  ->  GATE_EXIT=0        (00:37-01:48Z)
+  unit         175 files, 3,566 tests          76.7s
+  coverage     175 files, 3,566 tests         219.0s   (floors enforced)
+  statistical   47 files,   411 tests       3,899.1s   (real browser)
 ```
+
+Two runs before it were red and both were findings about the gate rather than
+about the branch. The first was a `Math.exp` in the broker's own conformance
+check, caught by the lint rule that exists because a transcendental differing
+between engines would make a broker's verdict depend on its runtime. The second
+exited 1 with **all 411 statistical tests passing** — the rpc probe named
+`multiAsset.stat.test.ts` for holding a request to the main thread 32.0 s. The
+cause was not a long test but thirty short synchronous ones in a row, each
+sending a task update the worker never yielded to let the main thread answer.
+Four attempted fixes measured as placebos before the probe's own output was read
+properly; they are listed in `db34894` rather than quietly dropped.
 
 The run before it was **red**, and the cause was the host rather than the code.
 `commitmentsFile.test.ts`'s memory bound — it signs a 5.9 MB chain and verifies
@@ -248,9 +259,29 @@ ceiling.
 
 ## EXACT NEXT LEGAL ACTION
 
-**Open PH-38 — the durable stores learn the lattice they were written on.**
-Cycle Audit 12 is closed: gated green at `5edcc85`, merged, and hosted CI is
-the corroboration owed on the merge commit. Thirteen of its fifteen findings
+**Deploy, declare, and verify through the API.** PH-38.1–.3 are approved and
+merged, so a read route now renders the frame a price was written on. What is
+owed on the live venue, in this order and for a reason: the serving build knows
+`RECORD_SCHEMA_VERSION` 2 and `declare` stamps the record to 3, so declaring
+before redeploying would leave the venue unable to boot. Redeploy, then
+`state:lattice check`, then `declare`, then read a pre-boundary tick back
+through the API and see the price that was published rather than today's.
+PH-38.4 — a candle never spans two frames — is what remains of the phase.
+
+The superseded instruction, kept for the reasoning: PH-38.2 is built
+([technical document](docs/phases/PH-38.2-the-past-is-declared.md)): a two-leg
+criterion the record corroborates, `list`/`check` that cannot upgrade the file
+they inspect, and `declare` that writes two epochs per asset and refuses by
+name what it cannot evidence. On a copy of the live backup it declares **30 of
+30**. Applying it to `~/.otc-local/state` touches the record of the engine the
+Human Owner watches, so it waits on them. PH-38.1 is done
+([technical document](docs/phases/PH-38.1-a-stored-price-states-its-frame.md)).
+PH-38 is ACTIVE ([phase document](docs/phases/PH-38-the-frame-a-price-counts-in.md))
+and its first subphase is open: a `lattice` table in the record, schema version
+2 to 3, a required `AssetBatch.frame`, the epoch written inside the append
+transaction, and the guard fed the previous release's own artefact. Cycle Audit 12 is closed: gated
+green at `5edcc85`, merged, and hosted CI is the corroboration owed on the
+merge commit. Thirteen of its fifteen findings
 are fixed with a guard each; the two that are phases rather than patches are
 Cycle 13's remaining work, and the order between them is a decision, not an
 accident. **Finding 3 comes first**: it finishes what PH-37 began — the
@@ -262,6 +293,14 @@ converted on read. **Finding 7 comes after it**: correcting the calibration
 moves every asset's volatility and seams every live market, and doing that
 first would migrate a catalogue whose stores still cannot say which lattice
 they were written on — the same defect twice, on more data.
+
+**PH-38's premise is measured, not inherited.** Through a consistent snapshot
+of the live venue (`state:backup`, which also gave the record its first backup
+— it had none): **3,664,367 of 7,500,278 retained ticks, 48.9%, predate the
+relattice seam of 2026-09-24 04:44:49 UTC and render wrong today**, on 30 of 30
+assets, median error 31.7%, worst 1,472%. `eurusd-otc`'s last pre-seam tick was
+published at `1.163184` and the venue renders it `1.201802`. The median
+independently reproduces the 31.7% the audit measured by another route.
 
 **Open PH-32 — the market time at which the anti-predictability claim stops resting on an hour.** The detection floor is `140.1 / sqrt(windows)`, so a year settles 30s (0.186pp gated) and leaves 15m at 1.018pp; every horizon crosses the 0.25pp product margin at about **seventeen years** of market time, which is 33 CPU-hours to generate and cannot be held in memory (936 GB). The phase makes the battery accumulate over chunks, proves the chunked path gives the same verdict as the whole-array one, and runs the thirty. Design notes: `~/.otc-local/ph32/DESIGN.md`. Cycle 11 is open and its first phase came from the Human Owner operating the Lab and saying what was wrong with it — the pace default, the push scale, a way to stop, and levels bounded by the market's own state. Cycle 10 is complete and audited; `v2.0.0` is the release that stands. Cycle 10 is complete and audited: three phases approved, Cycle Audit 10 closed (98 claims, 86 confirmed, 12 partial; every critical and material finding fixed in two gated waves, fourteen minor carried by name in the record), `v2.0.0` tagged on the commit hosted CI corroborated, and the integration package regenerated from that tag and verified inside itself. The roadmap's Cycle 10 section names what is deferred: Issue #9 (the multi-node composition), the engine's next stylised facts, jumps and volume; Issues #3 and #14 are the Human Owner's. The audit record's carried list is the first page of the next cycle's work.
 

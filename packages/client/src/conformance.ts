@@ -1,4 +1,4 @@
-import type { Tick } from '@otc/core';
+import { exp, type Tick } from '@otc/core';
 import {
   verifyCommitment,
   verifyInclusion,
@@ -361,6 +361,61 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
       sameDetail === '',
       sameDetail === '' ? `${String(sampled.length)} sampled ticks agree${evicted}` : sameDetail,
     );
+
+    // ---- a recorded price states the frame it counts in (PH-38.3) ----------
+    //
+    // The check that would have caught Cycle Audit 12's finding 3 from outside
+    // the venue. A canonical price is an integer count of log quanta above a
+    // reference, so `displayPrice` is only meaningful next to the two numbers
+    // that produce it. A venue that renders a recorded tick with the values in
+    // force *now* answers a price nobody published the moment a release moves a
+    // lattice — measured on a real deployment at a median of 31.8% and a worst
+    // case of 1,483%.
+    //
+    // So the broker re-derives the venue's own answer from the venue's own
+    // stated frame. Agreement means the two numbers travel with the integer;
+    // disagreement means they do not, whatever the contract says.
+    const dated = await get(`/markets/${encodeURIComponent(id)}/ticks/${String(last.sequence)}`);
+    const datedBody = dated.body as {
+      price?: unknown;
+      logQuantum?: unknown;
+      referencePrice?: unknown;
+      displayPrice?: unknown;
+    } | null;
+    if (dated.status === 200 && typeof datedBody?.displayPrice === 'string') {
+      const q = datedBody.logQuantum;
+      const ref = datedBody.referencePrice;
+      const price = datedBody.price;
+      const derivable =
+        typeof q === 'number' && typeof ref === 'number' && typeof price === 'number';
+      // The venue states its own precision by how it wrote the string.
+      const decimals = datedBody.displayPrice.split('.')[1]?.length ?? 0;
+      // The portable `exp`, not the platform one. This check compares a number
+      // it derives against a string the venue derived, so a transcendental that
+      // differs in its last bits between engines would make the broker's
+      // verdict depend on which runtime ran it — which is the whole reason the
+      // kernel carries its own (ADR-0004).
+      const own = derivable ? (ref * exp(q * price)).toFixed(decimals) : null;
+      check(
+        'a recorded price states the frame it counts in',
+        derivable && own === datedBody.displayPrice,
+        derivable
+          ? `${datedBody.displayPrice} re-derived from the response's own logQuantum ` +
+              `${String(q)} and referencePrice ${String(ref)} gives ${String(own)}`
+          : 'the response carries a displayPrice but not the logQuantum and referencePrice it ' +
+              'was derived from, so a broker holding the integer cannot render it',
+      );
+    } else if (dated.status === 200 && datedBody?.displayPrice === null) {
+      // Honest: the venue holds the integer and says it cannot date it. That is
+      // the correct answer for a record written before frames existed, and it
+      // is a pass — a null is a statement, a wrong number is not.
+      check(
+        'a recorded price states the frame it counts in',
+        true,
+        `the venue holds sequence ${String(last.sequence)} and says its frame is undeclared, ` +
+          `rather than rendering it on today's`,
+      );
+    }
 
     // ---- and the market is not behind its own stream -----------------------
     //

@@ -87,6 +87,13 @@ export interface Faults {
    * agrees with it; only the stream says how far behind it is (a4-04).
    */
   staleMarket?: boolean;
+  /**
+   * Serve a published tick whose stated frame does not produce its own
+   * displayPrice: the shape a venue has when it renders a recorded price on
+   * the lattice in force *now* rather than the one the tick was written on
+   * (PH-38.3, Cycle Audit 12 finding 3).
+   */
+  latticeMismatch?: boolean;
   noProof?: boolean;
   /**
    * Answer `/markets/:id` with the tick after the newest published one — the
@@ -129,10 +136,15 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
     recovery: null,
     ...(faults.extraKey ? { engineVersion: 1 } : {}),
   };
+  // PH-38.3: a published price states the frame it counts in, so a broker that
+  // archived integers can render them without one request per tick.
+  const FRAME = { logQuantum: 4.044597092506429e-6, referencePrice: 1.1, displayPrecision: 5 };
   const published = (t: Tick): Record<string, unknown> => ({
     sequence: t.sequence,
     instant: t.instant,
     price: t.price,
+    logQuantum: faults.latticeMismatch ? FRAME.logQuantum * 12.916 : FRAME.logQuantum,
+    referencePrice: FRAME.referencePrice,
     displayPrice: '1.1',
   });
   const server = createServer((request, response) => {
@@ -190,6 +202,11 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
       });
     // A venue that has never seamed: the record holds no discontinuity.
     if (p === '/markets/eurusd/seams') return json(response, 200, faults.seamed ? [SEAM] : []);
+    if (p === '/markets/eurusd/lattices') {
+      return json(response, 200, [
+        { assetId: 'eurusd', fromSequence: 1, fromInstant: TICKS[0]!.instant, ...FRAME },
+      ]);
+    }
     if (p.startsWith('/markets/eurusd/ticks/')) {
       const sequence = Number(p.split('/').pop());
       const tick = TICKS.find((t) => t.sequence === sequence);
@@ -379,6 +396,14 @@ describe('the conformance suite (PH-29.3)', () => {
       'a market reporting a tick from far behind its own stream (a4-04)',
       { staleMarket: true },
       'the market is not behind the ticks it streamed',
+    ],
+    // PH-38.3: the venue renders a recorded tick on a lattice that is not the
+    // one it says the tick counts in — what every read route did before this
+    // subphase, on 30 of 30 live assets.
+    [
+      'a recorded price rendered on a lattice other than its own (CA12 finding 3)',
+      { latticeMismatch: true },
+      'a recorded price states the frame it counts in',
     ],
     [
       'a market serving the tick it has drawn but not published (a1-03)',

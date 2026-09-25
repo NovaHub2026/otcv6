@@ -134,6 +134,21 @@ export {
   type RecordedSeam,
   type TickRecord,
 } from './tickRecord.js';
+export {
+  frameAtOrBefore,
+  malformedFrame,
+  sameFrame,
+  type LatticeEpoch,
+  type PriceFrame,
+} from './priceFrame.js';
+export {
+  CONTINUITY_BAND_PERCENT,
+  epochsOf,
+  proposeDeclaration,
+  renderOn,
+  type FrameProposal,
+  type FrameVerdict,
+} from './latticeDeclaration.js';
 export { DEFAULT_BUSY_TIMEOUT_MS } from './sqlite.js';
 export {
   FIRST_SEQUENCE,

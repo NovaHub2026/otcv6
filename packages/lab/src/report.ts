@@ -2,7 +2,7 @@ import { runBatteryAsync, type BatteryOptions, type Verdict } from './attacks/ba
 import { formatVerdict } from './attacks/battery.js';
 import type { ObserverDataset } from './observer.js';
 import {
-  assessRealism,
+  assessRealismAsync,
   formatRealismReport,
   type RealismOptions,
   type RealismReport,
@@ -39,7 +39,18 @@ export async function runValidation(
 ): Promise<ValidationReport> {
   const started = process.hrtime.bigint();
   const predictability = await runBatteryAsync(dataset, options.battery);
-  const realism = assessRealism(dataset, options.realism);
+  // **The async realism pass, not the synchronous one (PH-38.3).** The battery
+  // yields while it runs and then this call did not, so every validation ended
+  // with one unbroken stretch of realism metrics over the whole dataset while
+  // the worker's `onTaskUpdate` request sat unanswered.
+  //
+  // Honest about what this is worth: it was **not** the stretch that failed
+  // PH-38.3's gate — that was thirty synchronous mirror tests in a row, and
+  // this change was measured to move that file's worst block not at all. It is
+  // kept because it is the same defect in a shared helper that every validation
+  // runs, it costs nothing, and `assessRealismAsync` drives the same generator
+  // to the same result. `assessRealism` remains for callers outside a worker.
+  const realism = await assessRealismAsync(dataset, options.realism);
   return {
     instrument: dataset.instrument.id,
     ticks: dataset.tickCount,

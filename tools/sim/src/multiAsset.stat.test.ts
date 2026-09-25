@@ -17,6 +17,7 @@ import {
   measureDifferentiation,
   runValidation,
   SHAPE_FEATURES,
+  yieldToLoop,
   type AssetSignature,
 } from '@otc/lab';
 
@@ -81,7 +82,15 @@ function engineFor(assetIndex: number, maxTicks: number, sign?: RandomSource): M
 describe('every registered asset is structurally sign-blind', () => {
   it.each(ASSET_CATALOGUE.map((a, i) => [a.definition.id, i] as const))(
     '%s passes the mirror test',
-    (id, index) => {
+    async (id, index) => {
+      // **Thirty synchronous tests in a row are one synchronous stretch.**
+      // Each mirror test is only ~450ms, so none of them is long — but the
+      // worker sends an `onTaskUpdate` at every test boundary and never turns
+      // the loop, so the main thread answers none of them until all thirty are
+      // done. Measured: a 12.1s block idle and **32.0s under a full gate**,
+      // past the 30s the rpc probe fails a file at, which exited the gate 1
+      // with all 411 statistical tests passing (CLAUDE.md §5).
+      await yieldToLoop();
       const asset = ASSET_CATALOGUE[index]!;
       const signSource = (): RandomSource =>
         keyring.derive({

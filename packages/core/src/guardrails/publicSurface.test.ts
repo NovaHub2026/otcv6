@@ -108,6 +108,8 @@ const INTERNAL: Record<string, readonly string[]> = {
     // PH-28.3: the operator's verify/backup tool for the state directory, a
     // binary entry point like the job above it.
     'stateTool.ts',
+    // PH-38.2: the frame-log tool for the record, a binary entry point.
+    'latticeTool.ts',
     // PH-29.3: the conformance suite's command, a binary entry point.
     'conformanceTool.ts',
     // PH-30.3: the observer fleet's driver and its worker, binary entry points.

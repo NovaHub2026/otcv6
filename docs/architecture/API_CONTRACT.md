@@ -1,8 +1,8 @@
 # API Contract
 
 Type: SUPPORTING DOCUMENTATION (generated; do not edit by hand)
-Version: 2.1.0
-Digest: 76df7ddf99783c45
+Version: 3.0.0
+Digest: d205f4f674c19cfa
 Source: `apps/api/src/contract.ts` — rendered by `npm run contract:render`; held to the controller by `contract.test.ts`
 
 ---
@@ -195,7 +195,9 @@ Response: a JSON object:
 | `sequence` | `integer` |
 | `instant` | `integer` |
 | `price` | `integer` |
-| `displayPrice` | `string` |
+| `logQuantum` | `number|null` |
+| `referencePrice` | `number|null` |
+| `displayPrice` | `string|null` |
 
 | Status | When |
 | --- | --- |
@@ -224,7 +226,9 @@ Response: a JSON object:
 | `sequence` | `integer` |
 | `instant` | `integer` |
 | `price` | `integer` |
-| `displayPrice` | `string` |
+| `logQuantum` | `number|null` |
+| `referencePrice` | `number|null` |
+| `displayPrice` | `string|null` |
 
 | Status | When |
 | --- | --- |
@@ -249,6 +253,29 @@ Response: a JSON array; each item:
 | `lastInstant` | `integer` |
 | `resumesAtSequence` | `integer` |
 | `resumesAtInstant` | `integer` |
+
+| Status | When |
+| --- | --- |
+| 404 | the asset is unknown, or this deployment keeps no record |
+
+## GET `/markets/:id/lattices`
+
+Every frame this market's integers have counted in, oldest first. Half-open by sequence: an epoch covers up to the next one's fromSequence, and the last is in force. The join table for a broker that archived raw integers.
+
+| Path parameter | Must be |
+| --- | --- |
+| `id` | a known asset id; a retired market's record still answers |
+
+Response: a JSON array; each item:
+
+| Key | Type |
+| --- | --- |
+| `assetId` | `string` |
+| `fromSequence` | `integer` |
+| `fromInstant` | `integer` |
+| `logQuantum` | `number` |
+| `referencePrice` | `number` |
+| `displayPrecision` | `integer` |
 
 | Status | When |
 | --- | --- |
