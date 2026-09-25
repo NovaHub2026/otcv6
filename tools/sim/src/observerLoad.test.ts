@@ -1,7 +1,12 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
-import { runObserverLoad, type ObserverLoadReport, describeObserverLoad } from './observerLoad.js';
+import {
+  describeObserverLoad,
+  processCpuSeconds,
+  runObserverLoad,
+  type ObserverLoadReport,
+} from './observerLoad.js';
 
 /**
  * The instrument, watched failing.
@@ -366,6 +371,22 @@ describe('the harness counts what arrived, not what it opened', () => {
       stdio: 'ignore',
     });
     running.children.push(idle);
+    // **Wait for it to finish booting before the window opens.** The comparison
+    // is `harnessCpuSeconds > engineCpuSeconds` over the same window, and node's
+    // own startup costs tens of milliseconds of CPU — the same order as twelve
+    // observers' worth of harness work. Starting the window mid-boot puts that
+    // startup on the engine's side of the comparison, and the test then fails
+    // whenever the machine is loaded enough to make the harness's share small.
+    // It failed three times that way, twice inside a full gate.
+    //
+    // A booting engine is not an idle one, which is what this plant is about.
+    let settled = (await processCpuSeconds(idle.pid!)) ?? 0;
+    for (let i = 0; i < 40; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const now = (await processCpuSeconds(idle.pid!)) ?? 0;
+      if (now - settled < 0.002) break;
+      settled = now;
+    }
     const baseUrl = await serverThat((response) => {
       sse(response);
       let sequence = 1;
