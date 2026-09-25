@@ -252,7 +252,9 @@ export async function verifyStateDirectory(directory: string): Promise<StateDire
       problems.push({ file: HISTORY_DB, assetId: null, detail: damage });
     } else {
       try {
-        history = new SqliteCandleHistory(historyFile);
+        // Read-only: verification must not upgrade the file it inspects, and
+        // this path is pointed at directories a live venue is writing (PH-38.4).
+        history = new SqliteCandleHistory(historyFile, { readOnly: true });
       } catch (error) {
         problems.push({ file: HISTORY_DB, assetId: null, detail: (error as Error).message });
       }

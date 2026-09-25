@@ -1,4 +1,8 @@
 // Invariant evidence: INV-004 (timeframe observer independence), INV-003 (single underlying stream).
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import {
   bucketStart,
@@ -21,6 +25,7 @@ import {
   lastStoredSequence,
   readTimeframe,
 } from './history.js';
+import { SqliteCandleHistory } from './sqliteHistory.js';
 
 const ORIGIN = 1_776_000_000_000;
 
@@ -505,5 +510,79 @@ describe('the leading edge of a coarser read does not depend on the window (a5-0
       for (const bar of bars) expect(bar.openInstant, target).toBeLessThan(to);
       expect(bars[bars.length - 1]!.openInstant).toBe(to - timeframeById(target).durationMs);
     }
+  });
+});
+
+describe('a candle history states what its bars count in, and reading never upgrades it (PH-38.4)', () => {
+  const FRAME = { logQuantum: 4.044597092506429e-6, referencePrice: 1.16, displayPrecision: 6 };
+
+  function candleAt(index: number): Candle {
+    return {
+      openInstant: epochMillis(ORIGIN + index * 60_000),
+      timeframe: '1m',
+      open: logPrice(1_000),
+      high: logPrice(1_040),
+      low: logPrice(960),
+      close: logPrice(1_020),
+      tickCount: 43,
+      firstSequence: index * 43 + 1,
+      lastSequence: index * 43 + 43,
+    };
+  }
+
+  async function file(): Promise<string> {
+    const directory = await mkdtemp(path.join(tmpdir(), 'otc-history-frame-'));
+    return path.join(directory, 'history.db');
+  }
+
+  it('declares the frame the bars were appended under, once per change', async () => {
+    const at = await file();
+    const history = new SqliteCandleHistory(at);
+    try {
+      const bars = [candleAt(0), candleAt(1)];
+      await history.append('a', '1m', bars, FRAME);
+      await history.append('a', '1m', [candleAt(2)], FRAME);
+      const held = await history.frames('a');
+      expect(held, 'one epoch, not one per append').toHaveLength(1);
+      expect(held[0]).toMatchObject({ ...FRAME, fromSequence: bars[0]!.firstSequence });
+      await history.append('a', '1m', [candleAt(3)], { ...FRAME, logQuantum: 1e-6 });
+      expect(await history.frames('a'), 'a change adds one').toHaveLength(2);
+    } finally {
+      history.close();
+    }
+  });
+
+  it('leaves a file it opened read-only exactly as it found it', async () => {
+    const at = await file();
+    const writer = new SqliteCandleHistory(at);
+    await writer.append('a', '1m', [candleAt(0)], FRAME);
+    writer.close();
+
+    // A v1 file: the table the frame log lives in, dropped, and the version
+    // put back. This is what every deployment upgrading across PH-38.4 has.
+    const raw = new DatabaseSync(at);
+    raw.exec('DROP TABLE lattice');
+    raw.exec('PRAGMA user_version = 1');
+    raw.close();
+
+    const reader = new SqliteCandleHistory(at, { readOnly: true });
+    try {
+      expect(await reader.frames('a'), 'no log, so nothing is stated').toEqual([]);
+      expect(
+        await reader.read('a', '1m', epochMillis(0), epochMillis(ORIGIN + 86_400_000)),
+      ).toHaveLength(1);
+      await expect(reader.append('a', '1m', [candleAt(1)], FRAME)).rejects.toThrow(/read-only/);
+    } finally {
+      reader.close();
+    }
+    // **The property the state-directory suite caught the absence of**: verify
+    // reads directories a live venue is writing, so an open that created a
+    // table and stamped a version was a second writer on that file.
+    const after = new DatabaseSync(at);
+    expect(Number(after.prepare('PRAGMA user_version').get()!['user_version'])).toBe(1);
+    expect(
+      after.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='lattice'").get(),
+    ).toBeUndefined();
+    after.close();
   });
 });

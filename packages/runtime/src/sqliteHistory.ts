@@ -68,13 +68,32 @@ export const HISTORY_SCHEMA_VERSION = 2;
  */
 export class SqliteCandleHistory implements CandleHistory {
   readonly #db: DatabaseSync;
-  readonly #insertLattice!: StatementSync;
-  readonly #readLattices!: StatementSync;
-  readonly #insert: StatementSync;
-  readonly #read: StatementSync;
-  readonly #head: StatementSync;
+  #insertLattice!: StatementSync;
+  #readLattices!: StatementSync;
+  #insert!: StatementSync;
+  #read!: StatementSync;
+  #head!: StatementSync;
 
-  constructor(location: string) {
+  readonly #readOnly: boolean;
+  #hasLattice = true;
+
+  /**
+   * @param readOnly Open without upgrading the file: no table is created and
+   * the schema version is not stamped.
+   *
+   * **Opening became a write when this store learned its frame log (PH-38.4),
+   * and that broke verification.** `verifyStateDirectory` constructs this class
+   * to read a directory's heads — including one a live venue is writing — and
+   * an open that creates a table and stamps `user_version` is a second writer
+   * on that file. The state-directory suite caught it: "calls a database a
+   * second process is writing healthy, not damaged" went red on the coverage
+   * leg, which is the one slow enough to lose the race.
+   *
+   * It is the same hazard the record has, answered the same way. Reading must
+   * not upgrade.
+   */
+  constructor(location: string, { readOnly = false }: { readOnly?: boolean } = {}) {
+    this.#readOnly = readOnly;
     // The directory before the file. SQLite reports a missing parent directory
     // as `unable to open database file`, which reads as a permissions or
     // corruption problem and is neither — and it happens at construction, so
@@ -89,6 +108,10 @@ export class SqliteCandleHistory implements CandleHistory {
     if (location !== ':memory:') enableWriteAheadLog(this.#db);
     this.#db.exec('PRAGMA synchronous = FULL');
     assertSchemaNotNewer(this.#db, HISTORY_SCHEMA_VERSION, 'candle history');
+    if (readOnly) {
+      this.#prepare();
+      return;
+    }
     this.#db.exec(`
       CREATE TABLE IF NOT EXISTS candle (
         asset_id TEXT NOT NULL,
@@ -122,6 +145,18 @@ export class SqliteCandleHistory implements CandleHistory {
     // worse than an honest silence. An empty log reads as "the instrument in
     // force", which is exactly what this store's readers already assumed.
     stampSchemaVersion(this.#db, HISTORY_SCHEMA_VERSION);
+    this.#prepare();
+  }
+
+  #prepare(): void {
+    this.#hasLattice =
+      this.#db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'lattice'")
+        .get() !== undefined;
+    if (!this.#hasLattice) {
+      this.#prepareRest();
+      return;
+    }
     this.#insertLattice = this.#db.prepare(
       'INSERT OR IGNORE INTO lattice (asset_id, from_sequence, from_instant, log_quantum, ' +
         'reference_price, display_precision) VALUES (?, ?, ?, ?, ?, ?)',
@@ -130,6 +165,10 @@ export class SqliteCandleHistory implements CandleHistory {
       'SELECT asset_id, from_sequence, from_instant, log_quantum, reference_price, ' +
         'display_precision FROM lattice WHERE asset_id = ? ORDER BY from_sequence',
     );
+    this.#prepareRest();
+  }
+
+  #prepareRest(): void {
     this.#insert = this.#db.prepare(`
       INSERT INTO candle (
         asset_id, timeframe, open_instant, open, high, low, close,
@@ -152,6 +191,7 @@ export class SqliteCandleHistory implements CandleHistory {
   }
 
   frames(assetId: string): Promise<readonly LatticeEpoch[]> {
+    if (!this.#hasLattice) return Promise.resolve([]);
     return Promise.resolve(
       this.#readLattices.all(assetId).map((row) => ({
         assetId: String(row['asset_id']),
@@ -170,10 +210,18 @@ export class SqliteCandleHistory implements CandleHistory {
     candles: readonly Candle[],
     frame?: PriceFrame,
   ): Promise<void> {
+    if (this.#readOnly) {
+      return Promise.reject(
+        new HistoryError(
+          'This candle history was opened read-only, so that reading a running deployment could ' +
+            'not upgrade its file underneath it (PH-38.4). Nothing was modified.',
+        ),
+      );
+    }
     const unstored = unstoredTimeframe(timeframe);
     if (unstored !== null) return Promise.reject(unstored);
     if (candles.length === 0) return Promise.resolve();
-    if (frame !== undefined) {
+    if (frame !== undefined && this.#hasLattice) {
       const held = this.#readLattices.all(assetId);
       const inForce = held.length === 0 ? null : held[held.length - 1]!;
       const same =
