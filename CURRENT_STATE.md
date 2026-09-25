@@ -14,8 +14,8 @@ Last synchronized: 2026-09-24
 
 | Field                            | Value                                                                                                                                                      |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 13 — **1 of 3** phases approved (PH-37). Cycle 12 is audited and closed; Cycle 11 stays open                                                         |
-| Approved phases in current cycle | **1 of 3** — PH-37. Cycle Audit 12 has run, gated green and merged                                                                                         |
+| Active development cycle         | Cycle 13 — **2 of 3** phases approved (PH-37, PH-38). Cycle 12 is audited and closed; Cycle 11 stays open                                                  |
+| Approved phases in current cycle | **2 of 3** — PH-37, PH-38                                                                                                                                  |
 | Cycle Audit state                | **012 closed** — 15 findings, 13 fixed with a guard each, 2 carried as phases; gated green on `audit/ca12-fixes` at `5edcc85` and merged                   |
 | Last Cycle Audit                 | [Cycle Audit 012](docs/audits/CYCLE-AUDIT-012.md) — 2026-09-24, eight independent auditors, one worktree each, every finding put to an independent refuter |
 
@@ -23,12 +23,12 @@ Last synchronized: 2026-09-24
 
 | Field                  | Value                                                                      |
 | ---------------------- | -------------------------------------------------------------------------- |
-| Active phase           | PH-38 — The frame a stored price counts in                                 |
-| Phase lifecycle        | ACTIVE                                                                     |
-| Active subphase        | PH-38.4 — A candle states its frame, and one that spans two states neither |
-| Subphase lifecycle     | ACTIVE                                                                     |
-| Last approved phase    | PH-37 — The staircase: a price you can read tick by tick                   |
-| Last approved subphase | PH-38.3 — Every read route renders on the frame the price was written in   |
+| Active phase           | none                                                                       |
+| Phase lifecycle        | none                                                                       |
+| Active subphase        | none                                                                       |
+| Subphase lifecycle     | none                                                                       |
+| Last approved phase    | PH-38 — The frame a stored price counts in                                 |
+| Last approved subphase | PH-38.4 — A candle states its frame, and one that spans two states neither |
 
 **Cycle 12 is audited and closed.** PH-34 (the market's tempo follows its
 state), PH-35 (the level the market runs at) and PH-36 (a stalled market

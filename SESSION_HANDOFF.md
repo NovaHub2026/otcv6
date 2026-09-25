@@ -6,16 +6,16 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                                                               |
-| ------------------ | --------------------------------------------------------------------------------------------------- |
-| Last clean session | 2026-09-24                                                                                          |
-| Branch             | `main` — PH-38.1–.3 merged from `feature/ph-38-the-frame`                                           |
-| Remote             | `origin` → NovaHub2026/otcv6, public                                                                |
-| Active cycle       | Cycle 13, **1 of 3** — PH-37 approved. Cycle Audit 12 gated, merged and closed; Cycle 11 stays open |
-| Active phase       | PH-38 — the frame a stored price counts in                                                          |
-| Active subphase    | PH-38.4 — a candle states its frame                                                                 |
-| Cycle Audit        | **012 closed** — 15 findings, 13 fixed with a guard each, 2 carried as phases                       |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                                                  |
+| Field              | Value                                                                                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------------------- |
+| Last clean session | 2026-09-24                                                                                                    |
+| Branch             | `main` — PH-38.1–.3 merged from `feature/ph-38-the-frame`                                                     |
+| Remote             | `origin` → NovaHub2026/otcv6, public                                                                          |
+| Active cycle       | Cycle 13, **2 of 3** — PH-37 and PH-38 approved. Cycle Audit 12 gated, merged and closed; Cycle 11 stays open |
+| Active phase       | none                                                                                                          |
+| Active subphase    | none                                                                                                          |
+| Cycle Audit        | **012 closed** — 15 findings, 13 fixed with a guard each, 2 carried as phases                                 |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                                                            |
 
 ---
 

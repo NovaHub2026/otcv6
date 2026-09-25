@@ -2,7 +2,8 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-38
-Status: ACTIVE
+Status: APPROVED
+Approved: 2026-09-25 — four subphases, each gated; the phase gate is PH-38.4's at `a7de4f3` (`GATE_EXIT=0`)
 Cycle: 13 (phase 2)
 Created: 2026-09-24
 Branch: `feature/ph-38-the-frame`, cut from `main` at `88292d0`
