@@ -1287,3 +1287,40 @@ The load that caused it was self-inflicted: builds and test suites running on
 the same host as the venue. That is a fair reproduction of a production load
 spike, and the failure to recover afterwards is the defect rather than the
 stall.
+
+## 2026-09-25 — The reopening is fixed before the calibration, and the order is the decision
+
+Cycle Audit 12 left two findings that were phases rather than patches, and the
+audit record fixed their order: finding 3 first (the stores that keep an integer
+with no lattice, built as PH-38), finding 7 after it (the calibration that
+simulates a market the engine does not run, a refund bias of +1.91pp). **Finding
+7 is deferred one more phase.** PH-39 goes in front of it.
+
+**Why.** PH-38 closed on a verificado whose §4 names one thing that would stop a
+deployment, and it is not a price: a market that starves before its first tick
+never reopens again, so a venue that loses its host under load needs an operator
+to come back. Between 04:5x and 12:06 on 2026-09-25 that happened **three times
+on this host**, on nothing more exotic than a build, a unit suite and eight
+subagents — 60, 30 and 120 recorded reopenings, thirty markets stalled each
+time, `ready: false`, and twice the machine was already idle again when they were
+still stalled. Each one needed a hand restart, which is a recorded seam per
+asset.
+
+Finding 7 moves every asset's volatility and seams every live market. Doing that
+first would be loading cargo onto a ship with a known hole in it: the migration
+would run on a venue that cannot survive its own host, and the seams it writes
+would be indistinguishable from the ones an unrecovered stall writes.
+
+**What the alternative was.** Patch the bound inside PH-38's last subphase. That
+was refused on 2026-09-25 (the entry above) and the refusal stands: changing a
+bound on automatic reopening without measuring what it then does under sustained
+starvation is the shape of error this session had already paid for twice, and the
+measurement needs a reproduction, three guards and a phase gate rather than a
+commit at the end of another phase.
+
+**What would make it worth revisiting.** Nothing about finding 7 — it is the next
+phase of work and the roadmap says so, with one correction made when PH-39 was
+approved: Cycle 13 is full at three phases, so **Cycle Audit 13 comes between
+them**, and the calibration is Cycle 14's first phase rather than this cycle's
+fourth. A venue that heals itself is in any case the precondition for a migration
+that seams every market on purpose.

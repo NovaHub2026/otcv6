@@ -14,21 +14,21 @@ Last synchronized: 2026-09-24
 
 | Field                            | Value                                                                                                                                                      |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 13 — **2 of 3** phases approved (PH-37, PH-38). Cycle 12 is audited and closed; Cycle 11 stays open                                                  |
-| Approved phases in current cycle | **2 of 3** — PH-37, PH-38                                                                                                                                  |
+| Active development cycle         | Cycle 13 — **3 of 3** phases approved (PH-37, PH-38, PH-39). **The Cycle Audit is what runs next**; Cycle 11 stays open                                    |
+| Approved phases in current cycle | **3 of 3** — PH-37, PH-38, PH-39                                                                                                                           |
 | Cycle Audit state                | **012 closed** — 15 findings, 13 fixed with a guard each, 2 carried as phases; gated green on `audit/ca12-fixes` at `5edcc85` and merged                   |
 | Last Cycle Audit                 | [Cycle Audit 012](docs/audits/CYCLE-AUDIT-012.md) — 2026-09-24, eight independent auditors, one worktree each, every finding put to an independent refuter |
 
 ## Phase and subphase
 
-| Field                  | Value                                                                      |
-| ---------------------- | -------------------------------------------------------------------------- |
-| Active phase           | none                                                                       |
-| Phase lifecycle        | none                                                                       |
-| Active subphase        | none                                                                       |
-| Subphase lifecycle     | none                                                                       |
-| Last approved phase    | PH-38 — The frame a stored price counts in                                 |
-| Last approved subphase | PH-38.4 — A candle states its frame, and one that spans two states neither |
+| Field                  | Value                                                                    |
+| ---------------------- | ------------------------------------------------------------------------ |
+| Active phase           | none                                                                     |
+| Phase lifecycle        | none                                                                     |
+| Active subphase        | none                                                                     |
+| Subphase lifecycle     | none                                                                     |
+| Last approved phase    | PH-39 — The reopening that holds                                         |
+| Last approved subphase | PH-39.1 — A starved reopening is re-armed, and the outage keeps one seam |
 
 **Cycle 12 is audited and closed.** PH-34 (the market's tempo follows its
 state), PH-35 (the level the market runs at) and PH-36 (a stalled market
@@ -259,6 +259,38 @@ ceiling.
 
 ## EXACT NEXT LEGAL ACTION
 
+**Run Cycle Audit 13.** The cycle is full — three phases approved and merged — so
+GOVERNANCE §28 puts the audit in front of any new phase, and ADR-0008 says it
+runs automatically and waits for nobody. The three are the staircase, the frame a
+stored price counts in, and the reopening that holds. What the audit inherits, and
+where to start: the three findings filed on 2026-09-25
+([#23](https://github.com/NovaHub2026/otcv6/issues/23) — every clean restart of
+this venue writes two seams per asset because `start()` outruns its own bound,
+observed live; [#24](https://github.com/NovaHub2026/otcv6/issues/24),
+[#25](https://github.com/NovaHub2026/otcv6/issues/25)), and Cycle Audit 12's
+finding 7 — the calibration that simulates a market the engine does not run,
++1.91pp of refund bias — which is Cycle 14's first phase rather than this one's
+work (`DECISION-LOG.md`, 2026-09-25). Eight independent auditors, one worktree
+each, every finding put to a refuter in a worktree that is not the finding's own
+(§28.1).
+
+The superseded instruction, kept for the reasoning:
+**Build PH-39.1 — a starved reopening is re-armed, and the outage keeps one
+seam.** The phase document is
+[PH-39](docs/phases/PH-39-the-reopening-that-holds.md) and the subphase's is
+[PH-39.1](docs/phases/PH-39.1-a-starved-reopening-is-re-armed.md). What it
+closes: `VenueService.#reopen` refuses a market that has not published since its
+last reopening, and `awaitingFirstTick` is only ever cleared by a publication, so
+a market starved twice inside one outage is refused for the life of the process.
+Three occurrences on 2026-09-25 on ordinary developer load, thirty markets each
+time, twice with the machine already idle again. The reproduction is
+deterministic (`apps/api/src/venueReopen.test.ts`, three tests, red before the
+change). Cycle Audit 12's finding 7 — the calibration — is deferred one phase and
+is what follows this: it moves every asset's volatility and seams every live
+market, and doing that on a venue that cannot survive its own host is loading
+cargo onto a ship with a hole in it (`DECISION-LOG.md`, 2026-09-25).
+
+The superseded instruction, kept for the reasoning:
 **Deploy, declare, and verify through the API.** PH-38.1–.3 are approved and
 merged, so a read route now renders the frame a price was written on. What is
 owed on the live venue, in this order and for a reason: the serving build knows

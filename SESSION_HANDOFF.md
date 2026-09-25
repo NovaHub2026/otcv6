@@ -6,20 +6,52 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                                                                         |
-| ------------------ | ------------------------------------------------------------------------------------------------------------- |
-| Last clean session | 2026-09-24                                                                                                    |
-| Branch             | `main` — PH-38.1–.3 merged from `feature/ph-38-the-frame`                                                     |
-| Remote             | `origin` → NovaHub2026/otcv6, public                                                                          |
-| Active cycle       | Cycle 13, **2 of 3** — PH-37 and PH-38 approved. Cycle Audit 12 gated, merged and closed; Cycle 11 stays open |
-| Active phase       | none                                                                                                          |
-| Active subphase    | none                                                                                                          |
-| Cycle Audit        | **012 closed** — 15 findings, 13 fixed with a guard each, 2 carried as phases                                 |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                                                            |
+| Field              | Value                                                                                                       |
+| ------------------ | ----------------------------------------------------------------------------------------------------------- |
+| Last clean session | 2026-09-25                                                                                                  |
+| Branch             | `main` — PH-39 merged from `feature/ph-39-the-reopening-that-holds`                                         |
+| Remote             | `origin` → NovaHub2026/otcv6, public                                                                        |
+| Active cycle       | Cycle 13, **3 of 3** — PH-37, PH-38 and PH-39 approved. **Cycle Audit 13 is what runs next**; Cycle 11 open |
+| Active phase       | none                                                                                                        |
+| Active subphase    | none                                                                                                        |
+| Cycle Audit        | **012 closed** — 15 findings, 13 fixed with a guard each, 2 carried as phases                               |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                                                          |
 
 ---
 
-## Right now (2026-09-24)
+## Right now (2026-09-25)
+
+**PH-39 is approved and merged.** It closes the one item PH-38's
+broker-readiness record named as stopping a deployment: a market that starves
+before its first tick never reopened again, so a venue that lost its host under
+load needed an operator. `VenueService.#reopen` now splits a market that has
+published since its reopening (a new outage, the whole seam, rate-limited as
+ADR-0020 says) from one still awaiting its first tick (re-armed at the clock, no
+second seam, no eviction, and stalled by name until it publishes). New where an
+operator reads: `otc_market_rearms_total`, `otc_seconds_since_last_pass`, and the
+re-arming count inside `/health`'s stall reason.
+
+**The next legal action is Cycle Audit 13** — Cycle 13 is full. `CURRENT_STATE.md`
+says what it inherits.
+
+**Two gate facts worth carrying.** The first PH-39 gate went red on three
+statistical tests and the cause was the venue this session had just repaired,
+publishing thirty markets on the gate's own host: the rpc probe saw a 15.9 s block
+in the browser worker, the venue's new gauge saw the host withhold the CPU for
+107 s, and the same two files alone on a quiet host passed 12/12. **Every gate
+measured on this machine before 2026-09-25 ran beside a venue that was wedged,
+and a wedged venue costs nothing.** Stop the engine before a gate.
+
+**The engine on 7300 runs `~/.otc-genesis` on `main` again**, restarted after the
+merge. It ran the branch build from 12:07Z to 13:54Z on the same state directory,
+which is where PH-39.1 §6's live evidence comes from.
+
+**The defect happened three times on 2026-09-25**, all on ordinary developer
+load — a build, a unit suite, eight subagents — at 04:5x (60 reopenings), 11:39
+(30) and 12:06 (120). Thirty markets stalled each time, `ready: false`, and
+twice the machine was already idle again when they were still stalled. Captured
+at `~/.otc-local/ph39/live-stall-2026-09-25b.txt`. Each one needed a hand
+restart, which is a recorded seam per asset.
 
 **Cycle Audit 12 is gated, merged and closed.** The full gate ran on
 `audit/ca12-fixes` at `5edcc85` with `OTC_REQUIRE_BROWSER=1` and the browser

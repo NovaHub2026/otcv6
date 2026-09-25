@@ -1002,6 +1002,7 @@ that bind the Human Owner outside the repository are escalated
 | ----- | ------------------------------------------------ | -------- |
 | PH-37 | The staircase: a price you can read tick by tick | APPROVED |
 | PH-38 | The frame a stored price counts in               | APPROVED |
+| PH-39 | The reopening that holds                         | APPROVED |
 
 | Subphase | Title                                                                    | State    |
 | -------- | ------------------------------------------------------------------------ | -------- |
@@ -1011,6 +1012,24 @@ that bind the Human Owner outside the repository are escalated
 | PH-38.2  | The past is declared or refused, never guessed                           | APPROVED |
 | PH-38.3  | Every read route renders on the frame the price was in                   | APPROVED |
 | PH-38.4  | A candle states its frame, and one that spans two states neither         | APPROVED |
+| PH-39.1  | A starved reopening is re-armed, and the outage keeps one seam           | APPROVED |
+
+**Cycle 13 is full: PH-37, PH-38 and PH-39 are approved, so the Cycle Audit runs
+next** — automatically, waiting for nothing (GOVERNANCE §28, ADR-0008).
+
+**PH-39 is the third phase, and it is not the one the order named.** Cycle Audit
+12's finding 7 — the calibration that simulates a market the engine does not run
+— was next, and it is deferred one phase. What took its place came out of PH-38's
+own closing evidence
+([BROKER-READINESS-2026-09-25](../evidence/BROKER-READINESS-2026-09-25.md) §4):
+**a market that starves before its first tick never reopens again**, so a venue
+that loses its host under load needs an operator to come back. It happened three
+times on 2026-09-25 on ordinary developer load — 60, 30 and 120 recorded
+reopenings, thirty markets stalled each time, twice with the machine already
+idle again. Finding 7 moves every asset's volatility and seams every live
+market; doing that before this would be loading cargo onto a ship with a hole in
+it (`DECISION-LOG.md`, 2026-09-25). The phase document is
+[PH-39](PH-39-the-reopening-that-holds.md).
 
 **PH-38** is Cycle Audit 12's finding 3, carried as a phase because it is one:
 the durable stores keep an integer and throw away the pair that makes it a

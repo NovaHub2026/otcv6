@@ -174,6 +174,19 @@ the statistical gate on every push to `main` (ADR-0009). CI is a _required
 corroborating_ layer — a red CI on a green local gate is a finding about the
 gate.
 
+**A working venue on this host is load, and the gate measures it.** The first
+PH-39 gate went red on three statistical tests — two browser assertions that read
+an empty chart, one stream resume refused — while the venue this repository serves
+from `~/.otc-genesis` was publishing thirty markets on the same box. The rpc probe
+recorded a 15.9 s block inside the browser worker and the venue's own
+`otc_seconds_since_last_pass` recorded the host withholding the CPU for 107 s. The
+same two files alone on a quiet host passed 12 of 12; the full gate with the
+engine stopped was green. Nothing was wrong with the tests. What is worth
+carrying is the asymmetry: **every gate measured on this machine before 2026-09-25
+ran beside a venue that was wedged**, and a wedged venue consumes nothing — a
+working one consumes a core. Stop the engine before a gate, or the numbers above
+describe a different machine.
+
 **The gate needs a browser, and on this machine it needs a library path.** The
 statistical suite runs `apps/web/src/panel.stat.test.ts` and
 `apps/web/src/lab.stat.test.ts` in a real Chromium, and `npm run gate` sets
