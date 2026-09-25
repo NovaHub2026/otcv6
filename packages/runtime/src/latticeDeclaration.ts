@@ -219,6 +219,74 @@ export async function proposeDeclaration(
   return { assetId, ok: true, proposal: candidates[0]! };
 }
 
+/**
+ * Extend an asset's earliest frame back over the range below it (PH-38.2).
+ *
+ * **The case the boundary criterion cannot see, and it is the steady state.**
+ * An asset whose retained window has already advanced past a release's frame
+ * change holds no tick from before it, so there is no boundary seam to find and
+ * `proposeDeclaration` refuses — correctly. But refusing leaves the whole range
+ * undeclared, and an undeclared range renders as `null`. For an asset whose
+ * record is entirely on the current frame that is **worse than before the
+ * phase**: it used to answer a number that happened to be right.
+ *
+ * The evidence is the venue's own, not a default. `changeInstant` is the
+ * newest boundary any *other* asset could be dated at — the instant the release
+ * moved the lattices, read off the record rather than assumed — and the asset's
+ * oldest retained tick is strictly after it. Nothing in the retained range
+ * predates the change, so the frame already declared at the top of the range
+ * holds all the way down.
+ *
+ * Refuses when the asset has no declared frame to extend, when its oldest tick
+ * is at or before the change (there is a boundary in range and this is the
+ * wrong tool), or when the range is already covered.
+ */
+export async function proposeBackfill(
+  record: TickRecord,
+  assetId: string,
+  changeInstant: number,
+): Promise<FrameVerdict> {
+  const refuse = (refusal: string): FrameVerdict => ({ assetId, ok: false, refusal });
+  const declared = await record.frames(assetId);
+  if (declared.length === 0) {
+    return refuse(`${assetId} has no declared frame to extend backwards.`);
+  }
+  const earliest = declared[0]!;
+  const oldest = await record.oldest(assetId);
+  if (oldest === null) return refuse(`${assetId} has no recorded ticks.`);
+  if (oldest >= earliest.fromSequence) {
+    return refuse(`${assetId} is already declared from its oldest retained sequence.`);
+  }
+  const [oldestTick] = await record.since(assetId, oldest, 1);
+  if (oldestTick === undefined) return refuse(`${assetId} has no tick at its oldest sequence.`);
+  if (oldestTick.instant <= changeInstant) {
+    return refuse(
+      `${assetId}'s oldest retained tick is from ${String(oldestTick.instant)}, at or before the ` +
+        `frame change at ${String(changeInstant)}, so part of its range predates the change and ` +
+        `extending one frame over all of it would be a guess. Nothing is declared for it.`,
+    );
+  }
+  return {
+    assetId,
+    ok: true,
+    proposal: {
+      assetId,
+      boundarySequence: earliest.fromSequence,
+      boundaryInstant: earliest.fromInstant,
+      before: earliest,
+      after: earliest,
+      oldestSequence: oldest,
+      oldestInstant: oldestTick.instant,
+      gapPercent: 0,
+      rescale: 1,
+      quantumRatio: 1,
+      published: renderOn(earliest, oldestTick.price),
+      renderedToday: renderOn(earliest, oldestTick.price),
+      ticksCovered: earliest.fromSequence - oldest,
+    },
+  };
+}
+
 /** The two epochs a proposal becomes: the old frame below the boundary, the current one from it. */
 export function epochsOf(proposal: FrameProposal): readonly [
   {

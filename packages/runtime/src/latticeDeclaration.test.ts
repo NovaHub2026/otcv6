@@ -8,6 +8,7 @@ import { epochMillis, logPrice, type Tick } from '@otc/core';
 import {
   CONTINUITY_BAND_PERCENT,
   epochsOf,
+  proposeBackfill,
   proposeDeclaration,
   RESCALE_TOLERANCE,
 } from './latticeDeclaration.js';
@@ -259,6 +260,55 @@ describe('a declaration is evidenced by the record or it is refused (PH-38.2)', 
       const [first, second] = epochsOf(verdict.proposal);
       await expect(record.declareLattice('a', [second, first])).rejects.toThrow(/not ordered/);
       expect(await record.frames('a')).toEqual([]);
+    } finally {
+      record.close();
+    }
+  });
+});
+
+describe('a window that has moved past the change is declared, not left null (PH-38.2)', () => {
+  it('extends the declared frame back over a range that is entirely after the change', async () => {
+    const { record, boundary } = await recordWithBoundary();
+    try {
+      // The steady state: the window has advanced past the boundary, so there
+      // is no boundary seam left to find and the first pass refuses.
+      await record.trim('a', 300);
+      const oldest = (await record.oldest('a'))!;
+      expect(oldest).toBeGreaterThan(boundary);
+      expect((await proposeDeclaration(record, 'a', OLD, NEW)).ok).toBe(false);
+
+      // What the running engine writes on its next append: one epoch at the
+      // head, leaving everything below it undeclared and therefore null.
+      const [head] = await record.since('a', oldest + 100, 1);
+      await record.declareLattice('a', [
+        { assetId: 'a', fromSequence: head!.sequence, fromInstant: head!.instant, ...NEW },
+      ]);
+      const [oldestTick] = await record.since('a', oldest, 1);
+      const change = oldestTick!.instant - 1;
+
+      const verdict = await proposeBackfill(record, 'a', change);
+      expect(verdict.ok, 'the whole retained range postdates the change').toBe(true);
+      if (!verdict.ok) return;
+      expect(verdict.proposal.oldestSequence).toBe(oldest);
+    } finally {
+      record.close();
+    }
+  });
+
+  it('refuses to extend over a range that predates the change', async () => {
+    const { record, boundary } = await recordWithBoundary();
+    try {
+      const oldest = (await record.oldest('a'))!;
+      await record.declareLattice('a', [
+        { assetId: 'a', fromSequence: boundary, fromInstant: epochMillis(GENESIS), ...NEW },
+      ]);
+      const [oldestTick] = await record.since('a', oldest, 1);
+      // A change AFTER the oldest tick: part of the range is on the other side
+      // of it, so extending one frame over all of it would be a guess.
+      const verdict = await proposeBackfill(record, 'a', oldestTick!.instant + 1);
+      expect(verdict.ok).toBe(false);
+      if (verdict.ok) return;
+      expect(verdict.refusal).toMatch(/predates the change|at or before the/);
     } finally {
       record.close();
     }

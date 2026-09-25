@@ -3,6 +3,7 @@ import path from 'node:path';
 import { ASSET_CATALOGUE, LATTICE_BEFORE_PH37 } from '@otc/engine';
 import {
   epochsOf,
+  proposeBackfill,
   proposeDeclaration,
   RECORD_DB,
   SqliteTickRecord,
@@ -212,6 +213,59 @@ export async function runLatticeTool(
       }
       verdicts.push(verdict);
     }
+    // **Second pass: the assets whose window has already moved past the
+    // change.** They have no boundary to find, so the first pass refuses them
+    // and their whole range would render as `null` — worse than before the
+    // phase, because it used to answer a number that happened to be right. The
+    // instant the release moved the lattices is read off the assets that
+    // *could* be dated, so this is the venue's own evidence rather than a
+    // default, and an asset holding anything from before that instant is still
+    // refused.
+    //
+    // Read from **the record** as well as from this run, and that distinction
+    // is not cosmetic: on a second run the assets that could be dated are
+    // already declared, so nothing succeeds in the first pass and a change
+    // instant taken only from this run's proposals would be zero. `check` and
+    // `declare` then disagreed — check saw thirty declarable and declare saw
+    // none — which is the shape of a tool that is not idempotent.
+    // Over **every** asset in the record, not the filtered set: the instant a
+    // release moved the lattices is a fact about the venue, so `--asset X`
+    // narrowing the scan to X left it unknowable and silently skipped the
+    // second pass for the one asset the operator asked about.
+    const fromRecord: number[] = [];
+    for (const id of await record.assets()) {
+      const held = await record.frames(id);
+      // An asset with two frames carries the change itself: the second one
+      // begins at it.
+      if (held.length >= 2) fromRecord.push(held[1]!.fromInstant);
+    }
+    const changeInstant = Math.max(
+      ...verdicts.filter((v) => v.ok).map((v) => (v.ok ? v.proposal.boundaryInstant : 0)),
+      ...fromRecord,
+      0,
+    );
+    if (changeInstant > 0) {
+      for (let i = 0; i < verdicts.length; i += 1) {
+        const verdict = verdicts[i]!;
+        if (verdict.ok) continue;
+        const backfill = await proposeBackfill(record, verdict.assetId, changeInstant);
+        if (!backfill.ok) continue;
+        if (options.command === 'declare') {
+          const held = await record.frames(verdict.assetId);
+          const extended = [
+            {
+              ...held[0]!,
+              fromSequence: backfill.proposal.oldestSequence,
+              fromInstant: backfill.proposal.oldestInstant,
+            },
+            ...held,
+          ];
+          await record.declareLattice(verdict.assetId, extended, true);
+        }
+        verdicts[i] = backfill;
+      }
+    }
+
     const wrote = options.command === 'declare';
     const anyRefused = verdicts.some((v) => !v.ok);
     const header =

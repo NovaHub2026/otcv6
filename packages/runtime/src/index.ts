@@ -144,6 +144,7 @@ export {
 export {
   CONTINUITY_BAND_PERCENT,
   epochsOf,
+  proposeBackfill,
   proposeDeclaration,
   renderOn,
   type FrameProposal,
