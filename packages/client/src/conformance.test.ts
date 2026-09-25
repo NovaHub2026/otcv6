@@ -8,7 +8,7 @@ import {
   signCommitment,
 } from '@otc/distribution';
 import type { Tick } from '@otc/core';
-import { epochMillis, logPrice } from '@otc/core';
+import { epochMillis, exp, logPrice } from '@otc/core';
 import { conformance, renderConformance } from './conformance.js';
 import { API_VERSION, contractDigest } from './contract.js';
 
@@ -94,6 +94,17 @@ export interface Faults {
    * (PH-38.3, Cycle Audit 12 finding 3).
    */
   latticeMismatch?: boolean;
+  /**
+   * Render every recorded price on a lattice the venue never published, and
+   * render it **coherently** — `displayPrice` derived from the stated frame, so
+   * each response is internally perfect. Only the venue's own `/lattices` log
+   * contradicts it.
+   *
+   * This is the attack an independent refuter used to show the first version of
+   * the frame check had no teeth: it scored 33/33 exit 0 while showing a broker
+   * 1.494102 where the record said 1.155439, a 29.3% error.
+   */
+  latticeUnanchored?: boolean;
   noProof?: boolean;
   /**
    * Answer `/markets/:id` with the tick after the newest published one — the
@@ -143,9 +154,19 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
     sequence: t.sequence,
     instant: t.instant,
     price: t.price,
-    logQuantum: faults.latticeMismatch ? FRAME.logQuantum * 12.916 : FRAME.logQuantum,
+    logQuantum: faults.latticeMismatch
+      ? FRAME.logQuantum * 12.916
+      : faults.latticeUnanchored
+        ? FRAME.logQuantum * 12.916
+        : FRAME.logQuantum,
     referencePrice: FRAME.referencePrice,
-    displayPrice: '1.1',
+    // Coherent with whatever frame is stated, so only an anchor outside the
+    // response can tell the unanchored venue from an honest one.
+    displayPrice: faults.latticeUnanchored
+      ? (FRAME.referencePrice * exp(FRAME.logQuantum * 12.916 * t.price)).toFixed(
+          FRAME.displayPrecision,
+        )
+      : '1.1',
   });
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://x');
@@ -403,6 +424,14 @@ describe('the conformance suite (PH-29.3)', () => {
     [
       'a recorded price rendered on a lattice other than its own (CA12 finding 3)',
       { latticeMismatch: true },
+      'a recorded price states the frame it counts in',
+    ],
+    // The refuter's attack: every response internally perfect, contradicted
+    // only by the venue's own frame log. The first version of the check scored
+    // this 33/33 exit 0.
+    [
+      'a venue rendering every recorded price coherently on a lattice it never published',
+      { latticeUnanchored: true },
       'a recorded price states the frame it counts in',
     ],
     [

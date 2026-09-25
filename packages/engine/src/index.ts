@@ -218,4 +218,4 @@ export {
   nextShock,
   selectContinuation,
 } from './intervention.js';
-export { LATTICE_BEFORE_PH37 } from './lattices.js';
+export { FRAME_BEFORE_PH37, LATTICE_BEFORE_PH37 } from './lattices.js';

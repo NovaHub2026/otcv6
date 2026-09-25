@@ -362,60 +362,132 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
       sameDetail === '' ? `${String(sampled.length)} sampled ticks agree${evicted}` : sameDetail,
     );
 
-    // ---- a recorded price states the frame it counts in (PH-38.3) ----------
+    // ---- a recorded price states the frame it counts in (PH-38.3/38.4) ----
     //
-    // The check that would have caught Cycle Audit 12's finding 3 from outside
-    // the venue. A canonical price is an integer count of log quanta above a
-    // reference, so `displayPrice` is only meaningful next to the two numbers
-    // that produce it. A venue that renders a recorded tick with the values in
-    // force *now* answers a price nobody published the moment a release moves a
-    // lattice — measured on a real deployment at a median of 31.8% and a worst
-    // case of 1,483%.
+    // **The first version of this check had no teeth and an independent
+    // refuter proved it.** It re-derived one tick's `displayPrice` from that
+    // same response's own `logQuantum`, which only asks whether a response is
+    // internally consistent. A venue rendering EVERY recorded price on a
+    // lattice nobody published passed 33/33 with exit 0, reporting
+    // "1.494102 re-derived ... gives 1.494102" where the venue's own record
+    // said 1.155439 — a 29.3% error, scored green. It also read only the newest
+    // tick, so every tick below the lattice boundary could be misrendered
+    // without the suite ever requesting one.
     //
-    // So the broker re-derives the venue's own answer from the venue's own
-    // stated frame. Agreement means the two numbers travel with the integer;
-    // disagreement means they do not, whatever the contract says.
-    const dated = await get(`/markets/${encodeURIComponent(id)}/ticks/${String(last.sequence)}`);
-    const datedBody = dated.body as {
-      price?: unknown;
-      logQuantum?: unknown;
-      referencePrice?: unknown;
-      displayPrice?: unknown;
-    } | null;
-    if (dated.status === 200 && typeof datedBody?.displayPrice === 'string') {
-      const q = datedBody.logQuantum;
-      const ref = datedBody.referencePrice;
-      const price = datedBody.price;
-      const derivable =
-        typeof q === 'number' && typeof ref === 'number' && typeof price === 'number';
-      // The venue states its own precision by how it wrote the string.
-      const decimals = datedBody.displayPrice.split('.')[1]?.length ?? 0;
-      // The portable `exp`, not the platform one. This check compares a number
-      // it derives against a string the venue derived, so a transcendental that
-      // differs in its last bits between engines would make the broker's
-      // verdict depend on which runtime ran it — which is the whole reason the
-      // kernel carries its own (ADR-0004).
-      const own = derivable ? (ref * exp(q * price)).toFixed(decimals) : null;
-      check(
-        'a recorded price states the frame it counts in',
-        derivable && own === datedBody.displayPrice,
-        derivable
-          ? `${datedBody.displayPrice} re-derived from the response's own logQuantum ` +
-              `${String(q)} and referencePrice ${String(ref)} gives ${String(own)}`
-          : 'the response carries a displayPrice but not the logQuantum and referencePrice it ' +
-              'was derived from, so a broker holding the integer cannot render it',
-      );
-    } else if (dated.status === 200 && datedBody?.displayPrice === null) {
-      // Honest: the venue holds the integer and says it cannot date it. That is
-      // the correct answer for a record written before frames existed, and it
-      // is a pass — a null is a statement, a wrong number is not.
-      check(
-        'a recorded price states the frame it counts in',
-        true,
-        `the venue holds sequence ${String(last.sequence)} and says its frame is undeclared, ` +
-          `rather than rendering it on today's`,
-      );
+    // So it now does three things the first version did not: it anchors against
+    // the venue's OWN declared frames, it reads a HISTORICAL tick and not just
+    // the live edge, and it checks that the price is continuous across each
+    // declared boundary. The last is the one with teeth: a venue that renders
+    // history on today's lattice puts a step of tens of percent at the
+    // boundary, and no internally-consistent story hides it.
+    const latticesAnswer = await get(`/markets/${encodeURIComponent(id)}/lattices`);
+    const epochs = Array.isArray(latticesAnswer.body)
+      ? (latticesAnswer.body as {
+          fromSequence: number;
+          logQuantum: number;
+          referencePrice: number;
+        }[])
+      : [];
+    const renderedAt = async (
+      sequence: number,
+    ): Promise<{
+      price: number;
+      logQuantum: number | null;
+      referencePrice: number | null;
+      displayPrice: string | null;
+    } | null> => {
+      const answer = await get(`/markets/${encodeURIComponent(id)}/ticks/${String(sequence)}`);
+      if (answer.status !== 200) return null;
+      const body = answer.body as {
+        price?: unknown;
+        logQuantum?: unknown;
+        referencePrice?: unknown;
+        displayPrice?: unknown;
+      } | null;
+      if (typeof body?.price !== 'number') return null;
+      return {
+        price: body.price,
+        logQuantum: typeof body.logQuantum === 'number' ? body.logQuantum : null,
+        referencePrice: typeof body.referencePrice === 'number' ? body.referencePrice : null,
+        displayPrice: typeof body.displayPrice === 'string' ? body.displayPrice : null,
+      };
+    };
+
+    const frameFaults: string[] = [];
+    let frameDetail = `${String(epochs.length)} declared frame(s)`;
+    // 1. Self-consistency and agreement with the venue's own frame log, on the
+    //    newest tick and on one from BELOW the newest boundary.
+    const probes = [last.sequence];
+    const newestBoundary = epochs.length > 1 ? epochs[epochs.length - 1]!.fromSequence : null;
+    if (newestBoundary !== null) probes.push(newestBoundary - 1, newestBoundary);
+    for (const sequence of probes) {
+      const shown = await renderedAt(sequence);
+      if (shown === null) continue;
+      if (shown.displayPrice === null) continue;
+      if (shown.logQuantum === null || shown.referencePrice === null) {
+        frameFaults.push(
+          `sequence ${String(sequence)} carries a displayPrice but not the frame it was derived ` +
+            `from, so a broker holding the integer cannot render it`,
+        );
+        continue;
+      }
+      const decimals = shown.displayPrice.split('.')[1]?.length ?? 0;
+      const own = (shown.referencePrice * exp(shown.logQuantum * shown.price)).toFixed(decimals);
+      if (own !== shown.displayPrice) {
+        frameFaults.push(
+          `sequence ${String(sequence)} says ${shown.displayPrice} but its own stated frame gives ${own}`,
+        );
+      }
+      const covering = epochs.filter((e) => e.fromSequence <= sequence).at(-1);
+      if (covering !== undefined && covering.logQuantum !== shown.logQuantum) {
+        frameFaults.push(
+          `sequence ${String(sequence)} states logQuantum ${String(shown.logQuantum)} but ` +
+            `/lattices says that sequence counts in ${String(covering.logQuantum)}`,
+        );
+      }
     }
+    // 2. The price is continuous across each declared boundary. A frame that is
+    //    wrong on one side puts a step there that arithmetic cannot hide.
+    //
+    // **The tick below a boundary is `seam.lastSequence`, not `boundary - 1`.**
+    // A lattice change goes through a resume, so the sequence jumps and
+    // `boundary - 1` was never published: asking for it returns 404 and the
+    // whole leg skipped in silence. Against the live venue the check reported
+    // "2 declared frame(s)" and no gap at all — teeth that never closed. The
+    // seam list is what says where the record actually stops.
+    const seamsAnswer = await get(`/markets/${encodeURIComponent(id)}/seams`);
+    const seams = Array.isArray(seamsAnswer.body)
+      ? (seamsAnswer.body as { lastSequence: number; resumesAtSequence: number }[])
+      : [];
+    for (let i = 1; i < epochs.length; i += 1) {
+      const at = epochs[i]!.fromSequence;
+      const seam = seams.find((one) => one.resumesAtSequence === at);
+      const below = seam?.lastSequence ?? at - 1;
+      const before = await renderedAt(below);
+      const after = await renderedAt(at);
+      if (
+        before === null ||
+        after === null ||
+        before.displayPrice === null ||
+        after.displayPrice === null
+      ) {
+        continue;
+      }
+      const gap = Math.abs(Number(before.displayPrice) / Number(after.displayPrice) - 1) * 100;
+      frameDetail += `, boundary ${String(at)} gap ${gap.toFixed(3)}%`;
+      if (!(gap < 1)) {
+        frameFaults.push(
+          `the price steps ${gap.toFixed(2)}% across the declared boundary at ${String(at)} ` +
+            `(${before.displayPrice} to ${after.displayPrice}): one side is rendered on a frame ` +
+            `it was not published on`,
+        );
+      }
+    }
+    check(
+      'a recorded price states the frame it counts in',
+      frameFaults.length === 0,
+      frameFaults.length === 0 ? frameDetail : frameFaults.join('; '),
+    );
 
     // ---- and the market is not behind its own stream -----------------------
     //

@@ -4,7 +4,7 @@ import { epochMillis } from '@otc/core';
 
 /** The largest instant the kernel accepts, as an upper read bound. */
 const MAX_INSTANT = epochMillis(8_640_000_000_000_000);
-import { ASSET_CATALOGUE, LATTICE_BEFORE_PH37 } from '@otc/engine';
+import { ASSET_CATALOGUE, FRAME_BEFORE_PH37 } from '@otc/engine';
 import {
   dateCandlesAgainstRecord,
   epochsOf,
@@ -41,9 +41,17 @@ import {
  * nothing is written for a refused one.
  */
 
-/** The frame table a release published on. Only v2.4.0's predecessor exists. */
-const RELEASES: Readonly<Record<string, Readonly<Record<string, number>>>> = {
-  'v2.4.0': LATTICE_BEFORE_PH37,
+/**
+ * The frames a release published on. Only v2.4.0's predecessor exists.
+ *
+ * The **whole** frame, not just the quantum. Building the old frame as
+ * `{...todaysFrame, logQuantum}` carried today's `displayPrecision` back over
+ * history and lost a digit on all thirty assets — two on `tsla-otc` and
+ * `meta-otc`, which published four decimals and were answered with two, so
+ * 307.9080 came back as 307.91.
+ */
+const RELEASES: Readonly<Record<string, Readonly<Record<string, PriceFrame>>>> = {
+  'v2.4.0': FRAME_BEFORE_PH37,
 };
 
 export interface LatticeToolOptions {
@@ -189,10 +197,7 @@ export async function runLatticeTool(
           const table =
             options.fromRelease === undefined ? undefined : RELEASES[options.fromRelease];
           const older = table?.[id];
-          const candidates = [
-            current,
-            ...(older === undefined ? [] : [{ ...current, logQuantum: older }]),
-          ];
+          const candidates = [current, ...(older === undefined ? [] : [older])];
           // The whole stored series, bounded by the largest instant the kernel
           // accepts rather than by a clock: this file is scanned for ambient
           // time, and an operator tool has no business reading one.
@@ -271,9 +276,9 @@ export async function runLatticeTool(
         });
         continue;
       }
-      const quantum = table[id];
-      const before: PriceFrame | null =
-        quantum === undefined ? null : { ...after, logQuantum: quantum };
+      // The release's own frame, field for field — never today's with one
+      // field overridden.
+      const before: PriceFrame | null = table[id] ?? null;
       const verdict = await proposeDeclaration(record, id, before, after);
       if (verdict.ok && options.command === 'declare') {
         const existing = await record.frames(id);

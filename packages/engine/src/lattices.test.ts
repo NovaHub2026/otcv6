@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ASSET_CATALOGUE } from './catalogue.js';
-import { LATTICE_BEFORE_PH37 } from './lattices.js';
+import { FRAME_BEFORE_PH37, LATTICE_BEFORE_PH37 } from './lattices.js';
 
 /**
  * The lattice this release says it moved from is the one the previous release
@@ -62,6 +62,27 @@ function materialise(tag: string): string {
   return to;
 }
 
+function framesPublishedBy(
+  tree: string,
+): Record<string, { logQuantum: number; referencePrice: number; displayPrecision: number }> {
+  execFileSync(path.join(tree, 'node_modules/.bin/tsc'), ['-b', 'packages/engine'], { cwd: tree });
+  const probe = path.join(tree, 'frame-probe.mjs');
+  writeFileSync(
+    probe,
+    `import { ASSET_CATALOGUE } from '@otc/engine';\n` +
+      `const out = {};\n` +
+      `for (const a of ASSET_CATALOGUE) out[a.definition.id] = {\n` +
+      `  logQuantum: a.instrument.logQuantum,\n` +
+      `  referencePrice: a.instrument.referencePrice,\n` +
+      `  displayPrecision: a.instrument.displayPrecision };\n` +
+      `console.log(JSON.stringify(out));\n`,
+  );
+  return JSON.parse(execFileSync('node', [probe], { cwd: tree, encoding: 'utf8' })) as Record<
+    string,
+    { logQuantum: number; referencePrice: number; displayPrecision: number }
+  >;
+}
+
 function lattticesPublishedBy(tree: string): Record<string, number> {
   execFileSync(path.join(tree, 'node_modules/.bin/tsc'), ['-b', 'packages/engine'], { cwd: tree });
   const probe = path.join(tree, 'lattice-probe.mjs');
@@ -85,12 +106,26 @@ describe('the lattice the release carries is the one the release before it publi
       // against and nothing to be wrong about, because the table ships frozen.
       return;
     }
-    const published = lattticesPublishedBy(materialise(PREVIOUS_TAG));
+    const tree = materialise(PREVIOUS_TAG);
+    const published = lattticesPublishedBy(tree);
     const carried: Record<string, number> = {};
     for (const asset of ASSET_CATALOGUE)
       carried[asset.definition.id] = LATTICE_BEFORE_PH37[asset.definition.id]!;
     // Exact. A price is an integer count of quanta, and a quantum that is
     // nearly right converts it to a price nobody published.
     expect(carried).toEqual(published);
+
+    // **And the whole frame, not only the quantum (PH-38.2).** A price is
+    // `referencePrice * exp(logQuantum * price)` rendered to `displayPrecision`
+    // decimals, so declaring the past with today's precision loses digits that
+    // were published: eurusd published seven and was answered with six, tsla
+    // and meta published four and were answered with two. Checking only the
+    // quantum is what let that through — the table was right about the one
+    // field it was checked on.
+    const publishedFrames = framesPublishedBy(tree);
+    const carriedFrames: Record<string, unknown> = {};
+    for (const asset of ASSET_CATALOGUE)
+      carriedFrames[asset.definition.id] = FRAME_BEFORE_PH37[asset.definition.id]!;
+    expect(carriedFrames).toEqual(publishedFrames);
   }, 120_000);
 });
