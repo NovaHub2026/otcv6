@@ -97,6 +97,23 @@ By the Human Owner, with the measured table in front of them (2026-09-23):
 - **Publish a price finer than the lattice.** `displayPrecision` is recomputed
   from the quantum, as `rescaleCalibration` already says: a display finer than
   the lattice invites a trader to read a move that did not happen.
+
+  **Corrected 2026-09-25 (Cycle Audit 13, a1-2): this bullet is unsatisfiable as
+  written, and the catalogue does not satisfy it.** A decimal display and a
+  quantum that is not a power of ten leave no third option — the display is
+  either finer than the lattice or coarser — and coarser breaks two things that
+  matter more: two adjacent lattice prices would print as one string, so a
+  settled move could show no change, and `formatDisplayPrice` would stop
+  round-tripping through `fromDisplayPrice`. `Math.ceil` therefore picks finer,
+  for every one of the thirty assets, and predates this phase. What the phase
+  actually delivered is a coarser lattice, not a last digit that moves by one:
+  measured, EUR/USD's quantum is 4.69 units of its last displayed digit, so that
+  digit moves by 5, 9, 4 or 14 and never by 1. The way to satisfy the intent is
+  to snap each chosen quantum to the decimal grid — the coarsest lattice whose
+  quantum is a whole number of last-digit units while the 30-second refund stays
+  under the ceiling — which is a phase of its own and is named in Cycle Audit
+  13's record.
+
 - **Hide the cost.** Refunds rise from 0.1–0.75% to 3–5% per asset at 30
   seconds. The release notes say so in those words, because it is the Human
   Owner's margin.

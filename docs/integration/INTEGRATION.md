@@ -583,8 +583,16 @@ Cada entrada de `GET /catalogue` lleva:
 
 **Lo que es estable y lo que no.**
 
-- `id`, `displayPrecision`, `logQuantum` y `referencePrice` **no cambian nunca**
-  para un activo. El `id` es la etiqueta de derivación de claves y el nombre del
+- `id` **no cambia nunca** para un activo.
+- `displayPrecision`, `logQuantum` y `referencePrice` **sí cambian**, y esta guía
+  decía lo contrario hasta el 2026-09-25 (Auditoría de Ciclo 13, a3-04). Cambian
+  en un release que recalibra la retícula: `v2.4.0` movió las treinta, y el vento
+  en vivo declara dos épocas por activo — `eurusd-otc` pasó de un `logQuantum`
+  12,9 veces más fino y de 7 decimales a 6. Un bróker que cachee un marco por
+  activo reproduce exactamente el defecto que midió la Auditoría 12: la mitad del
+  pasado renderizado con un error medio del 31,8%. Cada precio publicado lleva su
+  propio marco, y `GET /markets/:id/lattices` da la historia completa para unir
+  enteros archivados; es esa la fuente, no el catálogo. El `id` es la etiqueta de derivación de claves y el nombre del
   fichero de estado: el motor se niega a reanudar un checkpoint que otra
   personalidad escribió bajo el mismo id, y los ids de los cinco activos
   anteriores (`eurusd`, `gbpjpy`, `btcusd`, `spx`, `xauusd`) están retirados y

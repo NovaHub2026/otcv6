@@ -12,12 +12,12 @@ Last synchronized: 2026-09-24
 
 ## Development cycle
 
-| Field                            | Value                                                                                                                                                      |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Active development cycle         | Cycle 13 — **3 of 3** phases approved (PH-37, PH-38, PH-39). **The Cycle Audit is what runs next**; Cycle 11 stays open                                    |
-| Approved phases in current cycle | **3 of 3** — PH-37, PH-38, PH-39                                                                                                                           |
-| Cycle Audit state                | **012 closed** — 15 findings, 13 fixed with a guard each, 2 carried as phases; gated green on `audit/ca12-fixes` at `5edcc85` and merged                   |
-| Last Cycle Audit                 | [Cycle Audit 012](docs/audits/CYCLE-AUDIT-012.md) — 2026-09-24, eight independent auditors, one worktree each, every finding put to an independent refuter |
+| Field                            | Value                                                                                                                                                                          |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Active development cycle         | Cycle 13 — **3 of 3** phases approved (PH-37, PH-38, PH-39). **The Cycle Audit is what runs next**; Cycle 11 stays open                                                        |
+| Approved phases in current cycle | **3 of 3** — PH-37, PH-38, PH-39                                                                                                                                               |
+| Cycle Audit state                | **013 closed** — 41 findings (2 critical, 9 material); the criticals and most materials fixed with a guard each, the rest carried by name in §6                                |
+| Last Cycle Audit                 | [Cycle Audit 013](docs/audits/CYCLE-AUDIT-013.md) — 2026-09-25, eight independent auditors in a worktree each, three refuters; [012](docs/audits/CYCLE-AUDIT-012.md) before it |
 
 ## Phase and subphase
 
@@ -259,6 +259,24 @@ ceiling.
 
 ## EXACT NEXT LEGAL ACTION
 
+**Open Cycle 14 with the phase Cycle Audit 13 put first: what a chart consumes
+belongs in the contract.** The audit is recorded
+([CYCLE-AUDIT-013](docs/audits/CYCLE-AUDIT-013.md)): 41 findings, two critical —
+both in the operator's own `state:verify`, which upgraded the record it inspected
+and carried that upgrade into every scheduled backup, on disk, for fifteen hours —
+and both fixed with a guard watched failing. What is left is §6, and the largest
+material is the candle item: it has no shape in the contract, no version and no
+exported type, a refuter fed the route `[{nonsense:true,logQuantum:'banana'}, 7,
+null]` and the shape check passed it, and the conformance suite never requests
+`/markets/:id/history` at all. With it go `displayPrecision` on the tick response
+(a2-04) and a release-checklist step that declares a new lattice **inside a
+tick-budgeted window** (a8-02) — hours on `dogeusdt-otc`, days on `eurgbp-otc`,
+and PH-38.2's tool ran too late, which is why 63.1% of hourly bars cannot be
+dated. Then `settle()` reading a hole it can now detect (a6-06 c), then Cycle Audit
+12's finding 7 — the calibration, worth 2.0% of the margin rather than the margin
+(a5-03).
+
+The superseded instruction, kept for the reasoning:
 **Run Cycle Audit 13.** The cycle is full — three phases approved and merged — so
 GOVERNANCE §28 puts the audit in front of any new phase, and ADR-0008 says it
 runs automatically and waits for nobody. The three are the staircase, the frame a

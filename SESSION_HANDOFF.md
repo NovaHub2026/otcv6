@@ -14,7 +14,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Active cycle       | Cycle 13, **3 of 3** — PH-37, PH-38 and PH-39 approved. **Cycle Audit 13 is what runs next**; Cycle 11 open |
 | Active phase       | none                                                                                                        |
 | Active subphase    | none                                                                                                        |
-| Cycle Audit        | **012 closed** — 15 findings, 13 fixed with a guard each, 2 carried as phases                               |
+| Cycle Audit        | **013 closed** — 41 findings, 2 critical, 9 material; criticals fixed, rest carried                         |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                                                          |
 
 ---
@@ -31,8 +31,17 @@ second seam, no eviction, and stalled by name until it publishes). New where an
 operator reads: `otc_market_rearms_total`, `otc_seconds_since_last_pass`, and the
 re-arming count inside `/health`'s stall reason.
 
-**The next legal action is Cycle Audit 13** — Cycle 13 is full. `CURRENT_STATE.md`
-says what it inherits.
+**Cycle Audit 13 ran and is open**:
+[`docs/audits/CYCLE-AUDIT-013.md`](docs/audits/CYCLE-AUDIT-013.md). Eight
+auditors, one worktree each under `~/.otc-audit13/`, three refuters; **41
+findings, two critical**. Both criticals were in `verifyStateDirectory` — the
+operator's own acceptance check upgraded the record it inspected, and the
+scheduled backup carried that upgrade into the copy an operator would restore.
+The first fix wave is in with a guard watched failing for each; §6 of the record
+names what is carried, and the biggest carried item is that **the candle store
+needs its own frame provenance**, because a bar can only be dated while the tick
+record still reaches it. The auditors' raw findings are under
+`~/.otc-audit13/findings/`; they are disposable, the record is the record.
 
 **Two gate facts worth carrying.** The first PH-39 gate went red on three
 statistical tests and the cause was the venue this session had just repaired,

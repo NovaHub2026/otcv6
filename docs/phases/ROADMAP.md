@@ -4,7 +4,7 @@ Type: SUPPORTING DOCUMENTATION (living)
 Status: Dynamic — phases may be split, merged, reordered or replaced as
 implementation reveals information (`GOVERNANCE.md` §13). Approved phases are
 never rewritten as though they had not happened.
-Last revised: 2026-09-07 (Cycle 11 open — PH-31 active; Cycle 10 complete and audited, the release that stands is `v2.0.0`)
+Last revised: 2026-09-25 (Cycle 13 full — PH-37, PH-38 and PH-39 approved, Cycle Audit 13 next; Cycle 11 stays open; the release a broker runs is `v2.4.0`). The header said `PH-31 active` for six phases after PH-31 was approved, and `state:check` stayed green through it: the guard reads the stated next action in `CURRENT_STATE.md`, not this line (Cycle Audit 13, a7-03).
 
 ---
 
@@ -998,11 +998,12 @@ that bind the Human Owner outside the repository are escalated
 
 ## Cycle 13 — the texture of a price
 
-| Phase | Title                                            | State    |
-| ----- | ------------------------------------------------ | -------- |
-| PH-37 | The staircase: a price you can read tick by tick | APPROVED |
-| PH-38 | The frame a stored price counts in               | APPROVED |
-| PH-39 | The reopening that holds                         | APPROVED |
+| Phase | Title                                                                            | State                                                                                                                                                                                                                |
+| ----- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PH-37 | The staircase: a price you can read tick by tick                                 | APPROVED                                                                                                                                                                                                             |
+| PH-38 | The frame a stored price counts in                                               | APPROVED                                                                                                                                                                                                             |
+| PH-39 | The reopening that holds                                                         | APPROVED                                                                                                                                                                                                             |
+| —     | **Cycle Audit 13** — eight worktrees, eight auditors, three independent refuters | **APPROVED** — [record](../audits/CYCLE-AUDIT-013.md): 41 findings (2 critical, 9 material after refutation); the criticals and most materials fixed with a guard watched failing for each, the rest carried by name |
 
 | Subphase | Title                                                                    | State    |
 | -------- | ------------------------------------------------------------------------ | -------- |

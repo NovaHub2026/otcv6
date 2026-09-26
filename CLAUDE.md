@@ -144,8 +144,11 @@ its own 90-minute ceiling** on the PH-24 merge and left that commit with no
 statistical verdict (Cycle Audit 8, finding 18; the ceiling is 180 minutes now).
 
 **The unit suite is the cheap half, and it is cheaper than this file said.**
-`npm run test:unit` is **163 files, 3,348 tests, 33 s** (the Cycle Audit 10
-gate, 2026-09-06); the plain leg has been 33–37 s across four consecutive gates.
+`npm run test:unit` is **175 files, 3,597 tests, 156 s** on a quiet host (the
+PH-39 gate, 2026-09-25). It was 163 files / 3,348 tests / 33 s at the Cycle Audit
+10 gate, and this paragraph still said 33–37 s two cycles later — 3.5x low
+(Cycle Audit 13, a7-05). Both the suite and the box have moved; treat any number
+here as a magnitude with a date on it.
 The `~110 s` this paragraph gave it for two cycles was `npm run test:cov:unit`
 — the same suite under coverage instrumentation, 113 s at that gate — measured
 correctly and labelled as the wrong leg (Cycle Audit 10, a2-12). The distinction
