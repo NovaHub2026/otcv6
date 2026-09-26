@@ -1,5 +1,5 @@
 import { exp } from '@otc/core';
-import { frameAtOrBefore, sameFrame, type LatticeEpoch, type PriceFrame } from './priceFrame.js';
+import { frameOfSpan, sameFrame, type LatticeEpoch, type PriceFrame } from './priceFrame.js';
 import { type TickRecord } from './tickRecord.js';
 
 /**
@@ -329,11 +329,33 @@ export async function dateCandlesAgainstRecord(
   let dated = 0;
   let undatable = 0;
   let inForce: PriceFrame | null = null;
+  // Read once. It was read per bar, which is a point query per row of a window
+  // that can hold twenty thousand of them.
+  const recordEpochs = await record.frames(assetId);
   for (const bar of bars) {
     const [tick] = await record.since(assetId, bar.lastSequence, 1);
     const recorded = tick !== undefined && tick.sequence === bar.lastSequence ? tick : null;
+    // **`frameOfSpan`, not `frameAtOrBefore` (Cycle Audit 13, a8-01).** This
+    // asked for the frame at the bar's *last* sequence, and a bar whose minutes
+    // straddle a frame change has its open on one lattice and its close on the
+    // other. Dating it by the close declared the whole bar — open, high and low
+    // included — on the close's frame, and the epoch was then anchored at the
+    // bar's *first* sequence, below the true boundary, so the reader's own
+    // crossing test could never see a crossing either: the span sat inside one
+    // declared epoch.
+    //
+    // Measured on the live venue before this fix: **17 of 30 assets** served a
+    // 1m bar with a wick no tick ever printed, from 2.3% to **73.0%**
+    // (`aix-idx-otc` 1060.30 rendered as 1834.71). It is the shape the PH-38
+    // refuters caught in the reader, recurring in the writer.
+    //
+    // `frameOfSpan` answers null exactly when a boundary falls inside the span,
+    // which makes such a bar undatable — four integers in two frames are not
+    // prices in either, and that is what PH-38.4 already says to a client.
     const recordFrame =
-      recorded === null ? null : frameAtOrBefore(await record.frames(assetId), bar.lastSequence);
+      recorded === null
+        ? null
+        : frameOfSpan(recordEpochs, bar.firstSequence, bar.lastSequence, null);
     let frame: PriceFrame | null = null;
     if (recorded !== null && recordFrame !== null) {
       if (bar.close === recorded.price) {

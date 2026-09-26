@@ -187,7 +187,25 @@ function integrityFailure(file: string): string | null {
  * skips it, so a restore is not refused for holding the file that says what it
  * holds (Cycle Audit 10, a7-01).
  */
-export async function verifyStateDirectory(directory: string): Promise<StateDirectoryReport> {
+/**
+ * How hard to look (Cycle Audit 13, a6-06).
+ *
+ * `scanForHoles` walks the record's whole tick table once per asset, ordered, to
+ * find a sequence gap no seam row covers — a tick the record lost. It is off by
+ * default because **this function runs at every boot** (`apps/api/src/main.ts`),
+ * and a boot that spends twenty seconds scanning 7.5 million rows is a boot that
+ * is already past its own catch-up bound before it serves anything. The operator
+ * commands turn it on, because that is the moment somebody is asking whether the
+ * directory is sound rather than whether it can be resumed.
+ */
+export interface VerifyOptions {
+  readonly scanForHoles?: boolean;
+}
+
+export async function verifyStateDirectory(
+  directory: string,
+  options: VerifyOptions = {},
+): Promise<StateDirectoryReport> {
   const problems: StateProblem[] = [];
   const warnings: StateProblem[] = [];
   const heads: Record<string, AssetHeads> = {};
@@ -237,7 +255,17 @@ export async function verifyStateDirectory(directory: string): Promise<StateDire
       problems.push({ file: RECORD_DB, assetId: null, detail: damage });
     } else {
       try {
-        record = new SqliteTickRecord(recordFile);
+        // Read-only, for the same reason the history open below says — and this
+        // line is the one that did not have it (Cycle Audit 13, a6-01). The
+        // constructor of a read-write record creates the `lattice` table, runs
+        // the v2→v3 seam backfill and stamps `user_version = 3`, so
+        // `npm run state:verify` against a v2.4.0 deployment moved its record to
+        // a version that build refuses, and the service then would not boot on
+        // its own record. It exited 0 and printed "every file agrees" while
+        // doing it, and `state:backup` carried the same upgrade into the copy an
+        // operator would restore. An inspection that bricks the next boot is not
+        // an inspection.
+        record = new SqliteTickRecord(recordFile, { readOnly: true });
         recordState = 'open';
       } catch (error) {
         problems.push({ file: RECORD_DB, assetId: null, detail: (error as Error).message });
@@ -323,6 +351,26 @@ export async function verifyStateDirectory(directory: string): Promise<StateDire
               : `holds no tick for an asset whose checkpoint has published through ${published}; nothing is primed at boot`,
         });
       }
+      // **An upgraded record's past is undeclared, and nothing said so
+      // (Cycle Audit 13, a6-03).** The v2→v3 migration writes no frame rows, by
+      // design: it cannot know what the integers it inherited were counted in.
+      // So on the one upgrade that needs them, every retained pre-upgrade tick
+      // has no frame — the read routes answer `null` rather than a guess, which
+      // is right, but a broker's chart goes blank and nothing anywhere names the
+      // repair. It is `state:lattice declare`, and one line is enough.
+      if (recordHead !== null && openRecord !== null) {
+        const declared = await openRecord.frames(assetId).catch(() => null);
+        if (declared !== null && declared.length === 0) {
+          warnings.push({
+            file: RECORD_DB,
+            assetId,
+            detail:
+              `holds ticks through ${recordHead} and declares no frame for any of them, so every ` +
+              `read route answers their price as null: run \`state:lattice declare\` to date the ` +
+              `past on evidence, or leave it undeclared deliberately`,
+          });
+        }
+      }
       if (published !== null && recordHead !== null && recordHead < published) {
         problems.push({
           file: RECORD_DB,
@@ -396,6 +444,56 @@ export async function verifyStateDirectory(directory: string): Promise<StateDire
   } finally {
     record?.close();
     history?.close();
+  }
+
+  // **A hole in the published record (Cycle Audit 13, a6-06).** Until now this
+  // function checked three heads and SQLite's own page integrity, and a record
+  // with a tick deleted out of the middle passed as "every file agrees". That
+  // matters in one direction more than the other: a **native v3** record derives
+  // no seam from an existing gap — only the v2→v3 migration ever did, and only
+  // while migrating — so `settle()` finds no seam to refuse and settles straight
+  // across a stretch nobody was served. A refuter reproduced exactly that:
+  // `seams` empty, `seamAt` null, inside a hole punched into a v3 record.
+  //
+  // One ordered pass over the primary key, the same `LEAD` window the migration
+  // uses, and only when an operator asked (see {@link VerifyOptions}).
+  if (options.scanForHoles === true && recordState === 'open') {
+    const db = new DatabaseSync(recordFile, { readOnly: true });
+    try {
+      const holes = db
+        .prepare(
+          `SELECT asset_id, sequence AS last_sequence, next_sequence FROM (
+             SELECT asset_id, sequence,
+                    LEAD(sequence) OVER (PARTITION BY asset_id ORDER BY sequence) AS next_sequence
+             FROM tick
+           ) AS walked
+           WHERE next_sequence IS NOT NULL AND next_sequence <> sequence + 1
+             AND NOT EXISTS (
+               SELECT 1 FROM seam
+               WHERE seam.asset_id = walked.asset_id
+                 AND seam.resumes_at_sequence = walked.next_sequence
+             )`,
+        )
+        .all() as { asset_id: string; last_sequence: number; next_sequence: number }[];
+      for (const hole of holes) {
+        problems.push({
+          file: RECORD_DB,
+          assetId: hole.asset_id,
+          detail:
+            `is missing ticks ${hole.last_sequence + 1}..${hole.next_sequence - 1} and no seam ` +
+            `declares that gap: a contract whose window touches it settles across ticks nobody ` +
+            `was served. Restore from a backup taken before the loss`,
+        });
+      }
+    } catch (error) {
+      problems.push({
+        file: RECORD_DB,
+        assetId: null,
+        detail: `could not be scanned for holes: ${(error as Error).message}`,
+      });
+    } finally {
+      db.close();
+    }
   }
 
   const registryDir = path.join(directory, REGISTRY_DIR);

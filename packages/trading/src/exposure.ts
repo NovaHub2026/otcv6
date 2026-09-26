@@ -12,8 +12,11 @@ import type { Contract } from './contract.js';
  *
  * So a thousand CALL contracts on `eurusd` all opening at 12:00:00 and expiring
  * at 12:00:30 carry the variance of **one** bet at a thousand times the stake.
- * The operator's edge over them is 0.2513pp of a thousand stakes, with none of
- * the `√1000` dilution that independence would give.
+ * The operator's edge over them is 0.2513pp **per stake**, so on a thousand
+ * stakes it is 5.0 stakes-worth of expected profit, with none of the `√1000`
+ * dilution that independence would give. This sentence read "0.2513pp of a
+ * thousand stakes" — 1.99x too small, and prose rather than code, so nothing
+ * computed from it (Cycle Audit 13, a5-04).
  *
  * `economics.ts` reasons per trade and cannot see this. It is the difference
  * between a venue that is safe and one that is one crowded expiry away from

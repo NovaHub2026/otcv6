@@ -690,3 +690,116 @@ describe('a state directory is backed up consistently and verified on the way ou
     expect(report.problems.map((p) => p.file)).toEqual([RECORD_DB]);
   });
 });
+
+/**
+ * An inspection leaves the schema it found (Cycle Audit 13, a6-01 and a6-02).
+ *
+ * `verifyStateDirectory` opened the tick record read-write while opening the
+ * candle history beside it read-only — the fix had been applied to one of the two
+ * stores. So `npm run state:verify`, the command an operator is told to run
+ * against a live deployment, created the `lattice` table, ran the v2→v3 seam
+ * backfill over every retained tick and stamped `user_version = 3`, then printed
+ * "every file agrees" and exited 0. The service holding that file refuses it on
+ * its next boot: a downgrade is refused by design, and this looked like one.
+ *
+ * `backupStateDirectory` verifies the copy on the way out, so it carried the same
+ * upgrade into the artefact an operator would restore. That is not hypothetical:
+ * the backup taken of the live venue at 01:51Z on 2026-09-25 is on disk at
+ * schema 3 with **zero** declared epochs while its `history.db` is still at 1 —
+ * the signature of a migration the backup performed on itself, at a moment the
+ * serving build understood version 2 and would have refused it.
+ *
+ * The auditor's plant for this — removing the flag from the history open, the
+ * mirror image of the live defect — left all 65 tests in this file green.
+ */
+describe('a directory is inspected at the schema it was found at (a6-01, a6-02)', () => {
+  /** A record shaped as the release before PH-38.1 wrote it: no `lattice`. */
+  function recordAtVersion2(directory: string): void {
+    const db = new DatabaseSync(path.join(directory, RECORD_DB));
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS tick (
+        asset_id TEXT NOT NULL, sequence INTEGER NOT NULL, instant INTEGER NOT NULL,
+        price INTEGER NOT NULL, PRIMARY KEY (asset_id, sequence)
+      ) WITHOUT ROWID
+    `);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS seam (
+        asset_id TEXT NOT NULL, last_sequence INTEGER NOT NULL, last_instant INTEGER NOT NULL,
+        resumes_at_sequence INTEGER NOT NULL, resumes_at_instant INTEGER NOT NULL,
+        PRIMARY KEY (asset_id, resumes_at_sequence)
+      ) WITHOUT ROWID
+    `);
+    const insert = db.prepare('INSERT INTO tick VALUES (?, ?, ?, ?)');
+    for (let i = 1; i <= 20; i += 1) insert.run('eurusd', i, GENESIS + i * 500, i);
+    db.exec('PRAGMA user_version = 2');
+    db.close();
+  }
+
+  function versionOf(file: string): { version: number; tables: string[] } {
+    const db = new DatabaseSync(file);
+    const version = (db.prepare('PRAGMA user_version').get() as { user_version: number })
+      .user_version;
+    const tables = (
+      db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {
+        name: string;
+      }[]
+    ).map((row) => row.name);
+    db.close();
+    return { version, tables };
+  }
+
+  it('does not upgrade the record it was asked to inspect', async () => {
+    const directory = scratch();
+    recordAtVersion2(directory);
+    const before = versionOf(path.join(directory, RECORD_DB));
+    expect(before.version).toBe(2);
+    expect(before.tables).not.toContain('lattice');
+
+    const report = await verifyStateDirectory(directory);
+    expect(report, 'the inspection did not run').toBeDefined();
+
+    const after = versionOf(path.join(directory, RECORD_DB));
+    expect(after.version, 'an inspection that bricks the next boot is not an inspection').toBe(2);
+    expect(after.tables, 'the inspection created a table').not.toContain('lattice');
+  });
+
+  it('finds a hole in the record that no seam declares, when asked to look', async () => {
+    // a6-06: a record with a tick deleted out of the middle passed as "every file
+    // agrees". On a native v3 record nothing ever derives a seam from an existing
+    // gap, so settlement finds no seam to refuse and settles across ticks nobody
+    // was served.
+    const directory = scratch();
+    recordAtVersion2(directory);
+    const db = new DatabaseSync(path.join(directory, RECORD_DB));
+    db.exec('DELETE FROM tick WHERE sequence = 10');
+    db.exec('PRAGMA user_version = 3');
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS lattice (
+        asset_id TEXT NOT NULL, from_sequence INTEGER NOT NULL, from_instant INTEGER NOT NULL,
+        log_quantum REAL NOT NULL, reference_price REAL NOT NULL, display_precision INTEGER NOT NULL,
+        PRIMARY KEY (asset_id, from_sequence)
+      ) WITHOUT ROWID
+    `);
+    db.close();
+
+    const shallow = await verifyStateDirectory(directory);
+    expect(shallow.problems, 'the boot path should stay cheap and say nothing here').toEqual([]);
+
+    const deep = await verifyStateDirectory(directory, { scanForHoles: true });
+    expect(deep.problems.map((p) => p.detail).join(' ')).toMatch(/missing ticks 10\.\.10/);
+    expect(deep.problems[0]!.assetId).toBe('eurusd');
+  });
+
+  it('does not upgrade the copy an operator would restore', async () => {
+    const directory = scratch();
+    recordAtVersion2(directory);
+    const target = path.join(scratch(), 'backup');
+    await backupStateDirectory(directory, target, GENESIS);
+
+    const source = versionOf(path.join(directory, RECORD_DB));
+    const copy = versionOf(path.join(target, RECORD_DB));
+    expect(source.version, 'the source was upgraded by its own backup').toBe(2);
+    expect(copy.version, 'the backup is at a schema the release that took it refuses').toBe(2);
+    expect(copy.tables).not.toContain('lattice');
+  });
+});

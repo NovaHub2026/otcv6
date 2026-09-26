@@ -20,7 +20,7 @@ import {
   displayPrice,
   LiveBarBuilder,
   panelTimeframe,
-  toBars,
+  toSeries,
   type HistoryCandle,
   type PanelTimeframeId,
 } from '@otc/chart';
@@ -157,6 +157,8 @@ export function PreviewChart({
   const markLine = useRef<IPriceLine | null>(null);
   const [status, setStatus] = useState<string>(es.preview.status.loading);
   const [bars, setBars] = useState<number>(0);
+  /** Bars the venue could not date, so the pane can say so instead of looking empty. */
+  const [undated, setUndated] = useState<number>(0);
   const [last, setLast] = useState<{ price: number; at: number } | null>(null);
   /**
    * PH-24.22: the market's clock, as the last tick told it and the time since.
@@ -395,9 +397,14 @@ export function PreviewChart({
       if (cancelled) return;
 
       setForming(null);
-      const drawn = toBars(history.candles, asset);
+      // **Say what was not drawn** (Cycle Audit 13, a3-01). A bar the venue could
+      // not date is skipped, and an empty pane with no message is indistinguishable
+      // from a venue that keeps no history — which is what 24 of 30 assets looked
+      // like on the 1d chart while the audit ran.
+      const { bars: drawn, undatable } = toSeries(history.candles, asset);
       target.setData(drawn.map((bar) => ({ ...bar, time: bar.time as UTCTimestamp })));
       setBars(drawn.length);
+      setUndated(undatable);
       chart.current?.timeScale().fitContent();
 
       // Resume the stream exactly where the history stops, so the bucket now
@@ -718,6 +725,11 @@ export function PreviewChart({
           </span>
         )}
         <span data-testid="bar-count">{es.preview.bars(bars.toLocaleString())}</span>
+        {undated > 0 && (
+          <span data-testid="undated-count" style={{ color: '#b4801f' }}>
+            {undated.toLocaleString()} sin marco declarado — no se dibujan
+          </span>
+        )}
         {/*
           Two renderings of the forming bar. The operator reads the time of day;
           the browser suite reads the bucket's epoch second through `forming-bucket`,

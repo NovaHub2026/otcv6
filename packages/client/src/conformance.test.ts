@@ -105,6 +105,35 @@ export interface Faults {
    * 1.494102 where the record said 1.155439, a 29.3% error.
    */
   latticeUnanchored?: boolean;
+  /**
+   * The frame log **agrees with the lie** (Cycle Audit 13, a3-02).
+   *
+   * Every response internally perfect, rendered on a lattice the venue never
+   * published, and `/lattices` declaring that same lattice — so nothing in the
+   * venue contradicts anything, and the two legs that compare the venue against
+   * its own log cannot see it. A refuter scored this 33 of 33, exit 0.
+   *
+   * It is not caught, and it cannot be from inside: with one declared frame
+   * there is no boundary to test continuity across. What the suite owes a broker
+   * is to say so, which is what the `NOT PROVEN` detail is for.
+   */
+  latticeLogAgrees?: boolean;
+  /**
+   * A frame log that starts above the record's oldest tick, while every tick is
+   * rendered anyway (a3-02). The venue answers a price for a sequence it does
+   * not claim to have a frame for — a guess, and the one lie of this family that
+   * a single-epoch venue *can* be caught in.
+   */
+  latticeCoversOnlyTheTail?: boolean;
+  /**
+   * A frame that begins where no seam resumes (Cycle Audit 13, a5-01).
+   *
+   * `settle()` cannot express a frame; its only defence against comparing two
+   * integers counted in different quanta is the seam list. Four separate
+   * mechanisms keep every frame boundary on a seam and none of them was tested
+   * as a protection, so this is the fault that names it.
+   */
+  latticeOffASeam?: boolean;
   noProof?: boolean;
   /**
    * Answer `/markets/:id` with the tick after the newest published one — the
@@ -154,19 +183,19 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
     sequence: t.sequence,
     instant: t.instant,
     price: t.price,
-    logQuantum: faults.latticeMismatch
-      ? FRAME.logQuantum * 12.916
-      : faults.latticeUnanchored
+    logQuantum:
+      faults.latticeMismatch || faults.latticeUnanchored || faults.latticeLogAgrees
         ? FRAME.logQuantum * 12.916
         : FRAME.logQuantum,
     referencePrice: FRAME.referencePrice,
     // Coherent with whatever frame is stated, so only an anchor outside the
     // response can tell the unanchored venue from an honest one.
-    displayPrice: faults.latticeUnanchored
-      ? (FRAME.referencePrice * exp(FRAME.logQuantum * 12.916 * t.price)).toFixed(
-          FRAME.displayPrecision,
-        )
-      : '1.1',
+    displayPrice:
+      faults.latticeUnanchored || faults.latticeLogAgrees
+        ? (FRAME.referencePrice * exp(FRAME.logQuantum * 12.916 * t.price)).toFixed(
+            FRAME.displayPrecision,
+          )
+        : '1.1',
   });
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://x');
@@ -224,9 +253,28 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
     // A venue that has never seamed: the record holds no discontinuity.
     if (p === '/markets/eurusd/seams') return json(response, 200, faults.seamed ? [SEAM] : []);
     if (p === '/markets/eurusd/lattices') {
-      return json(response, 200, [
-        { assetId: 'eurusd', fromSequence: 1, fromInstant: TICKS[0]!.instant, ...FRAME },
-      ]);
+      const declared = faults.latticeLogAgrees
+        ? { ...FRAME, logQuantum: FRAME.logQuantum * 12.916 }
+        : FRAME;
+      const from = faults.latticeCoversOnlyTheTail ? TICKS[30]! : TICKS[0]!;
+      const log = [
+        {
+          assetId: 'eurusd',
+          fromSequence: from.sequence,
+          fromInstant: from.instant,
+          ...declared,
+        },
+      ];
+      // A second frame beginning one sequence off the seam this venue lists.
+      if (faults.latticeOffASeam) {
+        log.push({
+          assetId: 'eurusd',
+          fromSequence: SEAM.resumesAtSequence + 1,
+          fromInstant: SEAM.resumesAtInstant,
+          ...FRAME,
+        });
+      }
+      return json(response, 200, log);
     }
     if (p.startsWith('/markets/eurusd/ticks/')) {
       const sequence = Number(p.split('/').pop());
@@ -434,6 +482,21 @@ describe('the conformance suite (PH-29.3)', () => {
       { latticeUnanchored: true },
       'a recorded price states the frame it counts in',
     ],
+    // a3-02: the leg that has teeth on a venue with one declared frame. A tick
+    // below the oldest frame the venue declares must not be rendered at all —
+    // there is no frame for it, so a price there is a guess.
+    [
+      'a venue rendering ticks from below the oldest frame it declares (a3-02)',
+      { latticeCoversOnlyTheTail: true },
+      'a recorded price states the frame it counts in',
+    ],
+    // a5-01: a frame boundary that is not a seam is a frame change settlement
+    // cannot see, and the venue must be caught declaring one.
+    [
+      'a venue declaring a frame from a sequence where no seam resumes (a5-01)',
+      { seamed: true, latticeOffASeam: true },
+      'a recorded price states the frame it counts in',
+    ],
     [
       'a market serving the tick it has drawn but not published (a1-03)',
       { futureMarket: true },
@@ -465,6 +528,34 @@ describe('the conformance suite (PH-29.3)', () => {
     const report = await conformance({ baseUrl: await fakeVenue({ noProof: true }), ticks: 40 });
     expect(report.ok).toBe(true);
     expect(report.checks.find((c) => c.name === 'proof')?.detail).toMatch(/does not publish/);
+  });
+
+  /**
+   * **Cycle Audit 13, a3-02.** A venue whose frame log agrees with its own
+   * misrendering passes every leg that compares the venue against that log, and
+   * with one declared frame there is no boundary to test continuity across. The
+   * suite cannot catch it from inside — so what it owes a broker is to stop
+   * printing a line that reads like a proven pass.
+   */
+  it('does not call the frame check proven when the only independent leg could not run', async () => {
+    const liar = await conformance({
+      baseUrl: await fakeVenue({ latticeLogAgrees: true }),
+      ticks: 40,
+    });
+    const detail = liar.checks.find(
+      (c) => c.name === 'a recorded price states the frame it counts in',
+    )?.detail;
+    expect(detail, 'a coherent liar was reported as a proven pass').toMatch(/NOT PROVEN/);
+
+    // And an honest venue with one frame says the same thing, because the same
+    // leg did not run for it either. The line describes the evidence, not the
+    // venue's honesty.
+    const honest = await conformance({ baseUrl: await fakeVenue({}), ticks: 40 });
+    expect(honest.ok).toBe(true);
+    expect(
+      honest.checks.find((c) => c.name === 'a recorded price states the frame it counts in')
+        ?.detail,
+    ).toMatch(/NOT PROVEN/);
   });
 
   it('reports a venue that does not answer at all', async () => {

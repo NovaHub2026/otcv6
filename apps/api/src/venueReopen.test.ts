@@ -463,6 +463,34 @@ describe('what a reopening leaves for the next boot and for an operator', () => 
     await v.service.stop();
   });
 
+  it('measures only a pass that completed, so a venue whose passes throw still looks late', async () => {
+    // **Cycle Audit 13, a4-04.** The gauge's stated property — "only a completed
+    // pass" — had no guard: moving the assignment to before the `try` left 361
+    // tests green, and in Cycle Audit 10's a3-06 scenario (6,795 throwing passes,
+    // nothing served) the number PH-39.1 calls "the warning the incident did not
+    // have" would have read about zero.
+    const v = await venue();
+    await run(v, 5);
+    // A pass that throws rather than one that records a refusal: the checkpoint
+    // is inside the pass, and a store that cannot be written takes the pass with
+    // it. (A record refusal is handled per asset and the pass completes — which
+    // is why `otc_markets_stalled` and the stall reasons cover that case.)
+    (v.store as unknown as { save: () => Promise<void> }).save = () =>
+      Promise.reject(new Error('the store is unavailable'));
+
+    v.clock.advance(durationMillis(6_000));
+    await expect(v.service.tick()).rejects.toThrow(/unavailable/);
+    v.clock.advance(durationMillis(10_000));
+
+    const metrics = await v.controller.metrics();
+    const seconds = Number(/otc_seconds_since_last_pass ([0-9.]+)/.exec(metrics)?.[1]);
+    expect(
+      seconds,
+      'a pass that threw refreshed the gauge that watches for starvation',
+    ).toBeGreaterThan(10);
+    await v.service.stop().catch(() => undefined);
+  });
+
   it('names the re-arming in the reason an operator reads', async () => {
     const v = await afterAnOutage();
     for (let i = 0; i < 2; i += 1) {

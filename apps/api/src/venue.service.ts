@@ -1015,10 +1015,15 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
   /**
    * Reopen a market its catch-up bound refused, or leave it stalled.
    *
-   * Returns whether it was reopened, so the caller can skip the stall it would
-   * otherwise record. A **re-arming** returns `false` although it did act: the
-   * market is armed again at the clock but has still served nothing, and the
-   * stall is what an operator must go on seeing (PH-39). Everything a boot seam does for the surfaces around the
+   * Returns whether the failure has been accounted for, so the caller can skip
+   * the stall it would otherwise record.
+   *
+   * **A re-arming returns `true`, and records the stall itself** (Cycle Audit 13,
+   * a4-01 and a7-02, which found this docstring claiming the opposite). It must:
+   * the caller's stall message carries only the lag, and the re-arming's carries
+   * the lag *and* how many times this outage has been re-armed, which is what an
+   * operator reads in `/health`. Returning `false` here would let the caller
+   * overwrite the richer message with the poorer one. Everything a boot seam does for the surfaces around the
    * market is done here too, in one act: the feed is told where its window
    * begins, the commitment chain is sealed and restarted past the gap, and the
    * recovery an observer reads stops describing a process that ended hours ago.
@@ -1110,6 +1115,19 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     this.recovery.set(assetId, reopened.outcome);
 
     if (rearm) {
+      // **The stated property, checked (Cycle Audit 13, a4-03).** The comment
+      // above says a re-arming stays silent only if the market still resumes
+      // where the feed was told it would; the condition above compares where it
+      // last *published*, which coincides only because the reserved sequence is
+      // derived from it. An auditor changed that derivation and every venue test
+      // stayed green while each re-arming moved the resume point a whole lease
+      // past the declared one. So compare the number the feed actually holds.
+      if (declaredSeam !== null && declaredSeam.resumesAt !== reopened.outcome.resumesAtSequence) {
+        this.feed.seam(assetId, {
+          publishedThrough: reopened.from.sequence,
+          resumesAt: reopened.outcome.resumesAtSequence,
+        });
+      }
       this.rearms += 1;
       const run = (this.rearmRun.get(assetId) ?? 0) + 1;
       this.rearmRun.set(assetId, run);

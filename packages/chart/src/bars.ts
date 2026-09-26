@@ -98,8 +98,32 @@ export class SeriesError extends Error {
  * milliseconds, which is exactly why the finest timeframe served from history is
  * a minute: two bars in one second would collide.
  */
+/**
+ * What a window of candles reduced to, including what it could not (PH-38.4,
+ * corrected by Cycle Audit 13, a3-01).
+ *
+ * A bar that states no frame is not drawn, and until now nothing said how many —
+ * `toBars` returned an array and a caller could not tell a bar it had dropped
+ * from a bar the venue never had. Measured on the live venue while the audit ran:
+ * **24 of 30 assets rendered an entirely empty 1d chart**, and `btcusdt-otc` lost
+ * 1,247 of 3,231 one-minute bars, with no message anywhere. An empty pane a
+ * viewer cannot distinguish from an outage is the kind of honesty that reads as a
+ * bug.
+ */
+export interface Series {
+  readonly bars: Bar[];
+  /** Bars the venue could not date, and which are therefore not drawn. */
+  readonly undatable: number;
+}
+
+/** {@link toSeries}, for a caller that only wants what can be drawn. */
 export function toBars(candles: readonly HistoryCandle[], instrument: InstrumentView): Bar[] {
+  return toSeries(candles, instrument).bars;
+}
+
+export function toSeries(candles: readonly HistoryCandle[], instrument: InstrumentView): Series {
   const bars: Bar[] = [];
+  let undatable = 0;
   let previous = -Infinity;
   for (const candle of candles) {
     if (candle.openInstant <= previous) {
@@ -122,6 +146,7 @@ export function toBars(candles: readonly HistoryCandle[], instrument: Instrument
       stated &&
       (quantum === null || quantum === undefined || reference === null || reference === undefined)
     ) {
+      undatable += 1;
       continue;
     }
     const frame: InstrumentView =
@@ -144,7 +169,7 @@ export function toBars(candles: readonly HistoryCandle[], instrument: Instrument
       close: displayPrice(candle.close, frame),
     });
   }
-  return bars;
+  return { bars, undatable };
 }
 
 /** Bucket start for an instant, on a fixed grid from the epoch. */

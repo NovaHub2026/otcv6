@@ -325,18 +325,22 @@ describe('a suite that spawns a build runs against this source', () => {
         if (projects.length > 0) spawning.set(file, projects);
       }
     }
-    // The seven `apps/api` statistical suites a2-06 named, the `tools/sim` job
-    // test that carried the only check, and the two outside them that spawn a
-    // build for the same reason. Named rather than counted: a detector that
-    // stopped reading one spelling would still find "some".
+    // Named rather than counted: a detector that stopped reading one spelling
+    // would still find "some". **All twelve** — the list held nine while
+    // `CLAUDE.md` §5 said twelve and the detector found twelve, so the three
+    // missing names were exactly the ones nobody would notice losing (Cycle Audit
+    // 13, a7-04): a deploy test and the two browser suites.
     for (const file of [
       'apps/api/src/clientReconstruction.stat.test.ts',
       'apps/api/src/conformance.stat.test.ts',
+      'apps/api/src/deploy.test.ts',
       'apps/api/src/panelSurface.stat.test.ts',
       'apps/api/src/registration.stat.test.ts',
       'apps/api/src/restart.stat.test.ts',
       'apps/api/src/servedRecord.stat.test.ts',
       'apps/api/src/stream.stat.test.ts',
+      'apps/web/src/lab.stat.test.ts',
+      'apps/web/src/panel.stat.test.ts',
       'packages/runtime/src/sqliteConcurrency.test.ts',
       'tools/sim/src/servedAssuranceJob.test.ts',
     ]) {

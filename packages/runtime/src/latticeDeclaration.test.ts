@@ -426,4 +426,35 @@ describe('dating candles against the record anchors each epoch at the BAR (PH-38
       record.close();
     }
   });
+
+  /**
+   * **Cycle Audit 13, a8-01.** A bar whose minutes straddle the boundary has its
+   * open on one lattice and its close on the other. Dating it by the close —
+   * which is what `frameAtOrBefore(epochs, bar.lastSequence)` did — declared the
+   * whole bar on the close's frame, and anchored the epoch at the bar's *first*
+   * sequence, below the true boundary. The reader's crossing test could not see
+   * it either: the span then sat inside one declared epoch.
+   *
+   * Measured on the live venue before the fix: 17 of 30 assets served a 1m bar
+   * with a wick no tick ever printed, 2.3% to 73.0%.
+   */
+  it('refuses a bar whose minutes straddle the boundary, rather than dating it by its close', async () => {
+    const { record, boundary } = await recordWithBoundary();
+    try {
+      const verdict = await proposeDeclaration(record, 'a', OLD, NEW);
+      if (!verdict.ok) return;
+      await record.declareLattice('a', epochsOf(verdict.proposal));
+      // Open on the old lattice, close on the new one: exactly the bar the live
+      // venue folded across the relattice.
+      const [closing] = await record.since('a', boundary, 1);
+      const bar = { firstSequence: 260, lastSequence: closing!.sequence, close: closing!.price };
+      const out = await dateCandlesAgainstRecord(record, 'a', [bar], [NEW, OLD]);
+
+      expect(out.dated, 'a bar with integers in two frames was given one').toBe(0);
+      expect(out.undatable).toBe(1);
+      expect(out.epochs, 'an epoch was anchored below the boundary it crosses').toEqual([]);
+    } finally {
+      record.close();
+    }
+  });
 });

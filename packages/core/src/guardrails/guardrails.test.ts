@@ -833,11 +833,29 @@ describe('a per-asset statistical suite yields between its cases', () => {
         .map((file) => ({ file, source: readRepositoryFile(file) })),
     )) {
       if (!file.endsWith('.stat.test.ts')) continue;
-      // `it.each(ASSET_CATALOGUE…)('…', (a, b) => {` — an arrow that is not
-      // `async` is a case that cannot yield.
-      const pattern = /it\.each\(\s*ASSET_CATALOGUE[\s\S]{0,400}?\n\s*(async\s+)?\([^)]*\)\s*=>/g;
-      for (const match of source.matchAll(pattern)) {
-        if (match[1] === undefined) offenders.push(file);
+      // **One identifier deep was not deep enough (Cycle Audit 13, a7-01).** The
+      // pattern was `it\.each\(\s*ASSET_CATALOGUE…`, so it needed the literal
+      // adjacent to the call. Two files in the tree already iterate the catalogue
+      // through a name — `SAMPLE.measured.map(…)` — and the meta-auditor dropped
+      // `async` from one of them and watched all 37 tests pass. Both are async
+      // today, so nothing was broken; the guard simply could not see them.
+      //
+      // So: find every `it.each(`, read the expression it iterates, and if that
+      // expression reaches the catalogue by any name, require the case body to be
+      // `async`. Iterating a handful of shapes or bounds is not this hazard and is
+      // deliberately not matched.
+      for (const match of source.matchAll(/it\.each\(/g)) {
+        const from = match.index ?? 0;
+        const window = source.slice(from, from + 900);
+        // The iterated expression ends where the case name begins: `)(`.
+        const endOfArgument = window.indexOf(')(');
+        if (endOfArgument === -1) continue;
+        const iterated = window.slice(0, endOfArgument);
+        if (!/ASSET_CATALOGUE|\bSAMPLE\b|\bCATALOGUE\b/.test(iterated)) continue;
+        const body = window.slice(endOfArgument + 2);
+        const arrowAt = body.indexOf('=>');
+        if (arrowAt === -1) continue;
+        if (!/\basync\b/.test(body.slice(0, arrowAt))) offenders.push(file);
       }
     }
     expect(

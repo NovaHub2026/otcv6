@@ -27,9 +27,15 @@ import { type LatticeEpoch, type PriceFrame } from './priceFrame.js';
  * on the wrong lattice.
  *
  * A reader that cannot see this table falls back to the instrument in force,
- * which is what every reader did before it existed, so the downgrade is a
- * wrong chart rather than a wrong settlement and the version does not fail
- * closed the way the record's does.
+ * which is what every reader did before it existed — a wrong chart rather than a
+ * wrong settlement.
+ *
+ * **It does fail closed, and this note said it did not** (Cycle Audit 13, a6-04
+ * and a2-03, found independently by two auditors and executed by a refuter
+ * against the previous release's own build). `assertSchemaNotNewer` is shared and
+ * unconditional, so `v2.4.0` refuses a `history.db` at version 2 by name. The
+ * consequence is a rollback across this bump cannot boot — on this file and on
+ * `record.db`, which refuses first — and no operational document says so.
  */
 export const HISTORY_SCHEMA_VERSION = 2;
 

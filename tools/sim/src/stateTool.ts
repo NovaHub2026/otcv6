@@ -139,7 +139,9 @@ export async function runStateTool(
     return { code: 1, output: `No state directory at ${options.dir}.` };
   }
   if (options.command === 'verify') {
-    const report = await verifyStateDirectory(options.dir);
+    // Deep, because this is the command an operator runs to ask whether the
+    // directory is sound; the boot's own call stays shallow (a6-06).
+    const report = await verifyStateDirectory(options.dir, { scanForHoles: true });
     return { code: report.problems.length === 0 ? 0 : 1, output: describeReport(report) };
   }
   try {

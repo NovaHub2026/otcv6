@@ -203,7 +203,12 @@ export const REFUND_FIT_HORIZONS = 8_000;
  * Audit 2 found the same error behind INV-007's p-value, and B-002 is the same
  * fact wearing its third face.
  *
- * The measured between-replicate standard deviation is 0.10-0.19pp — against a
+ * The measured between-replicate standard deviation is 0.10-0.19pp — measured
+ * when these rates were around 0.4%, and **four times too small for today's**
+ * (Cycle Audit 13, a1-4): at 3.5-4.8% an auditor measured 0.7-0.8pp per
+ * replicate, so a figure quoted here to four significant figures is worth about
+ * one. The band the tie test enforces is computed from each run's own replicates,
+ * not from this sentence. Against a
  * binomial 2se of 0.09pp for a single 20,000-horizon run, which is to say the
  * naive figure understated the real uncertainty by roughly four times.
  *

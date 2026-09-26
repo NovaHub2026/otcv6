@@ -415,6 +415,14 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
 
     const frameFaults: string[] = [];
     let frameDetail = `${String(epochs.length)} declared frame(s)`;
+    // How many boundaries the leg that does **not** trust the venue's frame log
+    // actually verified. **Cycle Audit 13, a3-02:** it was zero for every venue
+    // with one declared frame — `for (i = 1; i < epochs.length)` never runs —
+    // and the detail line then read exactly like a proven pass. A refuter built
+    // a venue that renders every price on a lattice it never published and
+    // declares that same wrong lattice in `/lattices`, so nothing contradicted
+    // anything, and it scored 33 of 33 with this check green.
+    let boundariesProven = 0;
     // 1. Self-consistency and agreement with the venue's own frame log, on the
     //    newest tick and on one from BELOW the newest boundary.
     const probes = [last.sequence];
@@ -474,6 +482,7 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
         continue;
       }
       const gap = Math.abs(Number(before.displayPrice) / Number(after.displayPrice) - 1) * 100;
+      boundariesProven += 1;
       frameDetail += `, boundary ${String(at)} gap ${gap.toFixed(3)}%`;
       if (!(gap < 1)) {
         frameFaults.push(
@@ -482,6 +491,51 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
             `it was not published on`,
         );
       }
+    }
+    // 3. A tick **below the oldest declared frame** must not be rendered at all.
+    //    The venue has no frame for it, so a price there is a guess — and this
+    //    is the one leg that has teeth on a venue with a single declared frame,
+    //    where leg 2 cannot run (a3-02). A venue that answers `displayPrice:
+    //    null` there is doing the right thing and passes.
+    const oldestDeclared = epochs.length === 0 ? 1 : epochs[0]!.fromSequence;
+    if (oldestDeclared > 1) {
+      const below = await renderedAt(oldestDeclared - 1);
+      if (below !== null && below.displayPrice !== null) {
+        frameFaults.push(
+          `sequence ${String(oldestDeclared - 1)} is below the oldest frame /lattices declares ` +
+            `(${String(oldestDeclared)}) and is still rendered, as ${below.displayPrice}: the venue is ` +
+            `answering with a frame it does not claim that sequence counts in`,
+        );
+      }
+    }
+    // 4. **Every frame boundary is a seam** (Cycle Audit 13, a5-01). `settle()`
+    //    compares raw integers and cannot express a frame, so its only defence
+    //    against comparing two integers counted in different quanta is the seam
+    //    list — and a refuter found that four separate mechanisms keep that true
+    //    (a resume seams on a quantum change, the admin route refuses to edit
+    //    one, and both declaration paths derive their boundaries from the seam
+    //    table) while **nothing anywhere asserts it**. Four emergent protections
+    //    are one refactor away from none. This is the assertion, and it is a
+    //    broker's to run: a frame that begins where no seam resumes is a frame
+    //    change settlement cannot see.
+    for (let i = 1; i < epochs.length; i += 1) {
+      const at = epochs[i]!.fromSequence;
+      if (!seams.some((one) => one.resumesAtSequence === at)) {
+        frameFaults.push(
+          `the frame log declares a new frame from sequence ${String(at)} and no seam resumes ` +
+            `there, so settlement would compare an integer from before it with one from after it ` +
+            `as though both counted in the same quantum`,
+        );
+      }
+    }
+    // **What a green line here does and does not mean.** With no boundary
+    // verified, every leg above compared the venue against its own frame log,
+    // and a venue whose log agrees with a misrendering passes them all. Saying
+    // so is the difference between a check and a formality.
+    if (boundariesProven === 0) {
+      frameDetail +=
+        ', NOT PROVEN: no declared boundary was in range, so the one leg that does not ' +
+        'trust the venue’s own frame log did not run';
     }
     check(
       'a recorded price states the frame it counts in',

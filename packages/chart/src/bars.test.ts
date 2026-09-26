@@ -8,6 +8,7 @@ import {
   PANEL_TIMEFRAMES,
   SeriesError,
   toBars,
+  toSeries,
   type HistoryCandle,
   type InstrumentView,
 } from './bars.js';
@@ -55,6 +56,30 @@ describe('a bar is drawn on the frame it states, and not on one it does not (PH-
     // ...which is a different number from the caller's instrument, or this test
     // would pass with the frame ignored.
     expect(bars[0]!.open).not.toBe(displayPrice(1_000, instrument));
+  });
+
+  it('counts the bars it could not date, so a caller can tell a hole from an outage', () => {
+    // **Cycle Audit 13, a3-01.** The skip was silent: `toBars` returned an array
+    // and nothing said how many rows had been dropped. On the live venue 24 of 30
+    // assets rendered an entirely empty 1d chart with no message anywhere, which a
+    // viewer cannot distinguish from a venue that keeps no history.
+    const dated = candle(0, { logQuantum: NOW, referencePrice: instrument.referencePrice });
+    const series = toSeries(
+      [
+        dated,
+        candle(1, { logQuantum: null, referencePrice: null }),
+        candle(2, { logQuantum: null, referencePrice: null }),
+      ],
+      instrument,
+    );
+    expect(series.bars).toHaveLength(1);
+    expect(series.undatable, 'the dropped bars are not reported').toBe(2);
+    // And a window with nothing datable is distinguishable from an empty window:
+    // no bars, but a count that says why.
+    const blind = toSeries([candle(3, { logQuantum: null, referencePrice: null })], instrument);
+    expect(blind.bars).toEqual([]);
+    expect(blind.undatable).toBe(1);
+    expect(toSeries([], instrument)).toEqual({ bars: [], undatable: 0 });
   });
 
   it("skips a bar that states no frame rather than drawing it on today's", () => {
