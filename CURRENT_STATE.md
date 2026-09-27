@@ -14,21 +14,21 @@ Last synchronized: 2026-09-26
 
 | Field                            | Value                                                                                                                                                                          |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Active development cycle         | Cycle 14 — **0 of 3** phases approved; PH-40 active. Cycle 13 closed by Cycle Audit 13; Cycle 11 stays open                                                                    |
-| Approved phases in current cycle | **0 of 3** — PH-40 active                                                                                                                                                      |
+| Active development cycle         | Cycle 14 — **1 of 3** phases approved (PH-40). Cycle 11 stays open                                                                                                             |
+| Approved phases in current cycle | **1 of 3** — PH-40                                                                                                                                                             |
 | Cycle Audit state                | **013 closed** — 41 findings (2 critical, 9 material); the criticals and most materials fixed with a guard each, the rest carried by name in §6                                |
 | Last Cycle Audit                 | [Cycle Audit 013](docs/audits/CYCLE-AUDIT-013.md) — 2026-09-25, eight independent auditors in a worktree each, three refuters; [012](docs/audits/CYCLE-AUDIT-012.md) before it |
 
 ## Phase and subphase
 
-| Field                  | Value                                                                                   |
-| ---------------------- | --------------------------------------------------------------------------------------- |
-| Active phase           | PH-40 — The engine a broker settles against                                             |
-| Phase lifecycle        | ACTIVE                                                                                  |
-| Active subphase        | PH-40.6 — The guide a broker integrates from                                            |
-| Subphase lifecycle     | ACTIVE                                                                                  |
-| Last approved phase    | PH-39 — The reopening that holds                                                        |
-| Last approved subphase | PH-40.5 — One restart writes one seam, and the seam rate measured on an isolated engine |
+| Field                  | Value                                        |
+| ---------------------- | -------------------------------------------- |
+| Active phase           | none                                         |
+| Phase lifecycle        | none                                         |
+| Active subphase        | none                                         |
+| Subphase lifecycle     | none                                         |
+| Last approved phase    | PH-40 — The engine a broker settles against  |
+| Last approved subphase | PH-40.6 — The guide a broker integrates from |
 
 **Cycle 12 is audited and closed.** PH-34 (the market's tempo follows its
 state), PH-35 (the level the market runs at) and PH-36 (a stalled market
@@ -260,6 +260,16 @@ ceiling.
 
 ## EXACT NEXT LEGAL ACTION
 
+**Open PH-41: the calibration that simulates the market the engine runs**
+(Cycle Audit 12, finding 7 — deferred twice, and next since PH-39). PH-40 is
+approved and merged ([PH-40](docs/phases/PH-40-the-engine-a-broker-settles-against.md)):
+contract 3.3.0, ADR-0021, the heartbeat, the precision rule, the typed candle,
+one seam per restart, and the Orbit guide. **One decision is the Human Owner's
+and is not blocking**: six assets at a broker's five decimals (PH-40 §8), with
+the recommendation that the broker show the engine's precision. After PH-41,
+Cycle Audit 13's a6-06 c and a8-02.
+
+The superseded instruction, kept for the reasoning:
 **Build PH-40, the engine a broker settles against, from PH-40.1.** The Human
 Owner showed the engine the broker it will serve (the Orbit frontend and a
 reference backend, read and not modified) and asked for the engine to be finished

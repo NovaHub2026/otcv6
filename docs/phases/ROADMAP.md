@@ -1062,9 +1062,9 @@ refunds now, under a ceiling the Human Owner set.
 
 ## Cycle 14 — the engine a broker settles against
 
-| Phase | Title                               | State  |
-| ----- | ----------------------------------- | ------ |
-| PH-40 | The engine a broker settles against | ACTIVE |
+| Phase | Title                               | State    |
+| ----- | ----------------------------------- | -------- |
+| PH-40 | The engine a broker settles against | APPROVED |
 
 | Subphase | Title                                                                         | State    |
 | -------- | ----------------------------------------------------------------------------- | -------- |
@@ -1073,7 +1073,7 @@ refunds now, under a ceiling the Human Owner set.
 | PH-40.3  | The lattice a broker can display, on every asset                              | APPROVED |
 | PH-40.4  | What TradingView reads: a typed candle, its precision and its volume          | APPROVED |
 | PH-40.5  | One restart writes one seam, and the seam rate measured on an isolated engine | APPROVED |
-| PH-40.6  | The guide a broker integrates from                                            | ACTIVE   |
+| PH-40.6  | The guide a broker integrates from                                            | APPROVED |
 
 **PH-40 opens Cycle 14, and it is not the phase Cycle Audit 13 named.** The
 audit put the candle item first — what a chart consumes belongs in the contract —

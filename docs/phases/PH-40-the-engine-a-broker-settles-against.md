@@ -2,7 +2,8 @@
 
 Type: PHASE CONTEXT DOCUMENT
 Identifier: PH-40
-Status: ACTIVE
+Status: APPROVED
+Approved: 2026-09-27 — the full gate on `3c043df`, `GATE_EXIT=0` with a real browser: 181 unit files / 3,680 tests (131 s), the same under coverage with every floor held (273 s), 47 statistical files / 411 tests (4,530 s); probe timestamps continuous from 19:16 to 20:39 UTC, so no clock jump
 Cycle: 14 (phase 1)
 Created: 2026-09-26
 
@@ -74,6 +75,40 @@ never make with contracts in flight.
   Owner's 5% ceiling on an asset, that is their decision to make with the number in
   front of them — raise the ceiling, or show one more decimal on that asset — and
   this phase measures it rather than choosing.
-- **Change a lattice with contracts in flight** — ADR-0021's guard, and PH-40.3
-  changes lattices, so it says how a deployment does that safely.
+- **Change a lattice with contracts in flight** — ADR-0021's guard. As built,
+  PH-40.3 changed no lattice at all: only six display precisions, which move no
+  integer and owe no seam.
 - **Integrate.** No code in the broker's repositories. The guide is the deliverable.
+
+## 6. What the phase delivered
+
+| Subphase | Delivered                                                                                                                                                                                           |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PH-40.1  | A contract settles at its final millisecond, across any ordinary seam; `/price` answers the price in force inside a seam and names it; only a change of lattice refuses (ADR-0021, contract 3.1.0). |
+| PH-40.2  | An opt-in heartbeat carrying the tick in force and `asOf`, never ahead of the record or of the connection; `/price` final through the last clean pass (3.2.0).                                      |
+| PH-40.3  | Every step visible at the published precision down to half the reference price — `meta-otc` had hidden moves on the live record; six precisions change, no lattice.                                 |
+| PH-40.4  | A typed candle in the contract, `displayPrecision` on every price and candle, and a conformance check that refolds stored bars (3.3.0; Cycle Audit 13 a3-03, a2-04).                                |
+| PH-40.5  | One restart writes one seam (#23); the seam rate measured with the host to itself: none, even at twice as many busy processes as cores.                                                             |
+| PH-40.6  | [`ORBIT.md`](../integration/ORBIT.md) and `npm run evidence:broker-fit`.                                                                                                                            |
+
+## 7. Phase verification
+
+the full gate on `3c043df`, `GATE_EXIT=0` with a real browser: 181 unit files / 3,680 tests (131 s), the same under coverage with every floor held (273 s), 47 statistical files / 411 tests (4,530 s); probe timestamps continuous from 19:16 to 20:39 UTC, so no clock jump. Each subphase was approved from its own targeted gate first; every
+red run on the way is recorded in the subphase that met it, including one in the
+browser panel suite whose cause was not established (PH-40.3 §6).
+
+## 8. What is left, and whose it is
+
+- **The Human Owner's: six assets at five decimals.** A broker that shows and
+  settles at five decimals refunds 7.4%–16.0% of 30-second contracts on USD/CHF,
+  EUR/GBP, AUD/USD, GBP/USD, DOGE/USDT and EUR/USD, against `settle()`'s 3.5%–4.4%.
+  Recommended: the broker shows the engine's `displayPrecision` (six decimals on
+  those six). The alternatives — coarsen those lattices, or raise the 5% ceiling
+  for them — are PH-40.3 §4, with their numbers.
+- **The broker's, documented in [`ORBIT.md`](../integration/ORBIT.md):** the entry
+  price must be the one in force when the server accepts (a one-second-old quote
+  wins 56–61% of 30-second contracts); settlement at the millisecond, not the
+  second; the display precision above.
+- **The engine's, next:** Cycle Audit 12's finding 7 (the calibration), and Cycle
+  Audit 13's a6-06 c and a8-02; `FollowerMarket.priceAt` still refuses inside a
+  seam, to close before multi-node settlement is offered.

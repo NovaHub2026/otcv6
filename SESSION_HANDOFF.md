@@ -11,15 +11,24 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Last clean session | 2026-09-26                                                                                                              |
 | Branch             | `feature/ph-40-the-engine-a-broker-settles-against`, off `audit/ca13-fixes-2` (`ed816dc`, Cycle Audit 13 waves 2 and 3) |
 | Remote             | `origin` → NovaHub2026/otcv6, public                                                                                    |
-| Active cycle       | Cycle 14, **0 of 3** — PH-40 active. Cycle 13 closed by Cycle Audit 13; Cycle 11 open                                   |
-| Active phase       | PH-40 — The engine a broker settles against                                                                             |
-| Active subphase    | PH-40.6 — The guide a broker integrates from                                                                            |
+| Active cycle       | Cycle 14, **1 of 3** — PH-40 approved. Cycle 11 open                                                                    |
+| Active phase       | none                                                                                                                    |
+| Active subphase    | none                                                                                                                    |
 | Cycle Audit        | **013 closed** — 41 findings, 2 critical, 9 material; criticals fixed, rest carried                                     |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                                                                      |
 
 ---
 
-## Right now (2026-09-26)
+## Right now (2026-09-27)
+
+**PH-40 is approved**: the full gate on `3c043df` is green with a real browser.
+What a fresh session must know: after a session restart the shell may have no
+Linux Node on PATH and `npx` resolves to Windows' — prefix commands with
+`export PATH=$HOME/.nvm/versions/node/v24.19.0/bin:$PATH;` (memory:
+restart-loses-linux-node). The venue on 7300 is restarted from `main` after the
+merge. Next is PH-41, the calibration (CURRENT_STATE).
+
+## Before that (2026-09-26)
 
 **PH-40 is open: the engine a broker settles against.** The Human Owner showed
 the engine the broker it will serve — `C:\Proyectos\optaqode-frontend2.0` and
