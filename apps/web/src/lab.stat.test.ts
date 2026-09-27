@@ -403,15 +403,38 @@ describe('Candle Close Control, from the panel', () => {
       await page.click('[data-testid="lab-scenario-apply"]');
       // The plan's own armed line, not the control row: an earlier flow may have
       // left this market ARMADO, and at PH-24.17's grain a script plays out fast.
-      await page.waitForFunction(
-        () =>
-          // textContent has no line breaks between rows; innerText does.
-          /armado\s*SÍ/.test(
-            document.querySelector('[data-testid="lab-scenario-plan"]')?.textContent ?? '',
-          ),
-        null,
-        { timeout: 30_000 },
-      );
+      try {
+        await page.waitForFunction(
+          () =>
+            // textContent has no line breaks between rows; innerText does.
+            /armado\s*SÍ/.test(
+              document.querySelector('[data-testid="lab-scenario-plan"]')?.textContent ?? '',
+            ),
+          null,
+          { timeout: 30_000 },
+        );
+      } catch (error) {
+        // **What the plan said, in the failure** (2026-09-27). Hosted CI timed out
+        // here once on a run where every other flow passed and this test normally
+        // takes a second: the apply answered, but not armed. `armed` is "the search
+        // found a selection", and the search runs on the market as it stands, so
+        // the reason is in the plan — attempts, selection, a refusal — and the
+        // next occurrence reports it instead of a bare timeout.
+        const plan = await page
+          .locator('[data-testid="lab-scenario-plan"]')
+          .first()
+          .innerText()
+          .catch(() => '(no plan on screen)');
+        const notice = await page
+          .locator('[data-testid="lab-scenario-notice"]')
+          .first()
+          .innerText({ timeout: 1_000 })
+          .catch(() => '(no notice)');
+        throw new Error(
+          `${(error as Error).message} — plan: ${plan.replace(/\n/g, ' | ')}; notice: ${notice}`,
+          { cause: error },
+        );
+      }
       expect(await text(page, 'lab-scenario-plan')).toMatch(/armado\nSÍ/);
       // The timeline is a poll away.
       await page.waitForFunction(
