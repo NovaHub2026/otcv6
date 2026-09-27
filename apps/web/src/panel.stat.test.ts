@@ -371,6 +371,25 @@ async function build(): Promise<void> {
   if (code !== 0) throw new Error(`next build failed (${code}):\n${output.slice(-3_000)}`);
 }
 
+/**
+ * What the chart says about itself, for a failed bar count (PH-40.3).
+ *
+ * Twice on 2026-09-27 the chart showed zero bars after a switch, and then passed
+ * on every rerun; the assertion said only "expected 0 to be greater than 10". The
+ * chart names why it drew nothing — undated bars, the stream's state — so the next
+ * occurrence carries that in its message instead of needing a reproduction.
+ */
+async function chartDiagnosis(page: Page): Promise<string> {
+  const read = async (id: string): Promise<string> =>
+    (await page.getByTestId(id).count()) === 0
+      ? '(absent)'
+      : ((await page.getByTestId(id).first().textContent()) ?? '');
+  return (
+    `bar-count "${await read('bar-count')}", undated "${await read('undated-count')}", ` +
+    `stream "${await read('stream-status')}", asset "${page.url()}"`
+  );
+}
+
 describe('the panel, in a browser', () => {
   /**
    * A real skip, not a pass (a6-03). `ctx.skip()` marks the test skipped in
@@ -539,7 +558,10 @@ describe('the panel, in a browser', () => {
       const box = await page.locator('canvas').first().boundingBox();
       expect(box!.height).toBeGreaterThan(200);
       const bars = await page.getByTestId('bar-count').textContent();
-      expect(Number((bars ?? '0').replace(/[^\d]/g, ''))).toBeGreaterThan(10);
+      expect(
+        Number((bars ?? '0').replace(/[^\d]/g, '')),
+        await chartDiagnosis(page),
+      ).toBeGreaterThan(10);
 
       expect(observed.consoleErrors, 'console errors').toEqual([]);
       expect(observed.failedRequests, 'failed requests').toEqual([]);
@@ -559,7 +581,13 @@ describe('the panel, in a browser', () => {
         return Number((text ?? '0').replace(/[^\d]/g, ''));
       };
       await page.getByRole('button', { name: '5m', exact: true }).click();
-      await expect.poll(barsNow, { timeout: 60_000 }).toBeGreaterThan(50);
+      try {
+        await expect.poll(barsNow, { timeout: 60_000 }).toBeGreaterThan(50);
+      } catch (error) {
+        throw new Error(`${(error as Error).message} — ${await chartDiagnosis(page)}`, {
+          cause: error,
+        });
+      }
       const fine = await barsNow();
 
       await page.getByRole('button', { name: '1d', exact: true }).click();
