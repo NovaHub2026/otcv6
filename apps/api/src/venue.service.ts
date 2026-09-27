@@ -17,6 +17,7 @@ import {
   CatchUpTooLargeError,
   checkpointMarket,
   DEFAULT_RECORD_TICKS,
+  MemoryStateStore,
   MIN_REOPEN_INTERVAL_MS,
   reopenStalledMarket,
   resumeMarket,
@@ -413,10 +414,87 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     // The record before the first pass: what the previous process served is
     // what this one's feed resumes from, and what its recorder folds first.
     for (const { asset } of markets) await this.#primeFromRecord(asset.definition.id);
+    await this.#rearmBootSeams(
+      markets.map(({ asset }) => asset),
+      genesis,
+    );
     this.lastCheckpointAt = this.clock.now();
     this.startedAt = epochMillis(this.clock.now());
     this.ready = true;
     this.schedule();
+  }
+
+  /**
+   * Open every market that booted on a seam at the clock the scheduler starts
+   * from, not at the clock it was resumed at (PH-40.5, issue #23).
+   *
+   * A seam opens at the clock so the gap stays a gap. But `start()` resumes the
+   * markets one after another, each read from the store and primed from the
+   * record, and on a full record that took 26 s on this venue: the markets
+   * seamed early were already past their own 15 s catch-up bound when the first
+   * pass ran, and ADR-0020 reopened them — **a second seam per asset for one
+   * restart**, and `otc_market_reopenings_total` reading 30 after every clean
+   * boot.
+   *
+   * A seamed market has published nothing since its seam, so opening it again at
+   * a later instant writes nothing: the same resume is taken again, and because
+   * `resumeMarket` only reads — the checkpoint and the record head are what they
+   * were a moment ago — it comes back at the same price and the same reserved
+   * sequence, which is the one the feed has already declared to any client that
+   * connected meanwhile. Only the instant it opens at, and so its keystream
+   * (ADR-0019), move forward.
+   */
+  async #rearmBootSeams(assets: readonly RegisteredAsset[], genesis: EpochMillis): Promise<void> {
+    // Everything read first, then every market rebuilt against the clock with no
+    // I/O in between: a re-arm that read the store market by market would give
+    // the markets it reached first the same head start on their bound that
+    // caused the second seam.
+    const read = new MemoryStateStore();
+    const heads = new Map<string, Tick | null>();
+    const seamed: RegisteredAsset[] = [];
+    for (const asset of assets) {
+      const id = asset.definition.id;
+      if (this.recovery.get(id)?.kind !== 'seam') continue;
+      // A seam taken with no checkpoint at all — the record's head alone — is
+      // re-armed too; a record that will not load is left as the boot took it,
+      // and the comparison below would refuse it anyway.
+      const record = await this.store.load(id).catch(() => undefined);
+      if (record === undefined) continue;
+      if (record !== null) await read.save(record);
+      heads.set(id, await this.#recordHead(id));
+      seamed.push(asset);
+    }
+    for (const asset of seamed) {
+      const id = asset.definition.id;
+      const booted = this.recovery.get(id);
+      if (booted?.kind !== 'seam') continue;
+      const { market, outcome } = await resumeMarket({
+        ...(this.signSource === null ? {} : { signSource: this.signSource }),
+        ...(this.arrivalSource === null ? {} : { arrivalSource: this.arrivalSource }),
+        retractable: this.signSource !== null || this.arrivalSource !== null,
+        asset,
+        keyring: this.keyring,
+        environment: 'production',
+        clock: this.clock,
+        store: read,
+        genesisInstant: genesis,
+        published: heads.get(id) ?? null,
+      });
+      // The property this rests on, checked rather than assumed (Cycle Audit 13,
+      // a4-03): a re-armed market must resume exactly where the first resume said,
+      // because that is the sequence the feed has already declared.
+      if (outcome.kind !== 'seam' || outcome.resumesAtSequence !== booted.resumesAtSequence) {
+        this.logger.warn(
+          `${id}: not re-armed at the clock — a second resume disagreed with the first ` +
+            `(${outcome.kind}, resuming at ` +
+            `${String(outcome.kind === 'seam' ? outcome.resumesAtSequence : null)} against ` +
+            `${String(booted.resumesAtSequence)})`,
+        );
+        continue;
+      }
+      this.venue!.reopen(id, market);
+      market.prime();
+    }
   }
 
   /**
