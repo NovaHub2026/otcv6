@@ -25,10 +25,10 @@ Last synchronized: 2026-09-26
 | ---------------------- | --------------------------------------------------------------------------------------- |
 | Active phase           | PH-40 — The engine a broker settles against                                             |
 | Phase lifecycle        | ACTIVE                                                                                  |
-| Active subphase        | PH-40.5 — One restart writes one seam, and the seam rate measured on an isolated engine |
+| Active subphase        | PH-40.6 — The guide a broker integrates from                                            |
 | Subphase lifecycle     | ACTIVE                                                                                  |
 | Last approved phase    | PH-39 — The reopening that holds                                                        |
-| Last approved subphase | PH-40.4 — What TradingView reads: a typed candle, its precision and its volume          |
+| Last approved subphase | PH-40.5 — One restart writes one seam, and the seam rate measured on an isolated engine |
 
 **Cycle 12 is audited and closed.** PH-34 (the market's tempo follows its
 state), PH-35 (the level the market runs at) and PH-36 (a stalled market

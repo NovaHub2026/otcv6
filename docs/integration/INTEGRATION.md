@@ -213,8 +213,8 @@ un paso del retículo sea al menos un dígito visible hasta la mitad del
 se imprimen iguales y comparar las cadenas decide lo mismo que comparar los
 enteros. Con **menos** decimales un movimiento real se imprime como «sin cambio»
 y una comparación de cadenas lo declara empate donde `settle()` no: medido a
-cinco decimales, USD/CHF reembolsa el 15,8% de los contratos de 30 s en lugar del
-3,8% (seis activos lo sufren; la tabla está en
+cinco decimales, USD/CHF reembolsa el 16,0% de los contratos de 30 s en lugar del
+3,9% (seis activos lo sufren; la tabla está en
 [PH-40.3](../phases/PH-40.3-the-lattice-a-broker-can-display.md)). Con **más**,
 se enseñan dígitos que el precio no tiene. En TradingView:
 `pricescale = 10 ** displayPrecision` y `minmov = 1`, por activo; un

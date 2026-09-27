@@ -1072,8 +1072,8 @@ refunds now, under a ceiling the Human Owner set.
 | PH-40.2  | A market that is open says so: a heartbeat carrying the price in force        | APPROVED |
 | PH-40.3  | The lattice a broker can display, on every asset                              | APPROVED |
 | PH-40.4  | What TradingView reads: a typed candle, its precision and its volume          | APPROVED |
-| PH-40.5  | One restart writes one seam, and the seam rate measured on an isolated engine | ACTIVE   |
-| PH-40.6  | The guide a broker integrates from                                            | PLANNED  |
+| PH-40.5  | One restart writes one seam, and the seam rate measured on an isolated engine | APPROVED |
+| PH-40.6  | The guide a broker integrates from                                            | ACTIVE   |
 
 **PH-40 opens Cycle 14, and it is not the phase Cycle Audit 13 named.** The
 audit put the candle item first — what a chart consumes belongs in the contract —
