@@ -137,6 +137,9 @@ export {
 export {
   frameAtOrBefore,
   frameOfSpan,
+  crossesAChange,
+  reframedSequences,
+  reframesAt,
   malformedFrame,
   sameFrame,
   type LatticeEpoch,

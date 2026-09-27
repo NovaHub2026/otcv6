@@ -598,6 +598,71 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
       `status ${String(future.status)}`,
     );
 
+    // ---- ADR-0021: a contract settles at its final millisecond, across a seam --
+    //
+    // The Human Owner's rule (2026-09-26): a contract always settles at its final
+    // millisecond, with the price in force there, and a seam never closes a
+    // market. So an instant inside a recorded seam must be answered with the price
+    // in force — the last tick before the gap, which the market reopened from — and
+    // the seam named, never refused. A venue on contract 3.0.0 answered 409 there,
+    // and a broker refunded the contract; this is the check that says a venue has
+    // moved.
+    const seamList = await get(`/markets/${encodeURIComponent(id)}/seams`);
+    const listed = Array.isArray(seamList.body)
+      ? (seamList.body as {
+          lastSequence?: unknown;
+          lastInstant?: unknown;
+          resumesAtSequence?: unknown;
+          resumesAtInstant?: unknown;
+          reframes?: unknown;
+        }[])
+      : [];
+    const ordinary = listed.filter(
+      (one) =>
+        one.reframes === false &&
+        typeof one.lastInstant === 'number' &&
+        typeof one.resumesAtInstant === 'number' &&
+        one.resumesAtInstant - one.lastInstant > 1,
+    );
+    if (listed.some((one) => typeof one.reframes !== 'boolean')) {
+      check(
+        'a price inside a seam is the price in force, and the seam is named',
+        false,
+        'a seam does not say whether the lattice changed there (`reframes`), which settle() ' +
+          'needs to know since ADR-0021',
+      );
+    } else if (ordinary.length === 0) {
+      check(
+        'a price inside a seam is the price in force, and the seam is named',
+        true,
+        'NOT PROVEN: this venue lists no ordinary seam to ask inside',
+      );
+    } else {
+      const seam = ordinary[ordinary.length - 1]!;
+      const inside = Math.floor(
+        ((seam.lastInstant as number) + (seam.resumesAtInstant as number)) / 2,
+      );
+      const answer = await get(`/markets/${encodeURIComponent(id)}/price?at=${String(inside)}`);
+      const body = answer.body as {
+        sequence?: unknown;
+        seam?: { lastSequence?: unknown; resumesAtSequence?: unknown } | null;
+      } | null;
+      const named = body?.seam ?? null;
+      check(
+        'a price inside a seam is the price in force, and the seam is named',
+        answer.status === 200 &&
+          body?.sequence === seam.lastSequence &&
+          named?.lastSequence === seam.lastSequence &&
+          named?.resumesAtSequence === seam.resumesAtSequence,
+        answer.status === 200
+          ? `at ${String(inside)}: sequence ${String(body?.sequence)}, seam ` +
+              `${String(body?.seam?.lastSequence)}..${String(body?.seam?.resumesAtSequence)}`
+          : `at ${String(inside)}, inside the seam ${String(seam.lastSequence)}..` +
+              `${String(seam.resumesAtSequence)}: ${String(answer.status)} — a contract whose ` +
+              `final millisecond falls there would have no price to settle at`,
+      );
+    }
+
     // ---- the market's price is one the record already carries --------------
     //
     // **Cycle Audit 10 (a1-03).** A venue draws the next tick before its

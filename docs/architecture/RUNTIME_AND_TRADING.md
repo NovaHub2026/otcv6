@@ -178,6 +178,21 @@ the same set, and the guide fills `seams` from the route rather than from the
 stream's `gap` frame, which carries sequences, is only seen live, and says
 nothing about earlier boots.
 
+**Since contract 3.1.0 a seam no longer refuses a contract** (ADR-0021, the
+Human Owner, 2026-09-26). A contract settles at its final millisecond whatever
+happened to the venue in between: a seam reopens the market at the price it last
+published (ADR-0020), so the last tick before the gap is the price in force at
+every instant inside it, and `settle()` takes the contract across it — expiry
+inside the gap, entry inside it, or a window spanning it — and says so in
+`seamsCrossed`. `GET /markets/:id/price?at=` answers that price inside a seam,
+with the seam named beside it, instead of `409`. What is still refused is a
+window across a **change of lattice** (`reframes: true` on the seam, read from the
+frame log by `reframesAt`), because prices either side of it count in different
+units; a release must never change a lattice with contracts in flight. A seam
+that does not say whether it changed the lattice is refused too, so silence can
+never read as "ordinary". A seam never closes a market: openings are the broker's
+trading rules, not the engine's.
+
 ## Where economic blindness is actually enforced
 
 Three mechanisms, and Cycle Audit 2 showed the first two were not enough on their

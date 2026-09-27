@@ -345,8 +345,11 @@ secuencia en la que reanudará, así que la ventana de unos cientos de
 milisegundos entre `/health/ready` y el primer tick contesta lo mismo que
 contesta después (Ciclo 10). Lo publicado antes de la costura no
 se pierde: sigue en el registro, por secuencia (`/ticks/:sequence`) y por
-instante (`/price?at=`), y en el histórico de velas — pero el **hueco** no tiene
-precio: un `at` dentro de la costura es `409`, y la costura misma se lee en
+instante (`/price?at=`), y en el histórico de velas. El **hueco** no tiene ticks,
+pero sí precio en vigor: el mercado reabre desde su último precio publicado, así
+que un `at` dentro de la costura responde ese precio con la costura nombrada al
+lado (`seam`), y un contrato que vence ahí **se liquida en su milisegundo final**
+contra él (ADR-0021, contrato 3.1.0). La costura misma se lee en
 `GET /markets/:id/seams` (§3.7, §5). La cadena de compromisos **se sella** en la
 costura y **se reanuda** después de ella en vez de puentearla (Ciclo 10): la
 ventana abierta se cierra, por corta que sea — de modo que todo lo servido antes
@@ -364,14 +367,15 @@ que una persona lo reiniciaba. Ahora **se reabre solo**: continúa desde su
 último precio publicado, en un keystream nuevo, con la secuencia adelantada un
 lease y el hueco registrado como costura — exactamente lo que hacía el reinicio.
 Para un bróker no hay nada nuevo que implementar: es la misma costura de §5, se
-lee en `GET /markets/:id/seams`, un `at` dentro del hueco sigue siendo `409` y
-un contrato cuya ventana la toque **no se liquida**. Lo único que cambia es la
+lee en `GET /markets/:id/seams`, un `at` dentro del hueco responde el precio en
+vigor con la costura nombrada, y un contrato cuya ventana la cruce **se liquida
+igual, en su milisegundo final** (ADR-0021). Una costura **nunca cierra el
+mercado**: abrir contratos es cosa de tus reglas de trading, no del motor. Lo único que cambia es la
 frecuencia: si tu host suspende a menudo verás costuras a menudo, y
 `otc_market_reopenings_total` en `/metrics` las cuenta. Un despliegue que las
 acumula tiene un problema de host, y ese contador es lo que lo dice.
 `OTC_AUTO_REOPEN=0` devuelve el comportamiento anterior (el mercado se queda
-parado y `/health` lo nombra) para quien prefiera decidirlo a mano. Una petición de prueba dentro del intervalo responde **409** nombrando
-sus dos extremos, no un «no» a secas.
+parado y `/health` lo nombra) para quien prefiera decidirlo a mano.
 
 ### 3.5 Histórico de velas
 
@@ -426,13 +430,16 @@ para liquidar.
   `settle()` y que dibujan las velas. La respuesta la nombra
   (`"rule": "last-tick-at-or-before"`). `404` si el registro empieza después del
   instante; `400` si el instante es posterior al último publicado — un precio
-  para un instante sin publicar es una predicción, no un registro; **`409` si el
-  instante cae dentro de una costura** (§5): ahí no se publicó nada y nunca se
-  publicará, y la respuesta nombra los dos lados del hueco.
+  para un instante sin publicar es una predicción, no un registro. **Dentro de
+  una costura** (§5) responde el precio en vigor —el último tick antes del hueco,
+  desde el que el mercado reabrió— y lo dice en `seam`, con los dos lados del
+  hueco y `reframes`; fuera de una costura `seam` es `null` (ADR-0021,
+  contrato 3.1.0; en la 3.0.0 era `409`).
 - **`GET /markets/:id/seams`** — las costuras que el registro guarda para ese
   mercado, de la más antigua a la más reciente: `assetId`, `lastSequence`,
-  `lastInstant`, `resumesAtSequence`, `resumesAtInstant`. Es lo que `settle()`
-  espera en `seams` (§5). Array vacío en un motor que nunca ha costurado.
+  `lastInstant`, `resumesAtSequence`, `resumesAtInstant` y `reframes` —si la
+  cuadrícula de precios cambió ahí—. Es lo que `settle()` espera en `seams`
+  (§5). Array vacío en un motor que nunca ha costurado.
 - **`GET /markets/:id/proof/:sequence`** — la prueba de inclusión: el
   compromiso firmado de la ventana que contiene la secuencia, la ruta Merkle y
   la clave pública del publicador. Con eso, `verifyInclusion` y
@@ -548,8 +555,12 @@ forma parte de la huella que lleva cada punto de control, así que al arrancar
 con la versión nueva **cada activo hace una costura**: continúa desde su último
 precio publicado —sin salto de precio, porque la cuadrícula de cada activo se
 conserva— con una discontinuidad registrada que `GET /markets/:id/seams`
-publica y `settle` respeta. Un contrato cuya ventana toque esa costura no se
-liquida; es una por activo y solo en el arranque de la actualización.
+publica. Es una costura ordinaria (`reframes: false`): un contrato que la cruce
+se liquida en su milisegundo final (ADR-0021). Es una por activo y solo en el
+arranque de la actualización. Una actualización que **cambie la cuadrícula**
+(`reframes: true`) se despliega sin contratos en vuelo: `settle()` rechaza un
+contrato que la cruce, porque los precios de cada lado cuentan en unidades
+distintas.
 
 **Empates.** Un contrato que termina exactamente en el precio de entrada se
 reembolsa (ADR-0007). La tasa medida por activo es **0,167%–0,435%** (12
@@ -756,9 +767,10 @@ Reglas que importan:
   binaria y sobre un array desordenado devuelve cualquier cosa, sin avisar.
 - **Empate** (`expiryPrice === entryPrice`): lo decide `AtMoneyPolicy`, por
   defecto `'refund'`. Puedes pasar `'loss'` o `'win'`.
-- **Se niega antes que inventar.** Si el registro empieza después de la entrada, o
-  termina antes de la expiración, lanza `NotSettleableError`. Un contrato cuya
-  expiración aún no ha ocurrido no se liquida: se reintenta más tarde.
+- **Nunca antes del milisegundo final.** Si el registro termina antes de la
+  expiración, lanza `NotSettleableError`: un contrato de un minuto no se liquida
+  ni un milisegundo antes de su minuto — se reintenta más tarde. También se niega
+  si el registro empieza después de la entrada.
 
 ### El borde de la vela
 
@@ -792,8 +804,12 @@ dentro del array exacto que pasaste. La identidad estable de un tick es su
 
 ### Las discontinuidades: de dónde salen las costuras
 
-`TickRecord` acepta un campo `seams` — discontinuidades del registro — y `settle`
-se niega a liquidar un contrato cuya ventana toque una. **Rellénalo desde
+`TickRecord` acepta un campo `seams` — discontinuidades del registro. Desde el
+contrato 3.1.0 (ADR-0021) una costura ordinaria **no impide liquidar**: el
+contrato se liquida en su milisegundo final con el precio en vigor —el último
+tick antes del hueco, si la expiración cae dentro— y el `Settlement` lo cuenta en
+`seamsCrossed`. `settle` solo se niega ante una costura que **cambió la
+cuadrícula** (`reframes: true`) o que no dice si la cambió. **Rellénalo desde
 `GET /markets/:id/seams`**, no desde el stream:
 
 ```ts
@@ -804,9 +820,10 @@ const record = {
   seams: seams.map((s) => ({
     lastInstant: s.lastInstant,
     resumesAtInstant: s.resumesAtInstant,
+    reframes: s.reframes,
   })),
 };
-settle(contract, record); // NotSettleableError si la ventana toca una costura
+settle(contract, record); // NotSettleableError solo si cruza un cambio de cuadrícula
 ```
 
 Léelo una vez por pasada de liquidación, no por contrato: una costura cuesta un
@@ -821,12 +838,12 @@ liquidar un contrato de la semana pasada. `recovery` en `GET /markets/:id`
 tampoco sirve: nombra el arranque **actual**. El registro es lo único que las
 recuerda todas, y `/seams` es cómo se leen (Auditoría de Ciclo 10).
 
-**Si liquidas sin las costuras** el resultado no es un error: es un precio. El
-motor devolvía —y `settle()` sin `seams` sigue devolviendo— el último tick
-_anterior_ al hueco como precio de expiración, y con la entrada antes de la
-costura eso es una pérdida liquidada contra un precio de un intervalo que nadie
-generó. Por eso `/price?at=` dentro de una costura ahora responde `409` en vez de
-un precio: la API y `settle()` se niegan en el mismo sitio.
+**Si liquidas sin las costuras** el precio es el mismo —el último tick anterior
+al hueco, que es el precio en vigor— pero pierdes lo único que `settle()` todavía
+rechaza: un contrato que cruza un cambio de cuadrícula, cuyos precios de entrada
+y de expiración no se pueden comparar. Pásale siempre las costuras, con
+`reframes`. La API y `settle()` responden lo mismo en el mismo sitio: `/price?at=`
+dentro de una costura da el precio en vigor y nombra la costura.
 
 `packages/trading` trae además `tally` (ledger), `assessBookRisk` /
 `exposureByEvent` (exposición por evento) y `ExposureBook` / `admit` (límites),
@@ -1143,8 +1160,9 @@ Dos avisos que ahorran tiempo:
       verde antes de salir a producción, y en cada actualización del motor (el
       contrato tiene versión: `/health.apiVersion`). Sin `--key` la prueba no es
       independiente y el informe lo dice.
-- [ ] Liquidación sobre `GET /markets/:id/price` (entrada y expiración) y, si
-      liquidas tú, con `settle()` y `NotSettleableError` manejado.
+- [ ] Liquidación sobre `GET /markets/:id/price` (entrada y expiración), **en el
+      milisegundo final** aunque haya costura, y, si liquidas tú, con `settle()`,
+      las costuras de `/seams` con `reframes`, y `NotSettleableError` manejado.
 - [ ] `stake` entero en tu unidad menor; `payoutRatio` con cuatro decimales como máximo.
 - [ ] Guardado, por contrato: el propio contrato, las dos respuestas de `/price` y
       las dos pruebas de `/proof` con la clave del publicador.

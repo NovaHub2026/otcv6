@@ -323,15 +323,24 @@ describe('settlement is direction-symmetric (the settlement mirror)', () => {
   });
 });
 
-describe('Cycle Audit 5: settlement refuses a window that touches a seam', () => {
-  // PH-14.3 built `spansSeam` with the docstring "the settlement path needs to
-  // be able to ask", and then nothing asked. An auditor produced a real
-  // 93-second failover gap and a contract whose expiry landed inside it: the
-  // price query returned null for that instant while the contract settled as a
-  // loss against the last pre-seam tick, for real money.
+describe('a contract settles at its final millisecond, across a seam (ADR-0021)', () => {
+  // The rule the Human Owner set on 2026-09-26 and approved for the kernel on
+  // 2026-09-27: "una operación siempre debe liquidarse en el milisegundo final
+  // […] nunca puede liquidarse antes". This block replaced one titled
+  // "settlement refuses a window that touches a seam" — Cycle Audit 5's fix, which
+  // a broker turned into a refund on a fifth of all 15-minute contracts on a
+  // loaded host. What that fix guarded against is kept where it still applies:
+  // an unstated record, an unstated seam, a lattice change, and an expiry not yet
+  // in the record are all still refused below.
+  //
+  // **The fixture behaves like the engine.** The block it replaced jumped the
+  // price across its gap, 7 to -40, which a real reopening never does: ADR-0020
+  // reopens a market at the price it last published, and the first tick after
+  // moves one step from there. A guard tested against a record the engine cannot
+  // produce describes a market nobody runs.
   const instants = Float64Array.from([0, 1_000, 2_000, 95_000, 96_000]);
-  const prices = Int32Array.from([0, 5, 7, -40, -38]);
-  const seams = [{ lastInstant: 2_000, resumesAtInstant: 95_000 }];
+  const prices = Int32Array.from([0, 5, 7, 8, 6]);
+  const seams = [{ lastInstant: 2_000, resumesAtInstant: 95_000, reframes: false }];
 
   const spanning = (entryInstant: number, horizonMs: number): Contract =>
     contract({
@@ -340,80 +349,101 @@ describe('Cycle Audit 5: settlement refuses a window that touches a seam', () =>
       horizonMs: durationMillis(horizonMs),
     });
 
-  it('refuses a contract whose expiry falls inside the gap', () => {
-    expect(() => settle(spanning(1_000, 30_000), { instants, prices, seams })).toThrow(
-      NotSettleableError,
-    );
+  it('settles a contract whose final millisecond falls inside the gap, at the price in force', () => {
+    // Entry 5, and at 31,000 the price in force is 7 — the last tick, which the
+    // market reopened from. Every observer was shown 7 at that instant.
+    const settled = settle(spanning(1_000, 30_000), { instants, prices, seams });
+    expect(settled.entryPrice).toBe(5);
+    expect(settled.expiryPrice).toBe(7);
+    expect(settled.outcome).toBe('win');
+    expect(settled.seamsCrossed, 'the seam was not recorded against the contract').toBe(1);
   });
 
-  it('refuses a contract whose entry falls inside the gap', () => {
-    expect(() => settle(spanning(50_000, 45_000), { instants, prices, seams })).toThrow(
-      NotSettleableError,
-    );
+  it('settles a contract opened inside the gap, against the price in force when it opened', () => {
+    // A seam never closes a market: a trader who opened during it opened at 7.
+    const settled = settle(spanning(50_000, 45_000), { instants, prices, seams });
+    expect(settled.entryPrice).toBe(7);
+    expect(settled.expiryPrice).toBe(8);
+    expect(settled.outcome).toBe('win');
   });
 
-  it('refuses a contract that spans the whole gap', () => {
-    expect(() => settle(spanning(1_000, 94_500), { instants, prices, seams })).toThrow(
-      NotSettleableError,
-    );
+  it('settles a contract that spans the whole gap, on its final millisecond', () => {
+    const settled = settle(spanning(1_000, 94_500), { instants, prices, seams });
+    expect(settled.expiryPrice).toBe(8);
+    expect(settled.outcome).toBe('win');
   });
 
-  it('settles a contract entirely on one side of the gap, on its merits', () => {
-    // **Cycle Audit 7, CA7-13.** This asserted `toBeDefined()` on both, which
-    // an engine that refunded *every* contract on a seamed record satisfies —
-    // and an auditor made exactly that change and watched all 2,203 unit tests
-    // pass. Three of this block's four tests assert only that something threw;
-    // the fourth asserted only that something came back. Between them they
-    // pinned the refusal and nothing about the answer.
-    //
-    // A seam decides whether a window is settleable. It must not decide what
-    // the outcome *is*, so the outcomes are compared against the identical
-    // contract on a record with no seam at all.
-    for (const window of [spanning(0, 2_000), spanning(95_000, 1_000)] as const) {
+  it('leaves a contract the seam outlasted as a tie, refunded — nobody loses to a seam', () => {
+    // Opened on the last tick before the gap and expiring inside it: the price
+    // stood still for the whole contract, which is a tie under ADR-0007.
+    const settled = settle(spanning(2_000, 30_000), { instants, prices, seams });
+    expect(settled.entryPrice).toBe(settled.expiryPrice);
+    expect(settled.outcome).toBe('refund');
+    expect(settled.net).toBe(0);
+  });
+
+  it('decides the outcome exactly as it would without the seam', () => {
+    // A seam is written down so an auditor can see the price stood still; it must
+    // not change what a contract is worth. Same record, same windows, seam stated
+    // and not.
+    for (const window of [
+      spanning(1_000, 30_000),
+      spanning(50_000, 45_000),
+      spanning(0, 2_000),
+      spanning(95_000, 1_000),
+    ]) {
       const withSeam = settle(window, { instants, prices, seams });
       const without = settle(window, { instants, prices, seams: [] });
-      expect(withSeam.outcome, 'a seam elsewhere in the record changed the outcome').toBe(
-        without.outcome,
-      );
-      expect(withSeam.entryPrice).toBe(without.entryPrice);
-      expect(withSeam.expiryPrice).toBe(without.expiryPrice);
+      expect(withSeam.outcome, `${window.id}: the seam changed the outcome`).toBe(without.outcome);
+      expect(withSeam.returned).toBe(without.returned);
     }
-    // And each outcome is the one the prices imply, so an engine returning a
-    // constant cannot satisfy this either.
-    for (const window of [spanning(0, 2_000), spanning(95_000, 1_000)] as const) {
-      const settled = settle(window, { instants, prices, seams });
-      expect(settled.outcome, `${settled.entryPrice} -> ${settled.expiryPrice}`).toBe(
-        settled.expiryPrice > settled.entryPrice
-          ? 'win'
-          : settled.expiryPrice < settled.entryPrice
-            ? 'loss'
-            : 'refund',
-      );
-    }
+  });
+
+  it('never settles before its final millisecond is in the record', () => {
+    // The record ends at the last tick before a gap that has not closed: a
+    // contract expiring after it has its result fixed at its final millisecond but
+    // cannot be read until the record reaches past it, because until then nobody
+    // can know that no other tick was published at that instant.
+    const open = {
+      instants: Float64Array.from([0, 1_000, 2_000]),
+      prices: Int32Array.from([0, 5, 7]),
+      seams: [],
+    };
+    expect(() => settle(spanning(1_000, 30_000), open)).toThrow(/beyond the record/);
+  });
+
+  it('refuses a contract across a change of lattice — the one seam that still refuses', () => {
+    // A release that recalibrates an asset reopens it on a new lattice: the
+    // integers either side count in different quanta. Cycle Audit 13 measured
+    // what comparing them does — a 9,900 win on a price that had not moved.
+    const reframing = [{ lastInstant: 2_000, resumesAtInstant: 95_000, reframes: true }];
+    expect(() => settle(spanning(1_000, 94_500), { instants, prices, seams: reframing })).toThrow(
+      /change of lattice/,
+    );
+    // And a contract entirely on either side of it is untouched.
+    expect(
+      settle(spanning(95_000, 1_000), { instants, prices, seams: reframing }).outcome,
+    ).toBeDefined();
+  });
+
+  it('refuses a seam that does not say whether the lattice changed (Cycle Audit 12)', () => {
+    // Silence is not "no". A caller without types that leaves the field out must
+    // not have its seam read as ordinary.
+    const unsaid = [{ lastInstant: 2_000, resumesAtInstant: 95_000 }] as unknown as typeof seams;
+    expect(() => settle(spanning(1_000, 30_000), { instants, prices, seams: unsaid })).toThrow(
+      /does not say whether the lattice/,
+    );
   });
 
   it('refuses a record that says nothing about its discontinuities (Cycle Audit 12)', () => {
     // **The input that made the guard opt-in.** `seams` was optional "so every
     // existing caller keeps working", which made *silence* and *no seams* the
-    // same statement — so a caller holding seams and forgetting to pass them
-    // settled straight across one. Since PH-37 that is worse than an unobserved
-    // interval: a seam can be a lattice change, and then the two integers being
-    // compared are counted in different quanta.
+    // same statement. It matters more now, not less: the seams are what say
+    // whether a lattice changed inside a contract.
     const silent = { instants, prices } as unknown as Parameters<typeof settle>[1];
     expect(() => settle(spanning(1_000, 30_000), silent)).toThrow(NotSettleableError);
     expect(() => settle(spanning(1_000, 30_000), silent)).toThrow(
       /did not state its discontinuities/,
-    );
-  });
-
-  it('a record that states it holds no seams settles as it always did', () => {
-    const settled = settle(spanning(1_000, 30_000), { instants, prices, seams: [] });
-    expect(settled.outcome).toBe(
-      settled.expiryPrice > settled.entryPrice
-        ? 'win'
-        : settled.expiryPrice < settled.entryPrice
-          ? 'loss'
-          : 'refund',
     );
   });
 });

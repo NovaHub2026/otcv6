@@ -58,6 +58,7 @@ interface SeamBody {
   lastInstant: number;
   resumesAtSequence: number;
   resumesAtInstant: number;
+  reframes: boolean;
 }
 interface ProofBody {
   publisherPublicKey: string | null;
@@ -262,36 +263,46 @@ describe('the settlement query (PH-29.1)', () => {
    * generated.
    */
   describe('a recorded seam (PH-31)', () => {
-    it('refuses the price of an instant inside it, naming both sides, and answers the boundaries', async () => {
+    /**
+     * ADR-0021 replaced the refusal: a contract settles at its final millisecond
+     * whatever happened to the venue in between, so an instant inside the gap
+     * is answered with the price in force there — the last tick before it, the
+     * price the market reopened from — and the seam is named beside it, both
+     * sides, so a broker can show why nothing was drawn there. What a4-01 found
+     * was an answer that *named nothing*; this one names everything.
+     */
+    it('answers the price in force inside it, naming both sides, and the boundaries with no seam (ADR-0021)', async () => {
       const { controller, seam, service } = await seamedVenue();
+      const named = {
+        lastSequence: seam.lastSequence,
+        lastInstant: seam.lastInstant,
+        resumesAtSequence: seam.resumesAtSequence,
+        resumesAtInstant: seam.resumesAtInstant,
+        reframes: false,
+      };
       const inside = Math.floor((seam.lastInstant + seam.resumesAtInstant) / 2);
       expect(inside).toBeGreaterThan(seam.lastInstant);
       expect(inside).toBeLessThan(seam.resumesAtInstant);
-      await expect(controller.priceAt(ID, String(inside))).rejects.toBeInstanceOf(
-        ConflictException,
-      );
-      await expect(controller.priceAt(ID, String(inside))).rejects.toThrow(
-        new RegExp(
-          `falls inside a recorded discontinuity.*sequence ${String(seam.lastSequence)} ` +
-            `\\(instant ${String(seam.lastInstant)}\\).*sequence ${String(seam.resumesAtSequence)} ` +
-            `\\(instant ${String(seam.resumesAtInstant)}\\)`,
-          's',
-        ),
-      );
-      // One millisecond either side of the boundary instants: refused inside,
-      // answered on the ticks themselves.
-      await expect(controller.priceAt(ID, String(seam.lastInstant + 1))).rejects.toBeInstanceOf(
-        ConflictException,
-      );
-      await expect(
-        controller.priceAt(ID, String(seam.resumesAtInstant - 1)),
-      ).rejects.toBeInstanceOf(ConflictException);
-      const before = (await controller.priceAt(ID, String(seam.lastInstant))) as Published;
-      expect(before.sequence, 'the last tick before the gap is still a price').toBe(
-        seam.lastSequence,
-      );
-      const after = (await controller.priceAt(ID, String(seam.resumesAtInstant))) as Published;
-      expect(after.sequence, 'and so is the first one after it').toBe(seam.resumesAtSequence);
+      const before = (await controller.priceAt(ID, String(seam.lastInstant))) as Published & {
+        seam: unknown;
+      };
+      expect(before.sequence, 'the last tick before the gap is a price').toBe(seam.lastSequence);
+      expect(before.seam, 'and it is not inside the seam').toBeNull();
+      // One millisecond inside either boundary, and the middle: each is the
+      // last tick before the gap, never the first one after it.
+      for (const at of [seam.lastInstant + 1, inside, seam.resumesAtInstant - 1]) {
+        const answer = (await controller.priceAt(ID, String(at))) as Published & {
+          seam: unknown;
+        };
+        expect(answer.sequence, `at ${String(at)}`).toBe(seam.lastSequence);
+        expect(answer.price, `at ${String(at)}`).toBe(before.price);
+        expect(answer.seam, `at ${String(at)}`).toEqual(named);
+      }
+      const after = (await controller.priceAt(ID, String(seam.resumesAtInstant))) as Published & {
+        seam: unknown;
+      };
+      expect(after.sequence, 'the first one after it is a price').toBe(seam.resumesAtSequence);
+      expect(after.seam).toBeNull();
       await service.stop();
     });
 
@@ -301,9 +312,13 @@ describe('the settlement query (PH-29.1)', () => {
         'assetId',
         'lastInstant',
         'lastSequence',
+        'reframes',
         'resumesAtInstant',
         'resumesAtSequence',
       ]);
+      // A restart, not a release: the lattice is the same either side, so
+      // settle() takes the contract across it (ADR-0021).
+      expect(seam.reframes).toBe(false);
       expect(seam.assetId).toBe(ID);
       // The seam the route names is the jump the record actually holds.
       const held = await record.since(ID, seam.lastSequence, 2);
@@ -315,7 +330,7 @@ describe('the settlement query (PH-29.1)', () => {
       await service.stop();
     });
 
-    it('is what stops settle() computing a loss against a price from before the gap', async () => {
+    it('lets settle() and the API agree on the price in force at a final millisecond inside the gap (ADR-0021)', async () => {
       const { controller, seam, ticks, service } = await seamedVenue();
       const instants = Float64Array.from(ticks.map((t) => t.instant));
       const prices = Int32Array.from(ticks.map((t) => t.price));
@@ -343,20 +358,35 @@ describe('the settlement query (PH-29.1)', () => {
       expect(() => settle(contract, blind)).toThrow(/did not state its discontinuities/);
       const lastBeforeTheGap = ticks.find((t) => t.sequence === seam.lastSequence)!;
       expect(lastBeforeTheGap, 'the gap this contract straddles is in the record').toBeDefined();
-      // The record the route now lets it build.
-      const seams = ((await controller.seams(ID)) as SeamBody[]).map((one) => ({
+      // The record the route now lets it build — and every seam says whether the
+      // lattice changed there, which is what `settle()` needs since ADR-0021.
+      const bodies = (await controller.seams(ID)) as (SeamBody & { reframes: boolean })[];
+      expect(
+        bodies.every((one) => one.reframes === false),
+        'a restart changed the lattice',
+      ).toBe(true);
+      const seams = bodies.map((one) => ({
         lastInstant: one.lastInstant,
         resumesAtInstant: one.resumesAtInstant,
+        reframes: one.reframes,
       }));
-      expect(() => settle(contract, { instants, prices, seams })).toThrow(NotSettleableError);
-      expect(() => settle(contract, { instants, prices, seams })).toThrow(
-        /touches a recorded discontinuity/,
-      );
-      // And the same window through the API refuses rather than serving the
-      // price `blind` used: the two agree now.
-      await expect(controller.priceAt(ID, String(expiryInstant))).rejects.toBeInstanceOf(
-        ConflictException,
-      );
+      // **A contract settles at its final millisecond, across the seam** (the
+      // Human Owner, 2026-09-26). Its final millisecond falls inside the gap, so
+      // the price in force there is the last tick before it — the price every
+      // observer was shown, and the one the market reopened from.
+      const across = settle(contract, { instants, prices, seams });
+      expect(across.expiryPrice).toBe(lastBeforeTheGap.price);
+      expect(across.seamsCrossed).toBe(1);
+      // And the API answers the same price for the same instant, naming the seam
+      // it fell in — the two agree, which is what this route exists for.
+      const atExpiry = (await controller.priceAt(ID, String(expiryInstant))) as Published & {
+        seam: { lastSequence: number; resumesAtSequence: number; reframes: boolean } | null;
+      };
+      expect(atExpiry.price).toBe(across.expiryPrice);
+      expect(atExpiry.sequence).toBe(seam.lastSequence);
+      expect(atExpiry.seam?.lastSequence).toBe(seam.lastSequence);
+      expect(atExpiry.seam?.resumesAtSequence).toBe(seam.resumesAtSequence);
+      expect(atExpiry.seam?.reframes).toBe(false);
       // Either side of the seam the two still agree exactly.
       const wholly = {
         ...contract,

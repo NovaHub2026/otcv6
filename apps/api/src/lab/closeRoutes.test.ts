@@ -96,7 +96,7 @@ async function advancePastExpiry(
   positionId: string,
 ): Promise<void> {
   const expiry = (
-    controller.listPositions(id) as { positions: { id: string; expiryInstant: number }[] }
+    (await controller.listPositions(id)) as { positions: { id: string; expiryInstant: number }[] }
   ).positions.find((p) => p.id === positionId)!.expiryInstant;
   await advance(venue, clock, Math.max(0, expiry - clock.now()) + 10_000);
   for (let step = 0; step < 24; step += 1) {
@@ -315,7 +315,7 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     expect(applied.instant).toBe(position.expiryInstant);
 
     // Expected rests on the armed target and says so.
-    const listed = controller.listPositions(id) as {
+    const listed = (await controller.listPositions(id)) as {
       positions: { id: string; expected: { outcome: string; basis: string }; actual: unknown }[];
     };
     const row = listed.positions.find((p) => p.id === position.id)!;
@@ -323,7 +323,7 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     expect(row.actual).toBeNull();
 
     await advancePastExpiry(venue, clock, controller, position.id);
-    const after = controller.listPositions(id) as {
+    const after = (await controller.listPositions(id)) as {
       positions: {
         id: string;
         actual: { outcome: string; agrees: boolean; expiryPrice: number } | null;
@@ -349,7 +349,7 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
       position: { id: string };
     };
     await advance(venue, clock, 40_000);
-    const after = controller.listPositions(id) as {
+    const after = (await controller.listPositions(id)) as {
       positions: { id: string; actual: { outcome: string } | null }[];
     };
     const row = after.positions.find((p) => p.id === opened.position.id)!;
@@ -723,24 +723,24 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
       actual: unknown;
       settlement: { kind: string; reason?: string } | null;
     };
-    const rowNow = (): Row =>
-      (controller.listPositions(id) as { positions: Row[] }).positions.find(
+    const rowNow = async (): Promise<Row> =>
+      ((await controller.listPositions(id)) as { positions: Row[] }).positions.find(
         (p) => p.id === opened.position.id,
       )!;
 
     // Before the expiry: nothing to say yet, and the view says so rather than
     // showing the same null an unsettleable entry would show.
-    expect(rowNow().settlement).toBeNull();
+    expect((await rowNow()).settlement).toBeNull();
 
     await advancePastExpiry(venue, clock, controller, opened.position.id);
-    const settled = rowNow();
+    const settled = await rowNow();
     expect(settled.settlement).toEqual({ kind: 'settled' });
     expect(settled.actual).not.toBeNull();
 
     // Now drop the window the entry lived in and let the feed refill past it.
     venue.feed.forget(id, 'test: the entry falls out of the retained window');
     await advance(venue, clock, 10_000);
-    const dropped = rowNow();
+    const dropped = await rowNow();
     expect(dropped.actual, 'an evicted entry cannot be settled').toBeNull();
     expect(dropped.settlement!.kind).toBe('evicted');
     // With `settle`'s own wording, so the panel is not paraphrasing the kernel.
@@ -865,7 +865,7 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
 
     await advancePastExpiry(venue, clock, controller, opened.position.id);
     const row = (
-      controller.listPositions(id) as {
+      (await controller.listPositions(id)) as {
         positions: {
           id: string;
           entryPrice: number;
@@ -907,7 +907,7 @@ describe('Candle Close Control on a real candle (PH-24.2)', () => {
     );
     await advancePastExpiry(venue, clock, controller, opened.position.id);
     const row = (
-      controller.listPositions(id) as {
+      (await controller.listPositions(id)) as {
         positions: { id: string; actual: { agrees: boolean } | null }[];
       }
     ).positions.find((p) => p.id === opened.position.id)!;

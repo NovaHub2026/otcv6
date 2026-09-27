@@ -7,6 +7,7 @@ import {
   type LogPrice,
   type Tick,
 } from '@otc/core';
+import { crossesAChange } from '@otc/runtime';
 import {
   NotSettleableError,
   settle,
@@ -131,17 +132,41 @@ export interface PositionRequest {
  * previous one plus one — the same rule `tickRecord.ts` detects one by — so the
  * window states exactly the discontinuities it contains.
  */
-export function recordOf(ticks: readonly Tick[]): {
+/** The price series of a window, without its discontinuities — what an entry price needs. */
+export function seriesOf(ticks: readonly Tick[]): { instants: Float64Array; prices: Int32Array } {
+  return {
+    instants: Float64Array.from(ticks.map((t) => t.instant)),
+    prices: Int32Array.from(ticks.map((t) => t.price)),
+  };
+}
+
+export function recordOf(
+  ticks: readonly Tick[],
+  /**
+   * Sequences at which the lattice changed (ADR-0021) — `reframedSequences` of
+   * the frame log. A seam crossing any of them is a change of lattice. Required, because a seam
+   * that cannot say whether it changed the lattice is refused by `settle()`, and
+   * silence here would read as "no" there.
+   */
+  reframedAt: ReadonlySet<number>,
+): {
   instants: Float64Array;
   prices: Int32Array;
-  seams: readonly { lastInstant: number; resumesAtInstant: number }[];
+  seams: readonly { lastInstant: number; resumesAtInstant: number; reframes: boolean }[];
 } {
-  const seams: { lastInstant: number; resumesAtInstant: number }[] = [];
+  const seams: { lastInstant: number; resumesAtInstant: number; reframes: boolean }[] = [];
   for (let i = 1; i < ticks.length; i += 1) {
     const previous = ticks[i - 1]!;
     const next = ticks[i]!;
     if (next.sequence !== previous.sequence + 1) {
-      seams.push({ lastInstant: previous.instant, resumesAtInstant: next.instant });
+      seams.push({
+        lastInstant: previous.instant,
+        resumesAtInstant: next.instant,
+        reframes: crossesAChange(reframedAt, {
+          lastSequence: previous.sequence,
+          resumesAtSequence: next.sequence,
+        }),
+      });
     }
   }
   return {
@@ -210,7 +235,9 @@ export class LabPositions {
         `horizonMs must be at least 1000, received ${String(request.horizonMs)}.`,
       );
     }
-    const record = recordOf(ticks);
+    // Only the series: opening reads an entry price, which no seam changes, and it
+    // runs inside `betweenAdvances`, a synchronous section a frame read cannot enter.
+    const record = seriesOf(ticks);
     const entryInstant =
       nextTickInstant !== null && nextTickInstant <= now ? epochMillis(nextTickInstant - 1) : now;
     const entry = priceAtOrBefore(record.instants, record.prices, entryInstant);
@@ -288,8 +315,12 @@ export class LabPositions {
    * contracts. It is raised by name rather than rendered as a mismatched
    * outcome (PH-30 / Cycle Audit 10).
    */
-  static status(position: LabPosition, ticks: readonly Tick[]): SettlementStatus {
-    const record = recordOf(ticks);
+  static status(
+    position: LabPosition,
+    ticks: readonly Tick[],
+    reframedAt: ReadonlySet<number>,
+  ): SettlementStatus {
+    const record = recordOf(ticks, reframedAt);
     let settlement: Settlement;
     try {
       settlement = settle(position.contract, record);
@@ -318,8 +349,12 @@ export class LabPositions {
   }
 
   /** The settlement alone; null for either refusal, which {@link status} tells apart. */
-  static actual(position: LabPosition, ticks: readonly Tick[]): Settlement | null {
-    const status = LabPositions.status(position, ticks);
+  static actual(
+    position: LabPosition,
+    ticks: readonly Tick[],
+    reframedAt: ReadonlySet<number>,
+  ): Settlement | null {
+    const status = LabPositions.status(position, ticks, reframedAt);
     return status.kind === 'settled' ? status.settlement : null;
   }
 }

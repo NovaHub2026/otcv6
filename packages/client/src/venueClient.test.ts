@@ -24,7 +24,7 @@ describe('the reference client (PH-29.4)', () => {
    * here. Before contract 2.0.0 there was nothing to fill it from, and a price
    * inside a gap nobody generated came back `200`.
    */
-  it("reads the record's discontinuities, and takes a price inside one as a refusal (PH-31)", async () => {
+  it("reads the record's discontinuities, and a price inside one is the price in force (ADR-0021)", async () => {
     const client = new VenueClient({ baseUrl: await fakeVenue({ seamed: true }) });
     const seams = await client.seams('eurusd');
     expect(isRefusal(seams)).toBe(false);
@@ -34,14 +34,34 @@ describe('the reference client (PH-29.4)', () => {
     expect(
       seams.map((s) => ({ lastInstant: s.lastInstant, resumesAtInstant: s.resumesAtInstant })),
     ).toEqual([{ lastInstant: SEAM.lastInstant, resumesAtInstant: SEAM.resumesAtInstant }]);
-    // A 409 is a refusal the contract lists, so it is a value and not a
-    // ContractViolation: a client that threw here would have no way to tell a
-    // seam from a broken venue.
+    // Inside the gap the price in force is the last tick before it — the price
+    // the market reopened from — and the seam is named beside it. A contract
+    // whose final millisecond falls there settles at that price.
     const inside = await client.priceAt('eurusd', SEAM.lastInstant + 1);
-    expect(isRefusal(inside) && inside.status).toBe(409);
-    // Both boundary instants are still prices.
-    expect(isRefusal(await client.priceAt('eurusd', SEAM.lastInstant))).toBe(false);
-    expect(isRefusal(await client.priceAt('eurusd', SEAM.resumesAtInstant))).toBe(false);
+    expect(isRefusal(inside)).toBe(false);
+    if (isRefusal(inside)) return;
+    expect(inside.sequence).toBe(SEAM.lastSequence);
+    expect(inside.seam).toEqual({
+      lastSequence: SEAM.lastSequence,
+      lastInstant: SEAM.lastInstant,
+      resumesAtSequence: SEAM.resumesAtSequence,
+      resumesAtInstant: SEAM.resumesAtInstant,
+      reframes: false,
+    });
+    // Both boundary instants are prices outside the seam.
+    const before = await client.priceAt('eurusd', SEAM.lastInstant);
+    const after = await client.priceAt('eurusd', SEAM.resumesAtInstant);
+    expect(!isRefusal(before) && before.seam).toBeNull();
+    expect(!isRefusal(after) && after.seam).toBeNull();
+    // A venue still on the 3.0.0 rule refuses there with 409, and contract 3.1.0
+    // no longer lists it: the client says the venue departed rather than handing
+    // a broker a refusal it would refund on.
+    const old = new VenueClient({
+      baseUrl: await fakeVenue({ seamed: true, seamRefused: true }),
+    });
+    await expect(old.priceAt('eurusd', SEAM.lastInstant + 1)).rejects.toThrow(
+      /answered 409, which the contract does not list/,
+    );
     // And a venue that never seamed answers an empty list.
     const none = await new VenueClient({ baseUrl: await fakeVenue() }).seams('eurusd');
     expect(none).toEqual([]);

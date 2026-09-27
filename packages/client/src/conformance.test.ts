@@ -142,6 +142,14 @@ export interface Faults {
   futureMarket?: boolean;
   /** A venue whose record carries a discontinuity: it lists it, and refuses a price inside it. */
   seamed?: boolean;
+  /**
+   * Refuse a price inside a seam with 409, as contract 3.0.0 did (ADR-0021).
+   *
+   * A broker settling on such a venue has no price for a contract whose final
+   * millisecond falls in the gap and refunds it — the rule the Human Owner
+   * replaced on 2026-09-26.
+   */
+  seamRefused?: boolean;
 }
 
 /** The gap a `seamed` fake venue's record holds: between tick 30 and tick 31. */
@@ -151,6 +159,8 @@ export const SEAM = {
   lastInstant: TICKS[29]!.instant,
   resumesAtSequence: 100_031,
   resumesAtInstant: TICKS[30]!.instant,
+  // An ordinary seam: a restart, not a release (ADR-0021).
+  reframes: false,
 };
 
 const servers: Server[] = [];
@@ -292,7 +302,8 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
     if (p === '/markets/eurusd/price') {
       const at = Number(url.searchParams.get('at'));
       if (at > TICKS[59]!.instant) return json(response, 400, { message: 'future' });
-      if (faults.seamed && at > SEAM.lastInstant && at < SEAM.resumesAtInstant) {
+      const inSeam = faults.seamed === true && at > SEAM.lastInstant && at < SEAM.resumesAtInstant;
+      if (inSeam && faults.seamRefused) {
         return json(response, 409, { message: 'inside a recorded discontinuity' });
       }
       let found: Tick | null = null;
@@ -303,6 +314,17 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
         at,
         rule: 'last-tick-at-or-before',
         ...published(found),
+        // ADR-0021: inside a seam the price in force is still a price, and the seam
+        // is named beside it.
+        seam: inSeam
+          ? {
+              lastSequence: SEAM.lastSequence,
+              lastInstant: SEAM.lastInstant,
+              resumesAtSequence: SEAM.resumesAtSequence,
+              resumesAtInstant: SEAM.resumesAtInstant,
+              reframes: SEAM.reframes,
+            }
+          : null,
       });
     }
     if (p.startsWith('/markets/eurusd/proof/')) {
@@ -497,6 +519,13 @@ describe('the conformance suite (PH-29.3)', () => {
       { seamed: true, latticeOffASeam: true },
       'a recorded price states the frame it counts in',
     ],
+    // ADR-0021: a venue still on the 3.0.0 rule refuses a price inside a seam, so a
+    // broker has nothing to settle a contract at whose final millisecond fell there.
+    [
+      'a venue that refuses a price inside a seam instead of answering the price in force (ADR-0021)',
+      { seamed: true, seamRefused: true },
+      'a price inside a seam is the price in force, and the seam is named',
+    ],
     [
       'a market serving the tick it has drawn but not published (a1-03)',
       { futureMarket: true },
@@ -556,6 +585,23 @@ describe('the conformance suite (PH-29.3)', () => {
       honest.checks.find((c) => c.name === 'a recorded price states the frame it counts in')
         ?.detail,
     ).toMatch(/NOT PROVEN/);
+  });
+
+  /**
+   * ADR-0021. The check has two honest answers: proven, when the venue lists an
+   * ordinary seam and answers the price in force inside it; and not proven, when
+   * it lists none — which is not a pass a broker should read as evidence.
+   */
+  it('proves the seam rule on a seamed venue, and says NOT PROVEN on one that never seamed', async () => {
+    const name = 'a price inside a seam is the price in force, and the seam is named';
+    const seamed = await conformance({ baseUrl: await fakeVenue({ seamed: true }), ticks: 40 });
+    const proven = seamed.checks.find((c) => c.name === name);
+    expect(proven?.ok).toBe(true);
+    expect(proven?.detail).not.toMatch(/NOT PROVEN/);
+    expect(proven?.detail).toContain(`seam ${String(SEAM.lastSequence)}..`);
+
+    const never = await conformance({ baseUrl: await fakeVenue({}), ticks: 40 });
+    expect(never.checks.find((c) => c.name === name)?.detail).toMatch(/NOT PROVEN/);
   });
 
   it('reports a venue that does not answer at all', async () => {

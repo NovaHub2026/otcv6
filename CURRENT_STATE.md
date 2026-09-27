@@ -2,7 +2,7 @@
 
 Type: CURRENT STATE
 Status: Authoritative record of current project state
-Last synchronized: 2026-09-24
+Last synchronized: 2026-09-26
 
 > This document is not a diary. It records where the project is **now** and what
 > the **exact next legal action** is. History lives in Git, phase documents and
@@ -14,21 +14,21 @@ Last synchronized: 2026-09-24
 
 | Field                            | Value                                                                                                                                                                          |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Active development cycle         | Cycle 13 — **3 of 3** phases approved (PH-37, PH-38, PH-39). **The Cycle Audit is what runs next**; Cycle 11 stays open                                                        |
-| Approved phases in current cycle | **3 of 3** — PH-37, PH-38, PH-39                                                                                                                                               |
+| Active development cycle         | Cycle 14 — **0 of 3** phases approved; PH-40 active. Cycle 13 closed by Cycle Audit 13; Cycle 11 stays open                                                                    |
+| Approved phases in current cycle | **0 of 3** — PH-40 active                                                                                                                                                      |
 | Cycle Audit state                | **013 closed** — 41 findings (2 critical, 9 material); the criticals and most materials fixed with a guard each, the rest carried by name in §6                                |
 | Last Cycle Audit                 | [Cycle Audit 013](docs/audits/CYCLE-AUDIT-013.md) — 2026-09-25, eight independent auditors in a worktree each, three refuters; [012](docs/audits/CYCLE-AUDIT-012.md) before it |
 
 ## Phase and subphase
 
-| Field                  | Value                                                                    |
-| ---------------------- | ------------------------------------------------------------------------ |
-| Active phase           | none                                                                     |
-| Phase lifecycle        | none                                                                     |
-| Active subphase        | none                                                                     |
-| Subphase lifecycle     | none                                                                     |
-| Last approved phase    | PH-39 — The reopening that holds                                         |
-| Last approved subphase | PH-39.1 — A starved reopening is re-armed, and the outage keeps one seam |
+| Field                  | Value                                                                                   |
+| ---------------------- | --------------------------------------------------------------------------------------- |
+| Active phase           | PH-40 — The engine a broker settles against                                             |
+| Phase lifecycle        | ACTIVE                                                                                  |
+| Active subphase        | PH-40.1 — A contract settles at its final millisecond, and a seam never closes a market |
+| Subphase lifecycle     | ACTIVE                                                                                  |
+| Last approved phase    | PH-39 — The reopening that holds                                                        |
+| Last approved subphase | PH-39.1 — A starved reopening is re-armed, and the outage keeps one seam                |
 
 **Cycle 12 is audited and closed.** PH-34 (the market's tempo follows its
 state), PH-35 (the level the market runs at) and PH-36 (a stalled market
@@ -250,6 +250,7 @@ ceiling.
 | ADR-0018 | One engine per deployment; a Lab-composed process is the engine in simulation mode; production is never Lab-composed (APPROVED)                                                                                                                                                                                                  |
 | ADR-0019 | A keystream is keyed by the instant it starts: a fresh genesis no longer replays the previous one (APPROVED)                                                                                                                                                                                                                     |
 | ADR-0020 | A market past its catch-up bound reopens itself at the clock as a recorded seam, instead of staying dead until an operator restarts the process (APPROVED)                                                                                                                                                                       |
+| ADR-0021 | A contract settles at its final millisecond with the price in force, across any ordinary seam; a seam never closes a market; only a change of lattice refuses (APPROVED, Human Owner)                                                                                                                                            |
 | Backlog  | [GitHub Issues](https://github.com/NovaHub2026/otcv6/issues) #1–#22; closed: #1, #2, #4, #5, #6, #7, #8, #10, #11, #12, #13, #15, #16, #17, #18, #19, #20, #21, #22. #9 (the multi-node composition) is deferred by the Cycle 10 plan; #3 and #14 are the Human Owner's (Governance amendments). `docs/BACKLOG.md` mirrors them. |
 | Roadmap  | `docs/phases/ROADMAP.md`                                                                                                                                                                                                                                                                                                         |
 | Branch   | `audit/ca10-fixes` off `main` at the PH-30 merge `353f101` (tagged `v1.0.0`, Cycle 10 complete); before it the PH-29 merge `668efa9`, the PH-28 merge `fd17ec0` and the PH-27 merge `e8ed2ae` (Cycle 9 complete)                                                                                                                 |
@@ -259,6 +260,26 @@ ceiling.
 
 ## EXACT NEXT LEGAL ACTION
 
+**Build PH-40, the engine a broker settles against, from PH-40.1.** The Human
+Owner showed the engine the broker it will serve (the Orbit frontend and a
+reference backend, read and not modified) and asked for the engine to be finished
+for how that broker operates, with the integration documented afterwards
+([PH-40](docs/phases/PH-40-the-engine-a-broker-settles-against.md)). PH-40.1 is
+[ADR-0021](docs/decisions/ADR-0021-a-contract-settles-at-its-final-millisecond.md),
+the Owner's rule: a contract settles at its final millisecond with the price in
+force, across any ordinary seam, and a seam never closes a market; only a change
+of lattice refuses. It is built on
+`feature/ph-40-the-engine-a-broker-settles-against` and waits on its targeted
+gate ([PH-40.1](docs/phases/PH-40.1-a-contract-settles-at-its-final-millisecond.md)).
+Then PH-40.2 (a heartbeat carrying the price in force, so a broker's own
+fifteen-second freshness rule does not close an open market), PH-40.3 (the six
+assets whose step is finer than the fifth decimal a broker displays — the refund
+ceiling is the Owner's call with the number in front of them), PH-40.4 (Cycle
+Audit 13's candle item, the two-hour bar and volume), PH-40.5 (issue #23, one
+restart writes one seam) and PH-40.6 (the guide). Cycle Audit 12's finding 7
+follows the phase.
+
+The superseded instruction, kept for the reasoning:
 **Open Cycle 14 with the phase Cycle Audit 13 put first: what a chart consumes
 belongs in the contract.** The audit is recorded
 ([CYCLE-AUDIT-013](docs/audits/CYCLE-AUDIT-013.md)): 41 findings, two critical —

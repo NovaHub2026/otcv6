@@ -6,20 +6,33 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-| Field              | Value                                                                                                       |
-| ------------------ | ----------------------------------------------------------------------------------------------------------- |
-| Last clean session | 2026-09-25                                                                                                  |
-| Branch             | `main` — PH-39 merged from `feature/ph-39-the-reopening-that-holds`                                         |
-| Remote             | `origin` → NovaHub2026/otcv6, public                                                                        |
-| Active cycle       | Cycle 13, **3 of 3** — PH-37, PH-38 and PH-39 approved. **Cycle Audit 13 is what runs next**; Cycle 11 open |
-| Active phase       | none                                                                                                        |
-| Active subphase    | none                                                                                                        |
-| Cycle Audit        | **013 closed** — 41 findings, 2 critical, 9 material; criticals fixed, rest carried                         |
-| Blockers           | none, and none possible — no Human gate (ADR-0008)                                                          |
+| Field              | Value                                                                                                                   |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| Last clean session | 2026-09-26                                                                                                              |
+| Branch             | `feature/ph-40-the-engine-a-broker-settles-against`, off `audit/ca13-fixes-2` (`ed816dc`, Cycle Audit 13 waves 2 and 3) |
+| Remote             | `origin` → NovaHub2026/otcv6, public                                                                                    |
+| Active cycle       | Cycle 14, **0 of 3** — PH-40 active. Cycle 13 closed by Cycle Audit 13; Cycle 11 open                                   |
+| Active phase       | PH-40 — The engine a broker settles against                                                                             |
+| Active subphase    | PH-40.1 — A contract settles at its final millisecond, and a seam never closes a market                                 |
+| Cycle Audit        | **013 closed** — 41 findings, 2 critical, 9 material; criticals fixed, rest carried                                     |
+| Blockers           | none, and none possible — no Human gate (ADR-0008)                                                                      |
 
 ---
 
-## Right now (2026-09-25)
+## Right now (2026-09-26)
+
+**PH-40 is open: the engine a broker settles against.** The Human Owner showed
+the engine the broker it will serve — `C:\Proyectos\optaqode-frontend2.0` and
+`C:\Proyectos\Orbit-Backend`, **read only, never modified: the integration is
+their team's** — and asked for the engine to be finished for how it operates.
+PH-40.1 is ADR-0021, the Owner's rule: a contract settles at its final
+millisecond with the price in force, across any ordinary seam; a seam never
+closes a market; only a change of lattice refuses. Kernel, API, contract 3.1.0,
+client, conformance check and Lab are built with seven plants watched failing
+(PH-40.1 §6); it waits on its targeted gate. **Stop the engine on 7300 before any
+gate** — a live venue on the gate's host voided one already.
+
+## Before that (2026-09-25)
 
 **PH-39 is approved and merged.** It closes the one item PH-38's
 broker-readiness record named as stopping a deployment: a market that starves

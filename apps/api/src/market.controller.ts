@@ -50,6 +50,7 @@ import {
   ImmutableFieldError,
   OVERLAY_FIELDS,
   frameOfSpan,
+  reframesAt,
   type AssetRegistry,
   type PriceFrame,
 } from '@otc/runtime';
@@ -866,16 +867,15 @@ export class MarketController implements BeforeApplicationShutdown {
           (newest === null ? '.' : `; the newest published instant is ${newest.instant}.`),
       );
     }
+    // **Inside a seam, the price in force is still a price** (ADR-0021, the Human
+    // Owner, 2026-09-26). This answered 409 — "no price was published at that
+    // instant" — so a contract whose final millisecond fell inside a seam had no
+    // price to settle at, and a broker refunded it. But a seam reopens the market
+    // at the price it last published (ADR-0020): the last tick before the gap is
+    // the price every observer was shown at every instant inside it, and the one
+    // the market resumed from. So that is the answer, and the seam is named beside
+    // it so a statement can say the market stood still.
     const seam = await this.venue.seamAt(id, instant);
-    if (seam !== null) {
-      throw new ConflictException(
-        `No price was published for ${id} at ${instant}: it falls inside a recorded ` +
-          `discontinuity. The record ends at sequence ${seam.lastSequence} ` +
-          `(instant ${seam.lastInstant}) and resumes at sequence ${seam.resumesAtSequence} ` +
-          `(instant ${seam.resumesAtInstant}); nothing was generating in between. A contract ` +
-          `whose window touches it cannot be settled — see GET /markets/${id}/seams.`,
-      );
-    }
     const tick = await this.venue.priceAt(id, instant);
     if (tick === null) {
       const bounds = await this.venue.recordBounds(id);
@@ -889,6 +889,16 @@ export class MarketController implements BeforeApplicationShutdown {
       at: instant,
       rule: 'last-tick-at-or-before',
       ...this.published(asset, tick, await this.frameOf(asset, tick)),
+      seam:
+        seam === null
+          ? null
+          : {
+              lastSequence: seam.lastSequence,
+              lastInstant: seam.lastInstant,
+              resumesAtSequence: seam.resumesAtSequence,
+              resumesAtInstant: seam.resumesAtInstant,
+              reframes: reframesAt(await this.venue.frames(id), seam),
+            },
     };
   }
 
@@ -919,12 +929,16 @@ export class MarketController implements BeforeApplicationShutdown {
       );
     }
     const seams = await this.venue.seams(id);
+    const epochs = await this.venue.frames(id);
     return seams.map((seam) => ({
       assetId: seam.assetId,
       lastSequence: seam.lastSequence,
       lastInstant: seam.lastInstant,
       resumesAtSequence: seam.resumesAtSequence,
       resumesAtInstant: seam.resumesAtInstant,
+      // What `settle()` needs to know since ADR-0021: an ordinary seam no longer
+      // refuses a contract, and a change of lattice still does.
+      reframes: reframesAt(epochs, seam),
     }));
   }
 

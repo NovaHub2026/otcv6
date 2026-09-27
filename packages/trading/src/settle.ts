@@ -24,6 +24,22 @@ export interface RecordSeam {
   readonly lastInstant: number;
   /** Instant the record resumes at. */
   readonly resumesAtInstant: number;
+  /**
+   * Whether the lattice changed at this seam (ADR-0021).
+   *
+   * An ordinary seam — a restart, a deploy, a host that withheld the CPU — reopens
+   * the market at the price it last published, on the same lattice, so the
+   * integers either side of it count in the same unit and a contract across it
+   * settles like any other. A seam that is also a **change of lattice** is a
+   * release recalibrating the asset: the integers either side count in different
+   * quanta, and comparing them would decide a contract by rounding. That is the
+   * one seam settlement still refuses.
+   *
+   * Required, for Cycle Audit 12's reason: a caller that does not know must say
+   * so by refusing to settle, not by leaving the field out and having silence read
+   * as "no".
+   */
+  readonly reframes: boolean;
 }
 
 export interface TickRecord {
@@ -104,19 +120,41 @@ export function settle(
       `expiry ${expiryInstant} is beyond the record, which ends at ${String(last)}`,
     );
   }
-  // ADR-0010's rule, applied to a read. An interval nobody observed is refused,
-  // not invented, and a contract that touches one cannot be settled against a
-  // price that was in force before it.
-  const touched = record.seams.find(
+  // **A contract settles at its final millisecond, across any seam** (ADR-0021,
+  // the Human Owner, 2026-09-26). This used to refuse every contract whose window
+  // touched a seam — the fix for Cycle Audit 5's real-money defect — and a broker
+  // turned that refusal into a refund. On a loaded host that was a fifth of all
+  // 15-minute contracts. It also protected nothing: a seam reopens the market at
+  // the price it last published (ADR-0020) on a fresh keystream (ADR-0019), so the
+  // price in force at any instant inside it is a price every observer was shown,
+  // the rule below is the same one that applies in any quiet stretch between
+  // ticks, and P(up) = P(down) after it exactly as before. What Cycle Audit 5 saw
+  // was a record that said nothing about its seams; that is still refused above.
+  //
+  // The one seam that still refuses is a change of lattice, because there the two
+  // integers count in different units and the comparison would be rounding, not
+  // market. A release must never make one with contracts in flight; this exists
+  // to make that operator error loud.
+  const crossed = record.seams.filter(
     (seam) => contract.entryInstant < seam.resumesAtInstant && expiryInstant > seam.lastInstant,
   );
-  if (touched !== undefined) {
-    throw new NotSettleableError(
-      contract.id,
-      `the window ${contract.entryInstant}..${expiryInstant} touches a recorded discontinuity ` +
-        `(${touched.lastInstant}..${touched.resumesAtInstant}), during which no node was ` +
-        `generating. Settling would use a price from before a gap nobody observed.`,
-    );
+  for (const seam of crossed) {
+    if (typeof seam.reframes !== 'boolean') {
+      throw new NotSettleableError(
+        contract.id,
+        `the seam ${seam.lastInstant}..${seam.resumesAtInstant} does not say whether the lattice ` +
+          `changed there, and settling across a lattice change compares two different units`,
+      );
+    }
+    if (seam.reframes) {
+      throw new NotSettleableError(
+        contract.id,
+        `the window ${contract.entryInstant}..${expiryInstant} crosses a change of lattice at ` +
+          `${seam.resumesAtInstant}: the entry and expiry integers count in different quanta, so ` +
+          `comparing them would decide the contract by rounding. A release must never change a ` +
+          `lattice with contracts in flight (ADR-0021)`,
+      );
+    }
   }
 
   const expiry = priceAtOrBefore(record.instants, record.prices, expiryInstant);
@@ -145,6 +183,7 @@ export function settle(
     expiryInstant,
     returned,
     net: returned - contract.stake,
+    seamsCrossed: crossed.length,
   };
 }
 

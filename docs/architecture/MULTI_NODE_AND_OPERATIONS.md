@@ -146,6 +146,14 @@ and a contract whose expiry fell inside it settled as a loss while `priceAt`
 refused the same instant. `settle()` (`packages/trading/src/settle.ts`) applies
 the same overlap rule to `TickRecord.seams` and throws `NotSettleableError`.
 
+**Since ADR-0021 (contract 3.1.0) the served route and `settle()` no longer
+refuse an ordinary seam**: a contract settles at its final millisecond at the
+price in force, the last tick before the gap, and only a seam that changes the
+lattice is refused. `FollowerMarket.priceAt` above still returns `null` inside a
+seam. No route serves it — a single-node deployment, which is what is delivered
+and verified, never reads it — and it is carried as a divergence to close before
+multi-node settlement is offered (PH-40).
+
 **"Stalled", operationally.** `VenueService.tick` advances with
 `advanceDetailed` and keeps every per-asset failure. A market past the bound
 refuses every later advance, because `#lastAdvancedAt` moves only after the

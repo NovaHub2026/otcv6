@@ -10,6 +10,12 @@ import {
 } from './positions.js';
 
 /**
+ * These fixtures never change the lattice, so the empty set is the true statement about
+ * them — not silence standing in for "no" (ADR-0021; Cycle Audit 12's lesson).
+ */
+const NO_REFRAMES: ReadonlySet<number> = new Set<number>();
+
+/**
  * PH-24.3 §4: the presets, on the lattice, and a position's entry read as
  * settlement reads.
  */
@@ -140,14 +146,14 @@ describe('a simulated position', () => {
       ticks,
       null,
     );
-    expect(LabPositions.actual(put, ticks)).toBeNull(); // record ends before expiry: refused, not guessed
-    expect(LabPositions.status(put, ticks).kind).toBe('pending');
+    expect(LabPositions.actual(put, ticks, NO_REFRAMES)).toBeNull(); // record ends before expiry: refused, not guessed
+    expect(LabPositions.status(put, ticks, NO_REFRAMES).kind).toBe('pending');
     const later = [...ticks, tick(65_000, 4, 101), tick(70_000, 5, 99)];
-    const settlement = LabPositions.actual(put, later)!;
+    const settlement = LabPositions.actual(put, later, NO_REFRAMES)!;
     expect(settlement.outcome).toBe('win'); // 101 < 105 for a put
     expect(settlement.expiryPrice).toBe(101);
-    expect(recordOf(later).prices.length).toBe(5);
-    expect(LabPositions.status(put, later)).toEqual({ kind: 'settled', settlement });
+    expect(recordOf(later, NO_REFRAMES).prices.length).toBe(5);
+    expect(LabPositions.status(put, later, NO_REFRAMES)).toEqual({ kind: 'settled', settlement });
   });
 
   it('tells a position that is waiting from one whose entry the window no longer holds', () => {
@@ -162,10 +168,10 @@ describe('a simulated position', () => {
     // entry is not. This position will never settle, and reporting it as "not
     // expired yet" would leave it on the panel for ever.
     const rolled = [tick(7_000, 4, 106), tick(65_000, 5, 101), tick(70_000, 6, 99)];
-    const status = LabPositions.status(call, rolled);
+    const status = LabPositions.status(call, rolled, NO_REFRAMES);
     expect(status.kind).toBe('evicted');
     expect(status.kind === 'evicted' && status.reason).toMatch(/starts after the entry instant/);
-    expect(LabPositions.actual(call, rolled)).toBeNull();
+    expect(LabPositions.actual(call, rolled, NO_REFRAMES)).toBeNull();
   });
 
   it('raises what settlement refuses for any other reason, instead of reading it as pending', () => {
@@ -184,8 +190,8 @@ describe('a simulated position', () => {
       contract: { ...sound.contract, payoutRatio: Number.NaN },
     };
     const later = [...ticks, tick(65_000, 4, 101), tick(70_000, 5, 99)];
-    expect(() => LabPositions.status(malformed, later)).toThrow(RangeError);
-    expect(() => LabPositions.actual(malformed, later)).toThrow(RangeError);
+    expect(() => LabPositions.status(malformed, later, NO_REFRAMES)).toThrow(RangeError);
+    expect(() => LabPositions.actual(malformed, later, NO_REFRAMES)).toThrow(RangeError);
   });
 });
 
@@ -216,7 +222,7 @@ describe("a position's entry survives the tick that was due and unpublished", ()
     // t0+6 100, `settle` would read 106, and "win by minimum" — armed at
     // 105 + 1 = 106 from the stored entry — would settle as a tie.
     const later = [...ticks, dueButUnpublished, tick(70_000, 4, 106)];
-    const settlement = LabPositions.actual(position, later)!;
+    const settlement = LabPositions.actual(position, later, NO_REFRAMES)!;
     expect(settlement.entryPrice).toBe(position.entryPrice);
     expect(presetLevel('win-minimum', position.entryPrice, 'up')).toBe(106);
     expect(settlement.outcome).toBe('win');
@@ -248,8 +254,10 @@ describe("a position's entry survives the tick that was due and unpublished", ()
     // `settle` reads an entry the row never showed. That is not an outcome
     // the "COINCIDE / NO COINCIDE" column can express: both sides would be
     // describing different contracts.
-    expect(() => LabPositions.status(position, later)).toThrow(EntryPriceDisagreementError);
-    expect(() => LabPositions.actual(position, later)).toThrow(
+    expect(() => LabPositions.status(position, later, NO_REFRAMES)).toThrow(
+      EntryPriceDisagreementError,
+    );
+    expect(() => LabPositions.actual(position, later, NO_REFRAMES)).toThrow(
       /was opened at level 105 but settles from level 106/,
     );
   });

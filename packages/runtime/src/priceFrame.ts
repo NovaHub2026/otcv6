@@ -143,3 +143,58 @@ export function frameOfSpan(
   }
   return frameAtOrBefore(epochs, firstSequence);
 }
+
+/**
+ * Every sequence at which a record's lattice changed (ADR-0021): the
+ * `fromSequence` of each epoch whose quantum or reference differs from the
+ * epoch before it.
+ *
+ * The first epoch is where the log starts, not a change; and an epoch that
+ * restates the frame before it — or changes only `displayPrecision`, which
+ * renders the same integers — is not a change either.
+ */
+export function reframedSequences(
+  epochs: readonly Pick<LatticeEpoch, 'fromSequence' | 'logQuantum' | 'referencePrice'>[],
+): ReadonlySet<number> {
+  const out = new Set<number>();
+  for (let i = 1; i < epochs.length; i++) {
+    const before = epochs[i - 1]!;
+    const after = epochs[i]!;
+    if (before.logQuantum !== after.logQuantum || before.referencePrice !== after.referencePrice) {
+      out.add(after.fromSequence);
+    }
+  }
+  return out;
+}
+
+/**
+ * Whether a seam crosses a change of lattice (ADR-0021) — what `settle()` needs
+ * to know about it: an ordinary seam no longer refuses a contract, and a change
+ * of lattice still does.
+ *
+ * A relattice goes through a resume, so the epoch it opens should start exactly
+ * at the seam's `resumesAtSequence` — which the conformance suite asserts of
+ * every epoch after the first (Cycle Audit 13, a5-01). This does not lean on
+ * that: a change logged *anywhere* after the last tick before the gap and at or
+ * before the first one after it is a change across the seam. Looking only at
+ * `resumesAtSequence` would answer "ordinary" for a change logged one sequence
+ * off, and a contract would settle across two lattices as though the prices
+ * either side were in one unit.
+ */
+export function reframesAt(
+  epochs: readonly Pick<LatticeEpoch, 'fromSequence' | 'logQuantum' | 'referencePrice'>[],
+  seam: { readonly lastSequence: number; readonly resumesAtSequence: number },
+): boolean {
+  return crossesAChange(reframedSequences(epochs), seam);
+}
+
+/** Whether any of `changes` falls inside a seam: after its last tick, at or before its resume. */
+export function crossesAChange(
+  changes: ReadonlySet<number>,
+  seam: { readonly lastSequence: number; readonly resumesAtSequence: number },
+): boolean {
+  for (const at of changes) {
+    if (at > seam.lastSequence && at <= seam.resumesAtSequence) return true;
+  }
+  return false;
+}

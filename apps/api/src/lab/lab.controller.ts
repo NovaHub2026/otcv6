@@ -31,7 +31,7 @@ import {
   selectContinuation,
   type Continuation,
 } from '@otc/engine';
-import { STATE_RECORD_VERSION } from '@otc/runtime';
+import { STATE_RECORD_VERSION, reframedSequences } from '@otc/runtime';
 import { EngineAccess } from '../engineAccess.js';
 import { VenueService } from '../venue.service.js';
 import {
@@ -1491,10 +1491,14 @@ export class LabController {
    * outcome and by the preset that decided them, with the count it rests on.
    */
   @Get('session/positions')
-  sessionPositions(): unknown {
+  async sessionPositions(): Promise<unknown> {
     const settled: SettledPosition[] = [];
     for (const position of this.positions.list()) {
-      const status = LabPositions.status(position, this.recordTicks(position.contract.assetId));
+      const status = LabPositions.status(
+        position,
+        this.recordTicks(position.contract.assetId),
+        await this.reframedFor(position.contract.assetId),
+      );
       // Only a settled position belongs in the diagnostic: one still waiting and
       // one whose entry the window dropped are both "no outcome", and the second
       // never gains one.
@@ -1570,7 +1574,11 @@ export class LabController {
         succeeded: true,
         diagnostics: { expiryInstant: position.expiryInstant },
       });
-      return { environment: LAB, asset: id, position: this.describe(position) };
+      return {
+        environment: LAB,
+        asset: id,
+        position: this.describe(position, await this.reframedFor(id)),
+      };
     } catch (error) {
       // `open` refuses a bad request with a `RangeError` and nothing else.
       // Anything else here — an `EntryPriceDisagreementError` above all — is a
@@ -1583,13 +1591,14 @@ export class LabController {
 
   /** Every position on this market, with what it is expected to be and what it was. */
   @Get('markets/:id/positions')
-  listPositions(@Param('id') id: string): unknown {
+  async listPositions(@Param('id') id: string): Promise<unknown> {
     if (this.engine.hostedMarket(id) === null)
       throw new NotFoundException(`Asset ${id} is not hosted.`);
+    const reframed = await this.reframedFor(id);
     return {
       environment: LAB,
       asset: id,
-      positions: this.positions.list(id).map((position) => this.describe(position)),
+      positions: this.positions.list(id).map((position) => this.describe(position, reframed)),
     };
   }
 
@@ -1656,7 +1665,7 @@ export class LabController {
       armed: result.armed,
       adjusted: result.adjusted,
       preset: name,
-      position: this.describe(position),
+      position: this.describe(position, await this.reframedFor(position.contract.assetId)),
     };
   }
 
@@ -1672,13 +1681,23 @@ export class LabController {
    * control row beside it read `EXACT`. Found on the long-running local Lab;
    * invisible to a test whose feed starts at sequence 1.
    */
+  /**
+   * Where this market's lattice changed, read from the record's own frame log
+   * (ADR-0021). Asked per request rather than cached: frames change at a boot or a
+   * declaration, and a stale answer here would settle a Lab position across a
+   * change of lattice as though it were an ordinary seam.
+   */
+  private async reframedFor(id: string): Promise<ReadonlySet<number>> {
+    return reframedSequences(await this.venue.frames(id));
+  }
+
   private recordTicks(id: string): readonly Tick[] {
     const window = this.venue.feed.retained(id);
     if (window === null) return [];
     return this.venue.feed.since(id, window.oldest);
   }
 
-  private describe(position: LabPosition): unknown {
+  private describe(position: LabPosition, reframedAt: ReadonlySet<number>): unknown {
     const asset = this.venue.assetFor(position.contract.assetId)!;
     const render = (level: number): string =>
       displayPrice(level, {
@@ -1708,7 +1727,9 @@ export class LabController {
      * as pending for the rest of the session.
      */
     const status =
-      this.venue.now() > position.expiryInstant ? LabPositions.status(position, ticks) : null;
+      this.venue.now() > position.expiryInstant
+        ? LabPositions.status(position, ticks, reframedAt)
+        : null;
     const actual = status?.kind === 'settled' ? status.settlement : null;
     return {
       id: position.contract.id,

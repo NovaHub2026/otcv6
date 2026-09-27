@@ -1059,3 +1059,32 @@ magnitude finer than the instruments it is named for — the price moved on
 93–99% of ticks where a real EUR/USD tape leaves 45.8% of them unchanged — so
 the market looked volatile when it was not. The lattice is chosen by what it
 refunds now, under a ceiling the Human Owner set.
+
+## Cycle 14 — the engine a broker settles against
+
+| Phase | Title                               | State  |
+| ----- | ----------------------------------- | ------ |
+| PH-40 | The engine a broker settles against | ACTIVE |
+
+| Subphase | Title                                                                         | State   |
+| -------- | ----------------------------------------------------------------------------- | ------- |
+| PH-40.1  | A contract settles at its final millisecond, and a seam never closes a market | ACTIVE  |
+| PH-40.2  | A market that is open says so: a heartbeat carrying the price in force        | PLANNED |
+| PH-40.3  | The lattice a broker can display, on every asset                              | PLANNED |
+| PH-40.4  | What TradingView reads: the two-hour bar, volume, and a typed candle          | PLANNED |
+| PH-40.5  | One restart writes one seam, and the seam rate measured on an isolated engine | PLANNED |
+| PH-40.6  | The guide a broker integrates from                                            | PLANNED |
+
+**PH-40 opens Cycle 14, and it is not the phase Cycle Audit 13 named.** The
+audit put the candle item first — what a chart consumes belongs in the contract —
+then `settle()` reading a hole, then Cycle Audit 12's finding 7. On 2026-09-26 the
+Human Owner showed the engine the broker it will serve (the Orbit frontend and a
+reference backend) and asked for the engine to be finished for how that broker
+operates, with the integration documented rather than done. Read from their code,
+that broker settles on a price it formats to at most five decimals, refuses to
+open on a stale quote, and reads TradingView's `pricescale`, `minmov` and a
+`volume` on every bar. **The audit's first item is inside this phase** (PH-40.4:
+the typed candle and `displayPrecision` on the tick), and the Owner's settlement
+rule (ADR-0021) goes in front of it because it changes what a broker refunds.
+Finding 7 stays next after this phase (`DECISION-LOG.md`, 2026-09-26). The phase
+document is [PH-40](PH-40-the-engine-a-broker-settles-against.md).

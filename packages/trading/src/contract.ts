@@ -50,6 +50,13 @@ export interface Settlement {
   readonly returned: number;
   /** Change in the trader's balance. Negative on a loss, zero on a refund. */
   readonly net: number;
+  /**
+   * Ordinary seams the window crossed (ADR-0021). They do not change the outcome —
+   * a contract settles at its final millisecond with the price in force there —
+   * and they are counted so an auditor reading a statement can see that the
+   * market stood still for part of this contract's life.
+   */
+  readonly seamsCrossed: number;
 }
 
 /**

@@ -3,7 +3,6 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { ConflictException } from '@nestjs/common';
 import { durationMillis, epochMillis, MasterKeyring, SteppableClock, type Tick } from '@otc/core';
 import { ASSET_CATALOGUE } from '@otc/engine';
 import { MemoryStateStore, MemoryTickRecord, MIN_REOPEN_INTERVAL_MS } from '@otc/runtime';
@@ -126,7 +125,7 @@ describe('a market past its catch-up bound reopens itself (ADR-0020)', () => {
     await v.service.stop();
   });
 
-  it('records the gap as a seam, and refuses a price inside it', async () => {
+  it('records the gap as a seam, and answers the price in force inside it (ADR-0021)', async () => {
     const v = await afterAnOutage();
     await run(v, 30);
     const seams = (await v.controller.seams(ID)) as {
@@ -134,22 +133,34 @@ describe('a market past its catch-up bound reopens itself (ADR-0020)', () => {
       lastInstant: number;
       resumesAtSequence: number;
       resumesAtInstant: number;
+      reframes: boolean;
     }[];
     expect(seams, 'the reopening left no seam in the record').toHaveLength(1);
     const seam = seams[0]!;
     // Both sides are real published ticks, and the gap between them is the
     // outage: this is what a broker reads before settling anything near it.
     expect(seam.resumesAtInstant - seam.lastInstant).toBeGreaterThan(OUTAGE_MS);
+    // An outage reopens on the same lattice: an ordinary seam, which a contract
+    // settles across (ADR-0021).
+    expect(seam.reframes).toBe(false);
+    // Inside the outage the price in force is the last one published before it
+    // — the price the market reopened from — and the seam is named.
     const inside = Math.floor((seam.lastInstant + seam.resumesAtInstant) / 2);
-    await expect(v.controller.priceAt(ID, String(inside))).rejects.toBeInstanceOf(
-      ConflictException,
-    );
-    // And the prices either side of it are answered, so a contract that does
-    // not span the gap settles exactly as before.
+    const during = (await v.controller.priceAt(ID, String(inside))) as {
+      sequence: number;
+      seam: { lastSequence: number; resumesAtSequence: number } | null;
+    };
+    expect(during.sequence).toBe(seam.lastSequence);
+    expect(during.seam?.lastSequence).toBe(seam.lastSequence);
+    expect(during.seam?.resumesAtSequence).toBe(seam.resumesAtSequence);
+    // And the prices either side of it are answered with no seam named, so a
+    // contract that does not span the gap settles exactly as before.
     const last = (await v.controller.priceAt(ID, String(seam.lastInstant))) as {
       sequence: number;
+      seam: unknown;
     };
     expect(last.sequence).toBe(seam.lastSequence);
+    expect(last.seam).toBeNull();
     await v.service.stop();
   });
 

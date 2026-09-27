@@ -1324,3 +1324,41 @@ approved: Cycle 13 is full at three phases, so **Cycle Audit 13 comes between
 them**, and the calibration is Cycle 14's first phase rather than this cycle's
 fourth. A venue that heals itself is in any case the precondition for a migration
 that seams every market on purpose.
+
+## 2026-09-26 — Cycle 14 opens with the broker, not with the audit's first item
+
+Cycle Audit 13 closed with an order for Cycle 14: the candle item (what a chart
+consumes belongs in the contract), then `settle()` reading a hole, then Cycle
+Audit 12's finding 7. **PH-40 goes in front of that order and absorbs its first
+item.**
+
+**Why.** The Human Owner showed the engine the broker it will serve — the Orbit
+frontend and a reference backend — and asked for the engine to be finished for
+how that broker operates, with the integration left to their team and
+documented by this one. Read from their code (and not modified: that was the
+instruction), the broker settles on a price it formats to at most five decimals,
+compares the two formatted strings, refuses to open on a quote older than fifteen
+seconds, and reads TradingView's `pricescale`, `minmov` and a `volume` on every
+bar. Six of thirty assets step finer than that fifth decimal. Those are defects
+at the one point where the engine meets money, and the audit's candle item is one
+of them — so it is PH-40.4 rather than a phase of its own.
+
+**ADR-0021 goes first inside the phase** because it is the Owner's decision and
+it changes what a broker refunds: a contract settles at its final millisecond,
+with the price in force, across any ordinary seam, and a seam never closes a
+market. Measured on PH-39's live day, the rule it replaces refunded 20.5% of
+15-minute contracts opened while the market was publishing. Replacing tests that
+asserted the old refusal was put to the Owner before it was done, and approved
+("sí, aplica ADR-0021").
+
+**One design correction made while building it.** `reframesAt` first looked for a
+frame change only at a seam's `resumesAtSequence`. A change logged one sequence
+off would have read as an ordinary seam and settled a contract across two units;
+the conformance suite would catch that venue, but a settlement guard that relies
+on another check's coverage is not a guard. It now looks anywhere inside the
+seam, and a test watched failing against the old version says so.
+
+**What would make it worth revisiting.** Nothing about finding 7 — it follows
+PH-40. If PH-40.3's measurement shows a displayable lattice breaks the Owner's 5%
+refund ceiling on an asset, that is the Owner's decision, with the number in
+front of them.

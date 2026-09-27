@@ -46,6 +46,15 @@ export interface PriceInForce extends Published {
   readonly assetId: string;
   readonly at: number;
   readonly rule: string;
+  /**
+   * The recorded seam the instant falls inside, or `null` (ADR-0021).
+   *
+   * Inside a seam the price in force is still the last tick before the gap — the
+   * price the market reopened from — and a contract whose final millisecond
+   * falls there settles at it. The seam is named so a broker can show why the
+   * chart has no ticks there, never so it can refund.
+   */
+  readonly seam: Omit<RecordedSeam, 'assetId'> | null;
 }
 
 /**
@@ -58,6 +67,12 @@ export interface RecordedSeam {
   readonly lastInstant: number;
   readonly resumesAtSequence: number;
   readonly resumesAtInstant: number;
+  /**
+   * Whether the lattice changed at this seam (ADR-0021). `settle()` takes it as
+   * `RecordSeam.reframes`: an ordinary seam no longer refuses a contract, a change
+   * of lattice still does.
+   */
+  readonly reframes: boolean;
 }
 
 export interface VerifiedProof {
@@ -207,10 +222,11 @@ export class VenueClient {
    * The price in force at an instant — the last tick at or before it — or the
    * refusal.
    *
-   * A `409` is a refusal like any other here, and it is the one to read: the
-   * instant falls inside a recorded discontinuity, so there is no price and
-   * there never will be. Settle nothing against that window; take the seams
-   * from {@link VenueClient.seams} and let `settle()` refuse it by name.
+   * An instant inside a recorded discontinuity is a price too, since contract
+   * 3.1.0 (ADR-0021): the last tick before the gap, with the seam named in
+   * `seam`. A contract settles at its final millisecond whatever happened to the
+   * venue in between; take the seams from {@link VenueClient.seams} and
+   * `settle()` refuses only a window that crosses a change of lattice.
    */
   async priceAt(id: string, at: number): Promise<PriceInForce | Refusal> {
     return (await this.#getOrRefusal(

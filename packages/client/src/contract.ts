@@ -108,6 +108,7 @@ const SEAM: Shape = {
   lastInstant: 'integer',
   resumesAtSequence: 'integer',
   resumesAtInstant: 'integer',
+  reframes: 'boolean',
 };
 
 const TICK_FRAME: Shape = { sequence: 'integer', instant: 'integer', price: 'integer' };
@@ -270,14 +271,20 @@ export const API_ROUTES: readonly RouteContract[] = [
       'The price in force at an instant: the last published tick at or before it, the rule settlement uses. A retired market answers it from its record, which is what retirement leaves readable.',
     params: { id: "a known asset id; a retired market's record still answers" },
     query: { at: 'an instant in milliseconds' },
-    response: { object: { assetId: 'string', at: 'integer', rule: 'string', ...PUBLISHED } },
+    response: {
+      object: {
+        assetId: 'string',
+        at: 'integer',
+        rule: 'string',
+        ...PUBLISHED,
+        seam: 'object|null',
+      },
+    },
     refusals: {
       '400':
-        'a missing or malformed instant, or an instant after the newest published one — for a market this process no longer hosts, after the newest instant its record holds',
+        'a missing or malformed instant, or an instant after the newest published one — for a market this process no longer hosts, after the newest instant its record holds. This is what makes a contract impossible to settle before its final millisecond',
       '404':
         'the asset is unknown, the record starts after the instant, or this deployment keeps no record',
-      '409':
-        'the instant falls inside a recorded discontinuity — nothing was published for it and nothing ever will be; the seam is named (see /markets/:id/seams)',
     },
   },
   {
@@ -463,6 +470,18 @@ export const CONTRACT_HISTORY: readonly { readonly version: string; readonly dig
   // which is the change being announced, and is why this is 3.0.0 and not
   // 2.2.0.
   { version: '3.0.0', digest: 'd205f4f674c19cfa' },
+  // PH-40.1, ADR-0021 (the Human Owner, 2026-09-26): a contract settles at its
+  // final millisecond, across any seam. Two changes a broker is told about here.
+  // `GET /markets/:id/price` no longer answers 409 inside a seam: it answers the
+  // price in force — the last tick before the gap, which the market reopened
+  // from — and names the seam in a new `seam` key, null outside one. And every
+  // entry of `GET /markets/:id/seams` says whether the lattice changed there
+  // (`reframes`), because that is the one seam `settle()` still refuses.
+  //
+  // **Minor.** Nothing a 3.0.0 client parses becomes invalid: two keys are added,
+  // and a refusal a client handled by refunding now arrives as a price it settles
+  // at — which is the rule this version exists to deliver.
+  { version: '3.1.0', digest: 'fbe42c5a23f5c378' },
 ];
 
 export const API_VERSION: string = CONTRACT_HISTORY[CONTRACT_HISTORY.length - 1]!.version;
