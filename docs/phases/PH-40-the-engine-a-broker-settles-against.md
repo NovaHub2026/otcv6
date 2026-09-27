@@ -62,7 +62,7 @@ never make with contracts in flight.
 | PH-40.1  | A contract settles at its final millisecond, and a seam never closes a market |
 | PH-40.2  | A market that is open says so: a heartbeat carrying the price in force        |
 | PH-40.3  | The lattice a broker can display, on every asset                              |
-| PH-40.4  | What TradingView reads: the two-hour bar, volume, and a typed candle          |
+| PH-40.4  | What TradingView reads: a typed candle, its precision and its volume          |
 | PH-40.5  | One restart writes one seam, and the seam rate measured on an isolated engine |
 | PH-40.6  | The guide a broker integrates from                                            |
 

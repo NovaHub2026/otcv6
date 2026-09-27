@@ -13,7 +13,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Remote             | `origin` → NovaHub2026/otcv6, public                                                                                    |
 | Active cycle       | Cycle 14, **0 of 3** — PH-40 active. Cycle 13 closed by Cycle Audit 13; Cycle 11 open                                   |
 | Active phase       | PH-40 — The engine a broker settles against                                                                             |
-| Active subphase    | PH-40.1 — A contract settles at its final millisecond, and a seam never closes a market                                 |
+| Active subphase    | PH-40.3 — The lattice a broker can display, on every asset                                                              |
 | Cycle Audit        | **013 closed** — 41 findings, 2 critical, 9 material; criticals fixed, rest carried                                     |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                                                                      |
 

@@ -21,14 +21,14 @@ Last synchronized: 2026-09-26
 
 ## Phase and subphase
 
-| Field                  | Value                                                                                   |
-| ---------------------- | --------------------------------------------------------------------------------------- |
-| Active phase           | PH-40 — The engine a broker settles against                                             |
-| Phase lifecycle        | ACTIVE                                                                                  |
-| Active subphase        | PH-40.1 — A contract settles at its final millisecond, and a seam never closes a market |
-| Subphase lifecycle     | ACTIVE                                                                                  |
-| Last approved phase    | PH-39 — The reopening that holds                                                        |
-| Last approved subphase | PH-39.1 — A starved reopening is re-armed, and the outage keeps one seam                |
+| Field                  | Value                                                                            |
+| ---------------------- | -------------------------------------------------------------------------------- |
+| Active phase           | PH-40 — The engine a broker settles against                                      |
+| Phase lifecycle        | ACTIVE                                                                           |
+| Active subphase        | PH-40.3 — The lattice a broker can display, on every asset                       |
+| Subphase lifecycle     | ACTIVE                                                                           |
+| Last approved phase    | PH-39 — The reopening that holds                                                 |
+| Last approved subphase | PH-40.2 — A market that is open says so: a heartbeat carrying the price in force |
 
 **Cycle 12 is audited and closed.** PH-34 (the market's tempo follows its
 state), PH-35 (the level the market runs at) and PH-36 (a stalled market
