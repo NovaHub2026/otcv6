@@ -1,8 +1,8 @@
 # API Contract
 
 Type: SUPPORTING DOCUMENTATION (generated; do not edit by hand)
-Version: 3.1.0
-Digest: fbe42c5a23f5c378
+Version: 3.2.0
+Digest: 689cdc98d3e3828c
 Source: `apps/api/src/contract.ts` — rendered by `npm run contract:render`; held to the controller by `contract.test.ts`
 
 ---
@@ -233,7 +233,7 @@ Response: a JSON object:
 
 | Status | When |
 | --- | --- |
-| 400 | a missing or malformed instant, or an instant after the newest published one — for a market this process no longer hosts, after the newest instant its record holds. This is what makes a contract impossible to settle before its final millisecond |
+| 400 | a missing or malformed instant, or an instant after the one the price is final through — the last clean pass for a hosted market, the newest instant its record holds for one this process no longer hosts. This is what makes a contract impossible to settle before its final millisecond |
 | 404 | the asset is unknown, the record starts after the instant, or this deployment keeps no record |
 
 ## GET `/markets/:id/seams`
@@ -321,6 +321,7 @@ Server-sent events: every tick of one market in order, resumable by sequence; a 
 | --- | --- |
 | `from?` | the next sequence wanted; omitted joins at the live edge |
 | `onGap?` | 'live' to be told a gap and joined at the sequence the feed resumes at, instead of a 400 |
+| `heartbeat?` | milliseconds between heartbeat frames, 500 to 30000; omitted, the stream carries none |
 
 Response: `text/event-stream`. Frames by event name (`message` is the default event):
 
@@ -345,6 +346,15 @@ Response: `text/event-stream`. Frames by event name (`message` is the default ev
 | Key | Type |
 | --- | --- |
 | `reason` | `string` |
+
+`heartbeat`:
+
+| Key | Type |
+| --- | --- |
+| `sequence` | `integer` |
+| `instant` | `integer` |
+| `price` | `integer` |
+| `asOf` | `integer` |
 
 | Status | When |
 | --- | --- |
@@ -360,6 +370,7 @@ Server-sent events: several markets on one connection, each frame naming its ass
 | `assets` | comma-separated hosted asset ids |
 | `from?` | per-asset next sequences, in the order of assets |
 | `onGap?` | 'live', as for one market |
+| `heartbeat?` | milliseconds between heartbeat frames, 500 to 30000; omitted, the stream carries none |
 
 Response: `text/event-stream`. Frames by event name (`message` is the default event):
 
@@ -387,6 +398,16 @@ Response: `text/event-stream`. Frames by event name (`message` is the default ev
 | --- | --- |
 | `asset` | `string` |
 | `reason` | `string` |
+
+`heartbeat`:
+
+| Key | Type |
+| --- | --- |
+| `asset` | `string` |
+| `sequence` | `integer` |
+| `instant` | `integer` |
+| `price` | `integer` |
+| `asOf` | `integer` |
 
 | Status | When |
 | --- | --- |

@@ -356,11 +356,13 @@ export class MarketController implements BeforeApplicationShutdown {
     @Query('assets') assets?: string,
     @Query('from') from?: string,
     @Query('onGap') onGap?: string,
+    @Query('heartbeat') heartbeat?: string,
   ): void {
     if (onGap !== undefined && onGap !== 'live') {
       throw new BadRequestException(`onGap must be 'live' if present, received ${onGap}.`);
     }
     const liveOnGap = onGap === 'live';
+    const heartbeatMs = heartbeatParam(heartbeat);
 
     const requested = (assets ?? '')
       .split(',')
@@ -438,6 +440,8 @@ export class MarketController implements BeforeApplicationShutdown {
 
     const subscriptions: { cancel: (reason?: string) => void }[] = [];
     const cappedAfter = new Map<string, number | null>();
+    /** Assets whose part of this stream the venue has closed: no heartbeat for them. */
+    const ended = new Set<string>();
     const sinkFor = (assetId: string): FeedSink => ({
       deliver: (_id, ticks): boolean => {
         for (const tick of ticks) {
@@ -463,6 +467,7 @@ export class MarketController implements BeforeApplicationShutdown {
               (after === null
                 ? ''
                 : ` after sequence ${String(after)}; resume from ${String(after + 1)}`);
+        ended.add(assetId);
         write(`event: close\ndata: ${JSON.stringify({ asset: assetId, reason: why })}\n\n`);
       },
     });
@@ -541,7 +546,21 @@ export class MarketController implements BeforeApplicationShutdown {
       return;
     }
     this.streams.add(live);
+    const stopBeating = beatEvery(heartbeatMs, res, () => {
+      for (const assetId of requested) {
+        if (ended.has(assetId)) continue;
+        const frame = heartbeatOwed(
+          this.venue.priceInForce(assetId),
+          position.get(assetId) ?? null,
+          res,
+        );
+        if (frame !== null) {
+          res.write(`event: heartbeat\ndata: ${JSON.stringify({ asset: assetId, ...frame })}\n\n`);
+        }
+      }
+    });
     res.on('close', () => {
+      stopBeating();
       if (headersSent) streamConnections -= 1;
       this.streams.delete(live);
       live.cancel('client disconnected');
@@ -820,31 +839,24 @@ export class MarketController implements BeforeApplicationShutdown {
    * The price in force at an instant: the last published tick at or before it
    * (PH-29.1). The rule `settle()` uses and the charts use, named in the
    * response so a broker's own settlement can cite it. Refused before the
-   * record's oldest tick — the record cannot say what was in force — and after
-   * the newest published instant, because a price for an instant nothing has
-   * been published for is a prediction and not a record (INV-005: an expiry a
-   * client chooses never changes what is published).
+   * record's oldest tick — the record cannot say what was in force (`404`) —
+   * and after the instant the price is final through (`400`, *not yet*: ask
+   * again), because a price for an instant not yet published is a prediction
+   * and not a record (INV-005: an expiry a client chooses never changes what is
+   * published). That instant is the last clean pass, not the last tick
+   * (PH-40.2), so a contract settles as soon as its final millisecond has
+   * passed.
    *
-   * **And refused inside a recorded seam (PH-31, Cycle Audit 10 a4-01 /
-   * a1-01).** An instant between the last tick before a restart-length gap and
-   * the first tick after it is exactly the case the paragraph above describes —
-   * nothing was published for it — and this route answered it anyway, with the
-   * pre-seam price and the rule's name, which is the number a broker settled
-   * real money against. `settle()` refuses the same window as
-   * `NotSettleableError`; the API now refuses the same point.
-   *
-   * **`409`, not `404` and not `400`.** The three refusals mean three different
-   * things to a broker, and the difference decides what it does next. `400`
-   * (after the newest) means *not yet* — ask again when it has been published.
-   * `404` (before the oldest) means *the record cannot say* — this deployment
-   * trimmed it, look elsewhere. A seam means *there is no answer and there
-   * never will be*: the interval was never generated, and the honest thing is
-   * neither a retry nor a search but a settlement that does not happen. `409`
-   * Conflict is the status this contract already uses for a request whose
-   * answer the record's own state forbids (the proof route's open window, and
-   * an archive that disagrees with the record), so a seam belongs on it. The
-   * body names both sides of the gap, in sequence and in instant, which is
-   * precisely what `settle()`'s `seams` field wants.
+   * **Inside a recorded seam the price in force is still a price** (ADR-0021,
+   * the Human Owner, 2026-09-26). PH-31 answered `409` there — "there is no
+   * answer and there never will be" — and a broker refunded the contract. But a
+   * seam reopens the market at the price it last published (ADR-0020): the last
+   * tick before the gap is the price every observer was shown at every instant
+   * inside it, and the one the market resumed from. So that is the answer, and
+   * the seam is named beside it (`seam`, with `reframes`), so a statement can
+   * say the market stood still. What a4-01 found was an answer that named
+   * nothing; this one names both sides. `settle()` agrees, and refuses only a
+   * window across a change of lattice.
    */
   @Get('markets/:id/price')
   async priceAt(@Param('id') id: string, @Query('at') at?: string): Promise<unknown> {
@@ -861,10 +873,20 @@ export class MarketController implements BeforeApplicationShutdown {
     // a4-06, a6-08). The record's own head is the honest bound, and retirement's
     // promise is exactly that the record stays readable.
     const newest = this.venue.lastTick(id) ?? (await this.venue.recordHead(id));
-    if (newest === null || instant > newest.instant) {
+    // **Final through the last clean pass, not only through the last tick**
+    // (PH-40.2). A pass that advanced a market to T published and recorded
+    // every tick at or before T, so the price in force anywhere up to T will
+    // never change — and a contract whose final millisecond has passed settles
+    // now, instead of waiting for the market's next tick to prove nothing came
+    // before it. Past T nothing is known yet: a host that lost the CPU catches
+    // up with ticks at past instants.
+    const inForce = this.venue.priceInForce(id);
+    const finalThrough =
+      newest === null ? null : Math.max(newest.instant, inForce?.asOf ?? newest.instant);
+    if (finalThrough === null || instant > finalThrough) {
       throw new BadRequestException(
         `No price has been published for ${id} at ${instant}` +
-          (newest === null ? '.' : `; the newest published instant is ${newest.instant}.`),
+          (finalThrough === null ? '.' : `; the price is final through ${finalThrough}.`),
       );
     }
     // **Inside a seam, the price in force is still a price** (ADR-0021, the Human
@@ -1159,6 +1181,7 @@ export class MarketController implements BeforeApplicationShutdown {
     @Req() request: Request,
     @Query('from') from?: string,
     @Query('onGap') onGap?: string,
+    @Query('heartbeat') heartbeat?: string,
   ): void {
     if (!this.venue.assetIds.includes(id)) {
       throw new NotFoundException(`Unknown asset ${id}.`);
@@ -1169,6 +1192,7 @@ export class MarketController implements BeforeApplicationShutdown {
       throw new BadRequestException(`onGap must be 'live' if present, received ${onGap}.`);
     }
     const liveOnGap = onGap === 'live';
+    const heartbeatMs = heartbeatParam(heartbeat);
     let fromSequence: number | undefined;
     if (from !== undefined) {
       fromSequence = Number.parseInt(from, 10);
@@ -1345,7 +1369,12 @@ export class MarketController implements BeforeApplicationShutdown {
       return;
     }
     this.streams.add(live);
+    const stopBeating = beatEvery(heartbeatMs, res, () => {
+      const frame = heartbeatOwed(this.venue.priceInForce(id), lastDelivered, res);
+      if (frame !== null) res.write(`event: heartbeat\ndata: ${JSON.stringify(frame)}\n\n`);
+    });
     res.on('close', () => {
+      stopBeating();
       if (headersSent) streamConnections -= 1;
       this.streams.delete(live);
       live.cancel('client disconnected');
@@ -1750,6 +1779,75 @@ function sequenceParam(raw: string): number {
     );
   }
   return Number(raw);
+}
+
+/** The heartbeat's bounds, in milliseconds (PH-40.2). */
+export const HEARTBEAT_MIN_MS = 500;
+export const HEARTBEAT_MAX_MS = 30_000;
+
+/**
+ * `?heartbeat=<ms>` on a stream, or null when it was not asked for (PH-40.2).
+ *
+ * Opt-in, so a client written against a stream that carried only ticks never
+ * meets an event it does not parse. Bounded both ways: below half a second it is
+ * a second tick stream, and above thirty seconds it outlives every freshness
+ * rule it exists to satisfy.
+ */
+function heartbeatParam(raw: string | undefined): number | null {
+  if (raw === undefined) return null;
+  const value = /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
+  if (!(value >= HEARTBEAT_MIN_MS && value <= HEARTBEAT_MAX_MS)) {
+    throw new BadRequestException(
+      `heartbeat must be an integer number of milliseconds from ${String(HEARTBEAT_MIN_MS)} ` +
+        `to ${String(HEARTBEAT_MAX_MS)}, received ${raw}.`,
+    );
+  }
+  return value;
+}
+
+/**
+ * The heartbeat frame one connection is owed for one market, or null (PH-40.2).
+ *
+ * It says: the price in force is still the tick with this sequence, and that is
+ * final through `asOf`. So a broker whose own rule refuses a quote older than
+ * some seconds can keep a quiet market open without inventing a price, and a
+ * seam — during which the price in force is the last tick before it — never
+ * reads to that broker as a closed market (ADR-0021).
+ *
+ * **It never runs ahead of the connection.** A client still being handed
+ * earlier ticks — a replay, a burst in flight — would otherwise be told a price
+ * it has not been shown yet, and a broker that refreshes its quote from the
+ * heartbeat would jump forward and then back. So a frame is owed only when the
+ * last tick this connection delivered *is* the one in force, or when it has
+ * delivered none yet (a live join, which the feed continues after the tick in
+ * force). And none is written into a socket that has ended or said stop.
+ */
+export function heartbeatOwed(
+  inForce: { sequence: number; instant: number; price: number; asOf: number } | null,
+  delivered: number | null,
+  socket: { readonly writableEnded: boolean; readonly writableNeedDrain: boolean },
+): { sequence: number; instant: number; price: number; asOf: number } | null {
+  if (inForce === null || socket.writableEnded || socket.writableNeedDrain) return null;
+  if (delivered !== null && delivered !== inForce.sequence) return null;
+  return inForce;
+}
+
+/**
+ * Run `beat` every `ms` until the response ends; returns what stops it. Nothing
+ * when the stream did not ask for a heartbeat. Unreferenced, so an open stream
+ * never holds the process up on its way out.
+ */
+function beatEvery(ms: number | null, res: Response, beat: () => void): () => void {
+  if (ms === null) return () => undefined;
+  const timer = setInterval(() => {
+    if (res.writableEnded) {
+      clearInterval(timer);
+      return;
+    }
+    beat();
+  }, ms);
+  timer.unref();
+  return () => clearInterval(timer);
 }
 
 function instantParam(name: string, raw: string | undefined): ReturnType<typeof epochMillis> {

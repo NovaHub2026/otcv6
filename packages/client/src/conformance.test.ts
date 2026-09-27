@@ -150,7 +150,19 @@ export interface Faults {
    * replaced on 2026-09-26.
    */
   seamRefused?: boolean;
+  /** A heartbeat whose `asOf` runs past what the price route will answer (PH-40.2). */
+  heartbeatAhead?: boolean;
+  /** A heartbeat naming a tick that is not the one in force at its `asOf`. */
+  heartbeatWrongTick?: boolean;
+  /** A stream that ignores `?heartbeat=` and never sends one. */
+  heartbeatNever?: boolean;
 }
+
+/**
+ * How far the fake venue has published: its last tick, plus a pass that found
+ * nothing new. The price route answers up to here, and a heartbeat says so.
+ */
+const FINAL_THROUGH = TICKS[59]!.instant + 300;
 
 /** The gap a `seamed` fake venue's record holds: between tick 30 and tick 31. */
 export const SEAM = {
@@ -301,7 +313,7 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
     }
     if (p === '/markets/eurusd/price') {
       const at = Number(url.searchParams.get('at'));
-      if (at > TICKS[59]!.instant) return json(response, 400, { message: 'future' });
+      if (at > FINAL_THROUGH) return json(response, 400, { message: 'future' });
       const inSeam = faults.seamed === true && at > SEAM.lastInstant && at < SEAM.resumesAtInstant;
       if (inSeam && faults.seamRefused) {
         return json(response, 409, { message: 'inside a recorded discontinuity' });
@@ -374,6 +386,17 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
         }
         response.write(`id: ${String(t.sequence)}\ndata: ${JSON.stringify(t)}\n\n`);
         written += 1;
+      }
+      if (url.searchParams.has('heartbeat') && !faults.heartbeatNever) {
+        const inForce = faults.heartbeatWrongTick ? TICKS[58]! : TICKS[59]!;
+        response.write(
+          `event: heartbeat\ndata: ${JSON.stringify({
+            sequence: inForce.sequence,
+            instant: inForce.instant,
+            price: inForce.price,
+            asOf: faults.heartbeatAhead ? FINAL_THROUGH + 5_000 : FINAL_THROUGH,
+          })}\n\n`,
+        );
       }
       response.write('event: close\ndata: {"reason":"end of tape"}\n\n');
       response.end();
@@ -525,6 +548,22 @@ describe('the conformance suite (PH-29.3)', () => {
       'a venue that refuses a price inside a seam instead of answering the price in force (ADR-0021)',
       { seamed: true, seamRefused: true },
       'a price inside a seam is the price in force, and the seam is named',
+    ],
+    // PH-40.2: a heartbeat must state only what the price route stands behind.
+    [
+      'a heartbeat whose asOf runs past what the venue will price',
+      { heartbeatAhead: true },
+      'a heartbeat names the price in force, final through an instant the price route agrees with',
+    ],
+    [
+      'a heartbeat naming a tick that is not the one in force',
+      { heartbeatWrongTick: true },
+      'a heartbeat names the price in force, final through an instant the price route agrees with',
+    ],
+    [
+      'a stream that never sends the heartbeat it was asked for',
+      { heartbeatNever: true },
+      'a heartbeat names the price in force, final through an instant the price route agrees with',
     ],
     [
       'a market serving the tick it has drawn but not published (a1-03)',

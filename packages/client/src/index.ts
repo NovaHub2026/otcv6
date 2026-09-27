@@ -11,7 +11,9 @@ export {
 } from './contract.js';
 export { conforms, shapeProblems } from './shape.js';
 export {
+  firstHeartbeat,
   type GapFrame,
+  type HeartbeatFrame,
   readStream,
   type SseEvent,
   SseParser,

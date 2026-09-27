@@ -113,6 +113,16 @@ const SEAM: Shape = {
 
 const TICK_FRAME: Shape = { sequence: 'integer', instant: 'integer', price: 'integer' };
 const GAP_FRAME: Shape = { requested: 'integer|null', reason: 'string', resumesAt: 'integer|null' };
+/**
+ * The price in force and the instant it is final through (PH-40.2): what a
+ * `?heartbeat=` stream writes between ticks. `sequence`, `instant` and `price`
+ * are the tick in force — one this connection has already been handed, or, on
+ * a live join, the one the stream continues after — and `/markets/:id/price`
+ * answers that tick for every instant from `instant` through `asOf`.
+ */
+const HEARTBEAT_FRAME: Shape = { ...TICK_FRAME, asOf: 'integer' };
+const HEARTBEAT_QUERY =
+  'milliseconds between heartbeat frames, 500 to 30000; omitted, the stream carries none';
 
 const REGISTRATION_JOB: Shape = {
   id: 'string',
@@ -282,7 +292,7 @@ export const API_ROUTES: readonly RouteContract[] = [
     },
     refusals: {
       '400':
-        'a missing or malformed instant, or an instant after the newest published one — for a market this process no longer hosts, after the newest instant its record holds. This is what makes a contract impossible to settle before its final millisecond',
+        'a missing or malformed instant, or an instant after the one the price is final through — the last clean pass for a hosted market, the newest instant its record holds for one this process no longer hosts. This is what makes a contract impossible to settle before its final millisecond',
       '404':
         'the asset is unknown, the record starts after the instant, or this deployment keeps no record',
     },
@@ -340,11 +350,13 @@ export const API_ROUTES: readonly RouteContract[] = [
       'from?': 'the next sequence wanted; omitted joins at the live edge',
       'onGap?':
         "'live' to be told a gap and joined at the sequence the feed resumes at, instead of a 400",
+      'heartbeat?': HEARTBEAT_QUERY,
     },
     stream: {
       message: TICK_FRAME,
       gap: GAP_FRAME,
       close: { reason: 'string' },
+      heartbeat: HEARTBEAT_FRAME,
     },
     refusals: {
       '400':
@@ -360,11 +372,13 @@ export const API_ROUTES: readonly RouteContract[] = [
       assets: 'comma-separated hosted asset ids',
       'from?': 'per-asset next sequences, in the order of assets',
       'onGap?': "'live', as for one market",
+      'heartbeat?': HEARTBEAT_QUERY,
     },
     stream: {
       message: { asset: 'string', ...TICK_FRAME },
       gap: { asset: 'string', ...GAP_FRAME },
       close: { asset: 'string', reason: 'string' },
+      heartbeat: { asset: 'string', ...HEARTBEAT_FRAME },
     },
     refusals: { '400': 'a malformed parameter, or an asset that is not hosted' },
   },
@@ -482,6 +496,18 @@ export const CONTRACT_HISTORY: readonly { readonly version: string; readonly dig
   // and a refusal a client handled by refunding now arrives as a price it settles
   // at — which is the rule this version exists to deliver.
   { version: '3.1.0', digest: 'fbe42c5a23f5c378' },
+  // PH-40.2: a market that is open says so. A stream asked for `?heartbeat=<ms>`
+  // writes an `event: heartbeat` frame between ticks: the tick in force and
+  // `asOf`, the instant it is final through. And `GET /markets/:id/price` answers
+  // any instant up to that point rather than only up to the last tick, so a
+  // contract settles once its final millisecond has passed instead of waiting
+  // for the market's next tick.
+  //
+  // **Minor.** The heartbeat is opt-in, so a client that never asks for it never
+  // meets the event; and the only requests whose answer changes are ones that
+  // were refused `400` — *not yet* — and are now answered with the price that
+  // retry would have got.
+  { version: '3.2.0', digest: '689cdc98d3e3828c' },
 ];
 
 export const API_VERSION: string = CONTRACT_HISTORY[CONTRACT_HISTORY.length - 1]!.version;

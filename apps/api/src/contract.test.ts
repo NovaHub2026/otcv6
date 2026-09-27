@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Request, Response } from 'express';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { durationMillis, epochMillis, MasterKeyring, SteppableClock } from '@otc/core';
 import { ASSET_CATALOGUE } from '@otc/engine';
 import { MemoryStateStore, MemoryTickRecord } from '@otc/runtime';
@@ -403,6 +403,14 @@ describe('the API is a contract (PH-29.2)', () => {
     controller.multiplexed(many.res, request(), id, `${id}:${String(oldest)}`);
     const manyGap = recording();
     controller.multiplexed(manyGap.res, request(), id, `${id}:99999`, 'live');
+    // `heartbeat` (PH-40.2): asked for on both routes, and one interval let run.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const beat = recording();
+    controller.stream(id, beat.res, request(), undefined, undefined, '500');
+    const manyBeat = recording();
+    controller.multiplexed(manyBeat.res, request(), id, undefined, undefined, '500');
+    vi.advanceTimersByTime(500);
+    vi.useRealTimers();
     // `close`: the frame every open stream is given when the process leaves.
     await controller.beforeApplicationShutdown();
 
@@ -410,10 +418,12 @@ describe('the API is a contract (PH-29.2)', () => {
     check('/markets/:id/stream', gap.body());
     check('/markets/stream', many.body());
     check('/markets/stream', manyGap.body());
+    check('/markets/:id/stream', beat.body());
+    check('/markets/stream', manyBeat.body());
 
     expect(problems, 'a stream frame does not match the contract').toEqual([]);
     // Every event name the contract declares was actually written by one of the
-    // four connections above, so this cannot quietly become a walk over nothing.
+    // connections above, so this cannot quietly become a walk over nothing.
     for (const route of ['/markets/:id/stream', '/markets/stream']) {
       const declared = Object.keys(API_ROUTES.find((r) => r.path === route)!.stream!).sort();
       expect([...(seen.get(route) ?? [])].sort(), `${route}: an event nothing wrote`).toEqual(

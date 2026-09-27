@@ -7,7 +7,7 @@ import {
 } from '@otc/distribution';
 import { API_ROUTES, API_VERSION, contractDigest, type RouteContract } from './contract.js';
 import { shapeProblems } from './shape.js';
-import { readStream } from './sse.js';
+import { firstHeartbeat, readStream } from './sse.js';
 
 /**
  * The integration checklist, executable against a live venue (PH-29.3).
@@ -660,6 +660,44 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
           : `at ${String(inside)}, inside the seam ${String(seam.lastSequence)}..` +
               `${String(seam.resumesAtSequence)}: ${String(answer.status)} — a contract whose ` +
               `final millisecond falls there would have no price to settle at`,
+      );
+    }
+
+    // ---- PH-40.2: a market that is open says so, and says nothing it cannot back
+    //
+    // A broker whose own rule refuses a quote older than some seconds needs a
+    // heartbeat between ticks, or a quiet market — and a seam, during which the
+    // price in force is the last tick before it — reads to it as closed. What the
+    // heartbeat may never do is state a price the record will not stand behind:
+    // `asOf` is how far the market has been published, so the price route must
+    // answer exactly the heartbeat's tick at `asOf`. A venue that put the wall
+    // clock there would fail this the first time it was caught up.
+    const beat = await firstHeartbeat({
+      baseUrl: base,
+      assetId: id,
+      heartbeat: 500,
+      timeoutMs: 5_000,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      fetch: doFetch,
+    });
+    if (beat === null) {
+      check(
+        'a heartbeat names the price in force, final through an instant the price route agrees with',
+        false,
+        'asked for a heartbeat every 500 ms and got none in 5 s: a broker whose freshness rule ' +
+          'needs one would close this market between ticks',
+      );
+    } else {
+      const answer = await get(`/markets/${encodeURIComponent(id)}/price?at=${String(beat.asOf)}`);
+      const body = answer.body as { sequence?: unknown; price?: unknown } | null;
+      check(
+        'a heartbeat names the price in force, final through an instant the price route agrees with',
+        beat.asOf >= beat.instant &&
+          answer.status === 200 &&
+          body?.sequence === beat.sequence &&
+          body.price === beat.price,
+        `heartbeat: sequence ${String(beat.sequence)} as of ${String(beat.asOf)}; price at that ` +
+          `instant: ${String(answer.status)} sequence ${String(body?.sequence)}`,
       );
     }
 

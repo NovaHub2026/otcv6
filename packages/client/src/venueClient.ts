@@ -7,7 +7,7 @@ import {
 } from '@otc/distribution';
 import { API_ROUTES, API_VERSION, type RouteContract, type Shape } from './contract.js';
 import { shapeProblems } from './shape.js';
-import { streamFrames, type GapFrame } from './sse.js';
+import { streamFrames, type GapFrame, type HeartbeatFrame } from './sse.js';
 
 /**
  * The reference client (PH-29.4): the venue's public surface as one class
@@ -115,6 +115,13 @@ export interface Market {
 export type StreamEvent =
   | { readonly kind: 'tick'; readonly tick: Tick }
   | { readonly kind: 'gap'; readonly gap: GapFrame }
+  /**
+   * The price in force is still this tick, and final through `asOf` (PH-40.2).
+   * Only when the subscription asked for a heartbeat. It never names a tick this
+   * subscription has not been handed, so a broker may refresh its quote's age
+   * from it without moving its price.
+   */
+  | { readonly kind: 'heartbeat'; readonly heartbeat: HeartbeatFrame }
   | { readonly kind: 'reconnected'; readonly from: number };
 
 export interface SubscribeOptions {
@@ -124,6 +131,11 @@ export interface SubscribeOptions {
   readonly signal?: AbortSignal;
   /** Reconnect attempts after a dropped connection before giving up. */
   readonly reconnects?: number;
+  /**
+   * Milliseconds between heartbeat events (PH-40.2), 500 to 30000. Omitted, the
+   * venue sends none and none are yielded.
+   */
+  readonly heartbeat?: number;
 }
 
 export interface VenueClientOptions {
@@ -329,6 +341,7 @@ export class VenueClient {
         assetId: id,
         ...(from === undefined ? {} : { from }),
         ...(options.onGap === 'refuse' ? {} : { onGap: 'live' as const }),
+        ...(options.heartbeat === undefined ? {} : { heartbeat: options.heartbeat }),
         ...(options.signal === undefined ? {} : { signal: options.signal }),
         fetch: this.#fetch,
       })) {
@@ -354,6 +367,8 @@ export class VenueClient {
           yield { kind: 'gap', gap: frame.gap };
         } else if (frame.kind === 'close') {
           closed = frame.reason;
+        } else if (frame.kind === 'heartbeat') {
+          yield { kind: 'heartbeat', heartbeat: frame.heartbeat };
         } else {
           // A repeat after a resume is never yielded twice; a skip is a hole
           // the venue did not tell, and the contract forbids it.

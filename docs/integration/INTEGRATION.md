@@ -309,6 +309,27 @@ GET /markets/:id/stream?from=<sequence>&onGap=live
   sola vez** con `event: close` y un motivo que nombra el tope y la secuencia
   desde la que reanudar (`replay capped at 1000000 bytes after sequence N;
 resume from N+1`): reconecta con `from=N+1`.
+- **`heartbeat=<ms>`** (500 a 30000; contrato 3.2.0) pide un latido entre ticks:
+
+  ```
+  event: heartbeat
+  data: {"sequence":481790,"instant":1776000123400,"price":-3118,"asOf":1776000125000}
+  ```
+
+  Dice: _el precio en vigor sigue siendo el de este tick, y es definitivo hasta
+  `asOf`_. `asOf` es hasta dónde el motor ha publicado y grabado ese mercado,
+  **no el reloj**: tras una congelación corta del host el motor recupera los
+  ticks perdidos con instantes pasados, y un latido que hubiera dicho «ahora» se
+  habría contradicho. Por eso `GET /markets/:id/price?at=<asOf>` responde
+  exactamente ese tick. El latido **nunca se adelanta a tu conexión**: sólo se
+  escribe cuando el último tick que te entregó es el que está en vigor (o cuando
+  aún no te entregó ninguno), así que puedes refrescar la antigüedad de tu
+  cotización con él sin mover su precio. Si tu frontend rechaza abrir sobre una
+  cotización de más de N segundos, usa `asOf` como su hora: un mercado tranquilo
+  —o una costura, en la que el precio en vigor es el último tick antes del hueco
+  (ADR-0021)— sigue abierto. Si `asOf` deja de avanzar, el motor no está
+  publicando ese mercado: eso sí es algo que mirar en `/health`. Sin el
+  parámetro no se envía ninguno.
 
 Varios activos por una sola conexión (un navegador solo permite seis por origen):
 
@@ -322,6 +343,7 @@ GET /markets/stream?assets=eurusd-otc,btcusdt-otc&from=eurusd-otc:481775,btcusdt
   que la reconexión del navegador es tan informativa como un `from` explícito.
 - Un hueco en un activo no derriba la conexión de los otros siete: el evento
   `gap` nombra el activo afectado.
+- `heartbeat=<ms>` igual que para un activo; cada latido nombra su activo.
 
 **Tres límites que hay que respetar en el cliente.** La reproducción que se sirve
 al conectar está acotada a 1 MB por conexión (unos trece mil ticks): pedir un
@@ -429,8 +451,11 @@ para liquidar.
   instante: **el último tick con instante menor o igual**, la misma regla que usa
   `settle()` y que dibujan las velas. La respuesta la nombra
   (`"rule": "last-tick-at-or-before"`). `404` si el registro empieza después del
-  instante; `400` si el instante es posterior al último publicado — un precio
-  para un instante sin publicar es una predicción, no un registro. **Dentro de
+  instante; `400` si el instante es posterior a aquel hasta el que el precio es
+  definitivo — un precio para un instante sin publicar es una predicción, no un
+  registro. Ese límite es la última pasada limpia del motor por ese mercado (el
+  `asOf` del latido), no su último tick (contrato 3.2.0): un contrato se liquida
+  en cuanto su milisegundo final ha pasado, sin esperar al siguiente tick. **Dentro de
   una costura** (§5) responde el precio en vigor —el último tick antes del hueco,
   desde el que el mercado reabrió— y lo dice en `seam`, con los dos lados del
   hueco y `reframes`; fuera de una costura `seam` es `null` (ADR-0021,

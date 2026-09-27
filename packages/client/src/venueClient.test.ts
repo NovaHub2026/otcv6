@@ -218,6 +218,32 @@ describe('the reference client (PH-29.4)', () => {
     expect(sequences).toEqual(Array.from({ length: 60 }, (_, i) => i + 1));
   });
 
+  it('yields a heartbeat when asked for one, after the tick it names, and none otherwise (PH-40.2)', async () => {
+    const base = await fakeVenue();
+    const read = async (heartbeat?: number): Promise<StreamEvent[]> => {
+      const events: StreamEvent[] = [];
+      for await (const event of new VenueClient({ baseUrl: base }).subscribe('eurusd', {
+        from: 1,
+        ...(heartbeat === undefined ? {} : { heartbeat }),
+      })) {
+        events.push(event);
+      }
+      return events;
+    };
+    const asked = await read(1_000);
+    const beats = asked.filter((e) => e.kind === 'heartbeat');
+    expect(beats).toHaveLength(1);
+    const beat = beats[0]!.kind === 'heartbeat' ? beats[0]!.heartbeat : null;
+    expect(beat?.sequence).toBe(TICKS[59]!.sequence);
+    // It never names a tick the subscription has not been handed.
+    const index = asked.findIndex((e) => e.kind === 'heartbeat');
+    const before = asked.slice(0, index).filter((e) => e.kind === 'tick');
+    expect(before.at(-1)?.kind === 'tick' ? before.at(-1)!.tick.sequence : null).toBe(
+      beat?.sequence,
+    );
+    expect((await read()).some((e) => e.kind === 'heartbeat')).toBe(false);
+  });
+
   it('refuses a stream that skips a sequence without telling a gap', async () => {
     const client = new VenueClient({ baseUrl: await fakeVenue({ skipSequence: true }) });
     const iterator = client.subscribe('eurusd', { from: 1 });

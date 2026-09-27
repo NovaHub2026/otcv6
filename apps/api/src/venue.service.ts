@@ -116,6 +116,23 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
    */
   readonly feed = new TickFeed();
   private readonly latest = new Map<string, Tick>();
+  /**
+   * The price in force per market, and the instant it is known to be in force
+   * through (PH-40.2).
+   *
+   * `asOf` is the clock reading the last clean pass advanced the market to, set
+   * only once that pass's ticks are in the record and offered to the feed. So
+   * every tick at or before `asOf` is published and recorded, and the next one
+   * the engine holds lies after it: the price in force at any instant up to
+   * `asOf` is final. It is **not** the wall clock. A host that withheld the CPU
+   * for ten seconds resumes by publishing the missed ticks with past instants,
+   * and a heartbeat that had said "still this price, as of now" during those ten
+   * seconds would have been contradicted by the record a moment later.
+   *
+   * The pair is stored together, because read apart they can disagree: a pass
+   * sets `latest` before its record append returns.
+   */
+  private readonly inForce = new Map<string, { readonly tick: Tick; readonly asOf: EpochMillis }>();
 
   /** Assets that published on the last pass; 0 with a stall means spinning. */
   private lastPublishedCount = 0;
@@ -731,6 +748,7 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     this.stalled.delete(assetId);
     this.stalledLogged.delete(assetId);
     this.latest.delete(assetId);
+    this.inForce.delete(assetId);
     this.recovery.delete(assetId);
     // Including what it remembers about reopening it (PH-39). These outlived
     // CA7-15's sweep: an asset registered again under the same id inherited a
@@ -848,6 +866,26 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     // whole promise is that the record stays readable. There is no live tick for
     // an unhosted market; the route bounds itself with the record instead.
     return this.#marketOrNull(assetId)?.lastPublishedState ?? null;
+  }
+
+  /**
+   * The price in force for a market and the instant it is final through, or
+   * null before this process has advanced it cleanly (PH-40.2).
+   *
+   * What a heartbeat carries and what `GET /markets/:id/price` bounds itself
+   * with: an instant at or before `asOf` has a price that will never change.
+   */
+  priceInForce(
+    assetId: string,
+  ): { sequence: number; instant: number; price: number; asOf: number } | null {
+    const known = this.inForce.get(assetId);
+    if (known === undefined) return null;
+    return {
+      sequence: known.tick.sequence,
+      instant: known.tick.instant,
+      price: known.tick.price,
+      asOf: known.asOf,
+    };
   }
 
   /**
@@ -1202,7 +1240,8 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       `${assetId}: REOPENED — ${failure.error.message} Continuing from sequence ` +
         `${reopened.from.sequence} at the same price, resuming at sequence ` +
         `${reopened.outcome.resumesAtSequence} on key epoch ${reopened.market.keyEpoch}. ` +
-        `The gap is recorded as a seam; a contract whose window touches it will not settle.`,
+        `The gap is recorded as a seam; a contract across it settles at its final ` +
+        `millisecond at the price in force, which inside the gap is this one (ADR-0021).`,
     );
     return true;
   }
@@ -1222,7 +1261,8 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     //
     // The failure list is the one thing that says so, and it was being thrown
     // away by the only caller that mattered.
-    const { published, failures } = this.venue.advanceDetailed(epochMillis(this.clock.now()));
+    const advancedTo = epochMillis(this.clock.now());
+    const { published, failures } = this.venue.advanceDetailed(advancedTo);
     this.lastPublishedCount = published.length;
     for (const failure of failures) {
       // A market past its catch-up bound can never clear it by waiting — the
@@ -1315,6 +1355,20 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       } catch (error) {
         this.#publishRefused(assetId, error);
       }
+    }
+    // What is in force, and through when (PH-40.2). Last, so every market that
+    // is about to be named has been recorded and offered to the feed in this
+    // pass. A market that failed its advance or is stalled by name keeps what it
+    // had: its price in force past its last clean pass is not known yet — a
+    // short outage is caught up with ticks at past instants, and a long one
+    // becomes a seam only once the first tick after it is written. That covers
+    // a reopened market too: its stall stays set until it publishes (PH-39).
+    const failed = new Set(failures.map((failure) => failure.assetId));
+    for (const assetId of this.venue.assetIds) {
+      if (failed.has(assetId) || this.stalled.has(assetId)) continue;
+      const tick = this.latest.get(assetId);
+      if (tick === undefined) continue;
+      this.inForce.set(assetId, { tick, asOf: advancedTo });
     }
     if (this.clock.now() - this.lastCheckpointAt >= this.checkpointEveryMs) {
       await this.checkpoint();
