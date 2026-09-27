@@ -1438,6 +1438,9 @@ export class MarketController implements BeforeApplicationShutdown {
       // render them for itself without one request per tick.
       logQuantum: frame?.logQuantum ?? null,
       referencePrice: frame?.referencePrice ?? null,
+      // How many decimals `displayPrice` carries — TradingView's `pricescale` is
+      // `10 ** displayPrecision` (PH-40.4, Cycle Audit 13 a2-04).
+      displayPrecision: frame?.displayPrecision ?? null,
       displayPrice:
         frame === null
           ? null
@@ -1551,6 +1554,7 @@ export class MarketController implements BeforeApplicationShutdown {
         ...candle,
         logQuantum: spansAChange ? null : (one?.logQuantum ?? null),
         referencePrice: spansAChange ? null : (one?.referencePrice ?? null),
+        displayPrecision: spansAChange ? null : (one?.displayPrecision ?? null),
       };
     });
   }

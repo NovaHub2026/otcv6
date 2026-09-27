@@ -1,8 +1,8 @@
 # API Contract
 
 Type: SUPPORTING DOCUMENTATION (generated; do not edit by hand)
-Version: 3.2.0
-Digest: 689cdc98d3e3828c
+Version: 3.3.0
+Digest: 29f014d456a6c000
 Source: `apps/api/src/contract.ts` — rendered by `npm run contract:render`; held to the controller by `contract.test.ts`
 
 ---
@@ -171,7 +171,7 @@ Response: a JSON object:
 | `timeframe` | `string` |
 | `from` | `integer` |
 | `to` | `integer` |
-| `candles` | `array` |
+| `candles` | array of `{ openInstant: integer, timeframe: string, open: integer, high: integer, low: integer, close: integer, tickCount: integer, firstSequence: integer, lastSequence: integer, logQuantum: number|null, referencePrice: number|null, displayPrecision: integer|null }` |
 
 | Status | When |
 | --- | --- |
@@ -197,6 +197,7 @@ Response: a JSON object:
 | `price` | `integer` |
 | `logQuantum` | `number|null` |
 | `referencePrice` | `number|null` |
+| `displayPrecision` | `integer|null` |
 | `displayPrice` | `string|null` |
 
 | Status | When |
@@ -228,6 +229,7 @@ Response: a JSON object:
 | `price` | `integer` |
 | `logQuantum` | `number|null` |
 | `referencePrice` | `number|null` |
+| `displayPrecision` | `integer|null` |
 | `displayPrice` | `string|null` |
 | `seam` | `object|null` |
 

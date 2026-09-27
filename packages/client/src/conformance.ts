@@ -709,6 +709,81 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
       );
     }
 
+    // ---- PH-40.4: a stored candle is the ticks it was folded from -----------
+    //
+    // Cycle Audit 13, a3-03: the suite never requested `/markets/:id/history`,
+    // and a refuter fed the route `[{nonsense:true,logQuantum:'banana'}, 7, null]`
+    // and the shape check passed it. The shape is typed now (the walk above
+    // holds every item to it); this is the content. Every 1m bar lying wholly
+    // inside the ticks the stream handed over is refolded from them — open,
+    // high, low, close and the count — and a bar that states a frame must render
+    // its close exactly as the tick it closed on was published.
+    {
+      const minute = 60_000;
+      const from = Math.floor(first.ticks[0]!.instant / minute) * minute;
+      const to = last.instant + minute;
+      const answer = await get(
+        `/markets/${encodeURIComponent(id)}/history?timeframe=1m&from=${String(from)}&to=${String(to)}`,
+      );
+      const candles = (
+        answer.status === 200 &&
+        Array.isArray((answer.body as { candles?: unknown } | null)?.candles)
+          ? (answer.body as { candles: unknown[] }).candles
+          : []
+      ) as {
+        firstSequence?: unknown;
+        lastSequence?: unknown;
+        open?: unknown;
+        high?: unknown;
+        low?: unknown;
+        close?: unknown;
+        tickCount?: unknown;
+        logQuantum?: unknown;
+      }[];
+      const bySequence = new Map(first.ticks.map((t) => [t.sequence, t]));
+      const faults: string[] = [];
+      let checked = 0;
+      for (const bar of candles) {
+        if (typeof bar.firstSequence !== 'number' || typeof bar.lastSequence !== 'number') continue;
+        const run: { price: number }[] = [];
+        for (let s = bar.firstSequence; s <= bar.lastSequence; s += 1) {
+          const tick = bySequence.get(s);
+          if (tick === undefined) break;
+          run.push(tick);
+        }
+        if (run.length !== bar.lastSequence - bar.firstSequence + 1) continue;
+        checked += 1;
+        const prices = run.map((t) => t.price);
+        const expected = {
+          open: prices[0],
+          high: Math.max(...prices),
+          low: Math.min(...prices),
+          close: prices[prices.length - 1],
+          tickCount: prices.length,
+        };
+        for (const [key, value] of Object.entries(expected)) {
+          if (bar[key as keyof typeof expected] !== value) {
+            faults.push(
+              `the 1m bar ${String(bar.firstSequence)}..${String(bar.lastSequence)} says ${key} ` +
+                `${String(bar[key as keyof typeof expected])}, its ticks fold to ${String(value)}`,
+            );
+          }
+        }
+        if (faults.length > 3) break;
+      }
+      check(
+        'a stored candle is the ticks it was folded from',
+        answer.status === 200 && faults.length === 0,
+        answer.status !== 200
+          ? `history answered ${String(answer.status)}`
+          : faults.length > 0
+            ? faults.slice(0, 3).join('; ')
+            : checked === 0
+              ? 'NOT PROVEN: no stored 1m bar lies wholly inside the ticks the stream handed over'
+              : `${String(checked)} bar(s) refolded from the stream and equal`,
+      );
+    }
+
     // ---- the market's price is one the record already carries --------------
     //
     // **Cycle Audit 10 (a1-03).** A venue draws the next tick before its

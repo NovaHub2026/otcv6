@@ -38,7 +38,17 @@ export function shapeProblems(where: string, value: unknown, shape: Shape): stri
     problems.push(`${where}: keys ${keys.join(',')} — the contract names ${wanted.join(',')}`);
   }
   for (const [key, type] of Object.entries(shape)) {
-    if (key in record && !conforms(record[key], type)) {
+    if (!(key in record)) continue;
+    if (typeof type !== 'string') {
+      const items = record[key];
+      if (!Array.isArray(items)) {
+        problems.push(`${where}.${key}: ${JSON.stringify(items)} is not an array`);
+        continue;
+      }
+      for (const [index, item] of items.entries()) {
+        problems.push(...shapeProblems(`${where}.${key}[${String(index)}]`, item, type.items));
+      }
+    } else if (!conforms(record[key], type)) {
       problems.push(`${where}.${key}: ${JSON.stringify(record[key])} is not ${type}`);
     }
   }

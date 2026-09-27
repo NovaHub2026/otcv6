@@ -11,7 +11,7 @@ import type { Request, Response } from 'express';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { durationMillis, epochMillis, MasterKeyring, SteppableClock } from '@otc/core';
 import { ASSET_CATALOGUE } from '@otc/engine';
-import { MemoryStateStore, MemoryTickRecord } from '@otc/runtime';
+import { InMemoryCandleHistory, MemoryStateStore, MemoryTickRecord } from '@otc/runtime';
 import {
   API_ROUTES,
   API_VERSION,
@@ -20,7 +20,9 @@ import {
   renderContract,
   type FieldType,
   type RouteContract,
+  type Shape,
 } from './contract.js';
+import { HistoryService } from './history.service.js';
 import { MarketController } from './market.controller.js';
 import { PublicationService } from './publication.service.js';
 import { VenueService } from './venue.service.js';
@@ -93,11 +95,7 @@ function conforms(value: unknown, type: FieldType): boolean {
   }
 }
 
-function checkShape(
-  where: string,
-  value: unknown,
-  shape: Readonly<Record<string, FieldType>>,
-): string[] {
+function checkShape(where: string, value: unknown, shape: Shape): string[] {
   const problems: string[] = [];
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return [`${where}: not an object`];
@@ -109,7 +107,15 @@ function checkShape(
   }
   for (const [key, type] of Object.entries(shape)) {
     const field = (value as Record<string, unknown>)[key];
-    if (key in value && !conforms(field, type)) {
+    if (!(key in value)) continue;
+    if (typeof type !== 'string') {
+      // An array of items with a shape of their own (PH-40.4): each one held to it.
+      if (!Array.isArray(field)) problems.push(`${where}.${key}: not an array`);
+      else
+        field.forEach((item, i) =>
+          problems.push(...checkShape(`${where}.${key}[${String(i)}]`, item, type.items)),
+        );
+    } else if (!conforms(field, type)) {
       problems.push(`${where}.${key}: ${JSON.stringify(field)} is not ${type}`);
     }
   }
@@ -280,11 +286,18 @@ describe('the API is a contract (PH-29.2)', () => {
       clock.advance(durationMillis(10_000));
       await venue.tick();
     }
-    const controller = new MarketController(venue);
+    // With a candle history, fed the venue's own ticks as production feeds it:
+    // without one `/history` answers its listed 404 and the walk skips it, so
+    // the candle shape was never held to anything (PH-40.4).
+    const history = new HistoryService(new InMemoryCandleHistory(), [asset]);
+    history.observe(id, venue.feed.since(id, 1));
+    await history.flush();
+    const controller = new MarketController(venue, history);
     const last = venue.lastTick(id)!;
     const byPath = new Map(declaredRoutes().map((r) => [`${r.method} ${r.path}`, r.name]));
     const problems: string[] = [];
     const exercised: string[] = [];
+    let candlesSeen = 0;
     for (const route of API_ROUTES) {
       if (route.response === undefined) continue;
       const name = byPath.get(`${route.method} ${route.path}`)!;
@@ -331,6 +344,9 @@ describe('the API is a contract (PH-29.2)', () => {
       }
       const value: unknown = JSON.parse(JSON.stringify(answer ?? null));
       exercised.push(route.path);
+      if (route.path === '/markets/:id/history') {
+        candlesSeen = ((value as { candles?: unknown[] } | null)?.candles ?? []).length;
+      }
       if ('array' in route.response) {
         if (!Array.isArray(value)) {
           problems.push(`${route.path}: not an array`);
@@ -346,6 +362,8 @@ describe('the API is a contract (PH-29.2)', () => {
       }
     }
     expect(exercised.length, exercised.join(', ')).toBeGreaterThanOrEqual(8);
+    expect(exercised, 'the candle route was never read').toContain('/markets/:id/history');
+    expect(candlesSeen, 'the history answered no candle to hold to its shape').toBeGreaterThan(0);
     expect(problems).toEqual([]);
   }, 60_000);
 
@@ -439,5 +457,13 @@ describe('the API is a contract (PH-29.2)', () => {
     expect(checkShape('x', { a: 1, b: 'y', c: 0 }, { a: 'integer', b: 'string' })).toHaveLength(1);
     expect(checkShape('x', { a: null }, { a: 'integer|null' })).toEqual([]);
     expect(checkShape('x', { a: null }, { a: 'integer' })).toHaveLength(1);
+    // PH-40.4: an items shape holds every element (Cycle Audit 13, a3-03).
+    const typed = { c: { items: { close: 'integer' } } } as const;
+    expect(checkShape('x', { c: [{ close: 1 }] }, typed)).toEqual([]);
+    expect(checkShape('x', { c: [{ nonsense: true }, 7] }, typed)).toEqual([
+      'x.c[0]: keys nonsense — the contract names close',
+      'x.c[1]: not an object',
+    ]);
+    expect(checkShape('x', { c: 'no' }, typed)).toEqual(['x.c: not an array']);
   });
 });

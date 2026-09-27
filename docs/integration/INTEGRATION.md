@@ -429,6 +429,16 @@ GET /markets/:id/history?timeframe=1m&from=<epoch ms>&to=<epoch ms>
   bajo el nombre pedido.
 - Hay un tope por número de velas (dos órdenes de magnitud por encima de
   cualquier petición legítima); por encima responde 400.
+- Cada vela (contrato 3.3.0) trae `openInstant`, `open`/`high`/`low`/`close`
+  como **enteros** del retículo, `tickCount`, `firstSequence`/`lastSequence` de
+  los ticks de los que se plegó, y el marco en que cuentan: `logQuantum`,
+  `referencePrice` y `displayPrecision`. Los tres son `null` a la vez cuando la
+  vela cruza un cambio de unidad y no es precio en ningún marco: **no la
+  dibujes**. Un cambio sólo de precisión no la anula: se fecha con la más fina.
+- **Para TradingView**: `volume = tickCount`; `pricescale = 10 ** displayPrecision`
+  y `minmov = 1`. Los marcos que sirve el motor son `1m`, `5m`, `15m`, `30m`,
+  `1h`, `4h` y `1d`; uno intermedio (`2h`) se agrega desde el inferior, como hace
+  TradingView si lo listas en `intraday_multipliers` sin él.
 
 ### 3.6 Escritura (admin)
 

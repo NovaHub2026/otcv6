@@ -6,6 +6,7 @@ export {
   contractDocument,
   renderContract,
   type FieldType,
+  type ItemsField,
   type RouteContract,
   type Shape,
 } from './contract.js';

@@ -29,7 +29,16 @@ export type FieldType =
   | 'string|null'
   | 'object|null';
 
-export type Shape = Readonly<Record<string, FieldType>>;
+/**
+ * An array whose every item has these keys (PH-40.4). A bare `'array'` says only
+ * that a value is a list, and Cycle Audit 13 fed the history route
+ * `[{nonsense:true,logQuantum:'banana'}, 7, null]` and the shape check passed it.
+ */
+export interface ItemsField {
+  readonly items: Shape;
+}
+
+export type Shape = Readonly<Record<string, FieldType | ItemsField>>;
 
 export interface RouteContract {
   readonly method: 'GET' | 'POST' | 'PATCH';
@@ -82,7 +91,30 @@ const PUBLISHED: Shape = {
   price: 'integer',
   logQuantum: 'number|null',
   referencePrice: 'number|null',
+  // How many decimals `displayPrice` carries: TradingView's `pricescale` is
+  // `10 ** displayPrecision` (PH-40.4, Cycle Audit 13 a2-04).
+  displayPrecision: 'integer|null',
   displayPrice: 'string|null',
+};
+
+/**
+ * One stored candle (PH-40.4). Four integers on the tick lattice and the frame
+ * they count in — null, all three, when the bar straddles a change of unit and so
+ * is a price in neither. `tickCount` is what a chart shows as volume.
+ */
+const CANDLE: Shape = {
+  openInstant: 'integer',
+  timeframe: 'string',
+  open: 'integer',
+  high: 'integer',
+  low: 'integer',
+  close: 'integer',
+  tickCount: 'integer',
+  firstSequence: 'integer',
+  lastSequence: 'integer',
+  logQuantum: 'number|null',
+  referencePrice: 'number|null',
+  displayPrecision: 'integer|null',
 };
 
 /** A frame in force from a sequence onward, as `GET /markets/:id/lattices` lists it. */
@@ -250,7 +282,7 @@ export const API_ROUTES: readonly RouteContract[] = [
         timeframe: 'string',
         from: 'integer',
         to: 'integer',
-        candles: 'array',
+        candles: { items: CANDLE },
       },
     },
     refusals: {
@@ -508,6 +540,16 @@ export const CONTRACT_HISTORY: readonly { readonly version: string; readonly dig
   // were refused `400` — *not yet* — and are now answered with the price that
   // retry would have got.
   { version: '3.2.0', digest: '689cdc98d3e3828c' },
+  // PH-40.4, Cycle Audit 13 a3-03 and a2-04: what a chart consumes is in the
+  // contract. `GET /markets/:id/history` declares its candle — four integers,
+  // the tick count a chart shows as volume, the sequences it was folded from and
+  // the frame it counts in — where it said only `array`, and every published
+  // price and candle says how many decimals it carries (`displayPrecision`,
+  // TradingView's `pricescale` is `10 ** displayPrecision`).
+  //
+  // **Minor.** One key is added to every price and every candle; nothing a 3.2.0
+  // client parses changes meaning.
+  { version: '3.3.0', digest: '29f014d456a6c000' },
 ];
 
 export const API_VERSION: string = CONTRACT_HISTORY[CONTRACT_HISTORY.length - 1]!.version;
@@ -528,7 +570,13 @@ export function contractDocument(): {
 
 function shapeRows(shape: Shape): string {
   return Object.entries(shape)
-    .map(([key, type]) => `| \`${key}\` | \`${type}\` |`)
+    .map(([key, type]) =>
+      typeof type === 'string'
+        ? `| \`${key}\` | \`${type}\` |`
+        : `| \`${key}\` | array of \`{ ${Object.entries(type.items)
+            .map(([k, t]) => `${k}: ${typeof t === 'string' ? t : 'array'}`)
+            .join(', ')} }\` |`,
+    )
     .join('\n');
 }
 

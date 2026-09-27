@@ -27,4 +27,26 @@ describe('a value conforms to a contracted type', () => {
     expect(shapeProblems('x', 'not an object', { a: 'integer' })).toEqual(['x: not an object']);
     expect(shapeProblems('x', null, { a: 'integer' })).toEqual(['x: not an object']);
   });
+
+  /**
+   * **Cycle Audit 13, a3-03.** The history route's candles were `'array'`, and a
+   * refuter fed it exactly this and the check passed it. An items shape holds
+   * every element to it (PH-40.4).
+   */
+  it('holds every item of a typed array to its shape', () => {
+    const shape = { candles: { items: { close: 'integer', logQuantum: 'number|null' } } } as const;
+    expect(shapeProblems('h', { candles: [{ close: 3, logQuantum: null }] }, shape)).toEqual([]);
+    const problems = shapeProblems(
+      'h',
+      { candles: [{ nonsense: true, logQuantum: 'banana' }, 7, null] },
+      shape,
+    );
+    expect(problems.join('; ')).toMatch(/h\.candles\[0\]: keys logQuantum,nonsense/);
+    expect(problems.join('; ')).toMatch(/h\.candles\[0\]\.logQuantum: "banana"/);
+    expect(problems).toContain('h.candles[1]: not an object');
+    expect(problems).toContain('h.candles[2]: not an object');
+    expect(shapeProblems('h', { candles: 'no' }, shape)).toEqual([
+      'h.candles: "no" is not an array',
+    ]);
+  });
 });

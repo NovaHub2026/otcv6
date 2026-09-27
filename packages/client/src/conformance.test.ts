@@ -158,6 +158,8 @@ export interface Faults {
   heartbeatWrongTick?: boolean;
   /** A stream that ignores `?heartbeat=` and never sends one. */
   heartbeatNever?: boolean;
+  /** A stored 1m bar whose close is not the last tick it was folded from (PH-40.4). */
+  historyWrongClose?: boolean;
 }
 
 /**
@@ -212,6 +214,7 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
         ? FRAME.logQuantum * 12.916
         : FRAME.logQuantum,
     referencePrice: FRAME.referencePrice,
+    displayPrecision: FRAME.displayPrecision,
     // Coherent with whatever frame is stated, so only an anchor outside the
     // response can tell the unanchored venue from an honest one.
     displayPrice:
@@ -266,14 +269,37 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
     if (p === '/archetypes') return json(response, 200, []);
     if (p === '/registrations') return json(response, 200, []);
     if (p === '/registrations/1') return json(response, 404, { message: 'no' });
-    if (p === '/markets/eurusd/history')
+    if (p === '/markets/eurusd/history') {
+      // Two 1m bars folded from the tape, with a frame, as a venue stores them
+      // (PH-40.4): ticks 1–30 and 31–60, so a reader that has seen forty ticks
+      // holds the whole of the first.
+      const bar = (from: number, to: number, openInstant: number): Record<string, unknown> => {
+        const run = TICKS.filter((t) => t.sequence >= from && t.sequence <= to);
+        const prices = run.map((t) => t.price as number);
+        return {
+          openInstant,
+          timeframe: '1m',
+          open: prices[0],
+          high: Math.max(...prices),
+          low: Math.min(...prices),
+          close: prices[prices.length - 1]! + (faults.historyWrongClose ? 1 : 0),
+          tickCount: prices.length,
+          firstSequence: from,
+          lastSequence: to,
+          logQuantum: FRAME.logQuantum,
+          referencePrice: FRAME.referencePrice,
+          displayPrecision: FRAME.displayPrecision,
+        };
+      };
+      const minute = Math.floor(TICKS[0]!.instant / 60_000) * 60_000;
       return json(response, 200, {
         assetId: 'eurusd',
         timeframe: '1m',
-        from: 0,
-        to: 1,
-        candles: [],
+        from: Number(url.searchParams.get('from') ?? 0),
+        to: Number(url.searchParams.get('to') ?? 1),
+        candles: [bar(1, 30, minute), bar(31, 60, minute + 60_000)],
       });
+    }
     // A venue that has never seamed: the record holds no discontinuity.
     if (p === '/markets/eurusd/seams') return json(response, 200, faults.seamed ? [SEAM] : []);
     if (p === '/markets/eurusd/lattices') {
@@ -564,6 +590,11 @@ describe('the conformance suite (PH-29.3)', () => {
       { seamed: true, seamRefused: true },
       'a price inside a seam is the price in force, and the seam is named',
     ],
+    [
+      'a stored candle whose close is not the tick it closed on',
+      { historyWrongClose: true },
+      'a stored candle is the ticks it was folded from',
+    ],
     // PH-40.2: a heartbeat must state only what the price route stands behind.
     [
       'a heartbeat whose asOf runs past what the venue will price',
@@ -670,6 +701,15 @@ describe('the conformance suite (PH-29.3)', () => {
       ticks: 40,
     });
     expect(unit.checks.find((c) => c.name === name)?.detail).toMatch(/no seam resumes there/);
+  });
+
+  it('proves the candle check on a venue whose bars lie inside the ticks it streamed (PH-40.4)', async () => {
+    const report = await conformance({ baseUrl: await fakeVenue(), ticks: 40 });
+    const line = report.checks.find(
+      (c) => c.name === 'a stored candle is the ticks it was folded from',
+    );
+    expect(line?.ok).toBe(true);
+    expect(line?.detail).toBe('1 bar(s) refolded from the stream and equal');
   });
 
   it('reports a venue that does not answer at all', async () => {
