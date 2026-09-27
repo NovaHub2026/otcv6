@@ -216,11 +216,21 @@ describe('the settlement query (PH-29.1)', () => {
     expect(((await controller.priceAt(ID, String(onTick.instant - 1))) as Published).sequence).toBe(
       lastAtOrBefore(served, onTick.instant - 1)!.sequence,
     );
-    // Before the record: refused; after the newest published instant: refused.
+    // Before the record: refused. After the newest tick and up to the instant
+    // the last clean pass reached, the newest tick — the price is final there
+    // (PH-40.2). One millisecond past that: refused, *not yet*.
     await expect(controller.priceAt(ID, String(first.instant - 1))).rejects.toBeInstanceOf(
       NotFoundException,
     );
-    await expect(controller.priceAt(ID, String(last.instant + 1))).rejects.toBeInstanceOf(
+    const through = service.priceInForce(ID)!.asOf;
+    expect(through).toBeGreaterThan(last.instant);
+    expect(((await controller.priceAt(ID, String(last.instant + 1))) as Published).sequence).toBe(
+      last.sequence,
+    );
+    expect(((await controller.priceAt(ID, String(through))) as Published).sequence).toBe(
+      last.sequence,
+    );
+    await expect(controller.priceAt(ID, String(through + 1))).rejects.toBeInstanceOf(
       BadRequestException,
     );
     await expect(controller.priceAt(ID, undefined)).rejects.toBeInstanceOf(BadRequestException);
