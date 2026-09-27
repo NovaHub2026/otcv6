@@ -164,6 +164,8 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
    */
   private readonly reopenedAt = new Map<string, EpochMillis>();
   private readonly awaitingFirstTick = new Set<string>();
+  /** Ticks each market appended to the record since its last trim; absent until the first. */
+  private readonly appendedSinceTrim = new Map<string, number>();
   /** Automatic reopenings this process has taken, every asset, for `/metrics`. */
   private reopenings = 0;
   /**
@@ -418,6 +420,18 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       markets.map(({ asset }) => asset),
       genesis,
     );
+    // **And if the first pass is late anyway, a seamed market is re-armed, not
+    // reopened** (PH-40.5). The re-arm above assumes the first pass follows at
+    // once; on the live venue it came 39 s later, and every market that had
+    // just seamed was reopened as a second outage. A market that booted on a
+    // seam has published nothing since it, which is exactly PH-39's "awaiting
+    // its first tick": past its bound it is re-armed at the clock, writing no
+    // second seam, until it publishes.
+    for (const { asset } of markets) {
+      if (this.recovery.get(asset.definition.id)?.kind === 'seam') {
+        this.awaitingFirstTick.add(asset.definition.id);
+      }
+    }
     this.lastCheckpointAt = this.clock.now();
     this.startedAt = epochMillis(this.clock.now());
     this.ready = true;
@@ -827,6 +841,7 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     this.stalledLogged.delete(assetId);
     this.latest.delete(assetId);
     this.inForce.delete(assetId);
+    this.appendedSinceTrim.delete(assetId);
     this.recovery.delete(assetId);
     // Including what it remembers about reopening it (PH-39). These outlived
     // CA7-15's sweep: an asset registered again under the same id inherited a
@@ -1369,6 +1384,10 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     // nothing for them, and the feed, the publisher and the history never see
     // a tick twice. A tick the record refuses is not published at all.
     const fresh = await this.#recordPass(published);
+    for (const [assetId, ticks] of fresh) {
+      const since = this.appendedSinceTrim.get(assetId);
+      if (since !== undefined) this.appendedSinceTrim.set(assetId, since + ticks.length);
+    }
     for (const { assetId, ticks: generated } of published) {
       const ticks = fresh.get(assetId);
       if (ticks === undefined) continue; // Refused by the record; stalled by name.
@@ -1627,9 +1646,20 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
         checkpointMarket(this.venue.marketFor(assetId), assetId, now, undefined, controlled),
       );
       this.control?.checkpointTaken(assetId);
-      // The record's bound, on the same cadence: a handful of rows past the
-      // window every five seconds, never a sweep.
-      await this.record?.trim(assetId, this.recordTicks);
+      // The record's bound, amortised (PH-40.5). Trimming deletes a handful of
+      // rows, but finding the boundary is a COUNT and an OFFSET walk over the
+      // whole window — 250,000 rows an asset — and on every checkpoint that was
+      // measured at 6.7 s of synchronous SQLite in 40 s on the live venue, 17%
+      // of the process, between the awaits of the pass it delays. So an asset
+      // is trimmed once it has appended a hundredth of its window since the
+      // last trim (every checkpoint for a small window, as before), and always
+      // on the first checkpoint of a process. The record then holds at most 1%
+      // past its window, never less than it.
+      const appended = this.appendedSinceTrim.get(assetId);
+      if (appended === undefined || appended >= trimEvery(this.recordTicks)) {
+        await this.record?.trim(assetId, this.recordTicks);
+        this.appendedSinceTrim.set(assetId, 0);
+      }
     }
     // Bars that closed since the last checkpoint. On the same cadence because a
     // minute bar closes at most once a minute: flushing per tick would be
@@ -1705,6 +1735,11 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       void this.inFlight;
     }, waitMs);
   }
+}
+
+/** How many appended ticks an asset's record trim waits for: a hundredth of its window. */
+export function trimEvery(recordTicks: number): number {
+  return Math.max(1, Math.floor(recordTicks / 100));
 }
 
 function isClosable(value: object): value is { close(): void } {
