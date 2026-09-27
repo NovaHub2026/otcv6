@@ -268,11 +268,18 @@ describe('the served record, read from outside the process', () => {
       // ticks cannot, so stripping it keeps the shape comparison field for field
       // and adds a check the fold could not make — the stored bar must state the
       // instrument the wire itself carried.
-      const { firstSequence, lastSequence, logQuantum, referencePrice, ...shape } =
-        candle as typeof candle & {
-          logQuantum?: number | null;
-          referencePrice?: number | null;
-        };
+      const {
+        firstSequence,
+        lastSequence,
+        logQuantum,
+        referencePrice,
+        displayPrecision,
+        ...shape
+      } = candle as typeof candle & {
+        logQuantum?: number | null;
+        referencePrice?: number | null;
+        displayPrecision?: number | null;
+      };
       const { firstSequence: _f, lastSequence: _l, ...ownShape } = own!;
       expect(ownShape).toEqual(shape);
       expect(
@@ -282,6 +289,11 @@ describe('the served record, read from outside the process', () => {
         logQuantum: a.instrument.logQuantum,
         referencePrice: a.instrument.referencePrice,
       });
+      // And the precision the wire carried, which is TradingView's pricescale (PH-40.4).
+      expect(
+        displayPrecision,
+        `precision of the stored candle at ${String(candle.openInstant)}`,
+      ).toBe(a.instrument.displayPrecision);
       const first = a.ticks.find((t) => t.sequence === firstSequence);
       const last = a.ticks.find((t) => t.sequence === lastSequence);
       expect(first?.price, `first tick of ${String(candle.openInstant)}`).toBe(candle.open);

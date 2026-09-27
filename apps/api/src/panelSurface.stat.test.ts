@@ -205,6 +205,7 @@ describe('the panel and the engine agree across the process boundary', () => {
     const fineFrame = fine.candles[0] as unknown as {
       logQuantum: number | null;
       referencePrice: number | null;
+      displayPrecision: number | null;
     };
     expect(fineFrame.logQuantum, 'the fine tier states a frame').not.toBeNull();
 
@@ -231,11 +232,19 @@ describe('the panel and the engine agree across the process boundary', () => {
       // the shape still has to match field for field, and the two timeframes
       // still have to agree about the lattice — which is INV-004 applied to the
       // frame rather than only to the prices.
-      const { logQuantum, referencePrice, ...shape } = served!;
+      const { logQuantum, referencePrice, displayPrecision, ...shape } =
+        served! as typeof served & {
+          displayPrecision?: number | null;
+        };
       expect(shape, `hour ${bar.openInstant}`).toEqual(bar);
-      expect({ logQuantum, referencePrice }, `frame at hour ${bar.openInstant}`).toEqual({
+      // The whole frame, precision included (PH-40.4).
+      expect(
+        { logQuantum, referencePrice, displayPrecision },
+        `frame at hour ${bar.openInstant}`,
+      ).toEqual({
         logQuantum: fineFrame.logQuantum,
         referencePrice: fineFrame.referencePrice,
+        displayPrecision: fineFrame.displayPrecision,
       });
     }
   }, 120_000);
