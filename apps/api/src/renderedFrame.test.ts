@@ -2,7 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import { durationMillis, epochMillis, MasterKeyring, SteppableClock } from '@otc/core';
 import { ASSET_CATALOGUE } from '@otc/engine';
-import { MemoryStateStore, MemoryTickRecord } from '@otc/runtime';
+import { InMemoryCandleHistory, MemoryStateStore, MemoryTickRecord } from '@otc/runtime';
+import { HistoryService } from './history.service.js';
 import { MarketController } from './market.controller.js';
 import { PublicationService } from './publication.service.js';
 import { VenueService } from './venue.service.js';
@@ -34,7 +35,11 @@ const OLD_FRAME = {
   displayPrecision: asset.instrument.displayPrecision + 1,
 };
 
-async function venueWithTwoFrames(): Promise<{
+async function venueWithTwoFrames(
+  seconds = 90,
+  /** Declare the first epoch this many ticks above the oldest, so bars reach below the log. */
+  logStartsAt = 0,
+): Promise<{
   controller: MarketController;
   service: VenueService;
   record: MemoryTickRecord;
@@ -59,13 +64,13 @@ async function venueWithTwoFrames(): Promise<{
     record,
   );
   await service.start();
-  for (let i = 0; i < 90; i += 1) {
+  for (let i = 0; i < seconds; i += 1) {
     clock.advance(durationMillis(1_000));
     await service.tick();
   }
   const held = await record.since(ID, 1, 1_000_000);
   expect(held.length, 'the venue published nothing to declare over').toBeGreaterThan(20);
-  const oldest = held[0]!.sequence;
+  const oldest = held[logStartsAt]!.sequence;
   const boundary = held[Math.floor(held.length / 2)]!.sequence;
   // The shape the live venue has: an older, finer frame, then the current one
   // from a relattice boundary onwards. `replace` because the record has already
@@ -73,7 +78,7 @@ async function venueWithTwoFrames(): Promise<{
   await record.declareLattice(
     ID,
     [
-      { assetId: ID, fromSequence: oldest, fromInstant: held[0]!.instant, ...OLD_FRAME },
+      { assetId: ID, fromSequence: oldest, fromInstant: held[logStartsAt]!.instant, ...OLD_FRAME },
       {
         assetId: ID,
         fromSequence: boundary,
@@ -85,6 +90,95 @@ async function venueWithTwoFrames(): Promise<{
   );
   return { controller: new MarketController(service), service, record, boundary, oldest };
 }
+
+/**
+ * A bar whose four integers straddle a frame change states no frame — decided by
+ * the **record**, which is what says where a frame changed at all.
+ *
+ * **Cycle Audit 13, a2-02 and a8-01.** The candle store's frame log is sparse: a
+ * bar the declaration refused to date lies between two declared epochs, and a
+ * half-open log covers it with the epoch below. So the venue served a bar with its
+ * open in one unit and its close in another and chose one of them — live,
+ * `aix-idx-otc`'s 1m bar across the relattice rendered a 73.0% wick that no tick
+ * ever printed, on 17 of 30 assets. Nothing has to be chosen: four integers
+ * spanning a change are not prices in either frame, which is already what this
+ * route answers for a bar the candle log itself splits.
+ */
+describe('a candle that spans a frame change in the record states no frame', () => {
+  it('refuses the bar even when the candle store’s own log covers it', async () => {
+    // Long enough that several one-minute bars close, with the boundary inside one.
+    const { service, record, boundary } = await venueWithTwoFrames(420);
+    const history = new HistoryService(new InMemoryCandleHistory(), [asset]);
+    const controller = new MarketController(service, history);
+    // The venue's own published ticks, folded by the service exactly as it folds
+    // them in production. The candle store declares nothing, so every bar would
+    // otherwise be stamped with the live instrument — which is the sparse-log case
+    // this refusal is for.
+    const held = await record.since(ID, 1, 1_000_000);
+    history.observe(ID, held);
+    await history.flush();
+
+    const answer = (await controller.history_(
+      ID,
+      '1m',
+      String(GENESIS),
+      String(GENESIS + 600_000),
+    )) as {
+      candles: { firstSequence: number; lastSequence: number; logQuantum: number | null }[];
+    };
+    expect(answer.candles.length, 'nothing was folded').toBeGreaterThan(1);
+    const spanning = answer.candles.filter(
+      (c) => c.firstSequence < boundary && c.lastSequence >= boundary,
+    );
+    const ordinary = answer.candles.filter((c) => c.lastSequence < boundary);
+    expect(spanning.length, 'no bar straddles the boundary in this fixture').toBeGreaterThan(0);
+    for (const bar of spanning) {
+      expect(bar.logQuantum, 'a bar with integers in two frames was given one of them').toBeNull();
+    }
+    // And a bar that does not span a change is still dated: this must refuse the
+    // straddling bar, not the window.
+    expect(ordinary.length).toBeGreaterThan(0);
+    expect(
+      ordinary.every((bar) => bar.logQuantum !== null),
+      'an ordinary bar lost its frame',
+    ).toBe(true);
+    await service.stop();
+  });
+
+  it('draws a bar that reaches below where the frame log starts', async () => {
+    // The other half, and the one that emptied a chart when this refusal was
+    // written the first time: a venue whose candle history reaches below where its
+    // frame log begins — every backfilled or primed one — must still draw those
+    // bars. The log's first row says "from here I know", not "here it changed",
+    // and treating it as a change made the panel read a bar count of zero.
+    // 200 ticks of history below where the frame log begins, which is what a
+    // backfilled or primed venue looks like.
+    const { service, record, oldest } = await venueWithTwoFrames(420, 200);
+    const history = new HistoryService(new InMemoryCandleHistory(), [asset]);
+    const controller = new MarketController(service, history);
+    const held = await record.since(ID, 1, 1_000_000);
+    history.observe(ID, held);
+    await history.flush();
+
+    const answer = (await controller.history_(
+      ID,
+      '1m',
+      String(GENESIS),
+      String(GENESIS + 600_000),
+    )) as { candles: { firstSequence: number; lastSequence: number; logQuantum: number | null }[] };
+    const acrossTheStart = answer.candles.filter(
+      (c) => c.firstSequence < oldest && c.lastSequence >= oldest,
+    );
+    for (const bar of acrossTheStart) {
+      expect(bar.logQuantum, 'a bar reaching below the log’s first row was refused').not.toBeNull();
+    }
+    expect(
+      answer.candles.some((c) => c.logQuantum !== null),
+      'the window went dark',
+    ).toBe(true);
+    await service.stop();
+  });
+});
 
 describe('a recorded price is rendered on the frame it was published on', () => {
   it('renders a pre-boundary tick on the old frame, not on the current one', async () => {

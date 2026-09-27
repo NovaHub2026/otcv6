@@ -1428,6 +1428,23 @@ export class MarketController implements BeforeApplicationShutdown {
     // nineteen days of chart on the wrong lattice, and the two stores are
     // separate artefacts precisely because they can move apart.
     const epochs = await this.history!.frames(id);
+    // **And the record's own boundaries, which refuse a bar the candle store's
+    // log cannot** (Cycle Audit 13, a2-02 and a8-01). The candle store's log is
+    // the authority on *which* frame a bar is on — the two artefacts really can
+    // move apart — but it is sparse: a bar the declaration refused to date lies
+    // between two declared epochs, and a half-open log covers it with the one
+    // below. The live venue shows exactly that: `aix-idx-otc`'s 1m bar across the
+    // relattice renders a 73.0% wick, because its open is in one unit and its
+    // close in another and something has to be chosen.
+    //
+    // Nothing needs to be chosen. The record says where frames change, that is
+    // not in doubt, and four integers spanning a change are not prices in either
+    // frame — which is what this route already answers with a null for a bar the
+    // candle log itself splits. Asking the record too costs one query per request
+    // and cannot be fixed in the stored data: re-declaring the live candle store
+    // would lose two epochs on twelve assets, because the tick window the
+    // evidence lived in has advanced past them.
+    const recordEpochs = this.venue.keepsRecord ? await this.venue.frames(id) : [];
     const live = this.venue.assetFor(id)?.instrument;
     // **A bar below the store's earliest declaration is undeclared, and saying
     // otherwise was a real defect that reached a running venue.**
@@ -1470,10 +1487,24 @@ export class MarketController implements BeforeApplicationShutdown {
       // agreeing. Caught by cross-checking every served bar against the tick the
       // record holds at its last sequence — not by any assertion in the suite.
       const one = frameOfSpan(epochs, candle.firstSequence, candle.lastSequence, fallback);
+      // Refused by either log: the candle store's, which says what the bar counts
+      // in, or the record's, which says where a frame changed at all.
+      //
+      // **The first epoch is not a change**, and treating it as one emptied a
+      // chart: a venue whose candle history reaches below where its frame log
+      // starts — every backfilled or primed one — had every bar across that point
+      // refused, and the panel suite read a bar count of zero. The log's first row
+      // says "from here I know"; only a later row says "here it changed".
+      const spansAChange = recordEpochs
+        .slice(1)
+        .some(
+          (epoch) =>
+            epoch.fromSequence > candle.firstSequence && epoch.fromSequence <= candle.lastSequence,
+        );
       return {
         ...candle,
-        logQuantum: one?.logQuantum ?? null,
-        referencePrice: one?.referencePrice ?? null,
+        logQuantum: spansAChange ? null : (one?.logQuantum ?? null),
+        referencePrice: spansAChange ? null : (one?.referencePrice ?? null),
       };
     });
   }

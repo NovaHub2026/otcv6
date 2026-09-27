@@ -130,7 +130,7 @@ a limit of this audit, recorded rather than smoothed over (§7).
 | a6-02 | `state:backup` carries that upgrade into the copy an operator would restore, on a schedule     | CONFIRMED, trigger worse than claimed (R1)                                                               | **critical** |
 | a8-01 | a candle straddling the boundary is dated by its close; 17 of 30 live assets show a false wick | CONFIRMED by execution (conducting agent)                                                                | **critical** |
 | a2-01 | the whole PH-38.3 defect can be restored and the fast gate stays green — no two-frame fixture  | CONFIRMED by execution (conducting agent)                                                                | material     |
-| a2-02 | a bar the declaration refused to date is covered by the epoch below it                         | unrefuted                                                                                                | material     |
+| a2-02 | a bar the declaration refused to date is covered by the epoch below it                         | unrefuted; confirmed live by the conducting agent, and **fixed** (§5)                                    | material     |
 | a2-03 | `sqliteHistory`'s stated downgrade behaviour is false; a rollback cannot boot                  | CONFIRMED; escalation REFUTED (R1)                                                                       | minor        |
 | a3-01 | the chart drops undatable bars silently; 24 of 30 assets show an empty 1d chart                | CONFIRMED, worse than claimed (R2)                                                                       | material     |
 | a3-02 | the conformance frame check passes a venue whose frame log agrees with its own misrendering    | CONFIRMED, plant reproduced (R2)                                                                         | material     |
@@ -188,6 +188,14 @@ a limit of this audit, recorded rather than smoothed over (§7).
 
 ## 6. Carried, and as what
 
+- **The live candle store is not repaired, and must not be.** The straddling
+  epochs PH-38.2's tool wrote are still in it, and `state:lattice check` against
+  the live directory says what a re-declaration would now produce: **twelve assets
+  would lose two epochs each**, because the tick window their evidence lived in has
+  advanced past them. So the stored data stays as it is and the reader refuses what
+  it cannot honour (§5), which removes the 73.0% wick from `aix-idx-otc` and its
+  equivalents on 17 assets without rewriting anything. Declaring is not idempotent
+  against a moving retention window, and that is the finding under the finding.
 - **A lattice change must be declared inside a tick-budgeted window, and that
   belongs on the release checklist** (a8-02, and the part of a3-01 that is not the
   silence). A refuter took this apart and the finding it leaves is sharper than the
@@ -237,6 +245,28 @@ number this project reads — `otc_market_reopenings_total`, the seam count, a8-
 19% — therefore multiplies one event by thirty, and the next reader of those
 numbers will reach for the engine when the answer is the host. An availability
 metric should count stall _events_; this one counts their shadows.
+
+### The red hosted CI this audit produced, and what it could not say
+
+The first wave's merge went green on the Statistical Gate and **red on the Quality
+Gate**, with all 3,618 tests passing and the run exiting 1 on
+`Error: [vitest-worker]: Timeout calling "onTaskUpdate"` — the failure `CLAUDE.md`
+§5 calls the most confusing this project produces.
+
+It is not the audit's changes, and the evidence is the _previous_ run: the slow
+profile is the same to within a percent (`registration.test.ts` 497.8 s there and
+496.4 s here under coverage on a four-core runner, `labMarkets.test.ts` 367 s and
+377 s, `catalogue.test.ts` 191 s and 199 s). The unit project had been sitting
+beside the sixty-second ceiling for at least two runs and this one tipped over; the
+green before it was luck.
+
+**What the run could not do is name the file.** The statistical project has had a
+probe that fails the offender by name since B-021; the unit project had only the
+_mitigation_ — a loop turn between tests, which cannot help a test that blocks for
+longer than sixty seconds by itself, because the reply to a task update is a
+macrotask and needs a turn **inside** the test. So this audit adds the detector
+(§5). It does not make the next run green; it makes the next failure attributable,
+which is the difference between a defect and a mystery.
 
 ## 7. Findings about this audit
 
