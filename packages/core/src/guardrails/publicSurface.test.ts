@@ -90,6 +90,8 @@ const INTERNAL: Record<string, readonly string[]> = {
     // beside it, run by `npm run catalogue:build` and reached by no barrel.
     'buildCatalogue.ts',
     'tieRateEvidence.ts',
+    // PH-40.6: the broker-fit evidence runner, `npm run evidence:broker-fit`.
+    'brokerFitEvidence.ts',
     // PH-26.4: the integration library — a pure function and the runner that
     // writes it; the guard beside them re-derives the file.
     'catalogueBuild.ts',

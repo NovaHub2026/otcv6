@@ -254,6 +254,9 @@ const AMBIENT_STATE_ALLOWLIST = [
   'tools/sim/src/buildCatalogue.ts',
   // The tie-rate evidence run (PH-26.3): the same shape as the two above.
   'tools/sim/src/tieRateEvidence.ts',
+  // PH-40.6's broker-fit evidence: `--assets`, `--out` and the sample sizes from
+  // argv, the same shape; what it measures reaches no price path.
+  'tools/sim/src/brokerFitEvidence.ts',
   'tools/sim/src/observerLoadRun.ts',
   'tools/sim/src/venueScale.ts',
   // PH-25.3's served-assurance job: `--base`, `--assets`, `--out` from argv,

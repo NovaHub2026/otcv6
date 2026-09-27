@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 import { writeFileSync } from 'node:fs';
-import { epochMillis, logPrice, MasterKeyring, yieldToLoop, type InstrumentSpec } from '@otc/core';
+import {
+  epochMillis,
+  logPrice,
+  MasterKeyring,
+  toDisplayPrice,
+  yieldToLoop,
+  type InstrumentSpec,
+} from '@otc/core';
 import {
   ASSET_CATALOGUE,
   CALIBRATION_CHUNK_TICKS,
@@ -70,6 +77,8 @@ const LAGS = [1_000, 2_000, 5_000] as const;
 const QUOTE_HORIZONS = [30_000, 60_000, 300_000] as const;
 /** The decimals a broker displays and settles at, below 10,000 (Orbit's rule). */
 const BROKER_DECIMALS = 5;
+/** One unit of the fifth decimal, written out: `**` is not portable (a2-04). */
+const FIFTH_DECIMAL = 0.00001;
 
 interface Series {
   readonly instants: number[];
@@ -113,8 +122,9 @@ function inForce(series: Series, at: number): number {
   return series.prices[lo]!;
 }
 
+/** The kernel's portable rendering, to a broker's decimals rather than the engine's. */
 const render = (instrument: InstrumentSpec, price: number, decimals: number): string =>
-  (instrument.referencePrice * Math.exp(instrument.logQuantum * price)).toFixed(decimals);
+  toDisplayPrice(instrument, logPrice(price)).toFixed(decimals);
 
 async function ties(
   asset: (typeof ASSET_CATALOGUE)[number],
@@ -191,7 +201,7 @@ async function main(): Promise<void> {
   const quoteRows: string[] = [];
   for (const asset of selected) {
     const base = asset.instrument;
-    const step = (base.referencePrice * base.logQuantum) / 10 ** -BROKER_DECIMALS;
+    const step = (base.referencePrice * base.logQuantum) / FIFTH_DECIMAL;
     const measured = await ties(asset, base, options);
     let coarse = '—';
     if (step < 1) {
