@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { crossesAChange, reframedSequences, reframesAt } from './priceFrame.js';
+import { crossesAChange, frameOfSpan, reframedSequences, reframesAt } from './priceFrame.js';
 
 /**
  * ADR-0021. `settle()` takes a contract across an ordinary seam and refuses one
@@ -47,6 +47,22 @@ describe('whether a seam crosses a change of lattice (ADR-0021)', () => {
     // And the empty log — a store older than the log — says nothing changed,
     // which is how every reader treats it.
     expect(reframesAt([], { lastSequence: 499, resumesAtSequence: 500 })).toBe(false);
+  });
+
+  it('treats a change of display precision alone as no change, anywhere (PH-40.3)', () => {
+    const epochs = [
+      { assetId: 'x', fromSequence: 1, fromInstant: 0, ...A, displayPrecision: 2 },
+      { assetId: 'x', fromSequence: 500, fromInstant: 0, ...A, displayPrecision: 3 },
+    ];
+    expect(reframedSequences(epochs)).toEqual(new Set());
+    expect(reframesAt(epochs, { lastSequence: 499, resumesAtSequence: 500 })).toBe(false);
+    // A span across it has one unit, rendered at the finer precision…
+    expect(frameOfSpan(epochs, 400, 600, null)).toEqual(epochs[1]);
+    // …and a span across a change of unit still has none.
+    const unit = [epochs[0]!, { ...epochs[1]!, logQuantum: A.logQuantum * 2 }];
+    expect(frameOfSpan(unit, 400, 600, null)).toBeNull();
+    // Wholly on one side, the frame of that side.
+    expect(frameOfSpan(epochs, 10, 20, null)).toEqual(epochs[0]);
   });
 
   it('bounds a seam at its last tick exclusive and its resume inclusive', () => {

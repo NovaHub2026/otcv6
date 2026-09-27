@@ -84,6 +84,22 @@ describe('a calibration can be moved to another volatility without simulating', 
     );
   });
 
+  it('chooses decimals that keep a step visible down to half the reference price (PH-40.3)', () => {
+    // The registration path computes its precision rather than reading a
+    // recorded one, so the rule is asserted here as well as on the catalogue —
+    // with the requirement as a literal, not read from the rule it tests.
+    for (const scale of [0.02, 0.1, 1, 4, 20]) {
+      const { logQuantum, displayPrecision, referencePrice } = rescaleCalibration(
+        measured,
+        scale,
+      ).instrument;
+      const unit = 10 ** -displayPrecision;
+      expect((referencePrice / 2) * logQuantum, `at ${String(scale)}x`).toBeGreaterThanOrEqual(
+        unit,
+      );
+    }
+  });
+
   it('records the factor it applied', () => {
     expect(measured.evidence.volatilityScale).toBe(1);
     expect(scaledByArithmetic.evidence.volatilityScale).toBe(factor);

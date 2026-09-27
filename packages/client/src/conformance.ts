@@ -518,9 +518,17 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
     //    are one refactor away from none. This is the assertion, and it is a
     //    broker's to run: a frame that begins where no seam resumes is a frame
     //    change settlement cannot see.
+    //
+    //    **A change of display precision alone is exempt** (PH-40.3): it moves
+    //    no integer and no unit, so a release that only makes a display finer
+    //    may land on a quick restart that writes no seam.
     for (let i = 1; i < epochs.length; i += 1) {
       const at = epochs[i]!.fromSequence;
-      if (!seams.some((one) => one.resumesAtSequence === at)) {
+      const before = epochs[i - 1]!;
+      const unitChanged =
+        epochs[i]!.logQuantum !== before.logQuantum ||
+        epochs[i]!.referencePrice !== before.referencePrice;
+      if (unitChanged && !seams.some((one) => one.resumesAtSequence === at)) {
         frameFaults.push(
           `the frame log declares a new frame from sequence ${String(at)} and no seam resumes ` +
             `there, so settlement would compare an integer from before it with one from after it ` +

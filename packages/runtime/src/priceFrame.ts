@@ -128,6 +128,13 @@ export function frameAtOrBefore(
  * another. Measured on a live venue with the ends-only test in place: a 1h bar
  * reading 5.16% away from the tick the record holds at its own last sequence.
  *
+ * **A change of display precision alone is not a change of unit** (PH-40.3).
+ * The integers either side count in the same quantum from the same reference,
+ * so the bar is one unit and is answered — rendered at the precision in force at
+ * its last sequence, the finer one when a release made the display finer.
+ * Refusing it would blank every bar across the release at every timeframe, a
+ * day's bar included, for a change that moved no price.
+ *
  * `fallback` answers when the log is empty — a store written before it had one,
  * where every reader already assumed the instrument in force.
  */
@@ -138,10 +145,18 @@ export function frameOfSpan(
   fallback: PriceFrame | null,
 ): PriceFrame | null {
   if (epochs.length === 0) return fallback;
+  const start = frameAtOrBefore(epochs, firstSequence);
   for (const epoch of epochs) {
-    if (epoch.fromSequence > firstSequence && epoch.fromSequence <= lastSequence) return null;
+    if (epoch.fromSequence <= firstSequence || epoch.fromSequence > lastSequence) continue;
+    if (
+      start === null ||
+      epoch.logQuantum !== start.logQuantum ||
+      epoch.referencePrice !== start.referencePrice
+    ) {
+      return null;
+    }
   }
-  return frameAtOrBefore(epochs, firstSequence);
+  return frameAtOrBefore(epochs, lastSequence);
 }
 
 /**

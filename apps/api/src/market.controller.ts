@@ -50,6 +50,7 @@ import {
   ImmutableFieldError,
   OVERLAY_FIELDS,
   frameOfSpan,
+  reframedSequences,
   reframesAt,
   type AssetRegistry,
   type PriceFrame,
@@ -1519,6 +1520,7 @@ export class MarketController implements BeforeApplicationShutdown {
             displayPrecision: live.displayPrecision,
           }
         : null;
+    const recordChanges = reframedSequences(recordEpochs);
     return candles.map((candle) => {
       // **A bar is refused when any frame boundary falls inside it**, not when
       // its two ends happen to differ. Comparing the ends was the first version
@@ -1538,12 +1540,13 @@ export class MarketController implements BeforeApplicationShutdown {
       // starts — every backfilled or primed one — had every bar across that point
       // refused, and the panel suite read a bar count of zero. The log's first row
       // says "from here I know"; only a later row says "here it changed".
-      const spansAChange = recordEpochs
-        .slice(1)
-        .some(
-          (epoch) =>
-            epoch.fromSequence > candle.firstSequence && epoch.fromSequence <= candle.lastSequence,
-        );
+      //
+      // **And a change of display precision alone is not a change** (PH-40.3):
+      // the integers either side count in one quantum, so only an epoch that
+      // moved the quantum or the reference refuses a bar across it.
+      const spansAChange = [...recordChanges].some(
+        (at) => at > candle.firstSequence && at <= candle.lastSequence,
+      );
       return {
         ...candle,
         logQuantum: spansAChange ? null : (one?.logQuantum ?? null),

@@ -666,7 +666,7 @@ export const ASSET_CATALOGUE: readonly RegisteredAsset[] = [
       drawnExcessKurtosis: 62.59199680470315,
       retreats: 0,
     },
-    { logQuantum: 0.00003976917497379534, displayPrecision: 2 },
+    { logQuantum: 0.00003976917497379534, displayPrecision: 3 },
     {
       predictedExcessKurtosis: 61.19413754623062,
       logQuantum: 0.00003976917497379534,
@@ -710,7 +710,7 @@ export const ASSET_CATALOGUE: readonly RegisteredAsset[] = [
       drawnExcessKurtosis: 59.03004566356671,
       retreats: 0,
     },
-    { logQuantum: 0.0000179278887905132, displayPrecision: 2 },
+    { logQuantum: 0.0000179278887905132, displayPrecision: 3 },
     {
       predictedExcessKurtosis: 60.386030795847105,
       logQuantum: 0.0000179278887905132,
@@ -886,7 +886,7 @@ export const ASSET_CATALOGUE: readonly RegisteredAsset[] = [
       drawnExcessKurtosis: 116.92560128107327,
       retreats: 0,
     },
-    { logQuantum: 0.00002400941219697859, displayPrecision: 0 },
+    { logQuantum: 0.00002400941219697859, displayPrecision: 1 },
     {
       predictedExcessKurtosis: 112.21505716005305,
       logQuantum: 0.00002400941219697859,
@@ -974,7 +974,7 @@ export const ASSET_CATALOGUE: readonly RegisteredAsset[] = [
       drawnExcessKurtosis: 137.02364768508,
       retreats: 0,
     },
-    { logQuantum: 0.000024697121279992967, displayPrecision: 2 },
+    { logQuantum: 0.000024697121279992967, displayPrecision: 3 },
     {
       predictedExcessKurtosis: 138.35189415098773,
       logQuantum: 0.000024697121279992967,
@@ -1240,7 +1240,7 @@ export const ASSET_CATALOGUE: readonly RegisteredAsset[] = [
       drawnExcessKurtosis: 48.58183828605249,
       retreats: 0,
     },
-    { logQuantum: 0.000019374532515471326, displayPrecision: 2 },
+    { logQuantum: 0.000019374532515471326, displayPrecision: 3 },
     {
       predictedExcessKurtosis: 47.88123198100068,
       logQuantum: 0.000019374532515471326,
@@ -1284,7 +1284,7 @@ export const ASSET_CATALOGUE: readonly RegisteredAsset[] = [
       drawnExcessKurtosis: 38.828226162385924,
       retreats: 0,
     },
-    { logQuantum: 0.000016245503430818698, displayPrecision: 2 },
+    { logQuantum: 0.000016245503430818698, displayPrecision: 3 },
     {
       predictedExcessKurtosis: 37.903817774749925,
       logQuantum: 0.000016245503430818698,

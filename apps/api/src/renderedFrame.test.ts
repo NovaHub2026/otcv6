@@ -39,6 +39,8 @@ async function venueWithTwoFrames(
   seconds = 90,
   /** Declare the first epoch this many ticks above the oldest, so bars reach below the log. */
   logStartsAt = 0,
+  /** The frame before the boundary; a finer, older lattice by default. */
+  before: typeof OLD_FRAME = OLD_FRAME,
 ): Promise<{
   controller: MarketController;
   service: VenueService;
@@ -78,7 +80,7 @@ async function venueWithTwoFrames(
   await record.declareLattice(
     ID,
     [
-      { assetId: ID, fromSequence: oldest, fromInstant: held[logStartsAt]!.instant, ...OLD_FRAME },
+      { assetId: ID, fromSequence: oldest, fromInstant: held[logStartsAt]!.instant, ...before },
       {
         assetId: ID,
         fromSequence: boundary,
@@ -142,6 +144,43 @@ describe('a candle that spans a frame change in the record states no frame', () 
       ordinary.every((bar) => bar.logQuantum !== null),
       'an ordinary bar lost its frame',
     ).toBe(true);
+    await service.stop();
+  });
+
+  /**
+   * **PH-40.3.** A release that only makes the display finer writes a new frame
+   * epoch — the precision is part of the frame — but moves no integer and no
+   * unit. Refusing every bar across it would blank the chart at every
+   * timeframe, a day's bar included, for a change that moved no price.
+   */
+  it('dates a bar across a change of display precision alone, on the finer precision', async () => {
+    const coarser = {
+      ...asset.instrument,
+      displayPrecision: asset.instrument.displayPrecision - 1,
+    };
+    const { service, record, boundary } = await venueWithTwoFrames(420, 0, {
+      logQuantum: coarser.logQuantum,
+      referencePrice: coarser.referencePrice,
+      displayPrecision: coarser.displayPrecision,
+    });
+    const history = new HistoryService(new InMemoryCandleHistory(), [asset]);
+    const controller = new MarketController(service, history);
+    history.observe(ID, await record.since(ID, 1, 1_000_000));
+    await history.flush();
+    const answer = (await controller.history_(
+      ID,
+      '1m',
+      String(GENESIS),
+      String(GENESIS + 600_000),
+    )) as {
+      candles: { firstSequence: number; lastSequence: number; logQuantum: number | null }[];
+    };
+    const spanning = answer.candles.filter(
+      (c) => c.firstSequence < boundary && c.lastSequence >= boundary,
+    );
+    expect(spanning.length, 'no bar straddles the boundary in this fixture').toBeGreaterThan(0);
+    for (const bar of spanning) expect(bar.logQuantum).toBe(asset.instrument.logQuantum);
+    expect(answer.candles.every((bar) => bar.logQuantum !== null)).toBe(true);
     await service.stop();
   });
 
@@ -240,5 +279,76 @@ describe('a recorded price is rendered on the frame it was published on', () => 
     expect(lattices[0]!.logQuantum).toBeCloseTo(OLD_FRAME.logQuantum, 15);
     expect(lattices[1]!.logQuantum).toBe(asset.instrument.logQuantum);
     await service.stop();
+  });
+});
+
+/**
+ * **PH-40.3, the upgrade path.** A release that only makes an asset's display
+ * finer, deployed as a quick restart on a record the previous release wrote. The
+ * fixture above declares its frames by hand; this one lets the two releases
+ * write them, which is the input the upgrade actually has.
+ */
+describe('a release that only makes the display finer', () => {
+  it('writes a frame, owes no seam, and renders each tick at the precision it was published at', async () => {
+    const clock = new SteppableClock(GENESIS);
+    const store = new MemoryStateStore();
+    const record = new MemoryTickRecord();
+    const older = {
+      ...asset,
+      instrument: { ...asset.instrument, displayPrecision: asset.instrument.displayPrecision - 1 },
+    };
+    const boot = (hosted: typeof asset): VenueService =>
+      new VenueService(
+        store,
+        MasterKeyring.fromSecret('rendered-frame-upgrade', new Uint8Array(32).fill(13)),
+        clock,
+        [hosted],
+        5_000,
+        new PublicationService([hosted], 20, {}),
+        null,
+        GENESIS,
+        0,
+        null,
+        null,
+        null,
+        record,
+      );
+    const run = async (service: VenueService, seconds: number): Promise<void> => {
+      for (let i = 0; i < seconds; i += 1) {
+        clock.advance(durationMillis(1_000));
+        await service.tick();
+      }
+    };
+    const before = boot(older);
+    await before.start();
+    await run(before, 60);
+    await before.checkpoint();
+    await before.stop();
+    const lastBefore = (await record.since(ID, 1, 1_000_000)).at(-1)!;
+
+    // A deploy's worth of downtime, inside the catch-up bound.
+    clock.advance(durationMillis(3_000));
+    const after = boot(asset);
+    await after.start();
+    await run(after, 60);
+    const controller = new MarketController(after);
+
+    const frames = await after.frames(ID);
+    expect(frames).toHaveLength(2);
+    expect(frames[1]!.fromSequence, 'the new frame starts at the first tick it priced').toBe(
+      lastBefore.sequence + 1,
+    );
+    expect(frames[1]!.logQuantum).toBe(frames[0]!.logQuantum);
+    expect(frames[1]!.referencePrice).toBe(frames[0]!.referencePrice);
+    expect(frames[1]!.displayPrecision).toBe(frames[0]!.displayPrecision + 1);
+    // No seam: the restart was quick, and a change of precision alone owes none.
+    expect(await controller.seams(ID)).toEqual([]);
+    const decimals = (sequence: number): Promise<number> =>
+      controller
+        .recordedTick(ID, String(sequence))
+        .then((t) => ((t as { displayPrice: string }).displayPrice.split('.')[1] ?? '').length);
+    expect(await decimals(lastBefore.sequence)).toBe(older.instrument.displayPrecision);
+    expect(await decimals(lastBefore.sequence + 1)).toBe(asset.instrument.displayPrecision);
+    await after.stop();
   });
 });

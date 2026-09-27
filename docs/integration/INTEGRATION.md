@@ -207,6 +207,25 @@ precioMostrado = referencePrice * exp(logQuantum * price)
 
 redondeado a `displayPrecision` decimales.
 
+**Muestra y compara a `displayPrecision`, ni más ni menos.** Está elegida para que
+un paso del retículo sea al menos un dígito visible hasta la mitad del
+`referencePrice` (PH-40.3), así que a esa precisión dos precios distintos nunca
+se imprimen iguales y comparar las cadenas decide lo mismo que comparar los
+enteros. Con **menos** decimales un movimiento real se imprime como «sin cambio»
+y una comparación de cadenas lo declara empate donde `settle()` no: medido a
+cinco decimales, USD/CHF reembolsa el 15,8% de los contratos de 30 s en lugar del
+3,8% (seis activos lo sufren; la tabla está en
+[PH-40.3](../phases/PH-40.3-the-lattice-a-broker-can-display.md)). Con **más**,
+se enseñan dígitos que el precio no tiene. En TradingView:
+`pricescale = 10 ** displayPrecision` y `minmov = 1`, por activo; un
+`pricescale` con tope (100.000 es habitual) es exactamente el caso de menos
+decimales.
+
+Un cambio de `displayPrecision` sin cambio de `logQuantum` ni de
+`referencePrice` no mueve ningún entero: los ticks anteriores siguen
+mostrándose con la precisión con la que se publicaron (`/markets/:id/lattices`
+lo lista como otra época), no abre costura y no rompe ninguna vela.
+
 > **Lee `logQuantum` y `displayPrecision` de la API, nunca de un ejemplo.** Los
 > números de arriba son los de hoy y se mueven: PH-37 engrosó la retícula de los
 > treinta activos entre ×9,1 y ×23, y esta guía se quedó con los valores

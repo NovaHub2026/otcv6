@@ -328,11 +328,28 @@ export const CALIBRATION_STREAM_PURPOSES = [
 ] as const;
 
 /**
+ * How far below its reference price an asset's step must stay visible, as a
+ * factor: 2 means one lattice step is at least one displayed digit down to half
+ * the reference price (PH-40.3).
+ *
+ * **At the reference price alone was not enough, and it was not hypothetical.**
+ * A step is `price * logQuantum`, so it shrinks as the price falls, and the rule
+ * this replaces guaranteed one digit only at the reference. `meta-otc` sat at
+ * 1.03 digits there, so three percent below 575 two adjacent prices rendered the
+ * same two decimals — and the live record shows it trading at 553.25 on its
+ * current frame. A broker comparing the `displayPrice` the engine publishes would
+ * have called a real move a draw, and `settle()` would not have. Five others were
+ * inside a 50% fall (tsla 26%, bnb 38%, tcx 38%, btc 40%, aix 48%).
+ */
+export const DISPLAY_MARGIN = 2;
+
+/**
  * Decimals to render at, from the lattice that settles.
  *
  * The display must never be coarser than the lattice: a trader seeing an
  * unchanged price on a move that settled would be a fairness problem even with
- * INV-009 intact.
+ * INV-009 intact. Fine enough, by {@link DISPLAY_MARGIN}, that this stays true
+ * as the price moves away from its reference.
  *
  * Floored at zero. **Cycle Audit 7, a3-07.** A lattice step of ten display
  * units or more — a large reference price on a coarse quantum — made this
@@ -341,7 +358,7 @@ export const CALIBRATION_STREAM_PURPOSES = [
  * the lattice moves in whole units, and so does the screen.
  */
 function displayPrecisionFor(logQuantum: number, referencePrice: number): number {
-  return Math.max(0, Math.ceil(ln(1 / (logQuantum * referencePrice)) / ln(10)));
+  return Math.max(0, Math.ceil(ln(DISPLAY_MARGIN / (logQuantum * referencePrice)) / ln(10)));
 }
 
 /**

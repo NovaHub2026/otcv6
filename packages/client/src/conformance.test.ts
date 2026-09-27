@@ -134,6 +134,8 @@ export interface Faults {
    * as a protection, so this is the fault that names it.
    */
   latticeOffASeam?: boolean;
+  /** A second frame off a seam that changes only the display precision (PH-40.3). */
+  precisionOffASeam?: boolean;
   noProof?: boolean;
   /**
    * Answer `/markets/:id` with the tick after the newest published one — the
@@ -287,13 +289,26 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
           ...declared,
         },
       ];
-      // A second frame beginning one sequence off the seam this venue lists.
+      // A second frame beginning one sequence off the seam this venue lists — a
+      // change of unit, which settlement cannot see without a seam.
       if (faults.latticeOffASeam) {
         log.push({
           assetId: 'eurusd',
           fromSequence: SEAM.resumesAtSequence + 1,
           fromInstant: SEAM.resumesAtInstant,
           ...FRAME,
+          logQuantum: FRAME.logQuantum * 2,
+        });
+      }
+      // The same place, changing only how many decimals are shown: no integer
+      // and no unit moved, so no seam is owed (PH-40.3).
+      if (faults.precisionOffASeam) {
+        log.push({
+          assetId: 'eurusd',
+          fromSequence: SEAM.resumesAtSequence + 1,
+          fromInstant: SEAM.resumesAtInstant,
+          ...FRAME,
+          displayPrecision: FRAME.displayPrecision + 1,
         });
       }
       return json(response, 200, log);
@@ -641,6 +656,20 @@ describe('the conformance suite (PH-29.3)', () => {
 
     const never = await conformance({ baseUrl: await fakeVenue({}), ticks: 40 });
     expect(never.checks.find((c) => c.name === name)?.detail).toMatch(/NOT PROVEN/);
+  });
+
+  it('owes no seam for a change of display precision alone, and still one for a change of unit (PH-40.3)', async () => {
+    const name = 'a recorded price states the frame it counts in';
+    const finer = await conformance({
+      baseUrl: await fakeVenue({ seamed: true, precisionOffASeam: true }),
+      ticks: 40,
+    });
+    expect(finer.checks.find((c) => c.name === name)?.ok).toBe(true);
+    const unit = await conformance({
+      baseUrl: await fakeVenue({ seamed: true, latticeOffASeam: true }),
+      ticks: 40,
+    });
+    expect(unit.checks.find((c) => c.name === name)?.detail).toMatch(/no seam resumes there/);
   });
 
   it('reports a venue that does not answer at all', async () => {

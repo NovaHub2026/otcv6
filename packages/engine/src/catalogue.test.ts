@@ -50,15 +50,27 @@ describe('the catalogue is well formed', () => {
   );
 
   it.each(ASSET_CATALOGUE.map((a) => [a.definition.id, a] as const))(
-    '%s displays at least as finely as it settles',
+    '%s displays at least as finely as it settles, down to half its reference price',
     (_id, asset) => {
       // One display unit must not be coarser than one lattice step, or a trader
-      // could see an unchanged price on a contract that settled as a move.
+      // could see an unchanged price on a contract that settled as a move — and
+      // not only at the reference price: a step is `price * logQuantum`, so it
+      // shrinks as the price falls (PH-40.3; meta-otc sat at 1.03 digits and
+      // traded 3.8% below its reference on the live record).
       const { logQuantum, displayPrecision, referencePrice } = asset.instrument;
       let displayUnit = 1;
       for (let i = 0; i < displayPrecision; i += 1) displayUnit /= 10;
-      const relativeDisplayUnit = displayUnit / referencePrice;
-      expect(relativeDisplayUnit).toBeLessThanOrEqual(logQuantum);
+      // Half the reference price, as a literal: reading `DISPLAY_MARGIN` here
+      // would let a weaker rule weaken this test with it.
+      const lowest = referencePrice / 2;
+      expect(displayUnit / lowest, 'a step hides before the price halves').toBeLessThanOrEqual(
+        logQuantum,
+      );
+      // And the step is not hidden by rounding either: adjacent integers at the
+      // lowest level render to different strings.
+      const at = (k: number): string =>
+        (lowest * Math.exp(logQuantum * k)).toFixed(displayPrecision);
+      for (let k = 0; k < 200; k += 1) expect(at(k + 1), `step ${String(k)}`).not.toBe(at(k));
     },
   );
 
