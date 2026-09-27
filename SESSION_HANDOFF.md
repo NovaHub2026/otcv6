@@ -13,7 +13,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 | Remote             | `origin` → NovaHub2026/otcv6, public                                                                                    |
 | Active cycle       | Cycle 14, **0 of 3** — PH-40 active. Cycle 13 closed by Cycle Audit 13; Cycle 11 open                                   |
 | Active phase       | PH-40 — The engine a broker settles against                                                                             |
-| Active subphase    | PH-40.3 — The lattice a broker can display, on every asset                                                              |
+| Active subphase    | PH-40.4 — What TradingView reads: a typed candle, its precision and its volume                                          |
 | Cycle Audit        | **013 closed** — 41 findings, 2 critical, 9 material; criticals fixed, rest carried                                     |
 | Blockers           | none, and none possible — no Human gate (ADR-0008)                                                                      |
 
