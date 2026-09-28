@@ -352,3 +352,93 @@ describe('a release that only makes the display finer', () => {
     await after.stop();
   });
 });
+
+/**
+ * **A fresh deployment's own history, which is the input no test had.**
+ *
+ * The backfill generates a market's past on a known instrument and stores it as
+ * candles — and declared no frame for them. While the candle store's frame log
+ * was empty every bar was answered on the live instrument, which is how the
+ * suites read: fine. The moment the venue's first checkpoint flushed a live bar,
+ * the store's log got its first epoch at that high sequence, every backfilled bar
+ * fell *below* it, and `frameOfSpan` answered null for all of them — the chart
+ * drew nothing at every timeframe.
+ *
+ * Measured on a fresh production venue with two days of backfill (2026-09-28):
+ * 1,437 of 1,439 one-minute bars undated, and 288 of 288 at five minutes, within
+ * a hundred seconds of boot. Hosted CI saw it as an empty chart and a panel
+ * assertion of zero bars; the diagnostic added the day before named it
+ * ("288 sin marco declarado — no se dibujan"). Every long-lived deployment was
+ * unaffected, because PH-38.2's tool had declared its past by hand — so the
+ * defect could only appear on a **new** deployment, which is what a broker is.
+ */
+describe('a provisioned past is dated, once live bars declare a frame beside it', () => {
+  it('answers every backfilled bar on the instrument the backfill generated it on', async () => {
+    // The slowest market in the catalogue: the fewest ticks for a given span.
+    const slow = [...ASSET_CATALOGUE].sort(
+      (a, b) => b.evidence.meanIntervalMs - a.evidence.meanIntervalMs,
+    )[0]!;
+    const id = slow.definition.id;
+    const clock = new SteppableClock(GENESIS);
+    const history = new HistoryService(new InMemoryCandleHistory(), [slow]);
+    const service = new VenueService(
+      new MemoryStateStore(),
+      MasterKeyring.fromSecret('provisioned-frame-spec', new Uint8Array(32).fill(71)),
+      clock,
+      [slow],
+      5_000,
+      new PublicationService([slow], 20, {}),
+      history,
+      GENESIS,
+      // Seventy-two minutes of past: one whole hour, so the rollup tier stores a
+      // bar too, and quick to generate on the slowest asset.
+      0.05,
+      null,
+      null,
+      null,
+      new MemoryTickRecord(),
+    );
+    await service.start();
+    const controller = new MarketController(service, history);
+    const from = String(GENESIS - 0.05 * 86_400_000);
+
+    // Before any live bar closes the store declares nothing, and the bars are
+    // answered on the live instrument. This is the state every suite saw.
+    const early = (await controller.history_(id, '1m', from, String(clock.now() + 1))) as {
+      candles: { logQuantum: number | null }[];
+    };
+    expect(early.candles.length, 'the backfill stored no minute bars').toBeGreaterThan(30);
+    expect(early.candles.filter((c) => c.logQuantum === null)).toEqual([]);
+
+    // Then the venue runs long enough for a minute bar to close and a checkpoint
+    // to flush it, which is what declares the store's first frame epoch.
+    for (let i = 0; i < 180; i += 1) {
+      clock.advance(durationMillis(1_000));
+      await service.tick();
+    }
+    const epochs = await history.frames(id);
+    expect(epochs.length, 'no live flush declared a frame; this fixture proves nothing').toBe(1);
+
+    for (const timeframe of ['1m', '1h'] as const) {
+      const answer = (await controller.history_(id, timeframe, from, String(clock.now() + 1))) as {
+        candles: {
+          firstSequence: number;
+          logQuantum: number | null;
+          displayPrecision: number | null;
+        }[];
+      };
+      const undated = answer.candles.filter((c) => c.logQuantum === null);
+      expect(
+        undated.length,
+        `${timeframe}: ${String(undated.length)} of ${String(answer.candles.length)} bars lost ` +
+          `their frame when the live tier declared one`,
+      ).toBe(0);
+      // And on the frame the backfill really used, not merely on something.
+      for (const bar of answer.candles) {
+        expect(bar.logQuantum, timeframe).toBe(slow.instrument.logQuantum);
+        expect(bar.displayPrecision, timeframe).toBe(slow.instrument.displayPrecision);
+      }
+    }
+    await service.stop();
+  }, 120_000);
+});

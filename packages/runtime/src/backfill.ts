@@ -3,6 +3,7 @@ import { yieldToLoop } from '@otc/core';
 import { configFor, createMarketEngine, type RegisteredAsset } from '@otc/engine';
 import type { Environment, MasterKeyring } from '@otc/core';
 import { startKeyEpoch } from './genesis.js';
+import type { PriceFrame } from './priceFrame.js';
 import { DEFAULT_MAX_CATCH_UP_MS, HostedMarket } from './hosted.js';
 import { personalityFingerprint } from './personality.js';
 import {
@@ -222,10 +223,22 @@ export async function backfillMarket(options: BackfillOptions): Promise<Backfill
   let baseCandles = 0;
   let rollupCandles = 0;
 
+  // **The frame the backfill generated on, declared with the bars** (PH-40.5).
+  // A provisioned past that states no frame reads as undated the moment anything
+  // else declares one: the venue's first live flush writes an epoch at its own
+  // high sequence, every backfilled bar falls below it, and the chart draws
+  // nothing at every timeframe. Measured on a fresh production venue with two
+  // days of backfill: 1,437 of 1,439 minute bars and 288 of 288 five-minute bars
+  // undated within a hundred seconds of boot. The backfill knows exactly what it
+  // counted in — it built the market from this instrument — so it says so, and
+  // the live tier's later appends add no epoch because the frame is the same one.
+  const { logQuantum, referencePrice, displayPrecision } = options.asset.instrument;
+  const frame: PriceFrame = { logQuantum, referencePrice, displayPrecision };
+
   const flush = async (): Promise<void> => {
     const closed = recorder.drain();
     if (closed.length > 0) {
-      await options.history.append(assetId, closed[0]!.timeframe, closed);
+      await options.history.append(assetId, closed[0]!.timeframe, closed, frame);
       baseCandles += closed.length;
     }
     // Derived from the stored minute series rather than from this recorder's
