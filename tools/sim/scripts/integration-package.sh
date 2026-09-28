@@ -23,6 +23,25 @@ commit="$(git -C "$repo" rev-parse --short "$ref^{commit}")"
 # Process documents: how this repository is run, not how the engine is.
 rm -f "$out"/{CLAUDE.md,CURRENT_STATE.md,DOCS_INDEX.md,GOVERNANCE.md,PROJECT_CONTEXT.md,PROJECT_INTRODUCTION.md,SESSION_HANDOFF.md}
 rm -rf "$out"/docs/phases "$out"/docs/audits "$out"/docs/reports "$out"/.github
+# **The release record for the version this package *is*** (the readiness audit of
+# 2026-09-28, second pass). The closure below keeps every `docs/evidence` record a
+# delivered document cites, and `INTEGRATION.md` cites `RELEASE-2.4.0`, which cites
+# the one before it — so the package delivered every **older** release record and
+# not the current one. A broker receiving `v3.0.0` got the notes for 2.4.0 and
+# nothing for the release in their hands.
+#
+# It is seeded as a *root* of the closure rather than copied in afterwards, which is
+# how the first version of this got it wrong: the record shipped and the three files
+# it cites did not, and the link check at the end of this script said so.
+release_record=""
+if printf '%s' "$ref" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+  release_record="docs/evidence/RELEASE-${ref#v}.md"
+  if [ ! -f "$repo/$release_record" ]; then
+    echo "packaging $ref but $release_record does not exist: write the release record first" >&2
+    exit 1
+  fi
+fi
+export OTC_PACKAGE_RELEASE_RECORD="$release_record"
 # **`docs/evidence` is not deleted wholesale any more** (the readiness audit of
 # 2026-09-28, finding 21). It was, and the two documents a broker actually reads
 # cite it — the refund table behind the payout advice, the seam rate, the tempo
@@ -68,7 +87,16 @@ if evidence.is_dir():
         for f in out.rglob('*.md')
         if 'evidence' not in f.parts and 'node_modules' not in f.parts
     ]
-    keep = cited_from(delivered)
+    # The release record this package *is*, as a root: kept, and its own citations
+    # followed like any other delivered document's.
+    import os
+    record = os.environ.get('OTC_PACKAGE_RELEASE_RECORD', '')
+    roots = list(delivered)
+    if record and (out / record).is_file():
+        roots.append(record)
+    keep = cited_from(roots)
+    if record and (out / record).is_file():
+        keep.add(record)
     removed = 0
     for f in sorted(evidence.rglob('*')):
         if f.is_file() and str(f.relative_to(out)) not in keep:

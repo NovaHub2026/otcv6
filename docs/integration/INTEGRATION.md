@@ -5,6 +5,8 @@ el **Lab**, preparados para integrarse en un bróker. No lleva documentación de
 proceso, gobernanza ni planificación: solo lo necesario para ejecutar, conectar y
 operar.
 
+**Las notas de esta versión están en `docs/evidence/RELEASE-<versión>.md`**, dentro de este paquete: qué cambió en el contrato, las seis cosas que ves al actualizar, qué se midió y qué no hace esta versión. Empieza por ahí si vienes de una versión anterior.
+
 Verificado antes de empaquetar, en este mismo árbol y sin nada más. **Este bloque
 lo reescribe el generador del paquete con lo que vio en su propia ejecución**
 (`integration-package.sh --verify`), así que en el paquete que recibes lleva la
