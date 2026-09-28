@@ -177,6 +177,8 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
   /** Passes slower than {@link SLOW_PASS_MS} since boot. */
   private slowPasses = 0;
   private lastSlowPassLogged: number | null = null;
+  /** How the last checkpoint's time divided, in ms (PH-40.5). */
+  private lastCheckpointSplit: { save: number; trim: number; history: number } | null = null;
   /** Ticks each market appended to the record since its last trim; absent until the first. */
   private readonly appendedSinceTrim = new Map<string, number>();
   /** Automatic reopenings this process has taken, every asset, for `/metrics`. */
@@ -1522,10 +1524,15 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     this.slowPasses += 1;
     if (this.lastSlowPassLogged !== null && startedAt - this.lastSlowPassLogged < 60_000) return;
     this.lastSlowPassLogged = startedAt;
+    const split = phases.checkpoint > 0 ? this.lastCheckpointSplit : null;
     this.logger.warn(
       `SLOW PASS — ${(total / 1_000).toFixed(1)}s against a ${String(MAX_CATCH_UP_S)}s ` +
         `catch-up bound: ` +
         PASS_PHASES.map((phase) => `${phase} ${(phases[phase] / 1_000).toFixed(1)}s`).join(', ') +
+        (split === null
+          ? ''
+          : ` (checkpoint: save ${(split.save / 1_000).toFixed(1)}s, ` +
+            `trim ${(split.trim / 1_000).toFixed(1)}s, history ${(split.history / 1_000).toFixed(1)}s)`) +
         ` (${String(this.slowPasses)} slow since boot; logged at most once a minute)`,
     );
   }
@@ -1669,6 +1676,10 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     // exists to prevent.
     if (!(await this.#stillTheWriter())) return;
     const now = this.clock.now();
+    // Where the checkpoint's own time goes, for the SLOW PASS line (PH-40.5):
+    // the first slow pass the instrumentation caught on the live venue was a
+    // 7.7 s checkpoint, and a checkpoint is three kinds of work.
+    const split = { save: 0, trim: 0, history: 0 };
     for (const assetId of this.venue.assetIds) {
       // **A stalled market's checkpoint is not refreshed (Cycle Audit 10:
       // ops-observed).** `resumeMarket` decides between continuing and seaming
@@ -1700,9 +1711,11 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       // taken mid-push carries it and the next boot seams rather than
       // regenerating ticks the keystream would sign differently.
       const controlled = this.control?.controlledSince(assetId) ?? false;
+      const saving = this.clock.now();
       await this.store.save(
         checkpointMarket(this.venue.marketFor(assetId), assetId, now, undefined, controlled),
       );
+      split.save += this.clock.now() - saving;
       this.control?.checkpointTaken(assetId);
       // The record's bound, amortised (PH-40.5). Trimming deletes a handful of
       // rows, but finding the boundary is a COUNT and an OFFSET walk over the
@@ -1715,14 +1728,19 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       // past its window, never less than it.
       const appended = this.appendedSinceTrim.get(assetId);
       if (appended === undefined || appended >= trimEvery(this.recordTicks)) {
+        const trimming = this.clock.now();
         await this.record?.trim(assetId, this.recordTicks);
+        split.trim += this.clock.now() - trimming;
         this.appendedSinceTrim.set(assetId, 0);
       }
     }
     // Bars that closed since the last checkpoint. On the same cadence because a
     // minute bar closes at most once a minute: flushing per tick would be
     // thousands of empty writes for each real one.
+    const flushing = this.clock.now();
     await this.history?.flush();
+    split.history = this.clock.now() - flushing;
+    this.lastCheckpointSplit = split;
     this.lastCheckpointAt = now;
   }
 

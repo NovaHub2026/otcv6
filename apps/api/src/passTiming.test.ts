@@ -102,6 +102,10 @@ describe('a pass says where it spent its time (PH-40.5)', () => {
     const slow = warn.mock.calls.filter(([message]) => String(message).startsWith('SLOW PASS'));
     expect(slow).toHaveLength(1);
     expect(String(slow[0]![0])).toMatch(/checkpoint [6-9]\.\ds/);
+    // And which part of the checkpoint: here the saves, not the trim or the history.
+    expect(String(slow[0]![0])).toMatch(
+      /\(checkpoint: save [6-9]\.\ds, trim 0\.\ds, history 0\.\ds\)/,
+    );
     await v.stop();
   });
 });
