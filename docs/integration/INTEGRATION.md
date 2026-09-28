@@ -514,7 +514,11 @@ para liquidar.
   > Pide al operador la clave pública de su `publisher.json` por un canal
   > distinto del motor, anótala y **fíjala**: pásasela a
   > `new VenueClient({ publisherPublicKey })` y a
-  > `npm run conformance -- --key <hex>`. Sin ella, `VenueClient.proof`
+  > `npm run conformance -- --key <clave>`. Es el campo `publicKey` de ese
+  > fichero, tal cual: la forma DER SPKI en hexadecimal —**88 caracteres** en
+  > Ed25519— y la misma cadena que devuelve `publisherPublicKey` en una prueba.
+  > Los 64 caracteres de `OTC_PUBLISHING_KEY` son la **semilla privada**, no la
+  > identidad: ninguna firma verifica contra ellos. Sin ella, `VenueClient.proof`
   > devuelve `keySource: 'self-certified'` y la lista de verificación nombra
   > esa fila como _no independiente_: lo único comprobado es que la prueba es
   > consistente consigo misma.
@@ -544,8 +548,10 @@ GET /markets/eurusd-otc/price?at=1788492000000
   ticks** que acaba de entregar por el stream y que el mercado no vaya por
   detrás de ellos, orden y reanudación exacta del stream y su hueco anunciado,
   la regla del precio sobre los ticks entregados, y una prueba verificada
-  contra la clave del publicador que le pases en `--key`. Sale con 0 si todo
-  pasa y 1 si no. Sin `--key` la fila de la prueba se llama _«no
+  contra la clave del publicador que le pases en `--key` (el `publicKey` de
+  `publisher.json`, 88 hex; la herramienta rechaza por nombre cualquier otra
+  forma y dice dónde está la buena). Sale con 0 si todo pasa, 1 si no y 2 ante
+  un error de uso. Sin `--key` la fila de la prueba se llama _«no
   independiente»_ y el informe lo dice encima de la tabla.
 
 ```ts
@@ -1175,10 +1181,10 @@ npm run assurance:served -- --base http://127.0.0.1:3000 --out verdict.md
                      # el trabajo permanente: lee la ventana retenida de cada activo
                      # por el stream, corre la batería anti-predicción sobre lo servido
                      # y escribe un informe; sale con 2 si algo es explotable
-npm run conformance -- --base http://127.0.0.1:3000 --key <hex> --out conformance.md
+npm run conformance -- --base http://127.0.0.1:3000 --key <clave> --out conformance.md
                      # la lista de verificación ejecutable contra tu despliegue (0/1);
-                     # --key es la clave del publicador que te dieron fuera de banda:
-                     # sin ella la prueba sólo se verifica contra sí misma
+                     # --key es el publicKey de publisher.json (88 hex) que te dieron
+                     # fuera de banda: sin ella la prueba sólo se verifica contra sí misma
 npm run state:verify -- --dir ./.otc-state          # el directorio de estado es coherente:
                      # los puntos de control se leen, las cabeceras concuerdan, el registro
                      # y el histórico pasan `PRAGMA quick_check` — un fichero dañado se
@@ -1218,8 +1224,8 @@ Dos avisos que ahorran tiempo:
 - [ ] Cliente consumiendo el stream con `from=<sequence>` y reintentos; un 400 por
       secuencia desalojada se maneja recargando el histórico.
 - [ ] Precios convertidos con `displayPrice`, comparaciones sobre `price` entero.
-- [ ] `npm run conformance -- --base <tu motor> --key <clave del publicador>` en
-      verde antes de salir a producción, y en cada actualización del motor (el
+- [ ] `npm run conformance -- --base <tu motor> --key <publicKey de publisher.json>`
+      en verde antes de salir a producción, y en cada actualización del motor (el
       contrato tiene versión: `/health.apiVersion`). Sin `--key` la prueba no es
       independiente y el informe lo dice.
 - [ ] Liquidación sobre `GET /markets/:id/price` (entrada y expiración), **en el

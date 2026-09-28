@@ -1,3 +1,4 @@
+import { createPublicKey } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { conformance, renderConformance } from '@otc/client';
 
@@ -14,7 +15,50 @@ import { conformance, renderConformance } from '@otc/client';
  * Without it the suite can only check a served proof's signature against the
  * key the venue shipped beside it, which any venue can choose; the report
  * says so above its table, and the proof row is named for what it did check.
+ *
+ * **The key is the one the engine publishes, in the shape it publishes it**
+ * (2026-09-28). This demanded 64 hex characters — the length of the *seed* in
+ * `OTC_PUBLISHING_KEY` — while an engine publishes its identity as the DER SPKI
+ * form, 88 hex characters for Ed25519, in `publisher.json` and in every proof's
+ * `publisherPublicKey`. So the documented command could not be run with the only
+ * value that works, and a broker who truncated the key to fit got a report
+ * saying the engine's proofs do not verify: measured against a live venue,
+ * `signature false … names the key it was signed with false`, exit 1, under a
+ * header claiming the proof had been checked against a key told out of band.
+ * Both the fixture and this check had agreed on the wrong length, so nothing
+ * caught it until a real engine's key was handed to the real tool.
  */
+/**
+ * The publisher key as the engine publishes it, or a refusal that says where to
+ * find the right value.
+ *
+ * Validated by constructing the key rather than by counting characters: the
+ * shape that matters is "something `verifyCommitment` can verify against", and
+ * that is exactly what this asks.
+ */
+export function publisherKeyArg(value: string): string {
+  const hex = value.trim().toLowerCase();
+  const wrong = (why: string): RangeError =>
+    new RangeError(
+      `--key ${why}. It is the publisher identity as the engine publishes it: the ` +
+        "`publicKey` field of `publisher.json` in the engine's OTC_PUBLICATION_DIR, which " +
+        'is the DER SPKI form — 88 hex characters for Ed25519 — and is the same string a ' +
+        'proof returns as `publisherPublicKey`. A 64-character value is the 32-byte seed ' +
+        'from OTC_PUBLISHING_KEY or a raw key, and no proof verifies against it.',
+    );
+  if (!/^[0-9a-f]+$/.test(hex) || hex.length % 2 !== 0) throw wrong('must be hex, in whole bytes');
+  try {
+    createPublicKey({ key: Buffer.from(hex, 'hex'), format: 'der', type: 'spki' });
+  } catch {
+    throw wrong(
+      hex.length === 64
+        ? 'is 64 hex characters, which is not a published key'
+        : 'is not a public key in DER SPKI form',
+    );
+  }
+  return hex;
+}
+
 export function parseConformanceArgs(argv: readonly string[]): {
   base: string;
   out: string | null;
@@ -32,9 +76,7 @@ export function parseConformanceArgs(argv: readonly string[]): {
     if (flag === '--base') base = value;
     else if (flag === '--out') out = value;
     else if (flag === '--key') {
-      if (!/^[0-9a-f]{64}$/i.test(value))
-        throw new RangeError('--key must be the publisher key as 64 hex characters.');
-      key = value.toLowerCase();
+      key = publisherKeyArg(value);
     } else if (flag === '--ticks') {
       if (!/^\d+$/.test(value) || Number(value) < 2)
         throw new RangeError('--ticks must be an integer of at least 2.');

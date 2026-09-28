@@ -180,4 +180,4 @@ pliega en vuestro backend con los ticks del stream, como hoy `currentBar`.
 - [ ] `pricescale = 10 ** displayPrecision` por activo, sin el tope de 100.000 (§3).
 - [ ] `volume = tickCount`; `2h` agregado desde `1h`; velas con marco `null` no se dibujan (§5).
 - [ ] La frescura de la cotización se mide con `asOf` (§4).
-- [ ] `npm run conformance -- --base <motor> --key <clave del publicador>` en verde antes de producción y en cada actualización del motor.
+- [ ] `npm run conformance -- --base <motor> --key <publicKey de publisher.json, 88 hex>` en verde antes de producción y en cada actualización del motor.
