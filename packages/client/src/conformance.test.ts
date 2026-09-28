@@ -160,6 +160,8 @@ export interface Faults {
   heartbeatNever?: boolean;
   /** A stored 1m bar whose close is not the last tick it was folded from (PH-40.4). */
   historyWrongClose?: boolean;
+  /** The Lab composition: it says so, and answers `/lab` (ADR-0018). */
+  labVenue?: boolean;
 }
 
 /**
@@ -235,6 +237,9 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
         bootNonce: null,
         apiVersion: faults.version ?? API_VERSION,
         ready: true,
+        // ADR-0018: which composition answered. `labVenue` is the fault that says
+        // `lab`, which a broker's gate must refuse.
+        composition: faults.labVenue === true ? 'lab' : 'production',
       });
     }
     if (p === '/health/live') return json(response, 200, { live: true });
@@ -267,6 +272,12 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
           dispersion: {},
         },
       ]);
+    // A Lab-composed venue answers its own routes; a production one has none.
+    if (p.startsWith('/lab')) {
+      return faults.labVenue === true
+        ? json(response, 200, [{ id: 'eurusd' }])
+        : json(response, 404, { message: 'Cannot GET /lab/markets' });
+    }
     if (p === '/archetypes') return json(response, 200, []);
     if (p === '/registrations') return json(response, 200, []);
     if (p === '/registrations/1') return json(response, 404, { message: 'no' });
@@ -590,6 +601,11 @@ describe('the conformance suite (PH-29.3)', () => {
       'a venue that refuses a price inside a seam instead of answering the price in force (ADR-0021)',
       { seamed: true, seamRefused: true },
       'a price inside a seam is the price in force, and the seam is named',
+    ],
+    [
+      'the Lab composition, whose prices an operator can steer (ADR-0018)',
+      { labVenue: true },
+      'the venue is the production composition, not a simulation',
     ],
     [
       'a stored candle whose close is not the tick it closed on',

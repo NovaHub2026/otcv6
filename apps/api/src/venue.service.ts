@@ -543,6 +543,21 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
    * liveness — a process that answers HTTP while a market is stalled is alive
    * and not ready — and from `/health`'s `status`, which a human reads.
    */
+  /**
+   * Whether this process is the Lab composition (ADR-0018), which serves every
+   * production route **plus** `/lab` and its price-steering controls.
+   *
+   * Structural rather than declared: the Lab is the same engine composed with a
+   * selectable sign or arrival source, which is the same expression every site
+   * that builds a market derives `retractable` from. Nothing in the public API
+   * said which composition a client was talking to, and a broker's own
+   * pre-production gate passed 37 of 37 against a Lab (the readiness audit of
+   * 2026-09-28) — a venue whose prices an operator can push, pulse and target.
+   */
+  get labComposed(): boolean {
+    return this.signSource !== null || this.arrivalSource !== null;
+  }
+
   get isReady(): boolean {
     return this.notReadyReason === null;
   }

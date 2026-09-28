@@ -165,6 +165,16 @@ async function bootstrap(): Promise<void> {
     forceCloseConnections: true,
   });
   app.enableShutdownHooks(['SIGINT', 'SIGTERM'], { useProcessExit: true });
+  // **A path's case is part of it** (the readiness audit of 2026-09-28). Express
+  // matches case-insensitively by default, so `/Metrics` and `/METRICS` answered
+  // like `/metrics` — and the shipped proxy's own `location ~ ^/(metrics|...)$`
+  // is case-*sensitive*, so the monitor surface and the write surface were both
+  // reachable from the public side by changing a letter. The proxy is fixed too;
+  // this is the layer that cannot be copied wrong.
+  (app.getHttpAdapter().getInstance() as { set: (k: string, v: unknown) => void }).set(
+    'case sensitive routing',
+    true,
+  );
 
   // The panel may be served from a different origin than the engine — `next dev`
   // on one port, this on another — and without these headers the browser blocks

@@ -20,7 +20,15 @@ services:
       OTC_MASTER_SECRET: ${OTC_MASTER_SECRET:?set OTC_MASTER_SECRET}
       OTC_ADMIN_TOKEN: ${OTC_ADMIN_TOKEN:-}
       OTC_PUBLISHING_KEY: ${OTC_PUBLISHING_KEY:-}
-      OTC_PUBLICATION_DIR: /var/lib/otc/publication
+      # Opt-in, and the two arrive together or not at all: setting the directory
+      # makes the key mandatory, and this file set the directory unconditionally
+      # while documenting an invocation with no key — so the engine refused to
+      # boot and `restart: unless-stopped` looped it for ever, with the backup
+      # service waiting on a health check that never came (the readiness audit of
+      # 2026-09-28). To publish proofs, set both:
+      #   OTC_PUBLISHING_KEY=$(openssl rand -hex 32) \
+      #   OTC_PUBLICATION_DIR=/var/lib/otc/publication docker compose ... up -d
+      OTC_PUBLICATION_DIR: ${OTC_PUBLICATION_DIR:-}
       OTC_RATE_LIMIT_PER_MINUTE: ${OTC_RATE_LIMIT_PER_MINUTE:-600}
       # One hop: nginx below is the only thing that talks to the engine, and it
       # forwards the client in X-Forwarded-For. Without this the rate limit

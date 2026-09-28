@@ -61,13 +61,28 @@ describe('the deployment files match the engine (PH-30.1)', () => {
     expect(compose).toContain('stop_signal: SIGTERM');
     expect(compose).toMatch(/OTC_MASTER_SECRET: \$\{OTC_MASTER_SECRET:\?/);
     expect(compose).toContain('deploy/backup.sh');
+    // Publication is opt-in, so its directory and its key arrive together: setting
+    // the directory makes the key mandatory, and this file set the directory
+    // unconditionally while its own header documented an invocation with no key —
+    // the engine refused to boot and `restart: unless-stopped` looped it for ever
+    // (the readiness audit of 2026-09-28).
+    expect(compose).toMatch(/OTC_PUBLICATION_DIR: \$\{OTC_PUBLICATION_DIR:-\}/);
     expect(compose).toMatch(/['"]127\.0\.0\.1:3000:3000['"]/);
   });
 
   it('the proxy leaves the stream unbuffered, cuts the write surface and forwards the client address', () => {
     const proxy = read('nginx.conf');
     expect(proxy).toContain('proxy_buffering off');
-    expect(proxy).toMatch(/location ~ \^\/assets \{\s*return 403;/);
+    // **Case-insensitive, and the monitor surface with an optional trailing
+    // slash** (the readiness audit of 2026-09-28). nginx's `~` is case-sensitive
+    // and the engine's router is not, so `/Assets/eurusd-otc` fell through this
+    // block to the write surface and `/Metrics` and `/metrics/` reached the
+    // monitor surface — while this guard asserted the very regex that let them.
+    expect(proxy).toMatch(/location ~\* \^\/assets \{\s*return 403;/);
+    expect(proxy).toMatch(/location ~\* \^\/\(metrics\|health\/ready\)\/\?\$ \{/);
+    expect(proxy, 'a case-sensitive location still guards a case-insensitive router').not.toMatch(
+      /location ~ \^\//,
+    );
     expect(proxy).toContain('X-Forwarded-For');
     expect(proxy).toContain("proxy_set_header Connection ''");
   });

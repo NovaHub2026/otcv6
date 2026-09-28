@@ -1,8 +1,8 @@
 # API Contract
 
 Type: SUPPORTING DOCUMENTATION (generated; do not edit by hand)
-Version: 3.4.0
-Digest: 841f6c8a05b0ff11
+Version: 3.6.0
+Digest: d94c5ab58d3ba40a
 Source: `apps/api/src/contract.ts` — rendered by `npm run contract:render`; held to the controller by `contract.test.ts`
 
 ---
@@ -27,6 +27,7 @@ Response: a JSON object:
 | `bootNonce` | `string|null` |
 | `apiVersion` | `string` |
 | `ready` | `boolean` |
+| `composition` | `string` |
 
 ## GET `/health/live`
 
@@ -87,6 +88,10 @@ Response: a JSON array; each item:
 | `instant` | `integer|null` |
 | `recovery` | `object|null` |
 
+| Status | When |
+| --- | --- |
+| 429 | too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused |
+
 ## GET `/markets/:id`
 
 One hosted market and where it stands.
@@ -111,6 +116,7 @@ Response: a JSON object:
 | Status | When |
 | --- | --- |
 | 404 | the asset is not hosted |
+| 429 | too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused |
 
 ## GET `/catalogue`
 
@@ -135,6 +141,10 @@ Response: a JSON array; each item:
 | `excessKurtosis` | `number` |
 | `dispersion` | `object` |
 
+| Status | When |
+| --- | --- |
+| 429 | too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused |
+
 ## GET `/archetypes`
 
 The archetypes an operator may register an asset under.
@@ -149,6 +159,10 @@ Response: a JSON array; each item:
 | `character` | `string` |
 | `dispersion` | `object` |
 | `excessKurtosis` | `object` |
+
+| Status | When |
+| --- | --- |
+| 429 | too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused |
 
 ## GET `/markets/:id/history`
 
@@ -178,6 +192,7 @@ Response: a JSON object:
 | --- | --- |
 | 400 | a missing or malformed parameter, a timeframe finer than 1m, or a window past 20 000 bars |
 | 404 | the asset is unknown, or this deployment keeps no candle history |
+| 429 | too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused |
 
 ## GET `/markets/:id/ticks/:sequence`
 
@@ -205,6 +220,7 @@ Response: a JSON object:
 | --- | --- |
 | 400 | the sequence is not a positive integer |
 | 404 | the asset is unknown, the sequence is outside the record (the bounds are named), or this deployment keeps no record |
+| 429 | too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused |
 
 ## GET `/markets/:id/price`
 
@@ -238,6 +254,7 @@ Response: a JSON object:
 | --- | --- |
 | 400 | a missing or malformed instant, or an instant after the one the price is final through — the last clean pass for a hosted market, the newest instant its record holds for one this process no longer hosts. This is what makes a contract impossible to settle before its final millisecond |
 | 404 | the asset is unknown, the record starts after the instant, or this deployment keeps no record |
+| 429 | too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused |
 
 ## GET `/markets/:id/seams`
 
@@ -261,6 +278,7 @@ Response: a JSON array; each item:
 | Status | When |
 | --- | --- |
 | 404 | the asset is unknown, or this deployment keeps no record |
+| 429 | too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused |
 
 ## GET `/markets/:id/lattices`
 
@@ -284,6 +302,7 @@ Response: a JSON array; each item:
 | Status | When |
 | --- | --- |
 | 404 | the asset is unknown, or this deployment keeps no record |
+| 429 | too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused |
 
 ## GET `/markets/:id/proof/:sequence`
 
@@ -310,6 +329,7 @@ Response: a JSON object:
 | 400 | the sequence is not a positive integer |
 | 404 | the asset is unknown, or this deployment does not publish commitments |
 | 409 | the sequence is published but its window is not yet committed (the newest committed sequence is named), or the archive disagrees with the record, or the archived window no longer hashes to the root its commitment signs |
+| 429 | too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused |
 | 503 | the commitment chain file is damaged past a line the message names; proofs of earlier sequences are unaffected |
 
 ## GET `/markets/:id/stream`
@@ -363,6 +383,7 @@ Response: `text/event-stream`. Frames by event name (`message` is the default ev
 | --- | --- |
 | 400 | a malformed from or onGap, or (without onGap=live) a sequence the venue cannot replay — including, between a restart that seamed this market and its first tick, every sequence below the one it will resume at |
 | 404 | the asset is not hosted |
+| 429 | too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused |
 
 ## GET `/markets/stream`
 
@@ -415,6 +436,7 @@ Response: `text/event-stream`. Frames by event name (`message` is the default ev
 | Status | When |
 | --- | --- |
 | 400 | a malformed parameter, or an asset that is not hosted |
+| 429 | too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused |
 
 ## GET `/registrations`
 
@@ -432,6 +454,10 @@ Response: a JSON array; each item:
 | `assetId` | `string|null` |
 | `submittedAt` | `integer` |
 | `finishedAt` | `integer|null` |
+
+| Status | When |
+| --- | --- |
+| 429 | too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused |
 
 ## GET `/registrations/:id`
 
@@ -457,6 +483,7 @@ Response: a JSON object:
 | Status | When |
 | --- | --- |
 | 404 | no such job |
+| 429 | too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused |
 
 ## POST `/assets`
 
@@ -464,14 +491,26 @@ Register an asset from a brief; answers the job that builds it.
 
 Admin: needs the bearer token in `OTC_ADMIN_TOKEN` and a JSON body.
 
+| Status | When |
+| --- | --- |
+| 429 | too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused |
+
 ## PATCH `/assets/:id`
 
 Rename an asset.
 
 Admin: needs the bearer token in `OTC_ADMIN_TOKEN` and a JSON body.
 
+| Status | When |
+| --- | --- |
+| 429 | too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused |
+
 ## POST `/assets/:id/retire`
 
 Stop hosting a market; its record stays readable.
 
 Admin: needs the bearer token in `OTC_ADMIN_TOKEN` and a JSON body.
+
+| Status | When |
+| --- | --- |
+| 429 | too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused |

@@ -181,6 +181,12 @@ export const API_ROUTES: readonly RouteContract[] = [
         bootNonce: 'string|null',
         apiVersion: 'string',
         ready: 'boolean',
+        // `production` or `lab` (ADR-0018). A Lab-composed process serves every
+        // route here **plus** `/lab` and its price-steering controls, and nothing
+        // in the API said which one you were talking to: a broker's own gate
+        // passed against a Lab. Refuse to go live against anything but
+        // `production`.
+        composition: 'string',
       },
     },
   },
@@ -219,6 +225,13 @@ export const API_ROUTES: readonly RouteContract[] = [
     path: '/markets',
     summary: 'Every hosted market and where it stands.',
     response: { array: MARKET },
+    refusals: {
+      // Every route but the operational probes is rate limited, so this is the one
+      // refusal a broker's own traffic causes — and it was on no route and in no
+      // guide until the readiness audit of 2026-09-28.
+      '429':
+        'too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused',
+    },
   },
   {
     method: 'GET',
@@ -226,7 +239,11 @@ export const API_ROUTES: readonly RouteContract[] = [
     summary: 'One hosted market and where it stands.',
     params: { id: 'a hosted asset id' },
     response: { object: MARKET },
-    refusals: { '404': 'the asset is not hosted' },
+    refusals: {
+      '404': 'the asset is not hosted',
+      '429':
+        'too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused',
+    },
   },
   {
     method: 'GET',
@@ -257,6 +274,10 @@ export const API_ROUTES: readonly RouteContract[] = [
         dispersion: 'object',
       },
     },
+    refusals: {
+      '429':
+        'too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused',
+    },
   },
   {
     method: 'GET',
@@ -271,6 +292,10 @@ export const API_ROUTES: readonly RouteContract[] = [
         dispersion: 'object',
         excessKurtosis: 'object',
       },
+    },
+    refusals: {
+      '429':
+        'too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused',
     },
   },
   {
@@ -293,6 +318,8 @@ export const API_ROUTES: readonly RouteContract[] = [
       },
     },
     refusals: {
+      '429':
+        'too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused',
       '400':
         'a missing or malformed parameter, a timeframe finer than 1m, or a window past 20 000 bars',
       '404': 'the asset is unknown, or this deployment keeps no candle history',
@@ -308,6 +335,8 @@ export const API_ROUTES: readonly RouteContract[] = [
     },
     response: { object: { assetId: 'string', ...PUBLISHED } },
     refusals: {
+      '429':
+        'too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused',
       '400': 'the sequence is not a positive integer',
       '404':
         'the asset is unknown, the sequence is outside the record (the bounds are named), or this deployment keeps no record',
@@ -330,6 +359,8 @@ export const API_ROUTES: readonly RouteContract[] = [
       },
     },
     refusals: {
+      '429':
+        'too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused',
       '400':
         'a missing or malformed instant, or an instant after the one the price is final through — the last clean pass for a hosted market, the newest instant its record holds for one this process no longer hosts. This is what makes a contract impossible to settle before its final millisecond',
       '404':
@@ -343,7 +374,11 @@ export const API_ROUTES: readonly RouteContract[] = [
       'Every discontinuity the record holds for this market: where it stops and where it starts again, in sequence and in instant. What settle() takes as seams.',
     params: { id: "a known asset id; a retired market's record still answers" },
     response: { array: SEAM },
-    refusals: { '404': 'the asset is unknown, or this deployment keeps no record' },
+    refusals: {
+      '404': 'the asset is unknown, or this deployment keeps no record',
+      '429':
+        'too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused',
+    },
   },
   {
     method: 'GET',
@@ -352,7 +387,11 @@ export const API_ROUTES: readonly RouteContract[] = [
       "Every frame this market's integers have counted in, oldest first. Half-open by sequence: an epoch covers up to the next one's fromSequence, and the last is in force. The join table for a broker that archived raw integers.",
     params: { id: "a known asset id; a retired market's record still answers" },
     response: { array: LATTICE },
-    refusals: { '404': 'the asset is unknown, or this deployment keeps no record' },
+    refusals: {
+      '404': 'the asset is unknown, or this deployment keeps no record',
+      '429':
+        'too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused',
+    },
   },
   {
     method: 'GET',
@@ -371,6 +410,8 @@ export const API_ROUTES: readonly RouteContract[] = [
       },
     },
     refusals: {
+      '429':
+        'too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused',
       '400': 'the sequence is not a positive integer',
       '404': 'the asset is unknown, or this deployment does not publish commitments',
       '409':
@@ -398,6 +439,8 @@ export const API_ROUTES: readonly RouteContract[] = [
       heartbeat: HEARTBEAT_FRAME,
     },
     refusals: {
+      '429':
+        'too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused',
       '400':
         'a malformed from or onGap, or (without onGap=live) a sequence the venue cannot replay — including, between a restart that seamed this market and its first tick, every sequence below the one it will resume at',
       '404': 'the asset is not hosted',
@@ -419,13 +462,21 @@ export const API_ROUTES: readonly RouteContract[] = [
       close: { asset: 'string', reason: 'string' },
       heartbeat: { asset: 'string', ...HEARTBEAT_FRAME },
     },
-    refusals: { '400': 'a malformed parameter, or an asset that is not hosted' },
+    refusals: {
+      '400': 'a malformed parameter, or an asset that is not hosted',
+      '429':
+        'too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused',
+    },
   },
   {
     method: 'GET',
     path: '/registrations',
     summary: 'Every asset-registration job this process has run.',
     response: { array: REGISTRATION_JOB },
+    refusals: {
+      '429':
+        'too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused',
+    },
   },
   {
     method: 'GET',
@@ -433,20 +484,41 @@ export const API_ROUTES: readonly RouteContract[] = [
     summary: 'One registration job.',
     params: { id: 'a job id' },
     response: { object: REGISTRATION_JOB },
-    refusals: { '404': 'no such job' },
+    refusals: {
+      '404': 'no such job',
+      '429':
+        'too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused',
+    },
   },
   {
     method: 'POST',
     path: '/assets',
     summary: 'Register an asset from a brief; answers the job that builds it.',
     admin: true,
+    refusals: {
+      '429':
+        'too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused',
+    },
   },
-  { method: 'PATCH', path: '/assets/:id', summary: 'Rename an asset.', admin: true },
+  {
+    method: 'PATCH',
+    path: '/assets/:id',
+    summary: 'Rename an asset.',
+    admin: true,
+    refusals: {
+      '429':
+        'too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused',
+    },
+  },
   {
     method: 'POST',
     path: '/assets/:id/retire',
     summary: 'Stop hosting a market; its record stays readable.',
     admin: true,
+    refusals: {
+      '429':
+        'too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused',
+    },
   },
 ];
 
@@ -566,6 +638,24 @@ export const CONTRACT_HISTORY: readonly { readonly version: string; readonly dig
   //
   // **Minor.** One key is added to an item a 3.3.0 client already parses.
   { version: '3.4.0', digest: '841f6c8a05b0ff11' },
+  // The readiness audit of 2026-09-28: every route but the operational probes now
+  // lists the `429` it has always been able to answer. `OTC_RATE_LIMIT_PER_MINUTE`
+  // is 600 by default and `GET /markets/:id/price` — the settlement route — is
+  // among them, so this is the one refusal a broker's own traffic causes; it was
+  // on no route and in no guide, and its body omitted the `error` key the guide
+  // declares every refusal carries. The body carries it now.
+  //
+  // **Minor.** A status the venue could always answer is written down.
+  { version: '3.5.0', digest: '6b778c7f993eb41c' },
+  // The readiness audit of 2026-09-28: `GET /health` says which composition
+  // answered, `production` or `lab` (ADR-0018). A Lab-composed process serves
+  // every route in this contract **and** `/lab`, whose controls push, pulse and
+  // target a market's price — and nothing here distinguished them, so the broker's
+  // own pre-production gate passed 37 of 37 against a Lab. The conformance suite
+  // now refuses anything but `production`.
+  //
+  // **Minor.** One key is added to a response a 3.5.0 client already parses.
+  { version: '3.6.0', digest: 'd94c5ab58d3ba40a' },
 ];
 
 export const API_VERSION: string = CONTRACT_HISTORY[CONTRACT_HISTORY.length - 1]!.version;

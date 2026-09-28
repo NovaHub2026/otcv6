@@ -77,6 +77,11 @@ export class RateLimitGuard implements CanActivate {
     throw new HttpException(
       {
         message: `Too many requests from this address: ${String(this.#perMinute)} a minute are admitted. Retry after ${String(verdict.retryAfterSeconds)} s.`,
+        // `error` too, because the guide tells a broker every refusal carries
+        // `{message, error, statusCode}` and this one did not (the readiness audit
+        // of 2026-09-28): a client switching on `error` met an undefined on the
+        // one refusal its own traffic causes.
+        error: 'Too Many Requests',
         statusCode: HttpStatus.TOO_MANY_REQUESTS,
       },
       HttpStatus.TOO_MANY_REQUESTS,

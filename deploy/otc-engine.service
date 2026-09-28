@@ -21,6 +21,11 @@ Environment=NODE_ENV=production
 Environment=PORT=3000
 Environment=OTC_BIND=127.0.0.1
 Environment=OTC_STATE_DIR=/var/lib/otc
+# Publication is on in this unit, which makes OTC_PUBLISHING_KEY **mandatory**:
+# the engine refuses to boot without it rather than invent a key nobody can verify
+# against a published identity, and systemd will restart it for ever. Write the key
+# into /etc/otc/secrets.env as the header says, or comment this line out to run
+# without inclusion proofs (the readiness audit of 2026-09-28).
 Environment=OTC_PUBLICATION_DIR=/var/lib/otc/publication
 # The unit binds loopback and nginx.conf sits in front of it, forwarding the
 # client in X-Forwarded-For. Without this the rate limit sees only nginx and

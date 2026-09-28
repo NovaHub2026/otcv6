@@ -241,6 +241,28 @@ export async function conformance(options: ConformanceOptions): Promise<Conforma
     );
   }
 
+  // ---- the composition: production, not a simulation ------------------------
+  //
+  // ADR-0018: a Lab-composed process serves every route in this contract **and**
+  // `/lab`, whose controls push, pulse and target a market's price. Nothing in the
+  // API distinguished the two until 2026-09-28, and this suite passed 37 of 37
+  // against a Lab — so a broker could take a steerable venue live having run its
+  // own gate. This is the check that says which one answered.
+  {
+    const health = (await get('/health')).body as { composition?: unknown } | null;
+    const composition = typeof health?.composition === 'string' ? health.composition : null;
+    const lab = await get('/lab/markets');
+    check(
+      'the venue is the production composition, not a simulation',
+      composition === 'production' && lab.status === 404,
+      `/health says ${composition ?? 'nothing'}; GET /lab/markets answers ${String(lab.status)}` +
+        (composition === 'lab' || lab.status === 200
+          ? ' — this is the Lab composition (ADR-0018): its prices can be steered from /lab, and ' +
+            'nothing settled against it is a market'
+          : ''),
+    );
+  }
+
   // ---- the stream: ordered, resumable, honest about gaps --------------------
   const first = await readStream({
     baseUrl: base,

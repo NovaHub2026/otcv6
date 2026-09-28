@@ -130,6 +130,8 @@ describe('health says whether the venue is publishing, not merely running', () =
       bootNonce: null,
       apiVersion: API_VERSION,
       ready: true,
+      // ADR-0018, and the readiness audit of 2026-09-28: which composition answered.
+      composition: 'production',
     });
   });
 
@@ -146,6 +148,7 @@ describe('health says whether the venue is publishing, not merely running', () =
       bootNonce: null,
       apiVersion: API_VERSION,
       ready: false,
+      composition: 'production',
     });
   });
 

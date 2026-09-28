@@ -192,6 +192,11 @@ export class MarketController implements BeforeApplicationShutdown {
       bootNonce: this.bootNonce,
       apiVersion: API_VERSION,
       ready: this.venue.isReady,
+      // Which composition answered (ADR-0018). A Lab serves every route here plus
+      // its price-steering controls, and until the readiness audit of 2026-09-28
+      // nothing in the API distinguished them: a broker's own pre-production gate
+      // passed 37 of 37 against a Lab.
+      composition: this.venue.labComposed ? 'lab' : 'production',
     };
   }
 
