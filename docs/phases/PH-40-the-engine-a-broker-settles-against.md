@@ -97,6 +97,18 @@ the full gate on `3c043df`, `GATE_EXIT=0` with a real browser: 181 unit files / 
 red run on the way is recorded in the subphase that met it, including one in the
 browser panel suite whose cause was not established (PH-40.3 §6).
 
+**After the merge, the live venue found two more** (PH-40.5 §6): a first pass
+that came 39 s late after a seamed boot reopened every market, and the record's
+retention trim cost 17% of the process. Both fixed with guards watched failing,
+and the whole was gated again: the full gate on `a7c3077`, `GATE_EXIT=0` with a
+real browser — 181 unit files / 3,683 tests, the coverage floors held, 47
+statistical files / 411 tests (3,816 s), probe timestamps continuous. A run
+before it was void: the host slept 1 h 48 min inside the statistical suite and a
+test's own timer fired on the clock jump. Hosted CI on the first merge
+(`f9b8d14`) was red on one Lab browser flow that normally takes a second and did
+not arm; nothing in PH-40 touches that path, and its failure now reports what
+the plan said.
+
 ## 8. What is left, and whose it is
 
 - **The Human Owner's: six assets at five decimals.** A broker that shows and
