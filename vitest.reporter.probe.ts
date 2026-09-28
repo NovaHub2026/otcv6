@@ -1,5 +1,5 @@
 /**
- * A main-thread probe for the statistical suite.
+ * A main-thread probe for the statistical suite, and for any run under coverage.
  *
  * The worker-side watchdog in `vitest.setup.statistical.ts` measures how long a
  * *worker* stays away from its own event loop. Hosted CI run 33607930939 —
@@ -50,9 +50,20 @@ export default class MainThreadProbe implements Reporter {
   }
 
   onTestModuleEnd(module: TestModule): void {
-    // The unit suite has 86 files and no history of this failure; only the
-    // statistical files are worth a line each.
-    if (module.moduleId.endsWith('.stat.test.ts')) log(`module end ${module.moduleId}`);
+    // Statistical files are always worth a line each. So is **every** unit file
+    // under coverage, since 2026-09-28: the `Coverage floors` step of hosted CI
+    // has now failed twice in three days — `22fada5` and `a8fc427` — with
+    // `Timeout calling "onTaskUpdate"`, every test green, and the error printed
+    // immediately before the v8 coverage report, which is main-thread work. The
+    // worker-side detector in `vitest.setup.unit.ts` names a test that blocks its
+    // own loop and did not fire either time, so the block is not in a test body;
+    // and the run that fails carried no main-thread probe at all, because
+    // `test:cov:unit` did not attach this reporter. Twice the occurrence was
+    // anonymous. It is not anonymous again.
+    const underCoverage = process.env.OTC_COVERAGE === '1';
+    if (underCoverage || module.moduleId.endsWith('.stat.test.ts')) {
+      log(`module end ${module.moduleId}`);
+    }
   }
 
   onTestRunEnd(): void {

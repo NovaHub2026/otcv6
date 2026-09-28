@@ -2,8 +2,11 @@
 
 Type: EVIDENCE (the release record)
 Recorded: 2026-09-28
-Tag: `v3.0.0` — the PH-40 merge, gated green locally on `38e8d88` and corroborated by
-hosted CI on both jobs
+Tag: `v3.0.0` — the PH-40 merge, gated green locally on `38e8d88` (`GATE_EXIT=0`,
+63 min, both browser suites in a real Chromium). **Hosted CI's Quality Gate went
+red on the tagged commit** and §9 says exactly why, because a release record that
+claims a corroboration it did not get is worth less than one that does not claim
+it.
 Supersedes: [`RELEASE-2.4.0.md`](RELEASE-2.4.0.md) for deployment
 Package: `tools/sim/scripts/integration-package.sh v3.0.0 <dir>`
 API contract: **3.8.0** (`77e60212e2388b93`), from `2.1.0` in `v2.4.0`
@@ -252,3 +255,36 @@ that has not gone live yet should provision fresh on this release.
   refuses a price inside a seam; a single-node deployment never reads it.
 - **The calibration still simulates a market the engine does not run** (Cycle
   Audit 12, finding 7, a refund bias of +1.91pp). It is the next phase.
+
+## 9. Hosted CI on the tagged commit, stated rather than summarised
+
+The local gate is green (§5). **Hosted CI's Quality Gate failed** on `a8fc427`, at
+the `Coverage floors` step — `npm run test:cov:unit` — with **every test passing**
+and the run exiting 1 on `Error: [vitest-worker]: Timeout calling "onTaskUpdate"`,
+printed immediately before the v8 coverage report.
+
+Three things a reader needs, and none of them is reassurance:
+
+1. **It is not the engine, and it is not this release's work.** The same step failed
+   the same way on `22fada5` on 2026-09-26, two days before any of it. The step runs
+   the unit suite **under coverage instrumentation**; the suite itself passes in that
+   run, and passes plainly in the gate, twice.
+2. **It has never been attributed.** The failure is a worker giving up after sixty
+   seconds on a reply from the main thread. The detector that names a _test_ blocking
+   its own worker did not fire on either occurrence, and the run carried no
+   main-thread probe at all — so both times the failure could name nothing. It is not
+   reproducible here: the same command on the release machine reports zero
+   main-thread blocks above two seconds, where the hosted four-core runner ran one
+   unit test for 178 seconds under instrumentation.
+3. **What was done about it** ([`DECISION-LOG.md`](../decisions/DECISION-LOG.md),
+   2026-09-28): the coverage step now carries the main-thread probe, which reports
+   blocks and every module's end under coverage, and a guard fails the build if that
+   reporter is ever dropped again. No claim is made that the cause is fixed, because
+   the cause has not been identified.
+
+**What this means for a deployment.** The engine's behaviour is verified by the
+local gate, by the statistical suite, and by the checklist run against the built
+release ([`RELEASE-CONFORMANCE-3.0.0.md`](RELEASE-CONFORMANCE-3.0.0.md)): 39 checks,
+0 failures, on the tagged build, with the seam and proof legs made provable. What is
+**not** verified is a hosted run of the coverage-floor step, which measures this
+repository's own test coverage and nothing a broker consumes.

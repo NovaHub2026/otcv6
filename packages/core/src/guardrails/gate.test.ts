@@ -237,6 +237,26 @@ describe('the gate reports what it ran', () => {
     expect(coverage, 'the coverage step must run the unit project with coverage on').toMatch(
       /--project unit .*--coverage|--coverage .*--project unit/,
     );
+    /**
+     * **And it must carry the main-thread probe** (2026-09-28).
+     *
+     * This is the step hosted CI fails at. It failed on `22fada5` and again on
+     * `a8fc427`, twice in three days, with `Timeout calling "onTaskUpdate"`, every
+     * test passing, and the error printed immediately before the v8 coverage
+     * report — which is main-thread work. The worker-side detector in
+     * `vitest.setup.unit.ts` names a test that blocks its own loop, and it did not
+     * fire either time, so the block is not in a test body. The main thread is the
+     * other half of that channel and only a reporter can measure it, and this step
+     * attached none: both occurrences were anonymous, on a run that cannot be
+     * reproduced on a developer machine fast enough never to block.
+     *
+     * A failure this step can produce and cannot describe is worth one flag.
+     */
+    expect(
+      coverage,
+      'the coverage step carries no main-thread probe, and it is the step hosted CI fails at ' +
+        'with every test green — an occurrence with no attribution is one nobody can fix',
+    ).toContain('--reporter=./vitest.reporter.probe.ts');
   });
 });
 

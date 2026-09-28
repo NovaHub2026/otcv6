@@ -1362,3 +1362,55 @@ seam, and a test watched failing against the old version says so.
 PH-40. If PH-40.3's measurement shows a displayable lattice breaks the Owner's 5%
 refund ceiling on an asset, that is the Owner's decision, with the number in
 front of them.
+
+---
+
+## 2026-09-28 — The `Coverage floors` step of hosted CI fails with every test green, and the occurrence was anonymous
+
+`v3.0.0` was tagged on `a8fc427` with `GATE_EXIT=0` locally, and hosted CI's
+**Quality Gate went red** — at the `Coverage floors` step, which runs
+`npm run test:cov:unit`. Every test passed. The run exited 1 on
+`Error: [vitest-worker]: Timeout calling "onTaskUpdate"`, printed **immediately
+before** the v8 coverage report.
+
+**This is not new and it is not the engine.** The same step failed the same way on
+`22fada5` two days earlier — Cycle Audit 13's own record commit. Twice in three
+days, and neither occurrence named anything.
+
+**What is established.** The failure is the one CLAUDE.md §5 describes: a worker
+sends a task update and gives the main thread sixty seconds to read the reply.
+`vitest.setup.unit.ts` already fails a _test_ that blocks its own worker's loop
+(20 s, standing down to 55 s under coverage) and it did not fire either time, so the
+block is not in a test body. The error's position, immediately before the coverage
+report, puts it on the **main thread**, whose end-of-run v8 remap is main-process
+work — and the only thing that can measure the main thread is a reporter, which
+`test:cov:unit` did not attach.
+
+**What was ruled out, by execution rather than argument.** The theory that spawned
+children inherit `NODE_V8_COVERAGE` and add coverage dumps for the main thread to
+parse: Vitest's v8 provider does not set that variable in its workers (verified —
+a test printed `NODE_V8_COVERAGE=unset` under `--coverage`). The theory that a new
+test tipped the leg over: the same failure predates all of this release's work.
+
+**What cannot be done.** Reproduce it here. The same command on this machine passes
+with **zero** main-thread blocks above two seconds and a slowest test of 18 s, where
+the hosted four-core runner ran one unit test for 178 s under instrumentation. A
+defect that only appears on a slower machine cannot be fixed by guessing on a faster
+one.
+
+**Decision: make the next occurrence name itself, and do not pretend to have fixed
+a cause that has not been identified.** `test:cov:unit` now attaches
+`vitest.reporter.probe.ts`, which reports main-thread event-loop blocks and, under
+`OTC_COVERAGE=1`, the wall-clock end of **every** module rather than only the
+statistical ones. `gate.test.ts` fails if that reporter is ever dropped from the
+step again. This is exactly what was done for the statistical project after B-021,
+where the same class stayed anonymous for six pushes while three wrong causes were
+recorded.
+
+**What would close it.** One more occurrence, with the probe attached: the log will
+say whether the main thread blocked, for how long, and which module ended last. If
+the block is the coverage remap, the answer is to shrink what is remapped or to run
+the floors over fewer projects; if it is a module boundary, the answer is where the
+probe points. Until then this is an open, recorded, intermittent failure of the
+**verification layer**, not of the engine — and `RELEASE-3.0.0.md` says so rather
+than claiming a corroboration it did not get.

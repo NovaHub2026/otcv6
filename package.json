@@ -23,7 +23,7 @@
     "test": "npm run test:unit && npm run test:stat",
     "test:watch": "vitest",
     "test:cov": "OTC_COVERAGE=1 vitest run --coverage --no-file-parallelism",
-    "test:cov:unit": "OTC_COVERAGE=1 vitest run --project unit --coverage",
+    "test:cov:unit": "OTC_COVERAGE=1 vitest run --project unit --coverage --reporter=default --reporter=./vitest.reporter.probe.ts",
     "test:stat": "NODE_OPTIONS=--max-old-space-size=6144 vitest run --project statistical --no-file-parallelism",
     "evidence:horizons": "npm run build && node tools/sim/dist/horizonEvidence.js",
     "catalogue:build": "npm run build && node tools/sim/dist/buildCatalogue.js",
