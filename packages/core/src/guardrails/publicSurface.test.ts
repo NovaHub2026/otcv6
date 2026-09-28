@@ -114,6 +114,12 @@ const INTERNAL: Record<string, readonly string[]> = {
     'stateTool.ts',
     // PH-38.2: the frame-log tool for the record, a binary entry point.
     'latticeTool.ts',
+    // The readiness audit of 2026-09-28: the package's own check — the pure half
+    // that resolves a delivered document's links and reads the delivered
+    // manifest, and the command `integration-package.sh` runs as its last step.
+    // Guarded by `packageLinks.test.ts`.
+    'packageLinks.ts',
+    'packageLinksTool.ts',
     // PH-29.3: the conformance suite's command, a binary entry point.
     'conformanceTool.ts',
     // PH-30.3: the observer fleet's driver and its worker, binary entry points.

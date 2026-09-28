@@ -254,6 +254,10 @@ const AMBIENT_STATE_ALLOWLIST = [
   'tools/sim/src/buildCatalogue.ts',
   // The tie-rate evidence run (PH-26.3): the same shape as the two above.
   'tools/sim/src/tieRateEvidence.ts',
+  // The readiness audit of 2026-09-28: the package's own check, the same shape —
+  // it reads the directory to check from argv and writes its report. It reads
+  // files and compares paths; it reaches nothing the engine runs on.
+  'tools/sim/src/packageLinksTool.ts',
   // PH-40.6's broker-fit evidence: `--assets`, `--out` and the sample sizes from
   // argv, the same shape; what it measures reaches no price path.
   'tools/sim/src/brokerFitEvidence.ts',
