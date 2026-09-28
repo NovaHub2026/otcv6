@@ -191,6 +191,7 @@ displayPrecision`. A broker that shows fewer decimals than the engine
 | A broker displaying fewer decimals than the engine publishes       | `usdchf-otc` refunds **16.0%** of 30 s contracts against settlement's 3.9% — [`BROKER-FIT-2026-09-27.md`](BROKER-FIT-2026-09-27.md) |
 | A quote one second stale, played in the direction of the move      | **56–61%** win rate at 30 s, against 54% break-even at an 85% payout                                                                |
 | The integration package's own links                                | **every target resolves**, across 56 delivered documents — the script refuses to build otherwise                                    |
+| Backup, restore and boot, executed end to end on the release build | eight documented promises held; one refusal was wrong and is fixed — [`RESTORE-DRILL-2026-09-28.md`](RESTORE-DRILL-2026-09-28.md)   |
 | Predictability                                                     | battery clean; the mirror test passes on the full stack                                                                             |
 | @@GATE@@                                                           |                                                                                                                                     |
 
