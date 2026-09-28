@@ -470,14 +470,30 @@ describe('the settlement query (PH-29.1)', () => {
         price: wanted.price,
       });
       // Bounded by the record's own head, since there is no live tick to bound
-      // it with: the newest recorded instant answers, one millisecond past it
-      // is the same "not yet" a hosted market gives.
+      // it with: the newest recorded instant answers, and one millisecond past it
+      // is refused.
       expect(
         ((await first.controller.priceAt(ID, String(head.instant))) as Published).sequence,
       ).toBe(head.sequence);
       await expect(first.controller.priceAt(ID, String(head.instant + 1))).rejects.toBeInstanceOf(
         BadRequestException,
       );
+      // **And the refusal says it is not a retry** (the readiness audit of
+      // 2026-09-28). This asserted only the status, and the status is the one a
+      // healthy market gives for a contract that has not expired — which the
+      // broker's guide tells it to retry. For a retired asset the bound is frozen
+      // at the record's head for ever, so that retry never ends. The message now
+      // says no later price will ever exist, and names retirement as the reason.
+      await expect(first.controller.priceAt(ID, String(head.instant + 1))).rejects.toThrow(
+        /is retired.*no later price will ever exist/s,
+      );
+      // A market that is merely quiet still gets the plain "not yet".
+      await expect(
+        first.controller.priceAt(other.definition.id, String(head.instant + 60_000_000)),
+      ).rejects.toThrow(/final through/);
+      await expect(
+        first.controller.priceAt(other.definition.id, String(head.instant + 60_000_000)),
+      ).rejects.not.toThrow(/is retired/);
       // Before the record: still the 404 that says the record cannot say.
       await expect(
         first.controller.priceAt(ID, String(served[0]!.instant - 1)),

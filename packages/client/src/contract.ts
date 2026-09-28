@@ -245,7 +245,14 @@ export const API_ROUTES: readonly RouteContract[] = [
         displayPrecision: 'integer',
         logQuantum: 'number',
         meanIntervalMs: 'number',
+        // The fraction of horizons whose continuous return was smaller than one
+        // quantum: a proxy for texture, **not** the rate a contract is refunded
+        // at, and typically three to four times larger than it.
         tieRate: 'number',
+        // The at-the-money rate this asset's lattice actually produces at the
+        // shortest horizon, measured on the published series. This is the number a
+        // broker sizes a payout with, and the one the refund ceiling bounds.
+        realisedRefundRate: 'number',
         excessKurtosis: 'number',
         dispersion: 'object',
       },
@@ -550,6 +557,15 @@ export const CONTRACT_HISTORY: readonly { readonly version: string; readonly dig
   // **Minor.** One key is added to every price and every candle; nothing a 3.2.0
   // client parses changes meaning.
   { version: '3.3.0', digest: '29f014d456a6c000' },
+  // The readiness audit of 2026-09-28: `GET /catalogue` serves
+  // `realisedRefundRate` beside `tieRate`, and the two are now defined. `tieRate`
+  // is a proxy — the fraction of horizons whose continuous return was smaller than
+  // one quantum — reading 11%–17% where the rate the engine refunds at is
+  // 3.5%–4.8%; it was the only one served and defined nowhere, so a broker sizing
+  // a payout from it was three to four times out.
+  //
+  // **Minor.** One key is added to an item a 3.3.0 client already parses.
+  { version: '3.4.0', digest: '841f6c8a05b0ff11' },
 ];
 
 export const API_VERSION: string = CONTRACT_HISTORY[CONTRACT_HISTORY.length - 1]!.version;

@@ -262,6 +262,7 @@ export async function fakeVenue(faults: Faults = {}): Promise<string> {
           logQuantum: 1e-5,
           meanIntervalMs: 400,
           tieRate: 0.1,
+          realisedRefundRate: 0.04,
           excessKurtosis: 3,
           dispersion: {},
         },

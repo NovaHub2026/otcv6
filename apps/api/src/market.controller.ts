@@ -800,6 +800,14 @@ export class MarketController implements BeforeApplicationShutdown {
       logQuantum: asset.instrument.logQuantum,
       meanIntervalMs: asset.evidence.meanIntervalMs,
       tieRate: asset.evidence.tieRate,
+      // **The number a broker sizes a payout with** (the readiness audit of
+      // 2026-09-28). `tieRate` is a continuous-return proxy — the fraction of
+      // horizons whose return was smaller than one quantum — and it reads 11%–17%
+      // where the rate the engine actually refunds is 3.5%–4.8%, 3.7x apart on
+      // eurusd-otc. It was the only one served, defined nowhere, and a broker
+      // reading it as "how often I refund" would price every payout wrong. The
+      // measured one is served beside it, and the contract defines both.
+      realisedRefundRate: asset.evidence.realisedRefundRate,
       excessKurtosis: asset.evidence.predictedExcessKurtosis,
       dispersion: {
         quarterlyLogSigma: dispersionLogSigma(asset.evidence),
@@ -898,9 +906,24 @@ export class MarketController implements BeforeApplicationShutdown {
     const finalThrough =
       newest === null ? null : Math.max(newest.instant, inForce?.asOf ?? newest.instant);
     if (finalThrough === null || instant > finalThrough) {
+      // **A retired market's refusal is not "not yet"** (the readiness audit of
+      // 2026-09-28). A broker is told that a 400 here means retry: ask again when
+      // the instant has been published. For a retired asset the bound is frozen at
+      // the last tick its final checkpoint wrote, so every instant past it
+      // answered the identical 400 for ever, and a settlement loop written to the
+      // guide would retry a contract that can never be settled — while
+      // retirement's whole promise is that the record stays readable and says so.
+      // The status stays 400 (the request named an instant this venue will never
+      // have a price for, which is the client's to fix) and the message says
+      // plainly that no later price will ever exist.
+      const retired = this.venue.isRetired(id);
       throw new BadRequestException(
         `No price has been published for ${id} at ${instant}` +
-          (finalThrough === null ? '.' : `; the price is final through ${finalThrough}.`),
+          (finalThrough === null ? '.' : `; the price is final through ${finalThrough}.`) +
+          (retired
+            ? ` ${id} is retired: its record ends there and no later price will ever exist, ` +
+              `so this instant is not a retry — settle nothing against it.`
+            : ''),
       );
     }
     // **Inside a seam, the price in force is still a price** (ADR-0021, the Human

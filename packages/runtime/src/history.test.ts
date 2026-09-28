@@ -305,6 +305,53 @@ function foldCandlesForTest(target: '1h' | '4h' | '1d', source: readonly Candle[
   return foldCandles(timeframeById(target), source);
 }
 
+/**
+ * **A coarse bucket folded across a hole is not served** (the readiness audit of
+ * 2026-09-28). `refreshRollup` refuses to store an hour whose minutes are not
+ * sequence-contiguous, and this read had no such rule, so every coarser bar
+ * folded the hole in silently. Measured on the live venue: a served daily bar was
+ * byte for byte the one surviving hourly bar of that day, labelled a whole day,
+ * with a low 54 fifth-decimal pips above the day's true low, the wrong open, and
+ * a tick count of 1,377 against the minute tier's 4,783 — internally consistent,
+ * so nothing in the response gave it away, and `/price?at=` inside the day
+ * answered a price *below* that bar's low.
+ */
+describe('a hole in the source tier withholds every bucket folded across it', () => {
+  const stream = ticks(50_400, 6_000);
+  const base = flatten(recordAll(stream));
+  const window = { from: epochMillis(0), to: epochMillis(ORIGIN + 5 * 86_400_000) };
+
+  it('serves the whole minute bars either side and no day or four-hour bar across the hole', async () => {
+    const history = new InMemoryCandleHistory();
+    // A hole the width of an hour, left where a kill or a withheld hour leaves
+    // one: the bars either side are whole, and their sequences do not touch.
+    const hourOfBars = Math.floor(3_600_000 / 60_000);
+    const cut = base.findIndex((bar) => bar.openInstant >= ORIGIN + 26 * 3_600_000);
+    const kept = [...base.slice(0, cut), ...base.slice(cut + hourOfBars)];
+    expect(kept.length).toBeLessThan(base.length);
+    await history.append('eurusd', HISTORY_BASE_TIMEFRAME, kept);
+    await refreshRollup(history, 'eurusd');
+
+    const holeAt = kept[cut]!.openInstant;
+    for (const target of ['1d', '4h'] as const) {
+      const read = await readTimeframe(history, 'eurusd', target, window.from, window.to);
+      const span = target === '1d' ? 86_400_000 : 14_400_000;
+      const across = read.filter(
+        (bar) => bar.openInstant <= holeAt && holeAt < bar.openInstant + span,
+      );
+      expect(across, `${target} served a bucket folded across the hole`).toEqual([]);
+      // And the tiers that do not fold across it are still served.
+      expect(read.length, `${target} served nothing at all`).toBeGreaterThan(0);
+    }
+    // The minute tier still serves its own whole bars either side of the hole:
+    // a gap between two whole bars is a discontinuity a client can see in the
+    // sequences, not a bar to withhold.
+    const minutes = await readTimeframe(history, 'eurusd', '1m', window.from, window.to);
+    expect(minutes.some((bar) => bar.openInstant < holeAt)).toBe(true);
+    expect(minutes.some((bar) => bar.openInstant >= holeAt)).toBe(true);
+  });
+});
+
 describe('a recorder that begins inside a minute never stores that minute (a5-01)', () => {
   // Six minutes at six seconds a tick: ten ticks to the minute.
   const stream = ticks(60);
@@ -509,6 +556,42 @@ describe('the leading edge of a coarser read does not depend on the window (a5-0
       expect(bars.length).toBeGreaterThan(0);
       for (const bar of bars) expect(bar.openInstant, target).toBeLessThan(to);
       expect(bars[bars.length - 1]!.openInstant).toBe(to - timeframeById(target).durationMs);
+    }
+  });
+
+  /**
+   * **And none opening before `from`** (the readiness audit of 2026-09-28). The
+   * read snaps *both* edges outward so the buckets holding `from` and `to` can be
+   * folded, and clipped only the trailing one — so the same paging defect the test
+   * above pins on the `to` side was live on the `from` side: measured on the venue,
+   * two contiguous five-minute pages at an unaligned boundary both returned the
+   * boundary candle.
+   */
+  it('returns no bar opening before `from`, so adjacent pages do not overlap', async () => {
+    const history = await stored(1);
+    for (const target of ['30m', '1h'] as const) {
+      const span = timeframeById(target).durationMs;
+      // A boundary deliberately inside a bucket, which is where a fixed-window
+      // pager lands unless it happens to align.
+      const boundary = epochMillis(T10 + span + Math.floor(span / 3));
+      const firstPage = await readTimeframe(history, 'x', target, T10, boundary);
+      const secondPage = await readTimeframe(
+        history,
+        'x',
+        target,
+        boundary,
+        epochMillis(T10 + 4 * span),
+      );
+      for (const bar of secondPage) {
+        expect(
+          bar.openInstant,
+          `${target}: a page returned a bar opening before its from`,
+        ).toBeGreaterThanOrEqual(boundary);
+      }
+      const overlap = secondPage.filter((bar) =>
+        firstPage.some((other) => other.openInstant === bar.openInstant),
+      );
+      expect(overlap, `${target}: adjacent pages overlap`).toEqual([]);
     }
   });
 });

@@ -590,11 +590,57 @@ export async function readTimeframe(
   const folded = source.id === target ? [...stored] : foldCandles(wanted, stored);
   if (folded.length === 0) return [];
 
+  // **A bucket folded across a hole is not served** (the readiness audit of
+  // 2026-09-28). `refreshRollup` refuses to store an hour whose minutes are not
+  // sequence-contiguous — the hour a kill fell in, or one the rollup itself
+  // withheld — and this read had no such rule, so every coarser bar folded the
+  // hole in silently. Measured on the live venue: a served 1d bar was byte for
+  // byte the single surviving hourly bar of that day, labelled a whole day, with
+  // a low 54 fifth-decimal pips above the day's true low, an open from the wrong
+  // hour and a tick count of 1,377 against the minute tier's 4,783 — and
+  // internally consistent, so nothing in the response gave it away. The chart
+  // then contradicted settlement: `/price?at=` inside the day answered a price
+  // *below* the served day bar's low.
+  //
+  // Withheld rather than mended, as everywhere else on this path: a wrong candle
+  // is indistinguishable from a real one and a missing one is not (PH-38.4).
+  //
+  // Only where there is folding. At the base tier each stored bar is whole by
+  // itself and a gap *between* two of them is a recorded discontinuity the client
+  // can see in the sequences — that is the minute tier doing its job, not a bar
+  // to withhold (`refreshRollup` says the same thing: a quiet minute prints no
+  // bar and the sequences on either side still touch).
+  const holes = new Set<number>();
+  if (source.id !== target) {
+    for (let i = 1; i < stored.length; i += 1) {
+      if (stored[i]!.firstSequence !== stored[i - 1]!.lastSequence + 1) {
+        holes.add(bucketStart(stored[i - 1]!.openInstant, wanted));
+        holes.add(bucketStart(stored[i]!.openInstant, wanted));
+      }
+    }
+  }
+
   // The trailing bucket is whole only if the source has moved past its end.
   const head = await history.head(assetId, source.id);
   const covered = head === null ? -Infinity : head + source.durationMs;
+  // **Both edges are clipped, not one** (the readiness audit of 2026-09-28). The
+  // read snaps both outward so the buckets holding `from` and `to` can be folded,
+  // and clipped only the trailing one — so a client paging by fixed windows got
+  // the leading bucket again, which is the defect this function's own docstring
+  // says was fixed on the `to` side. Measured live at an unaligned boundary: two
+  // contiguous 5m pages both returned the boundary candle.
+  //
+  // `[from, to)` over the bar's **open instant**, which is what the contract says
+  // of both parameters: a bucket that opened before `from` is outside the window,
+  // however much of it the window covers. a5-04's rule is untouched — which
+  // buckets are whole does not depend on where the window starts — because this
+  // drops a bar for being outside the window, not for being short.
   let complete = folded.filter(
-    (bar) => bar.openInstant + wanted.durationMs <= covered && bar.openInstant < to,
+    (bar) =>
+      bar.openInstant + wanted.durationMs <= covered &&
+      bar.openInstant >= from &&
+      bar.openInstant < to &&
+      !holes.has(bar.openInstant),
   );
   if (complete.length === 0) return [];
 

@@ -45,13 +45,6 @@ async function bootstrap(): Promise<void> {
   // The instant comes from the venue's injected clock, not from `Date.now()`:
   // the no-ambient-time guardrail covers this file, and it caught the first
   // version of this line.
-  const marker = markLabState(
-    stateDir,
-    venue.now(),
-    `state-record/${String(STATE_RECORD_VERSION)}`,
-  );
-  logger.log(`this state directory is a simulation's: ${marker}`);
-
   // One writer here too (Cycle Audit 10: a3-07, a6-05). This process runs the
   // same `VenueService` against the same kind of directory, so it has the same
   // failure: two Labs on one directory each prime a feed from a record the
@@ -79,6 +72,26 @@ async function bootstrap(): Promise<void> {
     lock.releaseSync();
   });
   venue.holdWriterLock(lock);
+
+  // **Marked only once this process holds the directory** (the readiness audit of
+  // 2026-09-28). The mark was written before the lock was taken, so a Lab pointed
+  // at production's state directory by a mistyped `OTC_STATE_DIR` left
+  // `lab/composed-by-lab.json` behind even though it then refused to start — and
+  // production refuses to boot on a directory a simulation has marked, for ever,
+  // by design. Demonstrated end to end: the Lab exited 1 on the writer lock and
+  // the marker was on disk. The rationale in `labState.ts` is unchanged — the mark
+  // still goes down before this process publishes a single tick, which is the
+  // next line but one.
+  //
+  // The instant comes from the venue's injected clock, not from `Date.now()`:
+  // the no-ambient-time guardrail covers this file, and it caught the first
+  // version of this line.
+  const marker = markLabState(
+    stateDir,
+    venue.now(),
+    `state-record/${String(STATE_RECORD_VERSION)}`,
+  );
+  logger.log(`this state directory is a simulation's: ${marker}`);
 
   venue.applyOverlays(await app.get<AssetRegistry>('ASSET_REGISTRY').overlays());
   await venue.start();

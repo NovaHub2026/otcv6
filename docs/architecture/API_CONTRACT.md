@@ -1,8 +1,8 @@
 # API Contract
 
 Type: SUPPORTING DOCUMENTATION (generated; do not edit by hand)
-Version: 3.3.0
-Digest: 29f014d456a6c000
+Version: 3.4.0
+Digest: 841f6c8a05b0ff11
 Source: `apps/api/src/contract.ts` — rendered by `npm run contract:render`; held to the controller by `contract.test.ts`
 
 ---
@@ -131,6 +131,7 @@ Response: a JSON array; each item:
 | `logQuantum` | `number` |
 | `meanIntervalMs` | `number` |
 | `tieRate` | `number` |
+| `realisedRefundRate` | `number` |
 | `excessKurtosis` | `number` |
 | `dispersion` | `object` |
 
