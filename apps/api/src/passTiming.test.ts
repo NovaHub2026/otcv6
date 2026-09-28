@@ -109,3 +109,74 @@ describe('a pass says where it spent its time (PH-40.5)', () => {
     await v.stop();
   });
 });
+
+/**
+ * **The engine's own maintenance must not cost thirty markets their continuity**
+ * (the readiness audit of 2026-09-28).
+ *
+ * `advanceDetailed` stamps every market with the clock reading the pass began at,
+ * so everything the pass did afterwards — the record write, the publish, the
+ * checkpoint — was charged to the *next* advance's fifteen-second catch-up bound.
+ * On the live venue a 17.3 s checkpoint therefore made all thirty markets refuse
+ * their next advance: thirty reopenings, thirty seams, a hundred thousand
+ * sequence numbers burned per asset and every stream subscriber dropped,
+ * seventeen minutes after a clean boot, with no external cause an operator could
+ * fix. It scales the wrong way with a broker's storage: the slower the volume's
+ * fsync, the more certain it is.
+ */
+describe('a slow checkpoint does not seam the markets it was checkpointing', () => {
+  const slowVenue = async (
+    costMs: number,
+    clock: SteppableClock,
+  ): Promise<{ service: VenueService; store: SlowSaves }> => {
+    const store = new SlowSaves(clock, costMs);
+    const service = await venue(store, clock);
+    return { service, store };
+  };
+
+  it('publishes on through a checkpoint slower than a pass, with no seam and no reopening', async () => {
+    const clock = new SteppableClock(GENESIS);
+    // Three markets, six seconds a save: an eighteen-second checkpoint, longer
+    // than the fifteen-second bound the next advance is measured against.
+    const { service, store } = await slowVenue(6_000, clock);
+    for (let i = 0; i < 4; i += 1) {
+      clock.advance(durationMillis(1_000));
+      await service.tick();
+    }
+    store.slow = true;
+    for (let i = 0; i < 8; i += 1) {
+      clock.advance(durationMillis(1_000));
+      await service.tick();
+    }
+    store.slow = false;
+    expect(service.counters.passPhaseMaxMs.checkpoint).toBeGreaterThanOrEqual(18_000);
+    expect(service.counters.reopenings, 'the engine seamed its own markets').toBe(0);
+    expect(service.notReadyReason, 'a slow checkpoint made the venue unready').toBeNull();
+    const controller = new MarketController(service);
+    for (const asset of assets) {
+      expect(await controller.seams(asset.definition.id), asset.definition.id).toEqual([]);
+    }
+    // And it published through it: the market is continuous (INV-008).
+    expect(service.counters.ticksPublished).toBeGreaterThan(0);
+    await service.stop();
+  }, 60_000);
+
+  it('still seams when a pass outruns the bound by more than the bound', async () => {
+    const clock = new SteppableClock(GENESIS);
+    // Twenty seconds a save, three markets: a minute in one checkpoint, four
+    // times the bound. Forgiving that would fill a minute of ticks in silently.
+    const { service, store } = await slowVenue(20_000, clock);
+    for (let i = 0; i < 4; i += 1) {
+      clock.advance(durationMillis(1_000));
+      await service.tick();
+    }
+    store.slow = true;
+    clock.advance(durationMillis(1_000));
+    await service.tick();
+    store.slow = false;
+    clock.advance(durationMillis(1_000));
+    await service.tick();
+    expect(service.counters.reopenings, 'a minute-long pass was forgiven').toBeGreaterThan(0);
+    await service.stop();
+  }, 60_000);
+});

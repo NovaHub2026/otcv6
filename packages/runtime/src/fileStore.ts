@@ -1,6 +1,6 @@
 import { mkdir, readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
-import { replaceFileAtomically } from './atomicFile.js';
+import { replaceFileAtomically, replaceFilesAtomically } from './atomicFile.js';
 import { CorruptRecordError, type MarketStateRecord, type StateStore } from './state.js';
 
 /**
@@ -114,6 +114,19 @@ export class FileStateStore implements StateStore {
   async save(record: MarketStateRecord): Promise<void> {
     await mkdir(this.directory, { recursive: true });
     await replaceFileAtomically(this.#pathFor(record.assetId), JSON.stringify(record));
+  }
+
+  /** Every checkpoint written and fsynced, then one fsync of the directory. */
+  async saveAll(records: readonly MarketStateRecord[]): Promise<void> {
+    if (records.length === 0) return;
+    await mkdir(this.directory, { recursive: true });
+    await replaceFilesAtomically(
+      this.directory,
+      records.map((record) => ({
+        name: path.basename(this.#pathFor(record.assetId)),
+        data: JSON.stringify(record),
+      })),
+    );
   }
 
   /**

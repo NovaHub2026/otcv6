@@ -291,6 +291,25 @@ export class HostedMarket {
   }
 
   /** Publish every tick due at or before `now`. */
+  /**
+   * Record that this runtime was awake and watching until `now`, without asking
+   * for a tick (2026-09-28).
+   *
+   * The catch-up bound measures the interval since this runtime last *looked at
+   * the clock*, and it looks at it continuously while it works — but only
+   * `advanceTo` used to move the marker, so everything a pass did after the
+   * advance (its record write, its publish, its checkpoint) was charged to the
+   * next advance's bound. A 17.3 s checkpoint therefore made every market refuse
+   * its next advance and take a seam nothing outside the process had caused.
+   *
+   * Forward only, and never past a reading the market has already advanced to.
+   */
+  observedUntil(now: EpochMillis): void {
+    if (this.#lastAdvancedAt === null || now > this.#lastAdvancedAt) {
+      this.#lastAdvancedAt = now;
+    }
+  }
+
   advanceTo(now: EpochMillis): Tick[] {
     const published: Tick[] = [];
     // Always defined: falls back to where the engine itself starts, so the bound

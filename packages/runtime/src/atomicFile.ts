@@ -80,6 +80,35 @@ export async function replaceFileAtomically(target: string, data: string): Promi
 }
 
 /**
+ * Replace many files in one directory: each one atomically and durably, and the
+ * directory synced **once** at the end rather than once per file.
+ *
+ * Every file is written and fsynced before any rename, so a power loss leaves
+ * each target either whole-old or whole-new — the property `replaceFileAtomically`
+ * gives, kept. What is dropped is the repetition: thirty checkpoints cost thirty
+ * directory fsyncs where one covers every rename into it, and the venue writes
+ * all thirty every five seconds. Measured on this machine's state filesystem,
+ * thirty replacements went from 60 fsyncs to 31, and on a contended volume the
+ * checkpoint that cost 11.4 s of a 15 s catch-up bound is what made that matter
+ * (the readiness audit of 2026-09-28).
+ */
+export async function replaceFilesAtomically(
+  directory: string,
+  files: readonly { readonly name: string; readonly data: string }[],
+): Promise<void> {
+  if (files.length === 0) return;
+  const written: { temporary: string; target: string }[] = [];
+  for (const file of files) {
+    const target = path.join(directory, file.name);
+    const temporary = temporaryPathFor(target);
+    await writeDurably(temporary, file.data);
+    written.push({ temporary, target });
+  }
+  for (const { temporary, target } of written) await rename(temporary, target);
+  await syncDirectory(directory);
+}
+
+/**
  * Create `target` with `data` only if it does not exist.
  *
  * Returns false, and leaves nothing behind, when the target already exists.

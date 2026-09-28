@@ -1120,7 +1120,8 @@ registra lo mismo. **Restaura siempre la copia más reciente.**
   `otc_pass_{advance,record,publish,checkpoint}_max_seconds` (la fase más lenta de
   una pasada desde el arranque: dice **dónde** se fue el tiempo),
   `otc_slow_passes_total` (pasadas de más de 5 s; cada una se registra además en
-  el log como `SLOW PASS` con su desglose, como mucho una vez por minuto) y
+  el log como `SLOW PASS` con su desglose, como mucho una vez por minuto —**salvo
+  una que cruce el límite de 15 s, que se registra siempre**) y
   `otc_market_reopenings_total` (costuras que el motor abrió solo). Alerta sobre
   los dos últimos: un motor con su máquina para él los mantiene en cero
   ([SEAM-RATE-2026-09-27](../evidence/SEAM-RATE-2026-09-27.md)).

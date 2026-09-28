@@ -146,6 +146,17 @@ export const DEFAULT_SEQUENCE_LEASE = 100_000;
 export interface StateStore {
   load(assetId: string): Promise<MarketStateRecord | null>;
   save(record: MarketStateRecord): Promise<void>;
+  /**
+   * Save many checkpoints, each as durably as {@link StateStore.save} does.
+   *
+   * Optional, and a caller that finds it absent saves one at a time. A store
+   * whose writes reach a filesystem implements it to pay the directory's fsync
+   * once for the batch instead of once per checkpoint: the venue writes every
+   * asset every five seconds, and on a contended volume that repetition is what
+   * took a checkpoint to 11.4 s of a 15 s catch-up bound and seamed thirty
+   * markets (the readiness audit of 2026-09-28).
+   */
+  saveAll?(records: readonly MarketStateRecord[]): Promise<void>;
   list(): Promise<readonly string[]>;
 }
 

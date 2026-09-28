@@ -28,6 +28,7 @@ import {
   type PriceFrame,
   type HostedMarket,
   type AssetFailure,
+  type MarketStateRecord,
   type RecordedSeam,
   type RecoveryOutcome,
   type SignSourceFactory,
@@ -67,6 +68,13 @@ import { PublicationService } from './publication.service.js';
  * intervals, and costs four passes a second instead of eight hundred.
  */
 const STALLED_BACKOFF_MS = 250;
+
+/** What one checkpoint will write, decided before any of it is written. */
+interface CheckpointPlan {
+  readonly at: number;
+  readonly records: readonly MarketStateRecord[];
+  readonly trim: readonly string[];
+}
 
 /** The phases of a publish pass, in order (PH-40.5). */
 export const PASS_PHASES = ['advance', 'record', 'publish', 'checkpoint'] as const;
@@ -1500,12 +1508,47 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     if (this.clock.now() - this.lastCheckpointAt >= this.checkpointEveryMs) {
       await this.checkpoint();
     }
+    const done = this.clock.now();
     this.#notePass(advancedTo, {
       advance: advanced - advancedTo,
       record: recorded - advanced,
       publish: offered - recorded,
-      checkpoint: this.clock.now() - offered,
+      checkpoint: done - offered,
     });
+    // **The bound measures time nobody watched, not time this process spent
+    // working** (2026-09-28). `advanceDetailed` stamps every market with the
+    // clock reading this pass began at, so the pass's own record write, publish
+    // and checkpoint were all charged to the *next* advance's fifteen-second
+    // catch-up bound. On the live venue a 17.3 s checkpoint therefore made every
+    // one of the thirty markets refuse its next advance and reopen — thirty
+    // seams, a hundred thousand sequence numbers burned per asset, every stream
+    // subscriber dropped, seventeen minutes after a clean boot, with no external
+    // cause an operator could fix. The interval was not unobserved: this process
+    // was awake in it, and says so here.
+    //
+    // **Bounded by the bound itself.** At most one bound's worth of a pass's own
+    // work is forgiven, so no interval longer than the bound is ever filled in
+    // without a seam — ADR-0010's guarantee, kept — while the ordinary case of a
+    // slow disk stops costing thirty markets their continuity. A pass that took
+    // minutes still seams, and says so: the SLOW PASS line is never deduplicated
+    // past the bound.
+    //
+    // What a broker sees in the forgiven case is better than a seam, and PH-40.2
+    // is why: `asOf` does not move past what has been published, so a settlement
+    // whose final millisecond falls inside the window is answered `400 — not yet`
+    // and retried, then answered with the true price, instead of crossing a
+    // recorded discontinuity with its subscribers dropped.
+    //
+    // **Only the markets that advanced.** A market whose advance was refused
+    // published nothing in this interval, so extending its marker would forgive
+    // exactly the late burst the bound exists to refuse — and would clear the
+    // stall an operator needs to see. Reached for as the `inForce` loop above
+    // does, from the same `failed` set.
+    const watched = epochMillis(Math.min(done, advancedTo + DEFAULT_MAX_CATCH_UP_MS));
+    for (const assetId of this.venue.assetIds) {
+      if (failed.has(assetId) || this.stalled.has(assetId)) continue;
+      this.venue.marketFor(assetId).observedUntil(watched);
+    }
   }
 
   /**
@@ -1528,12 +1571,23 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     }
     if (total < SLOW_PASS_MS) return;
     this.slowPasses += 1;
-    if (this.lastSlowPassLogged !== null && startedAt - this.lastSlowPassLogged < 60_000) return;
+    if (
+      total < MAX_CATCH_UP_S * 1_000 &&
+      this.lastSlowPassLogged !== null &&
+      startedAt - this.lastSlowPassLogged < 60_000
+    ) {
+      return;
+    }
     this.lastSlowPassLogged = startedAt;
     const split = phases.checkpoint > 0 ? this.lastCheckpointSplit : null;
+    const pastTheBound = total >= MAX_CATCH_UP_S * 1_000;
+    // **Never deduplicated past the bound** (2026-09-28): the once-a-minute rule
+    // suppressed the 17.3 s pass that seamed thirty markets, because a 6.7 s one
+    // had been logged thirty-four seconds earlier, so the worst event this
+    // process ever had produced no line at all.
     this.logger.warn(
       `SLOW PASS — ${(total / 1_000).toFixed(1)}s against a ${String(MAX_CATCH_UP_S)}s ` +
-        `catch-up bound: ` +
+        `catch-up bound${pastTheBound ? ' — PAST IT, every market will seam' : ''}: ` +
         PASS_PHASES.map((phase) => `${phase} ${(phases[phase] / 1_000).toFixed(1)}s`).join(', ') +
         (split === null
           ? ''
@@ -1673,19 +1727,47 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
    * (see below), and anything at all once this process has lost the state
    * directory's writer lock.
    */
+  /**
+   * Persist every market that is actually publishing, and renew the lock.
+   *
+   * Two things are deliberately *not* checkpointed: a market that is stalled
+   * (see `#planCheckpoint`), and anything at all once this process has lost the
+   * state directory's writer lock.
+   *
+   * Split in two since 2026-09-28, and the split is the point. What a checkpoint
+   * *says* is decided synchronously from state already in memory
+   * (`#planCheckpoint`); what it *writes* is I/O (`#writeCheckpoint`). A pass
+   * fires the write and goes on, because the write's duration was being charged
+   * to the next pass's catch-up bound: `advanceDetailed` stamps each market with
+   * the clock reading the pass began at, and a checkpoint that takes longer than
+   * the bound therefore makes every market refuse its next advance. It happened
+   * on the live venue seventeen minutes after a clean boot — a 17.3 s checkpoint,
+   * thirty simultaneous reopenings, thirty seams, a hundred thousand sequence
+   * numbers burned per asset, every stream subscriber dropped — with no external
+   * cause an operator could fix, and the once-a-minute log dedup suppressed the
+   * line for the worst pass of all (the readiness audit of 2026-09-28).
+   *
+   * Callers that need the writes on disk before they continue — `stop()`, and
+   * every test — await this method, which still does both halves.
+   */
   async checkpoint(): Promise<void> {
-    if (this.venue === null) return;
-    // The heartbeat, and the check, before anything is written (Cycle Audit 10:
-    // a6-05). A process that has lost the state directory must not write a
-    // checkpoint, trim the record or flush a bar into it: whoever holds the lock
-    // now is the writer, and two writers on one directory is the failure this
-    // exists to prevent.
-    if (!(await this.#stillTheWriter())) return;
-    const now = this.clock.now();
-    // Where the checkpoint's own time goes, for the SLOW PASS line (PH-40.5):
-    // the first slow pass the instrumentation caught on the live venue was a
-    // 7.7 s checkpoint, and a checkpoint is three kinds of work.
-    const split = { save: 0, trim: 0, history: 0 };
+    const plan = this.#planCheckpoint();
+    if (plan === null) return;
+    await this.#writeCheckpoint(plan);
+    // The cadence is measured from what the checkpoint *says*, not from when its
+    // last byte landed, so a slow write does not push the next one further out.
+    this.lastCheckpointAt = plan.at;
+  }
+
+  /**
+   * What the next checkpoint will write, from state in memory. Never touches the
+   * disk, so a pass can decide a checkpoint without waiting for one.
+   */
+  #planCheckpoint(): CheckpointPlan | null {
+    if (this.venue === null) return null;
+    const at = this.clock.now();
+    const records: MarketStateRecord[] = [];
+    const trim: string[] = [];
     let paidAtStart = false;
     for (const assetId of this.venue.assetIds) {
       // **A stalled market's checkpoint is not refreshed (Cycle Audit 10:
@@ -1716,39 +1798,64 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       if (this.stalled.has(assetId)) continue;
       // The mark goes into the record before it is cleared, so a checkpoint
       // taken mid-push carries it and the next boot seams rather than
-      // regenerating ticks the keystream would sign differently.
+      // regenerating ticks the keystream would sign differently. It is *read*
+      // here and cleared only once the write has happened.
       const controlled = this.control?.controlledSince(assetId) ?? false;
-      const saving = this.clock.now();
-      await this.store.save(
-        checkpointMarket(this.venue.marketFor(assetId), assetId, now, undefined, controlled),
+      records.push(
+        checkpointMarket(this.venue.marketFor(assetId), assetId, at, undefined, controlled),
       );
-      split.save += this.clock.now() - saving;
-      this.control?.checkpointTaken(assetId);
       // The record's bound, amortised (PH-40.5). Trimming deletes a handful of
       // rows, but finding the boundary is a COUNT and an OFFSET walk over the
       // whole window — 250,000 rows an asset — and on every checkpoint that was
       // measured at 6.7 s of synchronous SQLite in 40 s on the live venue, 17%
-      // of the process, between the awaits of the pass it delays. So an asset
-      // is trimmed once it has appended a hundredth of its window since the
-      // last trim (every checkpoint for a small window, as before).
+      // of the process. So an asset is trimmed once it has appended a hundredth
+      // of its window since the last trim (every checkpoint for a small window,
+      // as before).
       //
       // **And each asset owes one trim at a process's start, paid one asset a
-      // checkpoint.** A process that restarts before any asset appends that
-      // much would otherwise let the record grow by a hundredth per restart,
-      // for ever. The first version paid them all on the first checkpoint, and
-      // after a long outage — the record's pages no longer in memory — that one
-      // checkpoint took 12.1 s, 11.3 of them trimming, three seconds short of
-      // the catch-up bound; after fourteen hours it went past it and reopened
-      // every market. One cold trim is about 0.4 s.
+      // checkpoint.** A process that restarts before any asset appends that much
+      // would otherwise let the record grow by a hundredth per restart, for
+      // ever. Paying them all on the first checkpoint took 12.1 s after a long
+      // outage, with the record's pages no longer in memory — 11.3 of them
+      // trimming, three seconds short of the bound. One cold trim is about 0.4 s.
       const appended = this.appendedSinceTrim.get(assetId) ?? 0;
       const owed = this.trimOwed.has(assetId) && !paidAtStart;
       if (appended >= trimEvery(this.recordTicks) || owed) {
-        const trimming = this.clock.now();
-        await this.record?.trim(assetId, this.recordTicks);
-        split.trim += this.clock.now() - trimming;
-        this.appendedSinceTrim.set(assetId, 0);
-        if (this.trimOwed.delete(assetId) && owed) paidAtStart = true;
+        trim.push(assetId);
+        if (owed) paidAtStart = true;
       }
+    }
+    return { at, records, trim };
+  }
+
+  /** Put a plan on disk: the checkpoints, the record's trim, the closed bars. */
+  async #writeCheckpoint(plan: CheckpointPlan): Promise<void> {
+    // The heartbeat, and the check, before anything is written (Cycle Audit 10:
+    // a6-05). A process that has lost the state directory must not write a
+    // checkpoint, trim the record or flush a bar into it: whoever holds the lock
+    // now is the writer, and two writers on one directory is the failure this
+    // exists to prevent.
+    if (!(await this.#stillTheWriter())) return;
+    // Where the checkpoint's own time goes, for the SLOW PASS line (PH-40.5):
+    // the first slow pass the instrumentation caught on the live venue was a
+    // 7.7 s checkpoint, and a checkpoint is three kinds of work.
+    const split = { save: 0, trim: 0, history: 0 };
+    const saving = this.clock.now();
+    // One directory fsync for the batch where there were thirty, when the store
+    // can do it; a store that cannot is saved one checkpoint at a time.
+    if (this.store.saveAll !== undefined) await this.store.saveAll(plan.records);
+    else for (const record of plan.records) await this.store.save(record);
+    split.save = this.clock.now() - saving;
+    // Cleared only now: a plan whose write never happened must leave the control
+    // mark set, which is the conservative direction — the mark makes the next
+    // boot seam rather than regenerate ticks under a different keystream.
+    for (const record of plan.records) this.control?.checkpointTaken(record.assetId);
+    for (const assetId of plan.trim) {
+      const trimming = this.clock.now();
+      await this.record?.trim(assetId, this.recordTicks);
+      split.trim += this.clock.now() - trimming;
+      this.appendedSinceTrim.set(assetId, 0);
+      this.trimOwed.delete(assetId);
     }
     // Bars that closed since the last checkpoint. On the same cadence because a
     // minute bar closes at most once a minute: flushing per tick would be
@@ -1757,7 +1864,6 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     await this.history?.flush();
     split.history = this.clock.now() - flushing;
     this.lastCheckpointSplit = split;
-    this.lastCheckpointAt = now;
   }
 
   /**
