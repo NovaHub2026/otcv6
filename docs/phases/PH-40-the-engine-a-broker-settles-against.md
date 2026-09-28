@@ -107,7 +107,9 @@ before it was void: the host slept 1 h 48 min inside the statistical suite and a
 test's own timer fired on the clock jump. Hosted CI on the first merge
 (`f9b8d14`) was red on one Lab browser flow that normally takes a second and did
 not arm; nothing in PH-40 touches that path, and its failure now reports what
-the plan said.
+the plan said. Last, the pass was instrumented to name its slow phase (PH-40.5
+§6), gated in full on `45164d9`: `GATE_EXIT=0`, 182 unit files / 3,685 tests,
+the floors held, 47 statistical files / 411 tests, probe timestamps continuous.
 
 ## 8. What is left, and whose it is
 
