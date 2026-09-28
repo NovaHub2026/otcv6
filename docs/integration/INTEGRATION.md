@@ -1099,7 +1099,16 @@ registra lo mismo. **Restaura siempre la copia más reciente.**
   `503` con el motivo si no. Apunta tu orquestador a `ready` y tu reinicio a `live`.
 - `GET /metrics` sirve los contadores en formato Prometheus: mercados, parados,
   `otc_ready`, ticks publicados, suscriptores del stream, presupuesto de replay,
-  uptime, memoria residente y la cabeza del registro por activo.
+  uptime, memoria residente y la cabeza del registro por activo. **Los que avisan
+  de una costura antes de que ocurra** (PH-39, PH-40.5):
+  `otc_seconds_since_last_pass` (sano: muy por debajo de 1 s; el límite es 15 s),
+  `otc_pass_{advance,record,publish,checkpoint}_max_seconds` (la fase más lenta de
+  una pasada desde el arranque: dice **dónde** se fue el tiempo),
+  `otc_slow_passes_total` (pasadas de más de 5 s; cada una se registra además en
+  el log como `SLOW PASS` con su desglose, como mucho una vez por minuto) y
+  `otc_market_reopenings_total` (costuras que el motor abrió solo). Alerta sobre
+  los dos últimos: un motor con su máquina para él los mantiene en cero
+  ([SEAM-RATE-2026-09-27](../evidence/SEAM-RATE-2026-09-27.md)).
 - **Límite de peticiones**: `OTC_RATE_LIMIT_PER_MINUTE` (600 por defecto, `0` lo
   desactiva) por dirección de cliente; el exceso recibe `429` con `Retry-After`.
   Una conexión de stream cuenta una vez; sus tramas no. **Las tres sondas de
@@ -1116,16 +1125,15 @@ registra lo mismo. **Restaura siempre la copia más reciente.**
   propio cubo.
 - La credencial de administración es `OTC_ADMIN_TOKEN` (a6-01): sin ella toda
   escritura se rechaza; el proxy corta las rutas además, no en su lugar.
-- **Si la máquina estuvo suspendida, migrada en vivo o parada más de 15 s**, los
-  mercados vuelven `parados` con `Market is Ns behind the clock, past the 15s
-catch-up bound`: el motor se niega a inventar el intervalo que nadie observó
-  (ADR-0010). **La solución es reiniciar el proceso**, y solo eso: mientras un
-  mercado está parado su punto de control ya no se refresca, así que el
-  siguiente arranque lo ve viejo, cose una discontinuidad (`seam`), la deja
-  anotada en el registro y sigue publicando. No hace falta —ni conviene— mover
-  el directorio de estado: eso tira el registro. Lo que queda al otro lado de la
-  costura sigue ahí, legible por secuencia y por instante; lo que no existe es
-  el rato que nadie vio.
+- **Si la máquina estuvo suspendida, migrada en vivo o parada más de 15 s**, el
+  motor se niega a inventar el intervalo que nadie observó (ADR-0010) y **reabre
+  cada mercado solo** (ADR-0020): continúa desde su último precio publicado, en un
+  keystream nuevo, con el hueco anotado en el registro como una costura. No hace
+  falta reiniciar ni tocar nada, y un contrato que la cruce se liquida en su
+  milisegundo final (ADR-0021). `otc_market_reopenings_total` lo cuenta. Si ese
+  contador sube con la máquina despierta, mira `otc_pass_*_max_seconds` para ver
+  qué fase de la pasada se come el tiempo. No hace falta —ni conviene— mover el
+  directorio de estado: eso tira el registro.
 
 ### systemd
 

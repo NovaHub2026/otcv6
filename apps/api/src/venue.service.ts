@@ -16,6 +16,7 @@ import { ASSET_CATALOGUE, type RegisteredAsset } from '@otc/engine';
 import {
   CatchUpTooLargeError,
   checkpointMarket,
+  DEFAULT_MAX_CATCH_UP_MS,
   DEFAULT_RECORD_TICKS,
   MemoryStateStore,
   MIN_REOPEN_INTERVAL_MS,
@@ -66,6 +67,13 @@ import { PublicationService } from './publication.service.js';
  * intervals, and costs four passes a second instead of eight hundred.
  */
 const STALLED_BACKOFF_MS = 250;
+
+/** The phases of a publish pass, in order (PH-40.5). */
+export const PASS_PHASES = ['advance', 'record', 'publish', 'checkpoint'] as const;
+export type PassPhase = (typeof PASS_PHASES)[number];
+/** A pass this slow is a third of the way to the catch-up bound, and is logged. */
+export const SLOW_PASS_MS = 5_000;
+const MAX_CATCH_UP_S = DEFAULT_MAX_CATCH_UP_MS / 1_000;
 
 /**
  * Consecutive failed passes before this venue stops calling itself ready
@@ -164,6 +172,11 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
    */
   private readonly reopenedAt = new Map<string, EpochMillis>();
   private readonly awaitingFirstTick = new Set<string>();
+  /** The slowest each phase of a pass has been since boot, in ms (PH-40.5). */
+  private readonly passPhaseMaxMs = new Map<PassPhase, number>();
+  /** Passes slower than {@link SLOW_PASS_MS} since boot. */
+  private slowPasses = 0;
+  private lastSlowPassLogged: number | null = null;
   /** Ticks each market appended to the record since its last trim; absent until the first. */
   private readonly appendedSinceTrim = new Map<string, number>();
   /** Automatic reopenings this process has taken, every asset, for `/metrics`. */
@@ -596,6 +609,8 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     readonly reopenings: number;
     readonly rearms: number;
     readonly msSinceLastPass: number | null;
+    readonly slowPasses: number;
+    readonly passPhaseMaxMs: Readonly<Record<PassPhase, number>>;
   } {
     let subscribers = 0;
     for (const id of this.assetIds) subscribers += this.feed.subscriberCount(id);
@@ -607,6 +622,10 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       reopenings: this.reopenings,
       rearms: this.rearms,
       msSinceLastPass: this.lastPassAt === null ? null : this.clock.now() - this.lastPassAt,
+      slowPasses: this.slowPasses,
+      passPhaseMaxMs: Object.fromEntries(
+        PASS_PHASES.map((phase) => [phase, this.passPhaseMaxMs.get(phase) ?? 0]),
+      ) as Record<PassPhase, number>,
     };
   }
 
@@ -1356,6 +1375,7 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     // away by the only caller that mattered.
     const advancedTo = epochMillis(this.clock.now());
     const { published, failures } = this.venue.advanceDetailed(advancedTo);
+    const advanced = this.clock.now();
     this.lastPublishedCount = published.length;
     for (const failure of failures) {
       // A market past its catch-up bound can never clear it by waiting — the
@@ -1384,6 +1404,7 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     // nothing for them, and the feed, the publisher and the history never see
     // a tick twice. A tick the record refuses is not published at all.
     const fresh = await this.#recordPass(published);
+    const recorded = this.clock.now();
     for (const [assetId, ticks] of fresh) {
       const since = this.appendedSinceTrim.get(assetId);
       if (since !== undefined) this.appendedSinceTrim.set(assetId, since + ticks.length);
@@ -1467,9 +1488,46 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       if (tick === undefined) continue;
       this.inForce.set(assetId, { tick, asOf: advancedTo });
     }
+    const offered = this.clock.now();
     if (this.clock.now() - this.lastCheckpointAt >= this.checkpointEveryMs) {
       await this.checkpoint();
     }
+    this.#notePass(advancedTo, {
+      advance: advanced - advancedTo,
+      record: recorded - advanced,
+      publish: offered - recorded,
+      checkpoint: this.clock.now() - offered,
+    });
+  }
+
+  /**
+   * Where a pass spent its time, kept where an operator reads it (PH-40.5).
+   *
+   * On this machine a pass sometimes took ten to sixteen seconds in the minutes
+   * after a boot — close to the catch-up bound, and past it once, which reopened
+   * every market — while the event loop kept answering. Neither CPU saturation
+   * nor a saturated disk reproduced it, and nothing was logged, so its cause was
+   * not established. The next occurrence names its phase instead: the slowest
+   * each phase has been since boot is exported, and a pass slower than
+   * {@link SLOW_PASS_MS} is logged with its breakdown, at most once a minute.
+   */
+  #notePass(startedAt: number, phases: Readonly<Record<PassPhase, number>>): void {
+    let total = 0;
+    for (const phase of PASS_PHASES) {
+      const ms = phases[phase];
+      total += ms;
+      if (ms > (this.passPhaseMaxMs.get(phase) ?? 0)) this.passPhaseMaxMs.set(phase, ms);
+    }
+    if (total < SLOW_PASS_MS) return;
+    this.slowPasses += 1;
+    if (this.lastSlowPassLogged !== null && startedAt - this.lastSlowPassLogged < 60_000) return;
+    this.lastSlowPassLogged = startedAt;
+    this.logger.warn(
+      `SLOW PASS — ${(total / 1_000).toFixed(1)}s against a ${String(MAX_CATCH_UP_S)}s ` +
+        `catch-up bound: ` +
+        PASS_PHASES.map((phase) => `${phase} ${(phases[phase] / 1_000).toFixed(1)}s`).join(', ') +
+        ` (${String(this.slowPasses)} slow since boot; logged at most once a minute)`,
+    );
   }
 
   /**

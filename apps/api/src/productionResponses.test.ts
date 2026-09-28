@@ -121,6 +121,14 @@ const METRIC_NAMES = new Set([
   // catch-up bound is defined on. A latency of this process's own loop, which is
   // as public as uptime.
   'otc_seconds_since_last_pass',
+  // PH-40.5: the slowest each phase of a pass has been, and how many passes
+  // were slow — latencies of this process's own loop, like the one above. They
+  // say how long the record, the feed and the disk took, never what was drawn.
+  'otc_pass_advance_max_seconds',
+  'otc_pass_record_max_seconds',
+  'otc_pass_publish_max_seconds',
+  'otc_pass_checkpoint_max_seconds',
+  'otc_slow_passes_total',
 ]);
 /** The only label a sample may carry, and its value is an asset id. */
 const METRIC_LABELS = new Set(['asset']);

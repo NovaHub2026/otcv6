@@ -278,6 +278,19 @@ export class MarketController implements BeforeApplicationShutdown {
             '# TYPE otc_seconds_since_last_pass gauge',
             `otc_seconds_since_last_pass ${(counters.msSinceLastPass / 1_000).toFixed(3)}`,
           ]),
+      // PH-40.5: where a pass spends its time. Passes of ten to sixteen seconds
+      // were seen after some boots with the cause unestablished; the phase that
+      // is slow is the first thing to know, and this is where it is kept.
+      // One gauge per phase rather than a label: the only label a sample here
+      // may carry is an asset id (INV-010, productionResponses.test.ts).
+      ...Object.entries(counters.passPhaseMaxMs).flatMap(([phase, ms]) => [
+        `# HELP otc_pass_${phase}_max_seconds The slowest the ${phase} phase of a publish pass has been, since boot.`,
+        `# TYPE otc_pass_${phase}_max_seconds gauge`,
+        `otc_pass_${phase}_max_seconds ${(ms / 1_000).toFixed(3)}`,
+      ]),
+      '# HELP otc_slow_passes_total Publish passes slower than five seconds, since boot.',
+      '# TYPE otc_slow_passes_total counter',
+      `otc_slow_passes_total ${String(counters.slowPasses)}`,
       '# HELP otc_stream_subscribers Open stream subscriptions, every market.',
       '# TYPE otc_stream_subscribers gauge',
       `otc_stream_subscribers ${String(counters.subscribers)}`,
