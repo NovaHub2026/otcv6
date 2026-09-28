@@ -181,6 +181,7 @@ displayPrecision`. A broker that shows fewer decimals than the engine
 | Refund per asset at 30 s, from the shipped catalogue               | **3,47%–4,78%**, mean **4,07%**, published as `realisedRefundRate`                                                                  |
 | A broker displaying fewer decimals than the engine publishes       | `usdchf-otc` refunds **16.0%** of 30 s contracts against settlement's 3.9% — [`BROKER-FIT-2026-09-27.md`](BROKER-FIT-2026-09-27.md) |
 | A quote one second stale, played in the direction of the move      | **56–61%** win rate at 30 s, against 54% break-even at an 85% payout                                                                |
+| The integration package's own links                                | **every target resolves**, across 56 delivered documents — the script refuses to build otherwise                                    |
 | Predictability                                                     | battery clean; the mirror test passes on the full stack                                                                             |
 | @@GATE@@                                                           |                                                                                                                                     |
 

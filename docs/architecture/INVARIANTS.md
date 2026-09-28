@@ -1,6 +1,8 @@
 # Invariant traceability
 
-The ten invariants in [CLAUDE.md](../../CLAUDE.md) are the product's promises. This
+The ten invariants — `PROJECT_INTRODUCTION.md` §29, restated in `CLAUDE.md` §3 —
+are the product's promises. (Named rather than linked: both are process documents
+of this repository, and neither ships in the integration package.) This
 document is the map from each promise to the executable evidence that discharges it.
 
 ## Why this document exists

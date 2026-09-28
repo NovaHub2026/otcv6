@@ -25,8 +25,8 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 it is the thing to read first**
 ([PH-40-READINESS-2026-09-28](docs/evidence/PH-40-READINESS-2026-09-28.md),
 [RELEASE-3.0.0](docs/evidence/RELEASE-3.0.0.md)). Twenty findings, every one
-inside a green gate, sixteen fixed with a guard watched failing, four written down
-for the broker. Contract **3.6.0**, digest `d94c5ab58d3ba40a`.
+inside a green gate, plus a twenty-first from building the package itself;
+seventeen fixed with a guard watched failing, four written down for the broker. Contract **3.6.0**, digest `d94c5ab58d3ba40a`.
 
 What a fresh session must not rebuild, and where the traps are:
 

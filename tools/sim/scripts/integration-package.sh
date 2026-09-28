@@ -22,7 +22,65 @@ git -C "$repo" archive --format=tar "$ref" | tar -x -C "$out"
 commit="$(git -C "$repo" rev-parse --short "$ref^{commit}")"
 # Process documents: how this repository is run, not how the engine is.
 rm -f "$out"/{CLAUDE.md,CURRENT_STATE.md,DOCS_INDEX.md,GOVERNANCE.md,PROJECT_CONTEXT.md,PROJECT_INTRODUCTION.md,SESSION_HANDOFF.md}
-rm -rf "$out"/docs/phases "$out"/docs/audits "$out"/docs/reports "$out"/docs/evidence "$out"/.github
+rm -rf "$out"/docs/phases "$out"/docs/audits "$out"/docs/reports "$out"/.github
+# **`docs/evidence` is not deleted wholesale any more** (the readiness audit of
+# 2026-09-28, finding 21). It was, and the two documents a broker actually reads
+# cite it — the refund table behind the payout advice, the seam rate, the tempo
+# record — so the delivered package carried seventeen dead links under sentences
+# claiming a measurement was reproducible. What a delivered document cites, the
+# package ships; the rest of the evidence tree, which records how this repository
+# verified itself, does not. Computed transitively, so a kept record's own
+# citations are kept too, and checked at the end of this script.
+python3 - "$out" <<'PYEOF'
+import pathlib, shutil, sys
+sys.path.insert(0, str(pathlib.Path(sys.argv[1]) / 'tools' / 'sim'))
+out = pathlib.Path(sys.argv[1])
+evidence = out / 'docs' / 'evidence'
+if evidence.is_dir():
+    import re
+    LINK = re.compile(r'\[[^\]]*\]\(([^)\s]+)\)')
+    def cited_from(files):
+        seen, frontier = set(), list(files)
+        while frontier:
+            nxt = []
+            for rel in frontier:
+                f = out / rel
+                if not f.is_file():
+                    continue
+                for target in LINK.findall(f.read_text(errors='replace')):
+                    if re.match(r'^(?:[a-z][a-z0-9+.-]*:|//)', target, re.I):
+                        continue
+                    resolved = (f.parent / target.split('#')[0]).resolve()
+                    try:
+                        rel_target = resolved.relative_to(out.resolve())
+                    except ValueError:
+                        continue
+                    if rel_target.parts[:2] != ('docs', 'evidence'):
+                        continue
+                    key = str(rel_target)
+                    if key not in seen:
+                        seen.add(key)
+                        nxt.append(key)
+            frontier = nxt
+        return seen
+    delivered = [
+        str(f.relative_to(out))
+        for f in out.rglob('*.md')
+        if 'evidence' not in f.parts and 'node_modules' not in f.parts
+    ]
+    keep = cited_from(delivered)
+    removed = 0
+    for f in sorted(evidence.rglob('*')):
+        if f.is_file() and str(f.relative_to(out)) not in keep:
+            f.unlink()
+            removed += 1
+    for d in sorted(evidence.rglob('*'), reverse=True):
+        if d.is_dir() and not any(d.iterdir()):
+            d.rmdir()
+    if not any(evidence.iterdir()):
+        shutil.rmtree(evidence)
+    print(f'evidence: {len(keep)} record(s) a delivered document cites kept, {removed} dropped')
+PYEOF
 # The guards that hold those documents; every other test ships and passes.
 rm -f "$out"/packages/core/src/guardrails/{documentation,stateConsistency,traceability}.test.ts
 # Process material a broker has no use for, and which names this repository's
@@ -78,9 +136,74 @@ out, block = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]).read_text()
 guide = out / 'docs' / 'integration' / 'INTEGRATION.md'
 guide.write_text(guide.read_text().replace('@@VERIFIED@@\n', block))
 PYEOF
-cp "$out/docs/integration/INTEGRATION.md" "$out/INTEGRATION.md"
+# **The copy at the root needs its links rewritten, not just copied** (the
+# readiness audit of 2026-09-28, finding 21): every relative link in the guide is
+# written from `docs/integration/`, so at the root `../architecture/API_CONTRACT.md`
+# — the file `README.md` tells the broker to read — resolves *outside the package*.
+python3 - "$out" <<'PYEOF'
+import pathlib, re, sys
+out = pathlib.Path(sys.argv[1])
+text = (out / 'docs' / 'integration' / 'INTEGRATION.md').read_text()
+def rewrite(match):
+    label, target = match.group(1), match.group(2)
+    if re.match(r'^(?:[a-z][a-z0-9+.-]*:|//|#)', target, re.I):
+        return match.group(0)
+    path, _, anchor = target.partition('#')
+    resolved = (pathlib.Path('docs/integration') / path).as_posix()
+    resolved = pathlib.posixpath.normpath(resolved)
+    if resolved.startswith('..'):
+        return match.group(0)
+    return f'[{label}]({resolved}{"#" + anchor if anchor else ""})'
+(out / 'INTEGRATION.md').write_text(re.sub(r'\[([^\]]*)\]\(([^)\s]+)\)', rewrite, text))
+PYEOF
 mkdir -p "$out/examples" && cp "$out"/docs/integration/examples/* "$out/examples/"
 printf '# OTC Engine — integration package\n\nBuilt from commit `%s` of the engine repository on %s.\nStart with INTEGRATION.md; the API contract is docs/architecture/API_CONTRACT.md; the deployment files are under deploy/.\n' "$commit" "$(date -u +%F)" > "$out/README.md"
+# **The process trees are dropped by design, so a link into one becomes prose.**
+# This is the *only* class of broken link this script repairs, and it repairs it
+# narrowly on purpose: a rewriter that silenced every unresolvable link would make
+# the check below vacuous. A phase, audit or report document is named in the text
+# and not linked; anything else that fails to resolve is a defect and stops the
+# release.
+python3 - "$out" <<'PYEOF'
+import pathlib, re, sys
+out = pathlib.Path(sys.argv[1]).resolve()
+DROPPED = (('docs', 'phases'), ('docs', 'audits'), ('docs', 'reports'))
+LINK = re.compile(r'\[([^\]]*)\]\(([^)\s]+)\)')
+delinked = 0
+for f in sorted(out.rglob('*.md')):
+    if any(part in {'node_modules', 'dist', '.git'} for part in f.parts):
+        continue
+    def prose(match):
+        global delinked
+        label, target = match.group(1), match.group(2)
+        if re.match(r'^(?:[a-z][a-z0-9+.-]*:|//|#)', target, re.I):
+            return match.group(0)
+        resolved = (f.parent / target.split('#')[0]).resolve()
+        try:
+            parts = resolved.relative_to(out).parts
+        except ValueError:
+            return match.group(0)
+        if parts[:2] in DROPPED:
+            delinked += 1
+            return label
+        return match.group(0)
+    text = f.read_text(errors='replace')
+    new = LINK.sub(prose, text)
+    if new != text:
+        f.write_text(new)
+print(f'documents: {delinked} link(s) into the process trees named in prose instead')
+PYEOF
+
+# **A package whose documents cite what it does not ship does not build.** The
+# checker is the repository's own build, because the package's is not compiled
+# unless `--verify` ran.
+checker="$repo/tools/sim/dist/packageLinksTool.js"
+if [ ! -f "$checker" ]; then
+  echo "cannot check the package's links: $checker is missing — run npm run build" >&2
+  exit 1
+fi
+node "$checker" "$out"
+
 # The zip is the source tree, never what building or verifying it leaves behind.
 # `--verify` installs dependencies *inside* the package so the header can say it
 # ran, which took the v2.0.0 archive from 1.7 MB to 141 MB before this filter.

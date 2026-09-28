@@ -4,8 +4,10 @@ Type: EVIDENCE (a recorded verification)
 Recorded: 2026-09-28
 Subject: the tree at `7f9dffd` (PH-40.6), asking one question — **would a broker
 deploying this release meet a defect?**
-Outcome: **twenty confirmed findings, one refuted.** Sixteen are fixed in code with
-a guard watched failing; four are recorded as things a broker must be told.
+Outcome: **twenty confirmed findings, one refuted**, and a twenty-first found
+afterwards by building the release package and checking it (§3). Seventeen are
+fixed in code with a guard watched failing; four are recorded as things a broker
+must be told.
 
 ---
 
@@ -83,6 +85,37 @@ set.
 | 18  | **Six assets gain a decimal on upgrade, and that is deliberately not a reframe.** No quantum and no reference moved, so every stored integer still means what it meant and `settle()` crosses the restart normally (verified: `reframesAt` is `false` for a precision-only epoch change, `true` for a quantum change). A broker settling on _formatted strings_ would compare a 2-decimal entry against a 3-decimal expiry, and the engine cannot see it doing so. | `RELEASE-3.0.0.md` §4.5                |
 | 19  | **The client and the conformance suite are version-locked** (`venueVersion === API_VERSION`), so the package — not the binary — is the unit of upgrade: last release's checklist reports a failure against this release's engine, by design.                                                                                                                                                                                                                       | `RELEASE-3.0.0.md` §4.6                |
 | 20  | **The proof route needs `OTC_PUBLICATION_DIR` and a key**, or it answers 404 and the broker's conformance run records that its proof check was not independent.                                                                                                                                                                                                                                                                                                    | `RELEASE-3.0.0.md` §8                  |
+
+### A twenty-first, found by building the release package (fixed)
+
+The audit read the repository. The **package** is not the repository: it is `git
+archive` minus the documents that govern this project — `docs/phases`,
+`docs/audits`, `docs/reports`, `docs/evidence`, and the process files at the root.
+Building it for `v3.0.0` and then checking it produced **seventeen dead links in
+the delivered tree**, seven of them in the two documents a broker actually reads:
+
+- `INTEGRATION.md` at the package root pointed at `../architecture/API_CONTRACT.md`
+  — the file `README.md` tells the broker to open — which from the root **leaves
+  the package**. The root copy was a plain `cp` of a guide whose every relative
+  link is written from `docs/integration/`.
+- Both guides cited the measurements behind their own numbers — the refund table a
+  payout is sized with, the seam rate, the tempo record — under sentences saying
+  "measured" and "reproducible". None of those files shipped.
+
+Nothing could have caught it: the links resolve perfectly in the repository, and
+only the package deletes their targets. So the check now belongs to the package.
+`integration-package.sh` keeps every `docs/evidence` record a delivered document
+cites (transitively — 17 kept, 20 dropped), rewrites the root copy's links, names a
+link into a process tree in prose instead of linking it (7), and **then refuses to
+build if anything still does not resolve**. The de-linking is deliberately narrow:
+a rewriter that silenced every unresolvable link would make the check vacuous.
+
+The checker's own tests were watched failing twice, and the **first attempt was
+wrong in the way this project has learned to look for**: a plant that made the
+escaping-link rule unconditional passed all six tests, because the fixture's
+escaping target did not exist either, so existence was doing the work the rule was
+credited with. The fixture now writes a real file outside the package. Blind data,
+caught by planting (memory: `surviving-plant-may-mean-blind-data`).
 
 ### Refuted (one)
 
