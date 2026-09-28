@@ -4,10 +4,11 @@ Type: EVIDENCE (a recorded verification)
 Recorded: 2026-09-28
 Subject: the tree at `7f9dffd` (PH-40.6), asking one question — **would a broker
 deploying this release meet a defect?**
-Outcome: **twenty confirmed findings, one refuted**, and a twenty-first found
-afterwards by building the release package and checking it (§3). Seventeen are
-fixed in code with a guard watched failing; four are recorded as things a broker
-must be told.
+Outcome: **forty-three confirmed findings, one refuted.** Twenty from the engine
+audit, a twenty-first from building the release package and checking it, and
+twenty-two more from reading the deployment files and the broker's guide against the
+code (§3). Thirty-nine are fixed with a guard watched failing; four are recorded as
+things a broker must be told.
 
 ---
 
@@ -116,6 +117,60 @@ escaping-link rule unconditional passed all six tests, because the fixture's
 escaping target did not exist either, so existence was doing the work the rule was
 credited with. The fixture now writes a real file outside the package. Blind data,
 caught by planting (memory: `surviving-plant-may-mean-blind-data`).
+
+### A second pass over what a gate cannot check: the configuration and the guide (twenty-two more, all fixed)
+
+The audit above read the engine. Two further read-only passes read the two artefacts
+a **gate has no opinion about** — the files an operator deploys, and the document a
+broker integrates from — against the code that implements them. Twenty-two more,
+every one of them verified at its file and line before it was touched.
+
+**The deployment files (ten).** Worst first: `nginx.conf` declared
+`listen 443 ssl` and **no certificate anywhere**, which nginx rejects at parse
+time, so the one layer that cuts the write surface was the only piece of the
+deployment that could never start — and `nginx -t` fails the whole host's config, not
+just this file. Its monitor ACL then allowed `10.0.0.0/8` alone, which excludes every
+topology this directory ships (the engine on loopback, compose publishing on
+127.0.0.1, Docker's 172.16/12), so an operator's dashboards go blank while every
+container reports healthy, because the container's own probe does not pass through
+nginx. The systemd unit ran as a user its own recipe never created, then met a
+root-owned state directory as an unreadable `EACCES` at `RestartSec=2`, and wrote its
+secrets from a line containing a literal `...`. Both health checks hard-coded port
+3000 while the port is `PORT`, and through `depends_on: service_healthy` a changed
+port silently stops the backup service — the Cycle Audit 10 shape (up, healthy, never
+a backup) re-entered through the port. There was no `.dockerignore`, so the build
+context carried `dist/` and every `.tsbuildinfo`, `tsc -b` emitted nothing, and the
+image ran whatever the developer last built. And the systemd topology shipped **no
+backup at all** while the guide described the six-hourly backup as part of the
+deployment generally.
+
+**The broker's guide (twelve).** The worst is inside the package a broker receives.
+`examples/settle-example.ts` omitted `TickRecord.seams` — required since Cycle Audit
+12, where silence and "no discontinuities" stopped being the same input — so **every
+run of the only runnable demonstration of settlement ended in its own `catch`**, and
+its documented output read `returned: 185` where `settle()` returns 18,500. Nothing
+compiled it and nothing ran it: `docs/` is in no `tsconfig` and no test. The guide
+also stated the boot order **backwards** (markets before the port, where `main.ts`
+listens first deliberately — the reason `/health/ready` exists), shipped a second
+systemd unit missing `OTC_TRUSTED_PROXIES=1` (every client on the Internet in one
+rate-limit bucket, behind the proxy described 120 lines earlier), advertised
+`/health` two contract versions behind and without `composition`, showed the
+settlement response without the four keys its own §5 tells a broker to settle on,
+called `Last-Event-ID` equivalent to `from` (one tick skipped per reconnect,
+undetectably), and printed `tieRate: 0.0095` against the served `0.1288` — the very
+factor its prose warns a payout must not be sized with.
+
+**What the guards do now.** Twenty-three assertions over the deployment files,
+including a structural TLS check because `nginx -t` cannot run on a gate host; the
+shipped example **executed** and its comment compared with its output; and every
+documented number re-derived from `ASSET_CATALOGUE`, `API_VERSION` and the
+controller's own rendering, so a `displayPrice` the engine cannot print fails the
+build. Each was watched failing against the real defect where one existed, and
+against a plant otherwise.
+
+Contract **3.8.0** came out of this pass: the multiplexed stream answers `404` for
+an asset that is not hosted, as every single-asset route does, and carries at most
+32 assets — the contract declared neither.
 
 ### Refuted (one)
 

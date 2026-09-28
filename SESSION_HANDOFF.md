@@ -24,9 +24,10 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 **`v3.0.0` is the release a broker deploys, and the readiness audit that produced
 it is the thing to read first**
 ([PH-40-READINESS-2026-09-28](docs/evidence/PH-40-READINESS-2026-09-28.md),
-[RELEASE-3.0.0](docs/evidence/RELEASE-3.0.0.md)). Twenty findings, every one
-inside a green gate, plus a twenty-first from building the package itself;
-seventeen fixed with a guard watched failing, four written down for the broker. Contract **3.8.0**, digest `77e60212e2388b93`.
+[RELEASE-3.0.0](docs/evidence/RELEASE-3.0.0.md)). **Forty-three findings, every one inside a green
+gate**: twenty in the engine, one from building the package, and twenty-two from
+reading the deployment files and the guide against the code. Thirty-nine fixed with
+a guard watched failing, four written down for the broker. Contract **3.8.0**, digest `77e60212e2388b93`.
 
 What a fresh session must not rebuild, and where the traps are:
 

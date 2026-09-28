@@ -269,10 +269,12 @@ ADR-0021, the heartbeat, the precision rule, the typed candle, one seam per
 restart, and the Orbit guide — and on top of it the readiness audit of 2026-09-28
 ([PH-40-READINESS-2026-09-28](docs/evidence/PH-40-READINESS-2026-09-28.md)) asked
 the question the gates do not: **would a broker deploying this meet a defect?** It
-found **twenty, every one inside a green gate**, and a twenty-first fell out of
-building the release package: seventeen dead links in the delivered tree, seven of
-them in the two documents a broker reads. Seventeen are fixed with a guard watched
-failing and four are written down for the broker. The contract stands at
+found **forty-three, every one inside a green gate**: twenty in the engine, a
+twenty-first from building the release package (seventeen dead links in the
+delivered tree), and twenty-two more from reading the deployment files and the
+broker's guide against the code — a proxy that could not load, a systemd unit that
+could not start, and a settlement example that settled nothing. Thirty-nine are
+fixed with a guard watched failing and four are written down for the broker. The contract stands at
 **3.8.0** and the release record is
 [RELEASE-3.0.0](docs/evidence/RELEASE-3.0.0.md). **One decision is the Human
 Owner's and is not blocking**: six assets at a broker's five decimals (PH-40 §8),
