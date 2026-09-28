@@ -81,6 +81,22 @@ dice— responde, sin esperar al siguiente tick (contrato 3.2.0). **Un contrato 
 - **Empate si y sólo si los enteros `price` de entrada y salida son iguales**
   (ADR-0007, reembolso). Comparar cadenas formateadas sólo es equivalente si se
   formatean a la precisión que publica el motor (§3).
+- **Y sólo si los dos cuentan en la misma cuadrícula.** Cada respuesta de `/price`
+  lleva `logQuantum` y `referencePrice`: si los de la entrada y los de la
+  expiración no son iguales, el contrato cruzó un cambio de cuadrícula y comparar
+  sus enteros **invierte el resultado** (medido: `8797 → 687` es «bajó» por
+  enteros y «subió» en pantalla). `settle()` lo rechaza por ti; si comparas a
+  mano, compara primero los marcos. Ninguna de las dos respuestas trae `seam`: el
+  marco es el único aviso.
+- **`displayPrecision` es propiedad de cada precio publicado, no del activo**, y
+  puede diferir entre la entrada y la expiración si el motor se actualizó en
+  medio: formatea cada precio con **el suyo**.
+- **Un `429` es tuyo, no del motor**: todas las rutas salvo `/health/live`,
+  `/health/ready` y `/metrics` están limitadas (600 por minuto por defecto).
+  Respeta `Retry-After`; no es «todavía no».
+- **Un mercado retirado responde `400` para siempre** y el mensaje lo dice
+  («is retired: … no later price will ever exist»). No lo reintentes en bucle, y
+  no retires un activo con contratos abiertos.
 
 **Las costuras no cambian nada.** Si el motor se reinicia o el host lo congela,
 el registro guarda una costura; dentro de ella el precio vigente es el último
@@ -180,4 +196,5 @@ pliega en vuestro backend con los ticks del stream, como hoy `currentBar`.
 - [ ] `pricescale = 10 ** displayPrecision` por activo, sin el tope de 100.000 (§3).
 - [ ] `volume = tickCount`; `2h` agregado desde `1h`; velas con marco `null` no se dibujan (§5).
 - [ ] La frescura de la cotización se mide con `asOf` (§4).
-- [ ] `npm run conformance -- --base <motor> --key <publicKey de publisher.json, 88 hex>` en verde antes de producción y en cada actualización del motor.
+- [ ] `npm run conformance -- --base <motor> --key <publicKey de publisher.json, 88 hex>` en verde antes de producción y en cada actualización del motor. **Con el paquete de esta versión**: la suite y el cliente van atados al contrato del motor (hoy 3.6.0), así que una copia vieja falla contra un motor nuevo por claves que el motor añadió.
+- [ ] `GET /health` dice `"composition":"production"`. Si dice `"lab"`, es el Lab (ADR-0018): sirve todas estas rutas **más** `/lab`, cuyos controles empujan y dirigen el precio. La suite de conformidad lo rechaza desde la v3.0.0, pero compruébalo tú también antes de apuntar dinero real a un puerto.

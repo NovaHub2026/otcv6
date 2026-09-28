@@ -623,8 +623,15 @@ contrato que la cruce, porque los precios de cada lado cuentan en unidades
 distintas.
 
 **Empates.** Un contrato que termina exactamente en el precio de entrada se
-reembolsa (ADR-0007). La tasa medida por activo es **0,167%–0,435%** (12
-réplicas por activo): era 0,42%–0,53% antes de la v2.2.0, bajó a 0,085%–0,267%
+reembolsa (ADR-0007). La tasa medida por activo a 30 s es **3,47%–4,78%** (media
+4,07%), que es lo que publica `realisedRefundRate` en `/catalogue` y lo que acota
+el techo del 5% del Propietario
+([BROKER-FIT-2026-09-27](../evidence/BROKER-FIT-2026-09-27.md),
+[RELEASE-2.4.0](../evidence/RELEASE-2.4.0.md) §4). **No es `tieRate`**, que es
+otra cosa: la fracción de horizontes cuyo retorno continuo fue menor que un
+quantum, 11%–17%, tres o cuatro veces mayor — si dimensionas un payout con
+`tieRate` te equivocas por ese factor. Como historia: era 0,42%–0,53% antes de la
+v2.2.0, bajó a 0,085%–0,267%
 mientras el mercado corría a 1,7 veces el real, y volvió a este rango al
 devolverlo a su nivel.
 
@@ -827,6 +834,24 @@ Reglas que importan:
   binaria y sobre un array desordenado devuelve cualquier cosa, sin avisar.
 - **Empate** (`expiryPrice === entryPrice`): lo decide `AtMoneyPolicy`, por
   defecto `'refund'`. Puedes pasar `'loss'` o `'win'`.
+- **Dos enteros sólo se comparan si cuentan en la misma cuadrícula.** Cada
+  respuesta de `/price` lleva su `logQuantum` y su `referencePrice`: si los de la
+  entrada y los de la expiración **no son iguales**, el contrato cruzó un cambio
+  de cuadrícula y comparar sus enteros **invierte el resultado**. Medido contra el
+  motor: entrada `price 8797` (`1.1631999`), expiración `price 687` (`1.163228`) —
+  por enteros «bajó», en pantalla subió. `settle()` rechaza ese contrato por ti
+  (ADR-0021); si comparas a mano, compara primero los dos marcos. Ninguna de las
+  dos respuestas trae `seam`, porque ninguno de los dos instantes cae dentro del
+  hueco: el marco es el único aviso.
+- **Un `429` es tuyo, no del motor.** Toda ruta salvo `/health/live`,
+  `/health/ready` y `/metrics` está limitada (`OTC_RATE_LIMIT_PER_MINUTE`, 600 por
+  minuto por defecto), incluida `/price`: respeta `Retry-After` y no lo confundas
+  con «todavía no».
+- **Un mercado retirado no es «todavía no».** Su registro termina donde lo dejó el
+  último punto de control, así que cualquier instante posterior responde `400`
+  para siempre, y el mensaje lo dice («is retired: … no later price will ever
+  exist»). No lo reintentes en bucle, y no retires un activo con contratos
+  abiertos.
 - **Nunca antes del milisegundo final.** Si el registro termina antes de la
   expiración, lanza `NotSettleableError`: un contrato de un minuto no se liquida
   ni un milisegundo antes de su minuto — se reintenta más tarde. También se niega
@@ -898,11 +923,13 @@ liquidar un contrato de la semana pasada. `recovery` en `GET /markets/:id`
 tampoco sirve: nombra el arranque **actual**. El registro es lo único que las
 recuerda todas, y `/seams` es cómo se leen (Auditoría de Ciclo 10).
 
-**Si liquidas sin las costuras** el precio es el mismo —el último tick anterior
-al hueco, que es el precio en vigor— pero pierdes lo único que `settle()` todavía
-rechaza: un contrato que cruza un cambio de cuadrícula, cuyos precios de entrada
-y de expiración no se pueden comparar. Pásale siempre las costuras, con
-`reframes`. La API y `settle()` responden lo mismo en el mismo sitio: `/price?at=`
+**Si liquidas sin las costuras no liquidas nada**: `settle()` rechaza el contrato
+en vez de suponer que no hay ninguna, porque el silencio no puede significar «no
+hay» (Auditoría de Ciclo 12). Con `[]` liquidas asumiendo que no hay, lo cual es
+cierto sólo si tu despliegue no guarda registro; con las costuras de `/seams`
+liquidas de verdad, y lo único que sigue rechazándose es un contrato que cruza un
+cambio de cuadrícula, cuyos precios de entrada y de expiración no se pueden
+comparar. La API y `settle()` responden lo mismo en el mismo sitio: `/price?at=`
 dentro de una costura da el precio en vigor y nombra la costura.
 
 `packages/trading` trae además `tally` (ledger), `assessBookRisk` /

@@ -4,7 +4,7 @@ import { epochMillis } from '@otc/core';
 
 /** The largest instant the kernel accepts, as an upper read bound. */
 const MAX_INSTANT = epochMillis(8_640_000_000_000_000);
-import { ASSET_CATALOGUE, FRAME_BEFORE_PH37 } from '@otc/engine';
+import { ASSET_CATALOGUE, FRAME_BEFORE_PH37, FRAME_BEFORE_PH40 } from '@otc/engine';
 import {
   dateCandlesAgainstRecord,
   epochsOf,
@@ -42,7 +42,8 @@ import {
  */
 
 /**
- * The frames a release published on. Only v2.4.0's predecessor exists.
+ * The frames a release published on, keyed by the upgrade whose past they date:
+ * `--from-release v2.4.0` is "my record predates v2.4.0's lattice move".
  *
  * The **whole** frame, not just the quantum. Building the old frame as
  * `{...todaysFrame, logQuantum}` carried today's `displayPrecision` back over
@@ -52,6 +53,12 @@ import {
  */
 const RELEASES: Readonly<Record<string, Readonly<Record<string, PriceFrame>>>> = {
   'v2.4.0': FRAME_BEFORE_PH37,
+  // A record written by any build from `v2.4.0` up to `v3.0.0` holds today's
+  // quanta with six assets' older `displayPrecision`. Without this entry an
+  // upgrading deployment was offered the pre-PH-37 quanta, which its record
+  // refuses to corroborate, and its retained past stayed undatable (the readiness
+  // audit of 2026-09-28).
+  'v3.0.0': FRAME_BEFORE_PH40,
 };
 
 export interface LatticeToolOptions {

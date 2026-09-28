@@ -80,6 +80,69 @@ export const FRAME_BEFORE_PH37: Readonly<
   'brx-idx-otc': { logQuantum: 1.4896821412666174e-6, referencePrice: 1000, displayPrecision: 3 },
 };
 
+/**
+ * The frames `v2.4.0` published on — what a record written by any build from
+ * `v2.4.0` up to `v3.0.0` holds (the readiness audit of 2026-09-28).
+ *
+ * **Why a second table.** PH-40.3 moved six assets' `displayPrecision` and
+ * nothing else: the quanta and references are byte-identical to today's, which is
+ * what makes this table safe to write from the current catalogue with six
+ * overrides rather than from a build of the tag. A record written by `v2.4.0`
+ * therefore has no frame log at all — PH-38.1 deliberately left the past alone —
+ * and `state:lattice declare --from-release v2.4.0` would have offered it
+ * `FRAME_BEFORE_PH37`, the *pre*-PH-37 quanta, which the record cannot corroborate:
+ * an upgrading deployment was told "0 of 30 can be declared" and left with a
+ * quarter of a million ticks an asset rendering `displayPrice: null` for ever.
+ *
+ * Frozen on purpose, like the table above it. A derived one would follow the next
+ * recalibration and stop describing what `v2.4.0` actually published.
+ */
+export const FRAME_BEFORE_PH40: Readonly<
+  Record<
+    string,
+    {
+      readonly logQuantum: number;
+      readonly referencePrice: number;
+      readonly displayPrecision: number;
+    }
+  >
+> = {
+  'eurusd-otc': { logQuantum: 0.000004044597092506429, referencePrice: 1.16, displayPrecision: 6 },
+  'gbpusd-otc': { logQuantum: 0.000004071035260851775, referencePrice: 1.35, displayPrecision: 6 },
+  'usdjpy-otc': { logQuantum: 0.000004721767724047701, referencePrice: 159, displayPrecision: 4 },
+  'audusd-otc': { logQuantum: 0.000005788490926074027, referencePrice: 0.71, displayPrecision: 6 },
+  'usdchf-otc': { logQuantum: 0.000002936020835690536, referencePrice: 0.81, displayPrecision: 6 },
+  'eurgbp-otc': { logQuantum: 0.000002928561409753681, referencePrice: 0.856, displayPrecision: 6 },
+  'gbpjpy-otc': { logQuantum: 0.000015096056539817884, referencePrice: 215, displayPrecision: 3 },
+  'eurjpy-otc': { logQuantum: 0.000012146979134430585, referencePrice: 184, displayPrecision: 3 },
+  'aapl-otc': { logQuantum: 0.000012790337130389883, referencePrice: 310, displayPrecision: 3 },
+  'msft-otc': { logQuantum: 0.00001078704890296888, referencePrice: 495, displayPrecision: 3 },
+  'nvda-otc': { logQuantum: 0.00002122590797953285, referencePrice: 220, displayPrecision: 3 },
+  'tsla-otc': { logQuantum: 0.00003976917497379534, referencePrice: 340, displayPrecision: 2 },
+  'meta-otc': { logQuantum: 0.0000179278887905132, referencePrice: 575, displayPrecision: 2 },
+  'amzn-otc': { logQuantum: 0.000021551653131290453, referencePrice: 265, displayPrecision: 3 },
+  'pbr-otc': { logQuantum: 0.000020977812970554404, referencePrice: 18.4, displayPrecision: 4 },
+  'nu-otc': { logQuantum: 0.000027620254336536803, referencePrice: 14.4, displayPrecision: 4 },
+  'btcusdt-otc': { logQuantum: 0.00002400941219697859, referencePrice: 70000, displayPrecision: 0 },
+  'ethusdt-otc': { logQuantum: 0.000037195782215006836, referencePrice: 2100, displayPrecision: 2 },
+  'bnbusdt-otc': { logQuantum: 0.000024697121279992967, referencePrice: 650, displayPrecision: 2 },
+  'solusdt-otc': { logQuantum: 0.000045937577312699555, referencePrice: 85, displayPrecision: 3 },
+  'xrpusdt-otc': { logQuantum: 0.00003387093432005904, referencePrice: 1.2, displayPrecision: 5 },
+  'dogeusdt-otc': {
+    logQuantum: 0.00007449361347735962,
+    referencePrice: 0.078,
+    displayPrecision: 6,
+  },
+  'mmx-idx-otc': { logQuantum: 0.0000536308458831654, referencePrice: 1000, displayPrecision: 2 },
+  'cgx-idx-otc': { logQuantum: 0.000028298498715901247, referencePrice: 1000, displayPrecision: 2 },
+  'aix-idx-otc': { logQuantum: 0.000019374532515471326, referencePrice: 1000, displayPrecision: 2 },
+  'tcx-idx-otc': { logQuantum: 0.000016245503430818698, referencePrice: 1000, displayPrecision: 2 },
+  'scx-idx-otc': { logQuantum: 0.00002686802294642805, referencePrice: 1000, displayPrecision: 2 },
+  'gmx-idx-otc': { logQuantum: 0.000022525806716134888, referencePrice: 1000, displayPrecision: 2 },
+  'evx-idx-otc': { logQuantum: 0.000040857421337362215, referencePrice: 1000, displayPrecision: 2 },
+  'brx-idx-otc': { logQuantum: 0.00002051979260534711, referencePrice: 1000, displayPrecision: 2 },
+};
+
 export const LATTICE_BEFORE_PH37: Readonly<Record<string, number>> = {
   'eurusd-otc': 3.131447750503912e-7,
   'gbpusd-otc': 2.896342933171461e-7,

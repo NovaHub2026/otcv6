@@ -73,3 +73,40 @@ describe('the integration library is the catalogue', () => {
     expect(leaked, 'a trait or quantum value appears in the library').toEqual([]);
   });
 });
+
+/**
+ * **A figure a broker sizes a payout with cannot be maintained by hand** (the
+ * readiness audit of 2026-09-28). `INTEGRATION.md` quoted the at-the-money refund
+ * rate as 0,167%–0,435% — the pre-v2.4.0 range — and asserted it was current,
+ * while the engine refunds 3,47%–4,78%: ten times more, and `ORBIT.md` in the same
+ * package gave the true figure, so the two broker-facing guides disagreed by a
+ * factor of ten. Nothing re-derived it, so nothing caught it. This does.
+ */
+describe('the guide quotes the refund rate the catalogue actually measures', () => {
+  const GUIDE = path.join(repoRoot, 'docs', 'integration', 'INTEGRATION.md');
+  const es = (value: number): string => `${(value * 100).toFixed(2).replace('.', ',')}%`;
+
+  it('names the measured minimum, maximum and mean, from the compiled catalogue', () => {
+    const rates = ASSET_CATALOGUE.map((asset) => asset.evidence.realisedRefundRate);
+    expect(rates).toHaveLength(30);
+    const min = Math.min(...rates);
+    const max = Math.max(...rates);
+    const mean = rates.reduce((sum, rate) => sum + rate, 0) / rates.length;
+    const text = readFileSync(GUIDE, 'utf8');
+    for (const [what, value] of [
+      ['minimum', min],
+      ['maximum', max],
+      ['mean', mean],
+    ] as const) {
+      expect(
+        text,
+        `INTEGRATION.md does not quote the ${what} refund rate the catalogue measures ` +
+          `(${es(value)}); a recalibration moved it and the guide did not follow`,
+      ).toContain(es(value));
+    }
+    // And the proxy is not offered as the refund rate: they are 3-4x apart.
+    expect(text, 'the guide does not warn that tieRate is not the refund rate').toMatch(
+      /No es `tieRate`/,
+    );
+  });
+});

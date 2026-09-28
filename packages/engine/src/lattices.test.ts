@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ASSET_CATALOGUE } from './catalogue.js';
-import { FRAME_BEFORE_PH37, LATTICE_BEFORE_PH37 } from './lattices.js';
+import { FRAME_BEFORE_PH37, FRAME_BEFORE_PH40, LATTICE_BEFORE_PH37 } from './lattices.js';
 
 /**
  * The lattice this release says it moved from is the one the previous release
@@ -128,4 +128,44 @@ describe('the lattice the release carries is the one the release before it publi
       carriedFrames[asset.definition.id] = FRAME_BEFORE_PH37[asset.definition.id]!;
     expect(carriedFrames).toEqual(publishedFrames);
   }, 120_000);
+});
+
+/**
+ * **The second table, and why it can be written from today's catalogue**
+ * (the readiness audit of 2026-09-28). PH-40.3 moved six assets'
+ * `displayPrecision` and nothing else — every quantum and reference byte for byte
+ * what `v2.4.0` published — so `FRAME_BEFORE_PH40` is the current frames with six
+ * overrides. If a later phase moves a quantum, this test is what says the frozen
+ * table has stopped describing what `v2.4.0` published.
+ */
+describe('the frames v2.4.0 published are today’s, with six older precisions', () => {
+  const OLDER_PRECISION: Readonly<Record<string, number>> = {
+    'tsla-otc': 2,
+    'meta-otc': 2,
+    'btcusdt-otc': 0,
+    'bnbusdt-otc': 2,
+    'aix-idx-otc': 2,
+    'tcx-idx-otc': 2,
+  };
+
+  it('differs from the current catalogue in exactly those six, and only in precision', () => {
+    expect(Object.keys(FRAME_BEFORE_PH40).sort()).toEqual(
+      ASSET_CATALOGUE.map((a) => a.definition.id).sort(),
+    );
+    const moved: string[] = [];
+    for (const asset of ASSET_CATALOGUE) {
+      const id = asset.definition.id;
+      const then = FRAME_BEFORE_PH40[id]!;
+      const now = asset.instrument;
+      // A quantum or a reference that moved would make this table a conversion,
+      // not a relabelling, and it is not one.
+      expect(then.logQuantum, `${id} quantum`).toBe(now.logQuantum);
+      expect(then.referencePrice, `${id} reference`).toBe(now.referencePrice);
+      if (then.displayPrecision !== now.displayPrecision) moved.push(id);
+      expect(then.displayPrecision, `${id} precision`).toBe(
+        OLDER_PRECISION[id] ?? now.displayPrecision,
+      );
+    }
+    expect(moved.sort()).toEqual(Object.keys(OLDER_PRECISION).sort());
+  });
 });
