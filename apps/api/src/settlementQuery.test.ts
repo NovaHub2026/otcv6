@@ -167,6 +167,32 @@ function lastAtOrBefore(ticks: readonly Tick[], instant: number): Tick | null {
 }
 
 describe('the settlement query (PH-29.1)', () => {
+  /**
+   * The live restore drill of 2026-09-28 asked a restored venue for a sequence it
+   * had served before the backup. The answer was `404` — correct — with the words
+   * "not in the record, which holds 1–102446", and the sequence was 2,399: inside
+   * the range the refusal had just named. The record's sequences are not
+   * contiguous, and a broker reconciling a statement across a restart is the one
+   * client guaranteed to ask about a gap.
+   */
+  it('tells a sequence inside the bounds but inside a gap from one outside them', async () => {
+    const { controller, ticks, seam } = await seamedVenue();
+    const inTheGap = seam.lastSequence + 1;
+    expect(inTheGap, 'the seam leaves a gap to ask about').toBeLessThan(seam.resumesAtSequence);
+    const bounds = { oldest: ticks[0]!.sequence, newest: ticks[ticks.length - 1]!.sequence };
+    expect(inTheGap).toBeGreaterThan(bounds.oldest);
+    expect(inTheGap).toBeLessThan(bounds.newest);
+
+    await expect(controller.recordedTick(ID, String(inTheGap))).rejects.toThrow(
+      /falls in a gap[\s\S]*\/seams/,
+    );
+    // And a sequence genuinely past the record still gets the bounds, because
+    // there the answer really is "ask again later".
+    await expect(controller.recordedTick(ID, String(bounds.newest + 1_000))).rejects.toThrow(
+      new RegExp(`is not in the record, which holds ${String(bounds.oldest)}–`),
+    );
+  });
+
   it('serves the recorded tick at a sequence, and names the bounds outside them', async () => {
     const { venue: service, controller } = await venue(false);
     const served = service.feed.since(ID, 1);

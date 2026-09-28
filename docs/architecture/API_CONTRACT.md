@@ -1,8 +1,8 @@
 # API Contract
 
 Type: SUPPORTING DOCUMENTATION (generated; do not edit by hand)
-Version: 3.6.0
-Digest: d94c5ab58d3ba40a
+Version: 3.7.0
+Digest: b0d3c7c839be46dd
 Source: `apps/api/src/contract.ts` — rendered by `npm run contract:render`; held to the controller by `contract.test.ts`
 
 ---
@@ -219,7 +219,7 @@ Response: a JSON object:
 | Status | When |
 | --- | --- |
 | 400 | the sequence is not a positive integer |
-| 404 | the asset is unknown, the sequence is outside the record (the bounds are named), or this deployment keeps no record |
+| 404 | the asset is unknown, or this deployment keeps no record, or the sequence is not in it — outside its bounds, which are named, or inside them and inside a gap, which says so and points at `/markets/:id/seams`. The record's sequences are not contiguous: a market that resumes past its catch-up bound leases fresh ones and never republishes what it skipped |
 | 429 | too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused |
 
 ## GET `/markets/:id/price`

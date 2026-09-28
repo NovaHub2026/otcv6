@@ -837,6 +837,16 @@ export class MarketController implements BeforeApplicationShutdown {
    * record's bounds when the sequence is outside them, and says so when this
    * deployment keeps no record at all — a client cannot tell "evicted" from
    * "never" otherwise, and the difference is whether to ask again.
+   *
+   * **And a sequence inside the bounds that is still missing gets its own
+   * answer** (the readiness audit of 2026-09-28, the live restore drill). The
+   * record's sequences are not contiguous: a market that resumes past its
+   * catch-up bound leases new ones and never republishes what it skipped, so
+   * after a restart — and enormously after a restored backup, where one drill
+   * left the record holding 1–2,386 and then 102,446 onward — the bounds span a
+   * gap. Answering "not in the record, which holds 1–102446" to a request for
+   * 2,399 tells a broker reconciling a statement that the sequence should have
+   * been there. It says which case it is now, and where the gaps are recorded.
    */
   @Get('markets/:id/ticks/:sequence')
   async recordedTick(
@@ -853,9 +863,16 @@ export class MarketController implements BeforeApplicationShutdown {
     const tick = await this.venue.recordedTick(id, wanted);
     if (tick === null) {
       const bounds = await this.venue.recordBounds(id);
+      if (bounds === null) throw new NotFoundException(`The record holds nothing for ${id} yet.`);
+      const withinBounds = wanted >= bounds.oldest && wanted <= bounds.newest;
       throw new NotFoundException(
-        bounds === null
-          ? `The record holds nothing for ${id} yet.`
+        withinBounds
+          ? `Sequence ${wanted} of ${id} is inside the record's bounds ` +
+              `(${bounds.oldest}–${bounds.newest}) but was never published: it falls in a gap. ` +
+              `A market that resumed past its catch-up bound leases fresh sequences and never ` +
+              `republishes the ones it skipped, so this is a recorded discontinuity rather than ` +
+              `a missing tick. GET /markets/${id}/seams says where every gap is, and ` +
+              `GET /markets/${id}/price?at= answers the instant itself.`
           : `Sequence ${wanted} of ${id} is not in the record, which holds ${bounds.oldest}–${bounds.newest}.`,
       );
     }

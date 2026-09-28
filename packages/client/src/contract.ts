@@ -339,7 +339,7 @@ export const API_ROUTES: readonly RouteContract[] = [
         'too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused',
       '400': 'the sequence is not a positive integer',
       '404':
-        'the asset is unknown, the sequence is outside the record (the bounds are named), or this deployment keeps no record',
+        "the asset is unknown, or this deployment keeps no record, or the sequence is not in it — outside its bounds, which are named, or inside them and inside a gap, which says so and points at `/markets/:id/seams`. The record's sequences are not contiguous: a market that resumes past its catch-up bound leases fresh ones and never republishes what it skipped",
     },
   },
   {
@@ -656,6 +656,17 @@ export const CONTRACT_HISTORY: readonly { readonly version: string; readonly dig
   //
   // **Minor.** One key is added to a response a 3.5.0 client already parses.
   { version: '3.6.0', digest: 'd94c5ab58d3ba40a' },
+  // The readiness audit of 2026-09-28, from the live restore drill: the `404` of
+  // `GET /markets/:id/ticks/:sequence` distinguishes a sequence outside the
+  // record's bounds from one inside them that was never published. The record's
+  // sequences are not contiguous — a market resuming past its catch-up bound
+  // leases fresh ones and never republishes what it skipped — and a restored
+  // backup makes the gap enormous: one drill left a record holding 1–2,386 and
+  // then 102,446 onward, and a request for 2,399 was answered "not in the record,
+  // which holds 1–102446", a range containing the sequence it had just refused.
+  // A broker reconciling a statement across a restart is the one client
+  // guaranteed to ask about a gap, so the answer now says which case it is.
+  { version: '3.7.0', digest: 'b0d3c7c839be46dd' },
 ];
 
 export const API_VERSION: string = CONTRACT_HISTORY[CONTRACT_HISTORY.length - 1]!.version;

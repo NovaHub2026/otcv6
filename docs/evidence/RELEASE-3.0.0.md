@@ -5,7 +5,7 @@ Recorded: 2026-09-28
 Tag: `v3.0.0` — @@COMMIT@@, gated green locally and corroborated by hosted CI on both jobs
 Supersedes: [`RELEASE-2.4.0.md`](RELEASE-2.4.0.md) for deployment
 Package: `tools/sim/scripts/integration-package.sh v3.0.0 <dir>`
-API contract: **3.6.0** (`d94c5ab58d3ba40a`), from `2.1.0` in `v2.4.0`
+API contract: **3.7.0** (`b0d3c7c839be46dd`), from `2.1.0` in `v2.4.0`
 
 ---
 
@@ -39,7 +39,7 @@ unusual:
   now (ADR-0020), and a reopening that starves before its first tick is re-armed
   rather than refused for the life of the process (PH-39).
 
-## 2. What changed in the contract: 2.1.0 → 3.6.0
+## 2. What changed in the contract: 2.1.0 → 3.7.0
 
 **3.0.0 — a published price says what it counts in** (PH-38.3). `PUBLISHED`
 carries `logQuantum` and `referencePrice`, so a broker that archived integers can
@@ -90,6 +90,15 @@ controls push, pulse and target a market's price. Nothing distinguished them, so
 broker's conformance run could have passed against a venue whose prices were being
 steered by hand. `composition` is `production` or `lab`, and the conformance suite
 fails a venue that answers `lab`.
+
+**3.7.0 — a sequence the record skipped says so.** The record's sequences are not
+contiguous: a market resuming past its catch-up bound leases fresh ones and never
+republishes what it skipped. `GET /markets/:id/ticks/:sequence` answered every
+missing sequence by naming the record's bounds — and after a restored backup the
+bounds _contain_ the gap. The live restore drill asked for 2,399 and was told "not
+in the record, which holds 1–102446". A sequence inside the bounds now says it
+fell in a gap and points at `/markets/:id/seams`; one genuinely past the record
+still gets the bounds, because there the answer is "ask again later".
 
 The heartbeat is opt-in and the other additions are keys, so apart from the
 nullable `displayPrice` a client built against `2.1.0` keeps working.
@@ -160,7 +169,7 @@ displayPrecision`. A broker that shows fewer decimals than the engine
    first.
 6. **Re-take the client and the conformance suite from this package.** Both are
    version-locked to the contract they were built for: the suite asserts
-   `3.6.0` and refuses a venue that answers anything else, so last release's
+   `3.7.0` and refuses a venue that answers anything else, so last release's
    checklist reports a failure against this release's engine and this release's
    checklist reports one against an un-upgraded venue. That is the intended
    behaviour — a checklist that passed across a version boundary would be
@@ -188,7 +197,7 @@ displayPrecision`. A broker that shows fewer decimals than the engine
 ## 6. Why 3.0.0
 
 The release major follows the API contract, as `v2.4.0` §6 said when it stayed at
-2.x for an untouched contract. The contract has moved from `2.1.0` to `3.6.0`
+2.x for an untouched contract. The contract has moved from `2.1.0` to `3.7.0`
 since that release and one of those steps is breaking: `displayPrice` is
 `string|null`. Everything else is additive.
 
