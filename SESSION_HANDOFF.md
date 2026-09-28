@@ -46,6 +46,15 @@ What a fresh session must not rebuild, and where the traps are:
   conformance suite asserts the contract version exactly, so last release's
   checklist reports a failure against this release's engine, by design.
 
+**What is running right now**: the panel's engine and panel on 7300/7301, the Lab
+composition, from `~/.otc-genesis` (`main`), restarted on the release build — so
+`/health` there says `composition: lab`, which is correct and is the point of that
+key. The Orbit broker stack on 3010/3100/3030/3011/3012 is **not mine**.
+
+The delivered package lives at `~/.otc-local/release/otc-engine-v3.0.0` (and its
+`.zip`), built from the tag with `OTC_PACKAGE_VERIFY=1`, so its own header states
+the counts of its own run.
+
 Next is **PH-41, the calibration** (CURRENT_STATE) — the one open finding of
 Cycle Audit 12 (finding 7, a refund bias of +1.91pp).
 

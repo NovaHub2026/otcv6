@@ -263,7 +263,17 @@ ceiling.
 **Open PH-41: the calibration that simulates the market the engine runs**
 (Cycle Audit 12, finding 7 — deferred twice, and next since PH-39).
 
-**`v3.0.0` is released and the readiness audit is closed.** PH-40 is approved and
+**`v3.0.0` is tagged, merged and verified live.** The tag is on `a8fc427`, gated
+green locally (`GATE_EXIT=0`, 63 min, both browser suites in a real Chromium) and
+re-verified against the built release: the broker's own checklist answers **39
+checks, 0 failures, exit 0** on a production composition, with the proof leg and the
+seam leg both made provable rather than skipped, and the same suite against a Lab
+composition of the same build correctly exits 1
+([RELEASE-CONFORMANCE-3.0.0](docs/evidence/RELEASE-CONFORMANCE-3.0.0.md)). The
+delivered package verifies inside itself and is built by
+`tools/sim/scripts/integration-package.sh v3.0.0 <dir>`.
+
+**The readiness audit is closed.** PH-40 is approved and
 merged ([PH-40](docs/phases/PH-40-the-engine-a-broker-settles-against.md)) —
 ADR-0021, the heartbeat, the precision rule, the typed candle, one seam per
 restart, and the Orbit guide — and on top of it the readiness audit of 2026-09-28

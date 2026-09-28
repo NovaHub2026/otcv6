@@ -561,13 +561,29 @@ para liquidar.
   > esa fila como _no independiente_: lo único comprobado es que la prueba es
   > consistente consigo misma.
 
-```
+````
+
+**Comprueba la liquidación contra tu propio motor**, no sólo las rutas:
+
+```bash
+# Necesita un motor que haya registrado al menos una costura (párralo más de
+# quince segundos y arráncalo otra vez sobre el mismo directorio de estado).
+node tools/sim/scripts/settle-across-a-seam.mjs <base> <activo>
+````
+
+Coge los ticks del registro publicado por secuencia, las costuras de
+`GET /markets/:id/seams`, coloca un contrato **a caballo de la discontinuidad** y
+lo liquida con el mismo `@otc/trading` que usarás tú: imprime el resultado,
+`seamsCrossed`, y si los dos precios que usó coinciden con lo que responde
+`/price?at=` para esos instantes. Es la ruta del dinero de punta a punta.
+
 GET /markets/eurusd-otc/price?at=1788492000000
 { "assetId": "eurusd-otc", "at": 1788492000000, "rule": "last-tick-at-or-before",
-  "sequence": 41209, "instant": 1788491999412, "price": -3118,
-  "logQuantum": 0.000004044597092506429, "referencePrice": 1.16,
-  "displayPrecision": 6, "displayPrice": "1.145463", "seam": null }
-```
+"sequence": 41209, "instant": 1788491999412, "price": -3118,
+"logQuantum": 0.000004044597092506429, "referencePrice": 1.16,
+"displayPrecision": 6, "displayPrice": "1.145463", "seam": null }
+
+````
 
 Las cuatro claves después de `price` no son decoración: `logQuantum` y
 `referencePrice` son la unidad en la que cuenta ese entero, y **sólo son
@@ -616,7 +632,7 @@ for await (const event of venue.subscribe('eurusd-otc', { from: lastSequence + 1
   if (event.kind === 'tick') store(event.tick);
   if (event.kind === 'gap') reloadHistory(event.gap.resumesAt);
 }
-```
+````
 
 ## 3.1 La biblioteca de activos
 

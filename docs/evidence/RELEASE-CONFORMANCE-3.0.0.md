@@ -57,7 +57,41 @@ GET /health  →  {"status":"ok","assets":30,"stalled":[],"bootNonce":null,
 publisher.json publicKey → 302a300506032b6570032100f95c… (88 hex, DER SPKI)
 ```
 
-## 4. The report, as the suite wrote it
+## 4. The money path, settled with the shipped kernel across a real seam
+
+The checklist verifies the **price route**. It does not settle a contract, and
+nothing had: ADR-0021 is this release's headline and every test of it runs against a
+fixture. So a contract was settled the way a broker settles one — `@otc/trading`
+from this build, ticks taken from the venue's published record by sequence, seams
+taken from `GET /markets/:id/seams`, and a window deliberately straddling the
+discontinuity created in §1:
+
+```
+seam: 533..100535  reframes=false
+contract: entry 1790591557966, expiry 1790591591628 — the seam is inside it
+SETTLED: {"contractId":"live-across-the-seam","outcome":"win","entryPrice":5,
+          "expiryPrice":10,"entryIndex":7,"expiryIndex":17,
+          "expiryInstant":1790591591628,"returned":18500,"net":8500,
+          "seamsCrossed":1}
+  entry:  settle used 5;  /price?at= says 5  -> AGREE
+  expiry: settle used 10; /price?at= says 10 -> AGREE
+```
+
+Four things at once. The contract **settled** where the rule ADR-0021 replaced would
+have refused it, and a refusal is a refund the operator pays. `seamsCrossed: 1` says
+the kernel knew it crossed one rather than not noticing. The payout is exact integer
+arithmetic in the stake's minor unit — 10,000 at 0.85 returns 18,500. And both prices
+the kernel chose are **the same integers the venue itself answers** for those
+instants, which is the property a broker's reconciliation depends on: settlement and
+the settlement query cannot disagree, because they read one record.
+
+What this does not show: a contract across a **change of lattice**, which
+`settle()` must still refuse. Neither seam on this venue reframes — no quantum or
+reference moved — so the refusing case has no live input here and stays covered by
+`reframesAt`'s own guards, where a precision-only change reads `false` and a quantum
+change reads `true`.
+
+## 5. The report, as the suite wrote it
 
 # Conformance — PASS
 
