@@ -1,10 +1,31 @@
 # The OTC market engine as a systemd service (PH-30.1).
 #
-#   install -d /opt/otc /var/lib/otc /etc/otc
-#   cp -r . /opt/otc && cd /opt/otc && npm ci && npm run build
-#   printf 'OTC_MASTER_SECRET=%s\nOTC_ADMIN_TOKEN=%s\nOTC_PUBLISHING_KEY=%s\n' ... > /etc/otc/secrets.env
+# **The recipe below runs as printed.** It did not: it never created the `otc`
+# user this unit runs as (`status=217/USER`, then a two-second restart loop), it
+# left /var/lib/otc owned by root so the first thing the process did was fail to
+# write its own lock with a raw EACCES stack, and its secrets line was a literal
+# `...` that wrote three empty values (the readiness audit of 2026-09-28).
+#
+#   useradd --system --home-dir /var/lib/otc --shell /usr/sbin/nologin otc
+#   install -d /opt/otc /etc/otc
+#   install -d -o otc -g otc /var/lib/otc
+#   # Copy the tree, then drop what `tsc -b` would believe: a stale dist/ with a
+#   # newer .tsbuildinfo makes `npm run build` emit nothing and ship the build
+#   # from whatever tree you copied from.
+#   cp -r . /opt/otc && cd /opt/otc
+#   find . -name '*.tsbuildinfo' -delete && rm -rf packages/*/dist apps/*/dist tools/*/dist
+#   npm ci && npm run build
+#   printf 'OTC_MASTER_SECRET=%s\nOTC_ADMIN_TOKEN=%s\nOTC_PUBLISHING_KEY=%s\n' \
+#     "$(openssl rand -hex 32)" "$(openssl rand -hex 24)" "$(openssl rand -hex 32)" \
+#     > /etc/otc/secrets.env
 #   chmod 600 /etc/otc/secrets.env
 #   cp deploy/otc-engine.service /etc/systemd/system/ && systemctl enable --now otc-engine
+#
+# Node **24 or newer** is required, and not as a preference: the record and the
+# history are `node:sqlite`, which does not exist before 24. Debian 12 and Ubuntu
+# 22.04 ship 18 at /usr/bin/node, `npm ci` only warns, and the build succeeds — so
+# the first thing that fails is the service, at RestartSec=2, with
+# ERR_UNKNOWN_BUILTIN_MODULE. The ExecStartPre below says that once instead.
 #
 # SIGTERM is the right stop signal: the process writes a final checkpoint.
 # A SIGKILL loses nothing the record does not hold (PH-28), it only makes the
@@ -16,7 +37,13 @@ After=network.target
 [Service]
 Type=simple
 User=otc
+Group=otc
 WorkingDirectory=/opt/otc
+# systemd creates /var/lib/otc and chowns it to User= before the process starts,
+# so a fresh host does not depend on the operator having chowned it by hand: the
+# engine's first act is to take a lock file *inside* that directory, and on a
+# root-owned one that is an EACCES nobody can read as "wrong owner".
+StateDirectory=otc
 Environment=NODE_ENV=production
 Environment=PORT=3000
 Environment=OTC_BIND=127.0.0.1
@@ -32,6 +59,9 @@ Environment=OTC_PUBLICATION_DIR=/var/lib/otc/publication
 # every client shares one bucket (Cycle Audit 10).
 Environment=OTC_TRUSTED_PROXIES=1
 EnvironmentFile=/etc/otc/secrets.env
+# Refuse a Node too old for `node:sqlite` with a sentence, rather than looping on
+# ERR_UNKNOWN_BUILTIN_MODULE every two seconds.
+ExecStartPre=/bin/sh -c 'case $$(/usr/bin/node -v) in v[0-9].*|v1[0-9].*|v2[0-3].*) echo "otc-engine needs Node >= 24 (node:sqlite); /usr/bin/node is $$(/usr/bin/node -v)"; exit 1;; esac'
 ExecStart=/usr/bin/node /opt/otc/apps/api/dist/main.js
 Restart=always
 RestartSec=2

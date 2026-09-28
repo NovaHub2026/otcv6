@@ -3,7 +3,7 @@
 Type: SUPPORTING DOCUMENTATION (guía de integración para un bróker concreto)
 Canonical for: cómo Orbit-Backend y optaqode-frontend2.0 sustituyen su simulador por este motor
 Not canonical for: la API (eso es [`API_CONTRACT.md`](../architecture/API_CONTRACT.md)) ni la integración genérica ([`INTEGRATION.md`](INTEGRATION.md))
-Contrato del motor: **3.3.0**
+Contrato del motor: **3.8.0**
 
 ---
 
@@ -196,5 +196,5 @@ pliega en vuestro backend con los ticks del stream, como hoy `currentBar`.
 - [ ] `pricescale = 10 ** displayPrecision` por activo, sin el tope de 100.000 (§3).
 - [ ] `volume = tickCount`; `2h` agregado desde `1h`; velas con marco `null` no se dibujan (§5).
 - [ ] La frescura de la cotización se mide con `asOf` (§4).
-- [ ] `npm run conformance -- --base <motor> --key <publicKey de publisher.json, 88 hex>` en verde antes de producción y en cada actualización del motor. **Con el paquete de esta versión**: la suite y el cliente van atados al contrato del motor (hoy 3.7.0), así que una copia vieja falla contra un motor nuevo por claves que el motor añadió.
+- [ ] `npm run conformance -- --base <motor> --key <publicKey de publisher.json, 88 hex>` en verde antes de producción y en cada actualización del motor. **Con el paquete de esta versión**: la suite y el cliente van atados al contrato del motor (hoy 3.8.0), así que una copia vieja falla contra un motor nuevo por claves que el motor añadió.
 - [ ] `GET /health` dice `"composition":"production"`. Si dice `"lab"`, es el Lab (ADR-0018): sirve todas estas rutas **más** `/lab`, cuyos controles empujan y dirigen el precio. La suite de conformidad lo rechaza desde la v3.0.0, pero compruébalo tú también antes de apuntar dinero real a un puerto.

@@ -1,0 +1,15 @@
+# Every six hours, and once at boot if the machine was off when a run was due.
+# Enable the timer, not the service: `systemctl enable --now otc-backup.timer`.
+[Unit]
+Description=OTC market engine — verified state backup, every six hours
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=6h
+# Survives a host that was asleep: the missed run happens at the next boot
+# instead of waiting for the following six-hour mark.
+Persistent=true
+Unit=otc-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -26,7 +26,7 @@ it is the thing to read first**
 ([PH-40-READINESS-2026-09-28](docs/evidence/PH-40-READINESS-2026-09-28.md),
 [RELEASE-3.0.0](docs/evidence/RELEASE-3.0.0.md)). Twenty findings, every one
 inside a green gate, plus a twenty-first from building the package itself;
-seventeen fixed with a guard watched failing, four written down for the broker. Contract **3.7.0**, digest `b0d3c7c839be46dd`.
+seventeen fixed with a guard watched failing, four written down for the broker. Contract **3.8.0**, digest `77e60212e2388b93`.
 
 What a fresh session must not rebuild, and where the traps are:
 

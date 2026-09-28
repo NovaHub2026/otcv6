@@ -1,0 +1,20 @@
+# **Without this file the image ships the build on the developer's disk** (the
+# readiness audit of 2026-09-28). `deploy/Dockerfile` copies `packages`, `apps/api`
+# and `tools/sim` and then runs `npm run build`, which is `tsc -b`: with a
+# `.tsbuildinfo` and a `dist/` from the host in the context, every project reads as
+# up to date and nothing is emitted, so `CMD node apps/api/dist/main.js` runs
+# JavaScript compiled from another tree — possibly another commit — with no signal
+# that it did. The guide already warns about this for a hand copy
+# (`INTEGRATION.md`: delete the `*.tsbuildinfo` before building elsewhere); the
+# image needs the same thing, and a build context is where it can be enforced.
+**/dist
+**/*.tsbuildinfo
+**/node_modules
+.git
+.github
+**/coverage
+apps/web/.next
+apps/web/.next-stat
+.otc-state
+**/.otc-state
+*.log

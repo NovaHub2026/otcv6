@@ -451,7 +451,8 @@ export const API_ROUTES: readonly RouteContract[] = [
     path: '/markets/stream',
     summary: 'Server-sent events: several markets on one connection, each frame naming its asset.',
     query: {
-      assets: 'comma-separated hosted asset ids',
+      assets:
+        'comma-separated hosted asset ids, at most 32 on one connection (a 33rd is a 400 naming the limit)',
       'from?': 'per-asset next sequences, in the order of assets',
       'onGap?': "'live', as for one market",
       'heartbeat?': HEARTBEAT_QUERY,
@@ -463,7 +464,9 @@ export const API_ROUTES: readonly RouteContract[] = [
       heartbeat: { asset: 'string', ...HEARTBEAT_FRAME },
     },
     refusals: {
-      '400': 'a malformed parameter, or an asset that is not hosted',
+      '400':
+        'a malformed parameter: no `assets`, a repeated asset, more than 32 of them, or a `from` list whose length does not match',
+      '404': 'one of the named assets is not hosted',
       '429':
         'too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused',
     },
@@ -667,6 +670,13 @@ export const CONTRACT_HISTORY: readonly { readonly version: string; readonly dig
   // A broker reconciling a statement across a restart is the one client
   // guaranteed to ask about a gap, so the answer now says which case it is.
   { version: '3.7.0', digest: 'b0d3c7c839be46dd' },
+  // The readiness audit of 2026-09-28, second pass over the documents: two things
+  // the multiplexed stream does that this contract did not say. An asset that is
+  // not hosted is a **404**, exactly as it is on every single-asset route — the
+  // contract filed it under the 400, so a broker's error handling built from this
+  // document treated the real answer as unexpected. And one connection carries at
+  // most 32 assets; a 33rd is a 400 that names the limit, which nothing declared.
+  { version: '3.8.0', digest: '77e60212e2388b93' },
 ];
 
 export const API_VERSION: string = CONTRACT_HISTORY[CONTRACT_HISTORY.length - 1]!.version;

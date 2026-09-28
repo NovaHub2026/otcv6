@@ -5,14 +5,16 @@ el **Lab**, preparados para integrarse en un bróker. No lleva documentación de
 proceso, gobernanza ni planificación: solo lo necesario para ejecutar, conectar y
 operar.
 
-Verificado antes de empaquetar, en este mismo árbol y sin nada más
-(2026-09-05, construido desde el commit `4ee4986` del repositorio — el ciclo 9
-completo con los arreglos del Cycle Audit 9):
+Verificado antes de empaquetar, en este mismo árbol y sin nada más. **Este bloque
+lo reescribe el generador del paquete con lo que vio en su propia ejecución**
+(`integration-package.sh --verify`), así que en el paquete que recibes lleva la
+fecha, el commit y los recuentos de ese paquete y no de ninguna otra cosa. Lo que
+sigue son los de la última ejecución en el repositorio (2026-09-28):
 
 ```
 npm install         → 364 paquetes
 npm run build       → exit 0
-npm run test:unit   → 142 ficheros, 2.651 pruebas, exit 0
+npm run test:unit   → 186 ficheros, 3.729 pruebas, exit 0
 node apps/api/dist/main.js  → 30 mercados, /health "ok", ticks en vivo
 node examples/ticks-client.mjs eurusd-otc  → reanuda por secuencia y convierte precios
 ```
@@ -69,7 +71,7 @@ npm run build
 
 export OTC_MASTER_SECRET=$(openssl rand -hex 32)   # ← guárdalo, ver §4
 export OTC_ADMIN_TOKEN=$(openssl rand -hex 24)
-export OTC_STATE_DIR=/var/lib/otc
+export OTC_STATE_DIR=./.otc-state          # en producción /var/lib/otc, con dueño
 
 node apps/api/dist/main.js
 ```
@@ -111,7 +113,10 @@ Cuatro hechos generales antes de las rutas:
   `GET`, `HEAD` y `OPTIONS`, y exige el token para todo lo demás — hoy y para
   cualquier ruta que se añada mañana.
 - **Los errores tienen una forma fija**:
-  `{ "message": "…", "error": "Bad Request", "statusCode": 400 }`.
+  `{ "message": "…", "error": "Bad Request", "statusCode": 400 }` — con una
+  excepción: el `503` de `GET /health/ready` responde
+  `{ "ready": false, "reason": "…" }`, porque es una sonda y no una llamada de
+  cliente. Si tu capa de errores da por supuesta la forma fija, esa ruta la rompe.
 - **Un `POST` correcto devuelve 201**, incluido `POST /assets/:id/retire`.
 - El literal `/markets/stream` se declara antes que `/markets/:id`, así que gana
   la ruta literal: no llames `stream` a un activo.
@@ -121,11 +126,24 @@ Cuatro hechos generales antes de las rutas:
 ```
 GET /health
 → { "status": "ok" | "degraded", "assets": 30, "stalled": [], "bootNonce": null,
-    "apiVersion": "3.0.0", "ready": true }
+    "apiVersion": "3.8.0", "ready": true, "composition": "production" }
 ```
 
-`degraded` significa que algún mercado dejó de imprimir ticks; `stalled` los nombra.
-Úsalo como _readiness probe_.
+**`composition` es la clave que tienes que comprobar antes de producción.** Vale
+`production` o `lab`. Un proceso compuesto como Lab sirve **todas** las rutas de
+este contrato y además `/lab`, cuyos controles empujan, pulsan y fijan el precio a
+mano: es decir, un motor con el que se puede dirigir el mercado responde igual que
+el de producción a todo lo que tú miras. La suite de conformidad rechaza cualquier
+cosa que no diga `production` (y esta guía no mencionaba la clave hasta la
+auditoría de preparación de 2026-09-28, con lo que un gate propio podía pasar 37
+de 37 contra un Lab).
+
+`degraded` significa que algo dejó de imprimir ticks, y **no siempre nombra qué**:
+`stalled` lista los mercados parados, pero las otras dos causas —una pasada de
+publicación que falló entera, o el bloqueo de escritor perdido— salen con
+`stalled: []`, y esas dos son las peores. Escala también sobre `status`, no sólo
+sobre la lista, y mira `GET /health/ready` y el log para el motivo. Como
+_readiness probe_ usa `/health/ready`, no esta ruta.
 
 ### 3.2 Catálogo
 
@@ -150,7 +168,8 @@ arquetipo, carácter y fuente del precio de referencia — y nada privado:
   "logQuantum": 0.000004044597092506429,
   "meanIntervalMs": 972.3127707827689,
   "tieRate": 0.12880677095140936,
-  "excessKurtosis": 51.74839887934475,
+  "realisedRefundRate": 0.03467100054173438,
+  "excessKurtosis": 47.63833473015517,
   "dispersion": { "quarterlyLogSigma": 0.038, "quarterlyPercent": 0.03804117794545922 }
 }
 ```
@@ -163,7 +182,7 @@ arquetipo, carácter y fuente del precio de referencia — y nada privado:
   "displayName": "EUR/USD OTC",
   "family": "forex",
   "price": -156,
-  "displayPrice": "1.1599433",
+  "displayPrice": "1.159268",
   "sequence": 9,
   "instant": 1788609132652,
   "recovery": { "kind": "fresh" }
@@ -242,8 +261,16 @@ lo lista como otra época), no abre costura y no rompe ninguna vela.
 > en 30 de 30 activos, con un error mediano del 31,8% y un peor caso del 1.483%**
 > (Auditoría de Ciclo 12, hallazgo 3).
 >
-> Desde la versión **3.0.0** del contrato cada tick publicado lleva su propio
-> `logQuantum` y `referencePrice`, y son esos los que hay que usar. Si el venue
+> Desde la versión **3.0.0** del contrato `GET /markets/:id/ticks/:sequence` y
+> `GET /markets/:id/price` traen `logQuantum`, `referencePrice` y
+> `displayPrecision` con cada precio, y son esos los que hay que usar. **El
+> stream no**: un frame de tick es `{sequence, instant, price}` y nada más, por
+> tamaño. Así que si archivas lo que llega por el stream —que es de donde sacas
+> casi todos los ticks— guarda al lado el marco en el que llegó: pídelo una vez
+> con `GET /markets/:id/lattices`, que lista cada marco que el registro ha tenido
+> y desde qué secuencia. Un entero guardado sin su marco es exactamente el
+> defecto que este apartado existe para evitar (esta guía decía "cada tick
+> publicado" hasta la auditoría de preparación de 2026-09-28). Si el venue
 > no puede decir en qué contaba un entero, responde `displayPrice: null` en vez
 > de un número derivado de un marco que nadie publicó: **un nulo es una
 > afirmación, un número equivocado no**. Trata ese nulo como "sin precio
@@ -307,19 +334,28 @@ GET /markets/:id/stream?from=<sequence>&onGap=live
 - Sin `from`, empieza en el borde vivo.
 - Con `from=N`, reproduce desde esa secuencia. Si ya fue desalojada → **400**, no
   un stream vacío: un cliente no puede detectar lo que nunca recibió.
-- Se honra la cabecera `Last-Event-ID` de la reconexión automática del navegador
-  con el mismo significado que `from`.
+- Se honra la cabecera `Last-Event-ID` de la reconexión automática del navegador,
+  y **no significa lo mismo que `from`**: `from=N` es "la siguiente secuencia que
+  quiero" (inclusiva) y `Last-Event-ID: N` es "la última que recibí", así que el
+  servidor reanuda en `N+1`. Si reutilizas tu valor de `from` en la cabecera te
+  saltas exactamente un tick en cada reconexión, sin que nada te avise — el motivo
+  por el que existe todo este protocolo (esta guía las llamaba equivalentes hasta
+  la auditoría de preparación de 2026-09-28).
 - `onGap=live` pide que, ante un hueco, el servidor emita **primero** un evento
   `gap` y a continuación **toda la ventana que aún retiene**, desde su secuencia
   más antigua — no el borde vivo:
 
   ```
   event: gap
-  data: {"asset":"eurusd-otc","requested":481775,"reason":"...","resumesAt":483102}
+  data: {"requested":481775,"reason":"...","resumesAt":483102}
   ```
 
   `requested` es lo que pediste; `resumesAt` es la primera secuencia que vas a
-  recibir. El hueco es exactamente `[requested, resumesAt − 1]`: recarga ese
+  recibir. **Sin `asset`**: en un stream de un solo activo ya sabes cuál es, y esa
+  clave la añade únicamente el stream multiplexado (`/markets/stream`), donde la
+  llevan los cuatro tipos de evento. Este ejemplo la traía, así que un cliente que
+  validara sobre `event.asset` leía `undefined` justo en el frame que no puede
+  tratar mal (la auditoría de preparación de 2026-09-28). El hueco es exactamente `[requested, resumesAt − 1]`: recarga ese
   tramo del histórico de velas, porque esos ticks ya no vas a ver. Solo cuando
   el rechazo se debe al presupuesto de reproducción del proceso (no a la
   ventana) el servidor te une al borde vivo, y entonces `resumesAt` es `null`.
@@ -526,8 +562,19 @@ para liquidar.
 ```
 GET /markets/eurusd-otc/price?at=1788492000000
 { "assetId": "eurusd-otc", "at": 1788492000000, "rule": "last-tick-at-or-before",
-  "sequence": 41209, "instant": 1788491999412, "price": -3118, "displayPrice": "1.09657" }
+  "sequence": 41209, "instant": 1788491999412, "price": -3118,
+  "logQuantum": 0.000004044597092506429, "referencePrice": 1.16,
+  "displayPrecision": 6, "displayPrice": "1.145463", "seam": null }
 ```
+
+Las cuatro claves después de `price` no son decoración: `logQuantum` y
+`referencePrice` son la unidad en la que cuenta ese entero, y **sólo son
+comparables dos enteros que traen las mismas dos** (§5). `displayPrecision` es con
+cuántos decimales se imprime, y `seam` nombra la discontinuidad en vigor en ese
+instante, o `null`. Este ejemplo las omitía las cuatro y mostraba un precio que el
+motor no puede imprimir, así que un DTO copiado de aquí se quedaba sin la única
+defensa contra una liquidación invertida (la auditoría de preparación de
+2026-09-28).
 
 ### 3.8 El contrato y el cliente de referencia
 
@@ -590,11 +637,16 @@ Dos cosas que conviene saber antes de enchufar el motor a un frontend:
 - **La frecuencia de ticks sigue al carácter del activo y a su estado.** Un
   activo tranquilo tiene menos ticks por segundo que uno volátil, y todos se
   aceleran cuando el mercado se agita. Medido sobre sesenta días simulados por
-  activo, la mediana del catálogo va de **1,86 ticks/s en calma a 5,74 en
-  estrés** (normal 2,34), y por activo desde 0,88 /s (EUR/GBP en su régimen
-  normal) hasta 13,8 /s (DOGE en estrés). El catálogo entero da **un 40% menos
-  de ticks** que hasta la v2.1.0: menos tráfico en el stream y menos registro
-  que guardar, sin cambiar el tamaño de las velas.
+  activo, la mediana del catálogo va de **1,84 ticks/s en calma a 3,91 en
+  estrés** (normal 2,33), y por activo hasta **7,71 /s** (DOGE en estrés)
+  ([PH-35-THE-LEVEL](../evidence/PH-35-THE-LEVEL.md) §2; el intervalo medio por
+  activo que sirve `/catalogue` en `meanIntervalMs` es lo mismo visto al revés).
+  Estas cifras eran las de la v2.3.0 —1,86 / 5,74 / 13,8— hasta la auditoría de
+  preparación de 2026-09-28: el régimen de estrés bajó al recalibrar el nivel al
+  que corre el mercado, y dimensionar el stream con las viejas sobra un 47% en la
+  mediana y un 79% en el pico. El catálogo entero da **menos ticks** que hasta la
+  v2.1.0: menos tráfico en el stream y menos registro que guardar, sin cambiar el
+  tamaño de las velas.
 - **El mercado se mueve como el instrumento real que da nombre a cada activo**:
   su volatilidad media es la de ese instrumento (×0,99 medido sobre sesenta días
   por activo). En la v2.2.0 era 1,7 veces mayor, y se cambió porque un mercado
@@ -646,11 +698,12 @@ Cada entrada de `GET /catalogue` lleva:
   "retired": false,
   "referencePrice": 1.16,
   "displayPrecision": 6,
-  "logQuantum": 4.04e-6,
-  "meanIntervalMs": 348,
-  "tieRate": 0.0095,
-  "excessKurtosis": 51.7,
-  "dispersion": { "quarterlyLogSigma": 0.038, "quarterlyPercent": 3.8 },
+  "logQuantum": 0.000004044597092506429,
+  "meanIntervalMs": 972.3127707827689,
+  "tieRate": 0.12880677095140936,
+  "realisedRefundRate": 0.03467100054173438,
+  "excessKurtosis": 47.63833473015517,
+  "dispersion": { "quarterlyLogSigma": 0.038, "quarterlyPercent": 0.03804117794545922 },
   "seat": {
     "archetype": "major-fx",
     "character": "The deepest ladder and the longest excitation memory of the eight pairs…",
@@ -700,25 +753,28 @@ decimales y nunca menos.
 
 ## 4. Configuración
 
-| Variable                 | Por defecto                 | Qué hace                                                                                                                                                                                          |
-| ------------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OTC_MASTER_SECRET`      | — **obligatoria**           | 64 caracteres hex (32 bytes). De aquí se deriva todo el mercado.                                                                                                                                  |
-| `OTC_KEY_ID`             | `primary`                   | **Solo una etiqueta**, anotada en los puntos de control para saber qué secreto los generó. **No entra en la derivación**: cambiarla no cambia el mercado.                                         |
-| `PORT`                   | `3000`                      | Puerto del motor.                                                                                                                                                                                 |
-| `OTC_BIND`               | `127.0.0.1`                 | Interfaz. Rechaza `0`, `*`, `any`, `all`: si quieres exponerlo, escribe `0.0.0.0` — y pon el token antes.                                                                                         |
-| `OTC_TRUSTED_PROXIES`    | `0`                         | Saltos de proxy en los que confiar para leer la dirección del cliente (`X-Forwarded-For`). `1` detrás del nginx incluido; `0` si el motor se expone directamente. Lo lee el límite de peticiones. |
-| `OTC_ADMIN_TOKEN`        | —                           | Sin él, toda escritura se rechaza (403). **Mínimo 16 caracteres**: uno más corto impide arrancar.                                                                                                 |
-| `OTC_CORS_ORIGIN`        | `*` (solo `GET, HEAD`)      | Orígenes permitidos, separados por comas. CORS no es autorización.                                                                                                                                |
-| `OTC_STATE_DIR`          | `./.otc-state`              | Directorio de estado durable.                                                                                                                                                                     |
-| `OTC_HISTORY_DB`         | `$OTC_STATE_DIR/history.db` | Base SQLite del histórico.                                                                                                                                                                        |
-| `OTC_RECORD_DB`          | `$OTC_STATE_DIR/record.db`  | Base SQLite del **registro de ticks**: lo que hace que una reanudación exacta y una liquidación reproducible sobrevivan al proceso (§3.7).                                                        |
-| `OTC_RECORD_TICKS`       | `250000`                    | Ticks retenidos por activo en el registro. Mínimo 50.000. A 61,2 bytes por tick medidos, 250.000 son 15,2 MiB por activo y 456 MiB en los treinta.                                                |
-| `OTC_ASSET_REGISTRY_DIR` | `$OTC_STATE_DIR/assets`     | Activos creados y sus superposiciones.                                                                                                                                                            |
-| `OTC_BOOT_NONCE`         | —                           | Se devuelve en `/health` como `bootNonce`; sirve para saber **qué** proceso contestó en un puerto.                                                                                                |
-| `OTC_BACKFILL_DAYS`      | `0`                         | Días de pasado sintético que se dan a un activo **sin registro previo**. Solo dígitos, tope 365. **Irreversible**: una vez generado, ese pasado es el pasado de ese mercado.                      |
-| `OTC_PUBLICATION_DIR`    | —                           | Activa la publicación firmada del registro. Si la pones, `OTC_PUBLISHING_KEY` pasa a ser obligatoria.                                                                                             |
-| `OTC_PUBLISHING_KEY`     | —                           | Semilla Ed25519, 64 hex. **Se rechaza si es igual a `OTC_MASTER_SECRET`**: firmar con el secreto del que se deriva el mercado lo filtraría.                                                       |
-| `OTC_LAB_PORT`           | `PORT` o `3100`             | Puerto del proceso Lab.                                                                                                                                                                           |
+| Variable                    | Por defecto                 | Qué hace                                                                                                                                                                                                                                            |
+| --------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OTC_MASTER_SECRET`         | — **obligatoria**           | 64 caracteres hex (32 bytes). De aquí se deriva todo el mercado.                                                                                                                                                                                    |
+| `OTC_KEY_ID`                | `primary`                   | **Solo una etiqueta**, anotada en los puntos de control para saber qué secreto los generó. **No entra en la derivación**: cambiarla no cambia el mercado.                                                                                           |
+| `PORT`                      | `3000`                      | Puerto del motor.                                                                                                                                                                                                                                   |
+| `OTC_BIND`                  | `127.0.0.1`                 | Interfaz. Rechaza `0`, `*`, `any`, `all`: si quieres exponerlo, escribe `0.0.0.0` — y pon el token antes.                                                                                                                                           |
+| `OTC_TRUSTED_PROXIES`       | `0`                         | Saltos de proxy en los que confiar para leer la dirección del cliente (`X-Forwarded-For`). `1` detrás del nginx incluido; `0` si el motor se expone directamente. Lo lee el límite de peticiones.                                                   |
+| `OTC_ADMIN_TOKEN`           | —                           | Sin él, toda escritura se rechaza (403). **Mínimo 16 caracteres**: uno más corto impide arrancar.                                                                                                                                                   |
+| `OTC_CORS_ORIGIN`           | `*` (solo `GET, HEAD`)      | Orígenes permitidos, separados por comas. CORS no es autorización.                                                                                                                                                                                  |
+| `OTC_STATE_DIR`             | `./.otc-state`              | Directorio de estado durable.                                                                                                                                                                                                                       |
+| `OTC_HISTORY_DB`            | `$OTC_STATE_DIR/history.db` | Base SQLite del histórico.                                                                                                                                                                                                                          |
+| `OTC_RECORD_DB`             | `$OTC_STATE_DIR/record.db`  | Base SQLite del **registro de ticks**: lo que hace que una reanudación exacta y una liquidación reproducible sobrevivan al proceso (§3.7).                                                                                                          |
+| `OTC_RECORD_TICKS`          | `250000`                    | Ticks retenidos por activo en el registro. Mínimo 50.000. A 61,2 bytes por tick medidos, 250.000 son 15,2 MiB por activo y 456 MiB en los treinta.                                                                                                  |
+| `OTC_ASSET_REGISTRY_DIR`    | `$OTC_STATE_DIR/assets`     | Activos creados y sus superposiciones.                                                                                                                                                                                                              |
+| `OTC_BOOT_NONCE`            | —                           | Se devuelve en `/health` como `bootNonce`; sirve para saber **qué** proceso contestó en un puerto.                                                                                                                                                  |
+| `OTC_BACKFILL_DAYS`         | `0`                         | Días de pasado sintético que se dan a un activo **sin registro previo**. Solo dígitos, tope 365. **Irreversible**: una vez generado, ese pasado es el pasado de ese mercado.                                                                        |
+| `OTC_PUBLICATION_DIR`       | —                           | Activa la publicación firmada del registro. Si la pones, `OTC_PUBLISHING_KEY` pasa a ser obligatoria.                                                                                                                                               |
+| `OTC_PUBLISHING_KEY`        | —                           | Semilla Ed25519, 64 hex. **Se rechaza si es igual a `OTC_MASTER_SECRET`**: firmar con el secreto del que se deriva el mercado lo filtraría.                                                                                                         |
+| `OTC_RATE_LIMIT_PER_MINUTE` | `600`                       | Peticiones por minuto y por dirección. `0` lo desactiva. Se aplica a **todas** las rutas menos `/health/live`, `/health/ready` y `/metrics` — incluida `/markets/:id/price`, la de liquidación: es la única negativa que provoca tu propio tráfico. |
+| `OTC_AUTO_REOPEN`           | `1`                         | Un mercado que se pasa del límite de recuperación **se reabre solo** (ADR-0020). `0` devuelve el comportamiento anterior: se queda parado hasta que alguien reinicie el proceso.                                                                    |
+| `OTC_TRUSTED_PROXIES`       | `0`                         | Saltos de proxy en los que confiar para `X-Forwarded-For`. Detrás del `nginx.conf` que se entrega: **1**. Con `0` el límite de peticiones ve sólo la dirección de nginx y todos tus clientes comparten un cupo.                                     |
+| `OTC_LAB_PORT`              | `PORT` o `3100`             | Puerto del proceso Lab.                                                                                                                                                                                                                             |
 
 Toda la configuración se lee **una vez, al componer el proceso**. No hay recarga
 en caliente: un cambio de variable es un reinicio. Dos cosas que **no** son
@@ -767,8 +823,14 @@ registro, cada uno rechaza lo que el otro publicó, y ambos siguen contestando
 proceso ya no existe se adopta solo, con un aviso en el log que lo nombra; si ves
 ese aviso después de un despliegue, tenías dos unidades arrancadas.
 
-Orden de arranque: los mercados se levantan **antes** de que escuche el puerto, así
-que nadie observa un motor a medio recuperar. El apagado es el espejo: deja de
+Orden de arranque: el puerto **escucha primero** y los mercados reanudan después,
+y es deliberado — al contrario, una sonda de vida reiniciaba el proceso mientras
+reanudaba, para siempre (Cycle Audit 10). Consecuencia para ti: **que el puerto
+responda no significa que el motor esté recuperado.** Un mercado que aún no ha
+reanudado no está alojado: no sale en `/markets` y sus rutas responden `404`. Lo
+que dice que ya está listo es `GET /health/ready`, y es ahí donde debe apuntar tu
+balanceador o tu orquestador, nunca al puerto a secas (esta guía afirmaba lo
+contrario hasta la auditoría de preparación de 2026-09-28). El apagado es el espejo: deja de
 publicar, escribe un último punto de control, cierra el histórico y sale.
 
 ---
@@ -808,6 +870,12 @@ const contract: Contract = {
 const record: TickRecord = {
   instants: new Float64Array(ticks.map((t) => t.instant)),
   prices: new Int32Array(ticks.map((t) => t.price)),
+  // OBLIGATORIO. `settle()` rechaza un registro que no declara sus
+  // discontinuidades, y el silencio no es una respuesta: si tu despliegue no
+  // guarda ninguna pasa `[]` y lo estás diciendo; si guardas alguna, salen de
+  // `GET /markets/:id/seams`. Sin esta clave no compila y, sin tipos, lanza
+  // `NotSettleableError` en cada llamada.
+  seams: [],
 };
 
 const settlement = settle(contract, record);
@@ -898,7 +966,13 @@ cuadrícula** (`reframes: true`) o que no dice si la cambió. **Rellénalo desde
 `GET /markets/:id/seams`**, no desde el stream:
 
 ```ts
-const seams = await client.seams('eurusd-otc'); // RecordedSeam[]
+const seams = await client.seams('eurusd-otc'); // RecordedSeam[] | Refusal
+// Toda llamada del cliente puede devolver una negativa, y ésta no es una
+// excepción: sin esta guarda no compila, y en ejecución falla con
+// `seams.map is not a function` el día que el motor responda 404 o 429. No
+// liquides con una lista vacía inventada: si no puedes leer las costuras, no
+// puedes afirmar que no las cruzas.
+if (isRefusal(seams)) throw new Error(`no puedo leer las costuras: ${seams.message}`);
 const record = {
   instants,
   prices,
@@ -1098,7 +1172,18 @@ el panel detrás de tu autenticación.
 Desde PH-30.1 el repositorio trae lo que un despliegue arranca:
 
 - `deploy/otc-engine.service` — la unidad de systemd (SIGTERM, `Restart=always`,
-  el directorio de estado, el fichero de secretos).
+  `User=otc` con `Group=` y `StateDirectory=otc` para que systemd cree el
+  directorio de estado con su dueño, el fichero de secretos, y un `ExecStartPre`
+  que rechaza un Node anterior al 24 — el registro y el histórico son
+  `node:sqlite`, que no existe antes). La receta de instalación está en su
+  cabecera y **se ejecuta tal cual**.
+- `deploy/otc-backup.timer` y `deploy/otc-backup.service` — la copia de respaldo
+  del despliegue systemd, cada seis horas, las ocho últimas. Se habilita el
+  _timer_: `systemctl enable --now otc-backup.timer`. **Presupuesta el disco**:
+  cada copia es un `record.db` y un `history.db` completos —unos 456 MiB de
+  registro con treinta activos, más el histórico de velas—, así que ocho copias
+  son varios gigabytes (la auditoría de preparación de 2026-09-28: no había
+  respaldo para systemd y el de compose no decía cuánto ocupa).
 - `deploy/Dockerfile` y `deploy/docker-compose.yml` — la imagen y el compose
   del motor con un volumen para el estado, `healthcheck` sobre `/health/ready`,
   y un servicio `backup` que ejecuta `deploy/backup.sh` cada seis horas.
@@ -1189,24 +1274,28 @@ registra lo mismo. **Restaura siempre la copia más reciente.**
 
 ### systemd
 
-```ini
-[Unit]
-Description=OTC market engine
-After=network.target
+**Usa el fichero del paquete, `deploy/otc-engine.service`, no copies uno de aquí.**
+Esta sección traía una unidad completa y distinta de la que se entrega, y le
+faltaban cuatro líneas: `User=otc` (corría como root), `WorkingDirectory=`,
+`OTC_BIND=127.0.0.1` y `OTC_TRUSTED_PROXIES=1`. Esa última es la que duele: sin
+ella el motor sólo ve la dirección de nginx y **todos tus clientes comparten un
+único cupo de 600 peticiones por minuto** (Cycle Audit 10, encontrado por tres
+auditores por separado; la auditoría de preparación de 2026-09-28 encontró la
+copia de esta guía). La unidad entregada lleva además `Group=`,
+`StateDirectory=otc` —systemd crea y da permisos al directorio de estado antes de
+arrancar— y un `ExecStartPre` que rechaza un Node anterior al 24 con una frase en
+vez de reiniciarse cada dos segundos.
 
-[Service]
-Environment=NODE_ENV=production
-Environment=PORT=3000
-Environment=OTC_STATE_DIR=/var/lib/otc
-EnvironmentFile=/etc/otc/secrets.env    # OTC_MASTER_SECRET, OTC_ADMIN_TOKEN
-ExecStart=/usr/bin/node /opt/otc/apps/api/dist/main.js
-Restart=always
-KillSignal=SIGTERM
-TimeoutStopSec=30
-
-[Install]
-WantedBy=multi-user.target
+```bash
+# La receta está en la cabecera del propio fichero, y se ejecuta tal cual:
+sed -n '1,30p' deploy/otc-engine.service
+cp deploy/otc-engine.service /etc/systemd/system/
+systemctl enable --now otc-engine
 ```
+
+Las copias de respaldo del despliegue systemd van en `deploy/otc-backup.timer` y
+`deploy/otc-backup.service` (cada seis horas, las ocho últimas). El despliegue de
+compose ya trae el suyo.
 
 `SIGTERM` es la señal correcta: el proceso escribe un último punto de control antes
 de salir. Un `SIGKILL` no rompe nada — el siguiente arranque reanuda desde el punto
@@ -1219,7 +1308,7 @@ anterior — pero alarga la reproducción.
 ```bash
 npm run build        # compila todo (tsc -b)
 npm run build:web    # compila el panel
-npm run test:unit    # suite rápida (142 ficheros, ~2 min)
+npm run test:unit    # suite rápida (186 ficheros, 3.729 pruebas, ~1 min)
 npm run test:stat    # suite estadística, en serie (~75 min)
 npm run lint         # ESLint con tipos — requiere build previo
 npm run format:check # Prettier

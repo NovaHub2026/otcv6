@@ -331,3 +331,209 @@ describe('the deployment files match the engine (PH-30.1)', () => {
     });
   });
 });
+
+/**
+ * **Ten defects in these files, all of them found by reading them against the
+ * code rather than by any test** (the readiness audit of 2026-09-28). Every one
+ * would have hit an operator on a first deployment, and the guards above had
+ * grepped the same files for other properties without ever asking these
+ * questions. `nginx -t` cannot run here — nginx is not installed on a gate host —
+ * so the proxy is held to the structural invariant instead.
+ */
+describe('the deployment files can actually be deployed', () => {
+  const guide = (): string =>
+    readFileSync(path.join(root, 'docs/integration/INTEGRATION.md'), 'utf8');
+
+  it('nginx declares a certificate for every TLS listener, or listens without TLS', () => {
+    const conf = read('nginx.conf');
+    const directives = conf
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('#'))
+      .join('\n');
+    const tlsListeners = [...directives.matchAll(/^\s*listen\s+([^;]*);/gm)].filter(([, rest]) =>
+      /\bssl\b/.test(rest!),
+    );
+    if (tlsListeners.length > 0) {
+      expect(
+        directives,
+        'nginx refuses the whole config at parse time when a `listen ... ssl` has no ' +
+          'certificate — `no "ssl_certificate" is defined` — so the layer that cuts the ' +
+          'write surface is the one piece of the deployment that never starts',
+      ).toMatch(/^\s*ssl_certificate\s+\S+;/m);
+      expect(directives).toMatch(/^\s*ssl_certificate_key\s+\S+;/m);
+    }
+    // And there is a listener at all: a server block with none listens on 80 by
+    // default as root, which is not what this file means.
+    expect(
+      tlsListeners.length + [...directives.matchAll(/^\s*listen\s+/gm)].length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('nginx lets the monitor of every shipped topology reach /metrics', () => {
+    const conf = read('nginx.conf');
+    const block = /location[^{]*\(metrics\|health\/ready\)[^{]*\{([\s\S]*?)\}/.exec(conf)?.[1];
+    expect(block, 'the monitor location is gone or unrecognisable').toBeDefined();
+    // The engine binds loopback and compose publishes on 127.0.0.1, so a monitor
+    // on the same host is the shipped topology. It allowed 10/8 alone, which
+    // excludes that, Docker's default bridge and every 192.168 LAN.
+    expect(block, 'the monitor cannot reach /metrics from the host the engine runs on').toMatch(
+      /allow 127\.0\.0\.1;/,
+    );
+    expect(block).toMatch(/allow 172\.16\.0\.0\/12;/);
+    expect(block, 'the monitor surface must still not be public').toMatch(/deny all;/);
+  });
+
+  it('the systemd unit runs as a user the recipe creates, on a directory systemd gives it', () => {
+    const unit = read('otc-engine.service');
+    const value = (key: string): string | undefined =>
+      new RegExp(`^${key}=(.*)$`, 'm').exec(unit)?.[1];
+    const user = value('User');
+    expect(user, 'the unit runs as root').toBeDefined();
+    expect(value('Group'), 'no Group=, so the files it writes are owned by a surprise').toBe(user);
+    // Without this, `install -d /var/lib/otc` leaves a root-owned directory and the
+    // engine's first act — a lock file *inside* it — is an EACCES printed as a raw
+    // Node stack, at RestartSec=2.
+    expect(
+      value('StateDirectory'),
+      'systemd must create and chown the state directory: the unit does not run as root',
+    ).toBeDefined();
+    expect(unit, `the install recipe never creates ${String(user)}`).toMatch(
+      new RegExp(`useradd[^\\n]*\\b${String(user)}\\b`),
+    );
+    // The recipe's secrets line was a literal `...`, which writes three empty
+    // values and dies on "OTC_MASTER_SECRET must be 64 hex characters".
+    const recipe = unit.slice(0, unit.indexOf('[Unit]'));
+    expect(recipe, 'the recipe writes secrets it does not generate').toMatch(/openssl rand -hex/);
+    expect(recipe).not.toMatch(/%s\\n' \.\.\./);
+  });
+
+  it('the systemd unit refuses a Node too old for node:sqlite, in one line', () => {
+    const unit = read('otc-engine.service');
+    const pre = /^ExecStartPre=(.*)$/m.exec(unit)?.[1];
+    expect(pre, 'nothing checks the Node version, so an old one crash-loops').toBeDefined();
+    expect(pre).toMatch(/node/);
+    // The real requirement, from the source of truth rather than a number typed
+    // here: the record and the history import `node:sqlite`.
+    expect(readFileSync(path.join(root, 'packages/runtime/src/stateDirectory.ts'), 'utf8')).toMatch(
+      /from 'node:sqlite'/,
+    );
+    const engines = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) as {
+      engines?: { node?: string };
+    };
+    const major = /(\d+)/.exec(engines.engines?.node ?? '')?.[1];
+    expect(major, 'package.json no longer states a Node version').toBeDefined();
+    expect(
+      pre,
+      `the gate must name the major this workspace requires (${String(major)})`,
+    ).toContain(String(major));
+    // And the snippet must be shell systemd can run: no nested double quotes
+    // inside the command substitution, which is how the first attempt broke.
+    const script = /-c '(.*)'$/.exec(pre!)?.[1]?.replaceAll('$$', '$');
+    expect(script, 'ExecStartPre is not a quoted sh -c command').toBeDefined();
+    const checked = spawnSync('/bin/sh', ['-n', '-c', script!], { encoding: 'utf8' });
+    expect(checked.status, `sh cannot parse the version gate: ${checked.stderr}`).toBe(0);
+  });
+
+  it('the health checks follow PORT instead of hard-coding one', () => {
+    // A container that is `unhealthy` for ever on a changed port takes the backup
+    // service with it, because compose gates it on `service_healthy`: up, healthy,
+    // and never a single backup written.
+    expect(readFileSync(path.join(root, 'apps/api/src/main.ts'), 'utf8')).toMatch(
+      /process\.env\.PORT/,
+    );
+    for (const file of ['Dockerfile', 'docker-compose.yml']) {
+      const text = read(file);
+      const probe = /health\/ready[^\n]*/.exec(text)?.[0] ?? '';
+      expect(probe, `${file} probes readiness`).not.toBe('');
+      const line = text.split('\n').find((l) => l.includes('health/ready')) ?? '';
+      expect(line, `${file} hard-codes the port its probe asks for`).toMatch(/process\.env\.PORT/);
+    }
+  });
+
+  it('a build context cannot carry the host build into the image', () => {
+    // `npm run build` is `tsc -b`: with a dist/ and a .tsbuildinfo from the host in
+    // the context, every project reads as up to date, nothing is emitted, and the
+    // image runs JavaScript compiled from another tree.
+    const ignore = readFileSync(path.join(root, '.dockerignore'), 'utf8');
+    for (const pattern of ['dist', '*.tsbuildinfo', 'node_modules']) {
+      expect(ignore, `.dockerignore does not exclude ${pattern}`).toContain(pattern);
+    }
+    expect(read('Dockerfile')).toMatch(/npm run build/);
+  });
+
+  it('the systemd deployment has a backup, and it runs once per firing', () => {
+    for (const file of ['otc-backup.service', 'otc-backup.timer']) {
+      expect(existsSync(path.join(root, 'deploy', file)), `deploy/${file} is missing`).toBe(true);
+    }
+    const service = read('otc-backup.service');
+    expect(/^Type=(.*)$/m.exec(service)?.[1]).toBe('oneshot');
+    const exec = /^ExecStart=(.*)$/m.exec(service)?.[1] ?? '';
+    expect(exec).toMatch(/backup\.sh/);
+    // Four arguments would be the looping form, which belongs to compose: under a
+    // timer it would sleep for ever inside a oneshot unit.
+    expect(exec.trim().split(/\s+/).length, 'the timer form of backup.sh takes no interval').toBe(
+      4,
+    );
+    const timer = read('otc-backup.timer');
+    expect(timer).toMatch(/^OnUnitActiveSec=/m);
+    expect(timer, 'a host that was asleep must still take its missed backup').toMatch(
+      /^Persistent=true$/m,
+    );
+    expect(timer).toMatch(/^WantedBy=timers\.target$/m);
+    expect(guide(), 'the guide does not name the timer').toContain('deploy/otc-backup.timer');
+  });
+
+  it('the guide ships no second systemd unit, because the second one was wrong', () => {
+    // Its copy omitted User=, WorkingDirectory=, OTC_BIND and OTC_TRUSTED_PROXIES.
+    // The last puts every client on the Internet in one 600/min bucket behind the
+    // proxy described 120 lines earlier in the same section — the Cycle Audit 10
+    // defect, re-shipped in the document an operator actually pastes from.
+    const text = guide();
+    const blocks = [...text.matchAll(/```ini\n([\s\S]*?)```/g)].map(([, body]) => body!);
+    for (const block of blocks.filter((b) => b.includes('[Service]'))) {
+      expect(
+        block,
+        'a systemd unit in the guide must set OTC_TRUSTED_PROXIES, or not be in the guide',
+      ).toMatch(/OTC_TRUSTED_PROXIES=/);
+      expect(block, 'a systemd unit in the guide must not run the engine as root').toMatch(/User=/);
+    }
+    expect(text, 'the guide must point at the unit that is guarded').toContain(
+      'deploy/otc-engine.service',
+    );
+  });
+
+  it('the guide states the boot order the code implements, not the reverse', () => {
+    // It said the markets come up *before* the port listens. The code listens
+    // first, deliberately (Cycle Audit 10, a5-02: the old order let a liveness
+    // probe restart the venue for ever), which is the whole reason /health/ready
+    // exists. An operator who believed the guide pointed a load balancer at the
+    // port and routed traffic at markets that answer 404.
+    const main = readFileSync(path.join(root, 'apps/api/src/main.ts'), 'utf8');
+    const listensAt = main.indexOf('app.listen(');
+    const resumesAt = main.indexOf('venue.start()');
+    expect(listensAt).toBeGreaterThan(0);
+    expect(resumesAt).toBeGreaterThan(0);
+    expect(
+      listensAt,
+      'main.ts no longer listens before it resumes: fix the guide too',
+    ).toBeLessThan(resumesAt);
+    const text = guide();
+    expect(text, 'the guide claims the markets come up before the port').not.toMatch(
+      /mercados se levantan \*\*antes\*\* de que escuche el puerto/,
+    );
+    expect(text, 'the guide must send readiness checks to /health/ready').toMatch(/health\/ready/);
+  });
+
+  it('the quickstart writes somewhere a non-root user can write', () => {
+    // `export OTC_STATE_DIR=/var/lib/otc` was the guide's *first* command block,
+    // and /var/lib is root-owned everywhere: the engine dies taking its lock, with
+    // a raw EACCES stack.
+    const first = /```bash\n([\s\S]*?)```/.exec(guide())?.[1] ?? '';
+    const assignment = /OTC_STATE_DIR=(\S+)/.exec(first)?.[1];
+    expect(assignment, 'the quickstart no longer sets a state directory').toBeDefined();
+    expect(
+      assignment!.startsWith('/'),
+      `the quickstart writes to ${String(assignment)}, which a non-root user cannot create`,
+    ).toBe(false);
+  });
+});

@@ -1,8 +1,8 @@
 # API Contract
 
 Type: SUPPORTING DOCUMENTATION (generated; do not edit by hand)
-Version: 3.7.0
-Digest: b0d3c7c839be46dd
+Version: 3.8.0
+Digest: 77e60212e2388b93
 Source: `apps/api/src/contract.ts` — rendered by `npm run contract:render`; held to the controller by `contract.test.ts`
 
 ---
@@ -391,7 +391,7 @@ Server-sent events: several markets on one connection, each frame naming its ass
 
 | Query parameter | Must be |
 | --- | --- |
-| `assets` | comma-separated hosted asset ids |
+| `assets` | comma-separated hosted asset ids, at most 32 on one connection (a 33rd is a 400 naming the limit) |
 | `from?` | per-asset next sequences, in the order of assets |
 | `onGap?` | 'live', as for one market |
 | `heartbeat?` | milliseconds between heartbeat frames, 500 to 30000; omitted, the stream carries none |
@@ -435,7 +435,8 @@ Response: `text/event-stream`. Frames by event name (`message` is the default ev
 
 | Status | When |
 | --- | --- |
-| 400 | a malformed parameter, or an asset that is not hosted |
+| 400 | a malformed parameter: no `assets`, a repeated asset, more than 32 of them, or a `from` list whose length does not match |
+| 404 | one of the named assets is not hosted |
 | 429 | too many requests from this address; `Retry-After` names the wait in seconds (`OTC_RATE_LIMIT_PER_MINUTE`, 600 a minute by default, `0` disables it). `/health/live`, `/health/ready` and `/metrics` are never refused |
 
 ## GET `/registrations`

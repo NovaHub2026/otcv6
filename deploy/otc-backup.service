@@ -1,0 +1,35 @@
+# A verified backup of the state directory, for the systemd deployment (the
+# readiness audit of 2026-09-28).
+#
+# `deploy/` shipped a backup for the compose topology and none for the systemd
+# one — the topology the unit header, `deploy.test.ts` and ADR-0018 all treat as
+# the deployment — while `INTEGRATION.md` described the six-hourly backup as
+# though it were part of the deployment generally. An operator following the
+# systemd path had no backups and nothing said so.
+#
+#   cp deploy/otc-backup.service deploy/otc-backup.timer /etc/systemd/system/
+#   install -d -o otc -g otc /var/backups/otc
+#   systemctl enable --now otc-backup.timer
+#   systemctl list-timers otc-backup.timer      # when it next runs
+#   journalctl -u otc-backup.service            # what it wrote, and the verdict
+#
+# Disk: each run is a full copy of `record.db` and `history.db`. Thirty assets at
+# the default retention is ~456 MiB of record plus the candle history, so **eight
+# copies is a few gigabytes** — put /var/backups/otc somewhere that can hold it,
+# and lower `keep` (the third argument) if it cannot.
+[Unit]
+Description=OTC market engine — verified state backup
+# Not `Requires=`: a backup of a stopped venue is a perfectly good backup, and
+# the copy is consistent whether or not the engine is running (PH-28.3).
+After=otc-engine.service
+
+[Service]
+Type=oneshot
+User=otc
+Group=otc
+WorkingDirectory=/opt/otc
+# `keep` with no interval: one run, then exit. The timer is what repeats it, so a
+# failure is a failed unit an operator can see rather than a sleeping loop.
+ExecStart=/opt/otc/deploy/backup.sh /var/lib/otc /var/backups/otc 8
+# The script shells out to node for the copy itself.
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

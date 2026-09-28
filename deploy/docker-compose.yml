@@ -48,7 +48,7 @@ services:
           'CMD',
           'node',
           '-e',
-          "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
         ]
       interval: 15s
       timeout: 3s
@@ -72,6 +72,14 @@ services:
       - otc-state:/var/lib/otc
       - otc-backups:/backups
     # Every six hours, a verified copy; the last eight are kept (deploy/backup.sh).
+    #
+    # **Budget the disk.** Each copy is a full `record.db` and `history.db`: thirty
+    # assets at the default retention is ~456 MiB of record plus the candle
+    # history, so eight copies is a few gigabytes, and it lands in the
+    # `otc-backups` volume on the Docker root filesystem within two days of
+    # `docker compose up -d` (the readiness audit of 2026-09-28 — the comment said
+    # "the last eight are kept" and never multiplied it out). Bind-mount
+    # `/backups` somewhere sized for it, or lower the `8`.
     command: ['bash', 'deploy/backup.sh', '/var/lib/otc', '/backups', '8', '21600']
     restart: unless-stopped
 

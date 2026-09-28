@@ -5,7 +5,7 @@ Recorded: 2026-09-28
 Tag: `v3.0.0` — @@COMMIT@@, gated green locally and corroborated by hosted CI on both jobs
 Supersedes: [`RELEASE-2.4.0.md`](RELEASE-2.4.0.md) for deployment
 Package: `tools/sim/scripts/integration-package.sh v3.0.0 <dir>`
-API contract: **3.7.0** (`b0d3c7c839be46dd`), from `2.1.0` in `v2.4.0`
+API contract: **3.8.0** (`77e60212e2388b93`), from `2.1.0` in `v2.4.0`
 
 ---
 
@@ -39,7 +39,7 @@ unusual:
   now (ADR-0020), and a reopening that starves before its first tick is re-armed
   rather than refused for the life of the process (PH-39).
 
-## 2. What changed in the contract: 2.1.0 → 3.7.0
+## 2. What changed in the contract: 2.1.0 → 3.8.0
 
 **3.0.0 — a published price says what it counts in** (PH-38.3). `PUBLISHED`
 carries `logQuantum` and `referencePrice`, so a broker that archived integers can
@@ -99,6 +99,12 @@ bounds _contain_ the gap. The live restore drill asked for 2,399 and was told "n
 in the record, which holds 1–102446". A sequence inside the bounds now says it
 fell in a gap and points at `/markets/:id/seams`; one genuinely past the record
 still gets the bounds, because there the answer is "ask again later".
+
+**3.8.0 — the multiplexed stream declares what it actually refuses.** An asset
+that is not hosted is a `404`, exactly as on every single-asset route; the contract
+filed it under the `400`, so error handling written from the document treated the
+real answer as unexpected. And one connection carries at most 32 assets — a 33rd is
+a `400` naming the limit, which nothing declared.
 
 The heartbeat is opt-in and the other additions are keys, so apart from the
 nullable `displayPrice` a client built against `2.1.0` keeps working.
@@ -169,7 +175,7 @@ displayPrecision`. A broker that shows fewer decimals than the engine
    first.
 6. **Re-take the client and the conformance suite from this package.** Both are
    version-locked to the contract they were built for: the suite asserts
-   `3.7.0` and refuses a venue that answers anything else, so last release's
+   `3.8.0` and refuses a venue that answers anything else, so last release's
    checklist reports a failure against this release's engine and this release's
    checklist reports one against an un-upgraded venue. That is the intended
    behaviour — a checklist that passed across a version boundary would be
@@ -198,7 +204,7 @@ displayPrecision`. A broker that shows fewer decimals than the engine
 ## 6. Why 3.0.0
 
 The release major follows the API contract, as `v2.4.0` §6 said when it stayed at
-2.x for an untouched contract. The contract has moved from `2.1.0` to `3.7.0`
+2.x for an untouched contract. The contract has moved from `2.1.0` to `3.8.0`
 since that release and one of those steps is breaking: `displayPrice` is
 `string|null`. Everything else is additive.
 

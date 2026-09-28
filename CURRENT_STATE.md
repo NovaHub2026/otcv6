@@ -273,7 +273,7 @@ found **twenty, every one inside a green gate**, and a twenty-first fell out of
 building the release package: seventeen dead links in the delivered tree, seven of
 them in the two documents a broker reads. Seventeen are fixed with a guard watched
 failing and four are written down for the broker. The contract stands at
-**3.7.0** and the release record is
+**3.8.0** and the release record is
 [RELEASE-3.0.0](docs/evidence/RELEASE-3.0.0.md). **One decision is the Human
 Owner's and is not blocking**: six assets at a broker's five decimals (PH-40 §8),
 with the recommendation that the broker show the engine's precision. After PH-41,

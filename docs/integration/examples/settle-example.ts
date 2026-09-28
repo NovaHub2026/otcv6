@@ -32,10 +32,16 @@ interface Tick {
  * guardas. La liquidación no llama al motor: se hace contra lo que ya se
  * publicó, y por eso es reproducible.
  */
-function recordFrom(ticks: readonly Tick[]): TickRecord {
+function recordFrom(ticks: readonly Tick[], seams: TickRecord['seams'] = []): TickRecord {
   return {
     instants: Float64Array.from(ticks.map((t) => t.instant)),
     prices: Int32Array.from(ticks.map((t) => t.price)),
+    // **Obligatorio, y el silencio no vale.** `settle()` rechaza un registro que
+    // no declara sus discontinuidades: si tu despliegue no guarda ninguna, pasa
+    // `[]` y lo estás diciendo. Las que haya salen de
+    // `GET /markets/:id/seams`. Este fichero las omitía, así que cada ejecución
+    // acababa en su propio `catch` (la auditoría de preparación de 2026-09-28).
+    seams,
   };
 }
 
@@ -69,16 +75,20 @@ try {
   //                 sin tercer argumento: 'refund'
 
   console.log(settlement);
+  // Lo que imprime este fichero, ejecutado tal cual (una prueba del repositorio
+  // lo ejecuta y compara estos números con lo que devuelve `settle`, porque
+  // antes nadie lo hacía y llevaba `returned: 185` — cien veces menos):
   // {
   //   contractId:    'ticket-1001',
-  //   outcome:       'win' | 'loss' | 'refund',
-  //   entryPrice:    -12043,        // enteros del retículo, nunca el mostrado
-  //   expiryPrice:   -12001,
+  //   outcome:       'win',         // 'win' | 'loss' | 'refund'
+  //   entryPrice:    -12061,        // enteros del retículo, nunca el mostrado
+  //   expiryPrice:   -12037,
   //   entryIndex:    30,            // posiciones del registro que se usaron
   //   expiryIndex:   90,
   //   expiryInstant: 1788492090000,
-  //   returned:      185,           // stake * (1 + payoutRatio) si gana
-  //   net:           85,            // returned - stake
+  //   returned:      18500,         // stake + stake*payoutRatio si gana, exacto
+  //   net:           8500,          // returned - stake
+  //   seamsCrossed:  0,             // discontinuidades atravesadas (ADR-0021)
   // }
 
   // GUARDA, POR CONTRATO: el contrato entero y el rango de secuencias del
