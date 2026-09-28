@@ -125,3 +125,51 @@ export function citedEvidence(root: string, from: readonly string[]): Set<string
   }
   return cited;
 }
+
+/** A script in the delivered `package.json` that names a file the package lacks. */
+export interface DanglingScript {
+  /** The npm script's name. */
+  readonly script: string;
+  /** The path it names, relative to the package root. */
+  readonly target: string;
+}
+
+/**
+ * **A command the package offers has to be runnable in the package** (the
+ * readiness audit of 2026-09-28, finding 21, second half).
+ *
+ * `npm run state:check` ran the three guards that hold this repository's own
+ * process documents — and the package deletes those three test files, by design,
+ * because the documents they guard do not ship either. So the delivered
+ * `package.json` offered an operator a command that could only fail, in a tree
+ * where "check my state directory" is exactly the thing they would reach for.
+ *
+ * `dist/` paths are not dangling: the package ships source and the broker's first
+ * instruction is `npm run build`.
+ */
+export function danglingScripts(root: string): DanglingScript[] {
+  const absoluteRoot = path.resolve(root);
+  const manifest = path.join(absoluteRoot, 'package.json');
+  let scripts: Record<string, string>;
+  try {
+    const parsed = JSON.parse(readFileSync(manifest, 'utf8')) as {
+      scripts?: Record<string, string>;
+    };
+    scripts = parsed.scripts ?? {};
+  } catch {
+    return [];
+  }
+  const PATHS = /(?:tools|packages|apps|deploy|docs)\/[A-Za-z0-9_./-]+\.(?:sh|js|ts|mjs|cjs|py)/g;
+  const out: DanglingScript[] = [];
+  for (const [script, command] of Object.entries(scripts)) {
+    for (const target of command.match(PATHS) ?? []) {
+      if (target.includes('/dist/')) continue;
+      try {
+        statSync(path.join(absoluteRoot, target));
+      } catch {
+        out.push({ script, target });
+      }
+    }
+  }
+  return out;
+}

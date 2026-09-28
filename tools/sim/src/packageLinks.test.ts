@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { brokenLinks, citedEvidence, markdownFiles } from './packageLinks.js';
+import { brokenLinks, citedEvidence, danglingScripts, markdownFiles } from './packageLinks.js';
 import { runPackageLinksTool } from './packageLinksTool.js';
 
 /**
@@ -102,6 +102,50 @@ describe('a package whose documents cite what it does not ship', () => {
       ['A.md', 'B.md', 'C.md'].map((name) => path.join('docs', 'evidence', name)),
     );
     expect(cited.has(path.join('docs', 'evidence', 'UNCITED.md'))).toBe(false);
+  });
+
+  /**
+   * The real one, found on the tree this release was cut from: `npm run state:check`
+   * named the two guards the package deletes with the documents they hold, so the
+   * delivered manifest offered an operator a command that could only fail.
+   */
+  it('reports a script naming a file the package does not ship, and spares dist/', () => {
+    mkdirSync(path.join(root, 'packages', 'core', 'src'), { recursive: true });
+    write('packages/core/src/present.test.ts', '');
+    writeFileSync(
+      path.join(root, 'package.json'),
+      JSON.stringify({
+        scripts: {
+          'state:check': 'vitest run packages/core/src/guardrails/documentation.test.ts',
+          present: 'vitest run packages/core/src/present.test.ts',
+          // `dist/` is built by the broker's first command, so it is not dangling.
+          conformance: 'node tools/sim/dist/conformanceTool.js',
+          build: 'tsc -b',
+        },
+      }),
+    );
+    expect(danglingScripts(root)).toEqual([
+      {
+        script: 'state:check',
+        target: 'packages/core/src/guardrails/documentation.test.ts',
+      },
+    ]);
+    const { code, output } = runPackageLinksTool([root]);
+    expect(code).toBe(1);
+    expect(output).toContain('npm run state:check');
+    expect(output).not.toContain('conformance');
+  });
+
+  it('says both checks passed when they did', () => {
+    writeFileSync(
+      path.join(root, 'package.json'),
+      JSON.stringify({ scripts: { build: 'tsc -b' } }),
+    );
+    write('docs/integration/INTEGRATION.md', '# guide\n');
+    const { code, output } = runPackageLinksTool([root]);
+    expect(code).toBe(0);
+    expect(output).toContain('every target resolves');
+    expect(output).toContain('every command names a file the package ships');
   });
 
   it('refuses a directory it cannot read, rather than reporting a clean package', () => {

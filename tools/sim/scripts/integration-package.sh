@@ -83,6 +83,22 @@ if evidence.is_dir():
 PYEOF
 # The guards that hold those documents; every other test ships and passes.
 rm -f "$out"/packages/core/src/guardrails/{documentation,stateConsistency,traceability}.test.ts
+# **And the script that runs two of them** (the readiness audit of 2026-09-28,
+# finding 21): `state:check` named those test files, so the delivered package
+# offered an operator a command that could only fail — in a tree where "check my
+# state" is exactly what they would reach for. It guards this repository's process
+# documents, which do not ship either.
+python3 - "$out" <<'PYEOF'
+import json, pathlib, sys
+out = pathlib.Path(sys.argv[1])
+manifest = out / 'package.json'
+data = json.loads(manifest.read_text())
+dropped = [name for name in ('state:check',) if name in data.get('scripts', {})]
+for name in dropped:
+    del data['scripts'][name]
+manifest.write_text(json.dumps(data, indent=2) + '\n')
+print(f'scripts: dropped {", ".join(dropped) if dropped else "none"} (repository guards)')
+PYEOF
 # Process material a broker has no use for, and which names this repository's
 # own machinery (Cycle Audit 10, a5-07): the audit worktree script and the
 # Issue tracker's mirror. The script's comment above said the package was the
