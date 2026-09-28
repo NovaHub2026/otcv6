@@ -185,22 +185,23 @@ displayPrecision`. A broker that shows fewer decimals than the engine
 
 ## 5. What was measured
 
-| Measure                                                            | Result                                                                                                                                       |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| **The readiness audit**                                            | **forty-three** confirmed findings, one refuted, across three passes — [`PH-40-READINESS-2026-09-28.md`](PH-40-READINESS-2026-09-28.md)      |
-| The broker's checklist against a live venue, with publication      | **36 of 36, exit 0**, the proof row independent                                                                                              |
-| Settlement across seams, on a day of the live venue's record       | 20.5% of fifteen-minute contracts were refused before ADR-0021; **0 now**                                                                    |
-| A fresh deployment's chart, two days provisioned                   | **0 undated bars** at 1m, 5m, 1h and 1d, epoch declared at sequence 1 (1,437/1,439 undated before the fix)                                   |
-| Seams under a saturated host, after the bound fix                  | **0** — [`SEAM-RATE-2026-09-27.md`](SEAM-RATE-2026-09-27.md)                                                                                 |
-| The backup's signed commitment chain                               | **724 files** copied and counted, where it copied none                                                                                       |
-| The retained past that rendered on a lattice it was not written on | 3,728,119 of 7,500,278 ticks (49.7%), 30 of 30 assets, median error 31.8%, worst 1,483% — repaired by declaration                            |
-| Refund per asset at 30 s, from the shipped catalogue               | **3,47%–4,78%**, mean **4,07%**, published as `realisedRefundRate`                                                                           |
-| A broker displaying fewer decimals than the engine publishes       | `usdchf-otc` refunds **16.0%** of 30 s contracts against settlement's 3.9% — [`BROKER-FIT-2026-09-27.md`](BROKER-FIT-2026-09-27.md)          |
-| A quote one second stale, played in the direction of the move      | **56–61%** win rate at 30 s, against 54% break-even at an 85% payout                                                                         |
-| The integration package's own links                                | **every target resolves**, across 56 delivered documents — the script refuses to build otherwise                                             |
-| Backup, restore and boot, executed end to end on the release build | eight documented promises held; one refusal was wrong and is fixed — [`RESTORE-DRILL-2026-09-28.md`](RESTORE-DRILL-2026-09-28.md)            |
-| Predictability                                                     | battery clean; the mirror test passes on the full stack                                                                                      |
-| The release gate, host to itself                                   | `GATE_EXIT=0` on `38e8d88` — unit 186 files / 3,729 tests on both legs; statistical 47 / 411, both browser suites in a real Chromium; 63 min |
+| Measure                                                                       | Result                                                                                                                                                      |
+| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **The readiness audit**                                                       | **forty-three** confirmed findings, one refuted, across three passes — [`PH-40-READINESS-2026-09-28.md`](PH-40-READINESS-2026-09-28.md)                     |
+| The broker's checklist against a live venue, with publication                 | **36 of 36, exit 0**, the proof row independent                                                                                                             |
+| The same checklist against the **tagged** build, seam and proof both provable | **39 checks, 0 failures, exit 0**; the Lab composition of the same build correctly exits 1 — [`RELEASE-CONFORMANCE-3.0.0.md`](RELEASE-CONFORMANCE-3.0.0.md) |
+| Settlement across seams, on a day of the live venue's record                  | 20.5% of fifteen-minute contracts were refused before ADR-0021; **0 now**                                                                                   |
+| A fresh deployment's chart, two days provisioned                              | **0 undated bars** at 1m, 5m, 1h and 1d, epoch declared at sequence 1 (1,437/1,439 undated before the fix)                                                  |
+| Seams under a saturated host, after the bound fix                             | **0** — [`SEAM-RATE-2026-09-27.md`](SEAM-RATE-2026-09-27.md)                                                                                                |
+| The backup's signed commitment chain                                          | **724 files** copied and counted, where it copied none                                                                                                      |
+| The retained past that rendered on a lattice it was not written on            | 3,728,119 of 7,500,278 ticks (49.7%), 30 of 30 assets, median error 31.8%, worst 1,483% — repaired by declaration                                           |
+| Refund per asset at 30 s, from the shipped catalogue                          | **3,47%–4,78%**, mean **4,07%**, published as `realisedRefundRate`                                                                                          |
+| A broker displaying fewer decimals than the engine publishes                  | `usdchf-otc` refunds **16.0%** of 30 s contracts against settlement's 3.9% — [`BROKER-FIT-2026-09-27.md`](BROKER-FIT-2026-09-27.md)                         |
+| A quote one second stale, played in the direction of the move                 | **56–61%** win rate at 30 s, against 54% break-even at an 85% payout                                                                                        |
+| The integration package's own links                                           | **every target resolves**, across 56 delivered documents — the script refuses to build otherwise                                                            |
+| Backup, restore and boot, executed end to end on the release build            | eight documented promises held; one refusal was wrong and is fixed — [`RESTORE-DRILL-2026-09-28.md`](RESTORE-DRILL-2026-09-28.md)                           |
+| Predictability                                                                | battery clean; the mirror test passes on the full stack                                                                                                     |
+| The release gate, host to itself                                              | `GATE_EXIT=0` on `38e8d88` — unit 186 files / 3,729 tests on both legs; statistical 47 / 411, both browser suites in a real Chromium; 63 min                |
 
 ## 6. Why 3.0.0
 
