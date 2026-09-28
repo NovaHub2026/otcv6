@@ -11,6 +11,7 @@ export {
 } from './registry.js';
 export {
   CatchUpTooLargeError,
+  ClockWentBackwardsError,
   DEFAULT_MAX_CATCH_UP_MS,
   HostedMarket,
   type HostedMarketOptions,

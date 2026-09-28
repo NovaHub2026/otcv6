@@ -98,6 +98,16 @@ export interface StateDirectoryReport {
 export const RECORD_DB = 'record.db';
 export const HISTORY_DB = 'history.db';
 export const REGISTRY_DIR = 'assets';
+/**
+ * The signed commitment chain, when it lives inside the state directory.
+ *
+ * `OTC_PUBLICATION_DIR` is configurable and this module cannot know where it
+ * points — but both shipped deployments put it here (`deploy/otc-engine.service`
+ * and `deploy/docker-compose.yml` set `/var/lib/otc/publication` under a state
+ * directory of `/var/lib/otc`), and a backup that leaves it behind leaves the
+ * broker's whole fairness-proof past behind with it.
+ */
+export const PUBLICATION_DIR = 'publication';
 export const LAB_MARKER = path.join('lab', 'composed-by-lab.json');
 export { BACKUP_MANIFEST } from './fileStore.js';
 
@@ -590,6 +600,18 @@ export interface BackupManifest {
   readonly source: string;
   readonly assets: readonly string[];
   readonly heads: Readonly<Record<string, AssetHeads>>;
+  /**
+   * Files of the signed commitment chain copied, or null when the state
+   * directory holds no `publication/` (the chain is elsewhere, or this
+   * deployment publishes none).
+   *
+   * **Read this before trusting a restore to answer a dispute.** A copy with
+   * `null` here serves no proof for anything committed before it: the chain and
+   * the published identity are not in it. Optional by design — a manifest
+   * written before this field existed says nothing about the chain, which is
+   * exactly the state it was taken in.
+   */
+  readonly publicationFiles?: number | null;
 }
 
 /**
@@ -670,6 +692,29 @@ export async function backupStateDirectory(
     }
   }
   const registry = path.join(from, REGISTRY_DIR);
+  // The commitment chain, when it is inside the state directory. Copied after
+  // the databases for the same reason the registry is: it only ever grows, so a
+  // copy taken while the venue appends is a prefix of the chain, and a prefix
+  // verifies (`verifyCommitmentsFile` names the interval it reaches).
+  let publicationFiles: number | null = null;
+  const publication = path.join(from, PUBLICATION_DIR);
+  if (existsSync(publication) && statSync(publication).isDirectory()) {
+    publicationFiles = 0;
+    mkdirSync(path.join(to, PUBLICATION_DIR), { recursive: true });
+    for (const entry of readdirSync(publication)) {
+      const source = path.join(publication, entry);
+      if (statSync(source).isDirectory()) {
+        mkdirSync(path.join(to, PUBLICATION_DIR, entry), { recursive: true });
+        for (const name of readdirSync(source)) {
+          copyFileSync(path.join(source, name), path.join(to, PUBLICATION_DIR, entry, name));
+          publicationFiles += 1;
+        }
+        continue;
+      }
+      copyFileSync(source, path.join(to, PUBLICATION_DIR, entry));
+      publicationFiles += 1;
+    }
+  }
   if (existsSync(registry) && statSync(registry).isDirectory()) {
     mkdirSync(path.join(to, REGISTRY_DIR), { recursive: true });
     for (const name of readdirSync(registry)) {
@@ -689,6 +734,7 @@ export async function backupStateDirectory(
     source: path.resolve(from),
     assets: scanned.assets,
     heads: scanned.heads,
+    publicationFiles,
   };
   writeFileSync(path.join(to, BACKUP_MANIFEST), `${JSON.stringify(manifest, null, 2)}\n`);
   // Verified as the operator will find it, manifest included (a7-01).

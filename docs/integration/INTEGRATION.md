@@ -1083,6 +1083,15 @@ Desde PH-30.1 el repositorio trae lo que un despliegue arranca:
   antes de copiar nada, porque su retención es `head -n -N` y `head -n -0`
   imprime todas las líneas — con `0` borraba todas las copias, incluida la que
   acababa de tomar y verificar (Ciclo de Auditoría 10, a2-09).
+  **Qué entra en la copia**: los puntos de control, `record.db`, `history.db`, el
+  registro de activos y —desde la v3.0.0— la **cadena de compromisos firmados**
+  (`publication/`) cuando vive dentro del directorio de estado, que es donde la
+  ponen la unidad de systemd y el `docker-compose.yml` que se incluyen. El
+  manifiesto de la copia dice cuántos ficheros de la cadena copió, y la
+  herramienta lo imprime. Si tu `OTC_PUBLICATION_DIR` apunta **fuera** del
+  directorio de estado, respáldalo por separado: una restauración sin la cadena
+  no puede servir ninguna prueba de su pasado ni acredita su identidad de
+  publicador, y la copia se verifica igual, así que nada te avisaría.
 
 **Restaurar retrocede el registro publicado, y hay que leerlo antes de arrancar.**
 La restauración es un intercambio de directorio con el servicio parado, así que
@@ -1131,6 +1140,15 @@ registra lo mismo. **Restaura siempre la copia más reciente.**
   propio cubo.
 - La credencial de administración es `OTC_ADMIN_TOKEN` (a6-01): sin ella toda
   escritura se rechaza; el proxy corta las rutas además, no en su lugar.
+- **Si el reloj del host salta hacia atrás** (un `step` de chrony o systemd-timesyncd
+  tras un RTC malo al arrancar), el motor **no sigue al reloj hacia atrás**: cada
+  mercado queda `parado` con `The clock went back Ns…`, `/health` pasa a
+  `degraded`, `/health/ready` responde 503 y el latido deja de avanzar su `asOf`,
+  así que tu regla de frescura cierra la apertura por sí sola. No abre costura ni
+  reabre nada: reabrir no publicaría nada hasta que el reloj volviera. Arregla la
+  hora del host —con un `slew`, no un `step`— y, si el salto fue grande, reinicia:
+  el hueco queda anotado como costura. Un bamboleo pequeño que vuelve se recupera
+  solo, sin costura.
 - **Si la máquina estuvo suspendida, migrada en vivo o parada más de 15 s**, el
   motor se niega a inventar el intervalo que nadie observó (ADR-0010) y **reabre
   cada mercado solo** (ADR-0020): continúa desde su último precio publicado, en un
@@ -1190,7 +1208,8 @@ npm run state:verify -- --dir ./.otc-state          # el directorio de estado es
                      # y el histórico pasan `PRAGMA quick_check` — un fichero dañado se
                      # nombra aquí y no en mitad del arranque (a6-13). Sale 1 si el
                      # directorio no existe, y 1 si algo no cuadra.
-npm run state:backup -- --dir ./.otc-state --out DIR # copia coherente y verificada
+npm run state:backup -- --dir ./.otc-state --out DIR # copia coherente y verificada,
+                     # con la cadena de compromisos si está dentro del directorio
 npm run contract:render                              # regenera docs/architecture/API_CONTRACT.md
 ```
 

@@ -94,6 +94,39 @@ export interface HostedMarketOptions {
  */
 export const DEFAULT_MAX_CATCH_UP_MS = 15_000;
 
+/**
+ * The clock went backwards, and a market will not follow it (2026-09-28).
+ *
+ * `advanceTo` measured `behind = now - since` and refused only a value *above*
+ * the bound, so a negative one — the wall clock stepped back — was absorbed: the
+ * marker moved backwards and every pending tick was suddenly in the future, so
+ * the market published nothing until the clock climbed back to where it had been.
+ * Reproduced against the built runtime with a thirty-minute step back: five
+ * minutes of passes, **zero ticks published and zero throws**, `/health` `ok`,
+ * `stalled` empty, `otc_seconds_since_last_pass` near zero. Meanwhile
+ * `/price?at=` went on answering for instants inside the frozen window from ticks
+ * published before the step — a realised path any client could already read
+ * forward through `/ticks/:sequence`, which is the one thing INV-006 exists to
+ * deny. A clock that steps back is ordinary on a server (a chrony or timesyncd
+ * step after a bad RTC at boot), so this is a refusal, by name, that stalls the
+ * market where an operator and a broker can both see it.
+ */
+export class ClockWentBackwardsError extends Error {
+  constructor(
+    readonly byMs: number,
+    readonly lastAdvancedAt: number,
+  ) {
+    super(
+      `The clock went back ${Math.round(byMs / 1000)}s, to before this market's last advance ` +
+        `at ${lastAdvancedAt}. A market does not follow a clock backwards: it would publish ` +
+        `nothing until the clock returned, while serving prices for a window it had already ` +
+        `published. Fix the host's time (a step, not a slew) and restart; the gap is recorded ` +
+        `as a seam.`,
+    );
+    this.name = 'ClockWentBackwardsError';
+  }
+}
+
 export class CatchUpTooLargeError extends Error {
   constructor(
     readonly behindMs: number,
@@ -284,6 +317,14 @@ export class HostedMarket {
         ? this.#lastAdvancedAt
         : this.#floorInstant;
     const behind = now - since;
+    // **A backwards step is refused, and the marker never moves back.** Absorbing
+    // it froze the market silently; see `ClockWentBackwardsError`. Compared
+    // against the marker rather than against `since`, because `since` is floored
+    // at the engine's start and a market that has never advanced has no earlier
+    // reading to contradict.
+    if (this.#lastAdvancedAt !== null && now < this.#lastAdvancedAt) {
+      throw new ClockWentBackwardsError(this.#lastAdvancedAt - now, this.#lastAdvancedAt);
+    }
     if (behind > this.#maxCatchUpMs) {
       throw new CatchUpTooLargeError(behind, this.#maxCatchUpMs);
     }

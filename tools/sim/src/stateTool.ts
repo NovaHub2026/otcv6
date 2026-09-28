@@ -146,8 +146,17 @@ export async function runStateTool(
   }
   try {
     const { manifest, report } = await backupStateDirectory(options.dir, options.out!, clock.now());
+    // The chain, said out loud (2026-09-28). A restore without it answers no
+    // proof for anything committed before it, and the copy verifies either way.
+    const chain =
+      manifest.publicationFiles === null || manifest.publicationFiles === undefined
+        ? 'Commitment chain: none in this state directory — if OTC_PUBLICATION_DIR points ' +
+          'outside it, back that directory up separately or this copy can prove nothing ' +
+          'about its past.'
+        : `Commitment chain: ${String(manifest.publicationFiles)} file(s) copied.`;
     const output =
-      `Backup written to ${options.out!} (taken at ${manifest.takenAt})\n` + describeReport(report);
+      `Backup written to ${options.out!} (taken at ${manifest.takenAt})\n${chain}\n` +
+      describeReport(report);
     return { code: report.problems.length === 0 ? 0 : 1, output };
   } catch (error) {
     return { code: 1, output: (error as Error).message };

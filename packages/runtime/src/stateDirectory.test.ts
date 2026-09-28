@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   openSync,
+  readFileSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -24,6 +25,7 @@ import {
   BACKUP_MANIFEST,
   HISTORY_DB,
   LAB_MARKER,
+  PUBLICATION_DIR,
   RECORD_DB,
   stateRefusal,
   verifyStateDirectory,
@@ -515,6 +517,52 @@ describe('a state directory is verified as one thing (PH-28.3)', () => {
 });
 
 describe('a state directory is backed up consistently and verified on the way out (PH-28.3)', () => {
+  /**
+   * **The signed commitment chain is part of the state a restore needs**
+   * (2026-09-28). The backup copied checkpoints, both databases and the asset
+   * registry, and left `publication/` behind — where both shipped deployments put
+   * it: `deploy/otc-engine.service` and `deploy/docker-compose.yml` set
+   * `OTC_PUBLICATION_DIR=/var/lib/otc/publication` under a state directory of
+   * `/var/lib/otc`, and the compose file's backup container runs
+   * `deploy/backup.sh /var/lib/otc /backups`. A restore from such a copy answers
+   * no proof for anything committed before it and has lost the published
+   * identity, which is the broker's whole dispute-resolution story for its past —
+   * and nothing said so: the copy verified and the manifest did not mention it.
+   */
+  it('copies the commitment chain when it lives in the state directory, and counts it', async () => {
+    const directory = await directoryWith({ published: 100, recorded: 130, stored: 120 });
+    const chain = path.join(directory, PUBLICATION_DIR);
+    mkdirSync(path.join(chain, 'eurusd-otc'), { recursive: true });
+    writeFileSync(path.join(chain, 'publisher.json'), '{"kind":"otc-publisher-identity"}\n');
+    writeFileSync(path.join(chain, 'eurusd-otc', 'commitments.ndjson'), '{"window":1}\n');
+    writeFileSync(path.join(chain, 'eurusd-otc', '1-500.journal'), 'x\n');
+    const target = path.join(scratch(), 'backup-chain');
+    const { manifest, report } = await backupStateDirectory(directory, target, GENESIS + 7);
+    expect(report.problems).toEqual([]);
+    expect(manifest.publicationFiles, 'the manifest does not say the chain was copied').toBe(3);
+    expect(readFileSync(path.join(target, PUBLICATION_DIR, 'publisher.json'), 'utf8')).toContain(
+      'otc-publisher-identity',
+    );
+    expect(
+      readFileSync(path.join(target, PUBLICATION_DIR, 'eurusd-otc', 'commitments.ndjson'), 'utf8'),
+    ).toBe('{"window":1}\n');
+    expect(
+      readFileSync(path.join(target, PUBLICATION_DIR, 'eurusd-otc', '1-500.journal'), 'utf8'),
+    ).toBe('x\n');
+  });
+
+  it('says the chain was not copied when the state directory holds none', async () => {
+    const directory = await directoryWith({ published: 100, recorded: 130, stored: 120 });
+    const { manifest } = await backupStateDirectory(
+      directory,
+      path.join(scratch(), 'backup-nochain'),
+      GENESIS + 8,
+    );
+    // Null, not zero: a deployment that publishes nowhere is a different fact
+    // from a chain that turned out to be empty.
+    expect(manifest.publicationFiles).toBeNull();
+  });
+
   it('copies every file, verifies the copy, writes the manifest, and the copy is independent', async () => {
     const directory = await directoryWith({ published: 100, recorded: 130, stored: 120 });
     mkdirSync(path.join(directory, 'assets'));
