@@ -263,6 +263,12 @@ ceiling.
 **Open PH-41: the calibration that simulates the market the engine runs**
 (Cycle Audit 12, finding 7 — deferred twice, and next since PH-39).
 
+**`v3.0.1` is the release to deploy; `v3.0.0` is its engine.** The patch changes
+no engine code — the package now ships the release notes for the version it is, and
+the coverage-floor step of hosted CI can name its own failures
+([RELEASE-3.0.1](docs/evidence/RELEASE-3.0.1.md), which also records the two hosted
+failures of this release and what each one actually was).
+
 **`v3.0.0` is tagged, merged and verified live.** The tag is on `a8fc427`, gated
 green locally (`GATE_EXIT=0`, 63 min, both browser suites in a real Chromium) and
 re-verified against the built release: the broker's own checklist answers **39

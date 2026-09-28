@@ -24,6 +24,7 @@ import { describe, expect, it } from 'vitest';
  */
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const EXAMPLE = path.join(repoRoot, 'docs/integration/examples/settle-example.ts');
+const ASSET = 'eurusd-otc';
 
 /** The `key: value` pairs of a `console.log`ged object, from text. */
 function fields(text: string): Map<string, string> {
@@ -80,6 +81,26 @@ describe('the settlement example that ships to a broker', () => {
         `the comment says ${key} is ${value} and the example prints ${String(printed.get(key))}`,
       ).toBe(value);
     }
+  });
+
+  /**
+   * The other shipped example needs a live venue with a recorded seam, so its happy
+   * path belongs to the release verification and not to a unit suite
+   * (`RELEASE-CONFORMANCE-3.0.0.md` §4). What *is* checkable here is that it parses,
+   * that it refuses rather than throwing when there is nothing to settle across, and
+   * that it says which of the two it is — the states a broker meets first.
+   */
+  it('the seam example refuses a venue it cannot use, by name', () => {
+    const script = path.join(repoRoot, 'docs/integration/examples/settle-across-a-seam.mjs');
+    const result = spawnSync(process.execPath, [script, 'http://127.0.0.1:9', ASSET], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      timeout: 60_000,
+    });
+    // A venue that is not there is not a settlement failure: it exits non-zero with
+    // something a reader can act on, and never prints a settlement.
+    expect(result.status, 'an unreachable venue must not read as a settled contract').not.toBe(0);
+    expect(`${result.stdout}${result.stderr}`).not.toContain('SETTLED');
   });
 
   it('states its discontinuities, because settle() refuses a record that does not', () => {

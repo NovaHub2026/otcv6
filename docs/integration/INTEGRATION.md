@@ -568,7 +568,7 @@ para liquidar.
 ```bash
 # Necesita un motor que haya registrado al menos una costura (párralo más de
 # quince segundos y arráncalo otra vez sobre el mismo directorio de estado).
-node tools/sim/scripts/settle-across-a-seam.mjs <base> <activo>
+node examples/settle-across-a-seam.mjs <base> <activo>
 ````
 
 Coge los ticks del registro publicado por secuencia, las costuras de

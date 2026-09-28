@@ -46,6 +46,12 @@ What a fresh session must not rebuild, and where the traps are:
   conformance suite asserts the contract version exactly, so last release's
   checklist reports a failure against this release's engine, by design.
 
+**Two tags**: `v3.0.0` is the engine (both hosted jobs green, the Quality Gate on a
+re-run) and `v3.0.1` is the release to hand a broker — same engine, a package that
+carries its own release notes. Read `RELEASE-3.0.1.md` §3 before trusting a red CI
+here: one of this release's two hosted failures was the suite accusing the engine of
+doing its job.
+
 **What is running right now**: the panel's engine and panel on 7300/7301, the Lab
 composition, from `~/.otc-genesis` (`main`), restarted on the release build — so
 `/health` there says `composition: lab`, which is correct and is the point of that

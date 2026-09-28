@@ -401,14 +401,35 @@ describe('Candle Close Control, from the panel', () => {
       await page.waitForSelector('[data-testid="lab-scenario-plan"]', { timeout: 30_000 });
       expect(await text(page, 'lab-scenario-plan')).toMatch(/armado\nno/);
       await page.click('[data-testid="lab-scenario-apply"]');
-      // The plan's own armed line, not the control row: an earlier flow may have
-      // left this market ARMADO, and at PH-24.17's grain a script plays out fast.
+      /**
+       * **Either it arms, or it says why it cannot, and both are correct**
+       * (2026-09-28).
+       *
+       * This assertion demanded that the scenario arm, and hosted CI failed it three
+       * times in four days — `48244ae`, `f9b8d14` and `3e9a8c7` — while passing on
+       * every other run and every local one. The instrumentation added after the
+       * second occurrence reported what the screen said on the third, and the Lab was
+       * **right**: `intentos 20000 · tasa de aceptación 0 · armado no · "Ninguna
+       * continuación natural cumplió el criterio en los sorteos: este mercado no hace
+       * eso en esta ventana. Esa es la respuesta, no un esfuerzo insuficiente."`
+       *
+       * Arming is the outcome of a search over drawn continuations of the market as
+       * it stands, and this test inherits a market the flows before it have spent
+       * pushing. Whether twenty thousand draws contain a qualifying continuation in a
+       * 119-tick window is a property of that market, not of the screen — so a test
+       * that requires success is asserting a coin flip, and the Lab's refusal is the
+       * behaviour it exists for: it never fabricates a continuation the market does
+       * not offer.
+       *
+       * So this waits for the apply's **own timeline row**, which is written either
+       * way, and then holds each outcome to what it must say. The test beside this one
+       * has always done it this way — "or says none is coming".
+       */
       try {
         await page.waitForFunction(
           () =>
-            // textContent has no line breaks between rows; innerText does.
-            /armado\s*SÍ/.test(
-              document.querySelector('[data-testid="lab-scenario-plan"]')?.textContent ?? '',
+            /escenario aplicado [✓✗]/.test(
+              document.querySelector('[data-testid="lab-session-lab"]')?.textContent ?? '',
             ),
           null,
           { timeout: 30_000 },
@@ -435,16 +456,20 @@ describe('Candle Close Control, from the panel', () => {
           { cause: error },
         );
       }
-      expect(await text(page, 'lab-scenario-plan')).toMatch(/armado\nSÍ/);
-      // The timeline is a poll away.
-      await page.waitForFunction(
-        () =>
-          /escenario aplicado ✓/.test(
-            document.querySelector('[data-testid="lab-session-lab"]')?.textContent ?? '',
-          ),
-        null,
-        { timeout: 30_000 },
-      );
+      const armed = /escenario aplicado ✓/.test(await text(page, 'lab-session-lab'));
+      const plan = await text(page, 'lab-scenario-plan');
+      if (armed) {
+        expect(plan, 'the timeline says it armed and the plan does not').toMatch(/armado\nSÍ/);
+      } else {
+        // A refusal is the Lab's most important answer, and it has to be a *stated*
+        // one: the plan says it searched, how much, and that the market does not do
+        // this here. A blank refusal would be indistinguishable from a broken screen.
+        expect(plan, 'the plan should say it did not arm').toMatch(/armado\nno/);
+        expect(plan, 'a refusal must say the search ran').toMatch(/intentos/);
+        expect(plan, 'a refusal must say why, in words an operator can act on').toMatch(
+          /Ninguna continuación natural cumplió el criterio/,
+        );
+      }
       // PH-24.5: the engine's timeline is fed by observing the engine — at least
       // its first sight of every market — and the closes diagnostic says what it
       // rests on rather than calling this session's handful a pattern.

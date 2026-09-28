@@ -8,7 +8,7 @@
  * by sequence, seams from `GET /markets/:id/seams`, and the contract's window is
  * placed deliberately across the discontinuity.
  *
- *   node tools/sim/scripts/settle-across-a-seam.mjs [base url] [asset]
+ *   node examples/settle-across-a-seam.mjs [base url] [asset]
  *
  * It needs a venue that has recorded at least one seam: stop the process for longer
  * than the fifteen-second catch-up bound and start it again on the same state
