@@ -8,7 +8,7 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 | Field              | Value                                                                                                                   |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| Last clean session | 2026-09-26                                                                                                              |
+| Last clean session | 2026-09-28                                                                                                              |
 | Branch             | `feature/ph-40-the-engine-a-broker-settles-against`, off `audit/ca13-fixes-2` (`ed816dc`, Cycle Audit 13 waves 2 and 3) |
 | Remote             | `origin` → NovaHub2026/otcv6, public                                                                                    |
 | Active cycle       | Cycle 14, **1 of 3** — PH-40 approved. Cycle 11 open                                                                    |
@@ -19,7 +19,36 @@ Purpose: what a fresh session needs to resume **right now**. Nothing else.
 
 ---
 
-## Right now (2026-09-27)
+## Right now (2026-09-28)
+
+**`v3.0.0` is the release a broker deploys, and the readiness audit that produced
+it is the thing to read first**
+([PH-40-READINESS-2026-09-28](docs/evidence/PH-40-READINESS-2026-09-28.md),
+[RELEASE-3.0.0](docs/evidence/RELEASE-3.0.0.md)). Twenty findings, every one
+inside a green gate, sixteen fixed with a guard watched failing, four written down
+for the broker. Contract **3.6.0**, digest `d94c5ab58d3ba40a`.
+
+What a fresh session must not rebuild, and where the traps are:
+
+- **Pin Node on every command.** After a session restart the shell may have no
+  Linux Node and `npx` resolves to Windows' — silently doing nothing. Prefix with
+  `export PATH=$HOME/.nvm/versions/node/v24.19.0/bin:$PATH;` (memory:
+  restart-loses-linux-node).
+- **`npx prettier --check` over a `.conf` or `.service` exits 2 and validates
+  nothing.** Use `npm run format:check`.
+- **Stop every venue of mine before a gate, by pid.** The Orbit broker stack
+  (pids on 3010/3100/3030, `~/Projects/orbit-otc-node`) is **not mine** — never
+  sweep by pattern, and never kill by a pattern your own command contains.
+- **The panel's venue** is the Lab composition on 7300, restarted with
+  `bash ~/.otc-local/start.sh`, state in `~/.otc-local/state`.
+- **The integration package is the unit of upgrade**, not the binary: the
+  conformance suite asserts the contract version exactly, so last release's
+  checklist reports a failure against this release's engine, by design.
+
+Next is **PH-41, the calibration** (CURRENT_STATE) — the one open finding of
+Cycle Audit 12 (finding 7, a refund bias of +1.91pp).
+
+## Before that (2026-09-27)
 
 **PH-40 is approved**: the full gate on `3c043df` is green with a real browser.
 What a fresh session must know: after a session restart the shell may have no

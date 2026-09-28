@@ -2,7 +2,7 @@
 
 Type: CURRENT STATE
 Status: Authoritative record of current project state
-Last synchronized: 2026-09-26
+Last synchronized: 2026-09-28
 
 > This document is not a diary. It records where the project is **now** and what
 > the **exact next legal action** is. History lives in Git, phase documents and
@@ -261,13 +261,29 @@ ceiling.
 ## EXACT NEXT LEGAL ACTION
 
 **Open PH-41: the calibration that simulates the market the engine runs**
-(Cycle Audit 12, finding 7 — deferred twice, and next since PH-39). PH-40 is
-approved and merged ([PH-40](docs/phases/PH-40-the-engine-a-broker-settles-against.md)):
-contract 3.3.0, ADR-0021, the heartbeat, the precision rule, the typed candle,
-one seam per restart, and the Orbit guide. **One decision is the Human Owner's
-and is not blocking**: six assets at a broker's five decimals (PH-40 §8), with
-the recommendation that the broker show the engine's precision. After PH-41,
+(Cycle Audit 12, finding 7 — deferred twice, and next since PH-39).
+
+**`v3.0.0` is released and the readiness audit is closed.** PH-40 is approved and
+merged ([PH-40](docs/phases/PH-40-the-engine-a-broker-settles-against.md)) —
+ADR-0021, the heartbeat, the precision rule, the typed candle, one seam per
+restart, and the Orbit guide — and on top of it the readiness audit of 2026-09-28
+([PH-40-READINESS-2026-09-28](docs/evidence/PH-40-READINESS-2026-09-28.md)) asked
+the question the gates do not: **would a broker deploying this meet a defect?** It
+found **twenty, every one inside a green gate**; sixteen are fixed with a guard
+watched failing and four are written down for the broker. The contract stands at
+**3.6.0** and the release record is
+[RELEASE-3.0.0](docs/evidence/RELEASE-3.0.0.md). **One decision is the Human
+Owner's and is not blocking**: six assets at a broker's five decimals (PH-40 §8),
+with the recommendation that the broker show the engine's precision. After PH-41,
 Cycle Audit 13's a6-06 c and a8-02.
+
+**The audit's own lesson, for PH-41 and after.** Ten of the twenty were invisible
+to any suite this repository could reasonably have had, for three reasons worth
+carrying forward: no suite had the input (a deployment that has never run before),
+the fixture agreed with the defect (a key check and its fixture shared one wrong
+length), and the measurement was never taken on the thing that ships (a
+wall-clock bound, tested only against a hand-driven clock). A phase that adds a
+guard should ask which of the three it is exposed to.
 
 The superseded instruction, kept for the reasoning:
 **Build PH-40, the engine a broker settles against, from PH-40.1.** The Human
