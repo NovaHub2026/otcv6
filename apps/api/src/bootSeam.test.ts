@@ -202,3 +202,48 @@ describe('the record is trimmed once a hundredth of its window has been appended
     await venue.stop();
   });
 });
+
+describe("a process's start owes each market one trim, paid one market a checkpoint (PH-40.5)", () => {
+  /**
+   * After an hour's outage the first checkpoint trimmed all thirty markets at
+   * once with the record's pages no longer in memory: 12.1 s, 11.3 of them
+   * trimming. Paid one market a checkpoint, the cold cost is spread.
+   */
+  it('trims one owed market per checkpoint, until every market has been trimmed once', async () => {
+    const clock = new SteppableClock(GENESIS);
+    const record = new MemoryTickRecord();
+    const trimmed: string[] = [];
+    const original = record.trim.bind(record);
+    record.trim = (assetId: string, keep: number): Promise<void> => {
+      trimmed.push(assetId);
+      return original(assetId, keep);
+    };
+    const venue = new VenueService(
+      new MemoryStateStore(),
+      MasterKeyring.fromSecret('boot-seam-owed', new Uint8Array(32).fill(54)),
+      clock,
+      [...assets],
+      5_000,
+      new PublicationService([...assets], 20, {}),
+      null,
+      GENESIS,
+      0,
+      null,
+      null,
+      null,
+      record,
+      // A window large enough that no market reaches a hundredth of it here.
+      1_000_000,
+    );
+    await venue.start();
+    const checkpoints: string[][] = [];
+    for (let i = 0; i < 4; i += 1) {
+      const before = trimmed.length;
+      await venue.checkpoint();
+      checkpoints.push(trimmed.slice(before));
+    }
+    expect(checkpoints.map((c) => c.length)).toEqual([1, 1, 1, 0]);
+    expect(new Set(checkpoints.flat())).toEqual(new Set(assets.map((a) => a.definition.id)));
+    await venue.stop();
+  });
+});

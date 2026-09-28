@@ -179,8 +179,10 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
   private lastSlowPassLogged: number | null = null;
   /** How the last checkpoint's time divided, in ms (PH-40.5). */
   private lastCheckpointSplit: { save: number; trim: number; history: number } | null = null;
-  /** Ticks each market appended to the record since its last trim; absent until the first. */
+  /** Ticks each market appended to the record since its last trim. */
   private readonly appendedSinceTrim = new Map<string, number>();
+  /** Markets whose one trim at this process's start has not been paid yet. */
+  private readonly trimOwed = new Set<string>();
   /** Automatic reopenings this process has taken, every asset, for `/metrics`. */
   private reopenings = 0;
   /**
@@ -446,6 +448,7 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       if (this.recovery.get(asset.definition.id)?.kind === 'seam') {
         this.awaitingFirstTick.add(asset.definition.id);
       }
+      this.trimOwed.add(asset.definition.id);
     }
     this.lastCheckpointAt = this.clock.now();
     this.startedAt = epochMillis(this.clock.now());
@@ -863,6 +866,7 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     this.latest.delete(assetId);
     this.inForce.delete(assetId);
     this.appendedSinceTrim.delete(assetId);
+    this.trimOwed.delete(assetId);
     this.recovery.delete(assetId);
     // Including what it remembers about reopening it (PH-39). These outlived
     // CA7-15's sweep: an asset registered again under the same id inherited a
@@ -1408,8 +1412,10 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     const fresh = await this.#recordPass(published);
     const recorded = this.clock.now();
     for (const [assetId, ticks] of fresh) {
-      const since = this.appendedSinceTrim.get(assetId);
-      if (since !== undefined) this.appendedSinceTrim.set(assetId, since + ticks.length);
+      this.appendedSinceTrim.set(
+        assetId,
+        (this.appendedSinceTrim.get(assetId) ?? 0) + ticks.length,
+      );
     }
     for (const { assetId, ticks: generated } of published) {
       const ticks = fresh.get(assetId);
@@ -1680,6 +1686,7 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
     // the first slow pass the instrumentation caught on the live venue was a
     // 7.7 s checkpoint, and a checkpoint is three kinds of work.
     const split = { save: 0, trim: 0, history: 0 };
+    let paidAtStart = false;
     for (const assetId of this.venue.assetIds) {
       // **A stalled market's checkpoint is not refreshed (Cycle Audit 10:
       // ops-observed).** `resumeMarket` decides between continuing and seaming
@@ -1723,15 +1730,24 @@ export class VenueService implements OnModuleDestroy, OnApplicationShutdown {
       // measured at 6.7 s of synchronous SQLite in 40 s on the live venue, 17%
       // of the process, between the awaits of the pass it delays. So an asset
       // is trimmed once it has appended a hundredth of its window since the
-      // last trim (every checkpoint for a small window, as before), and always
-      // on the first checkpoint of a process. The record then holds at most 1%
-      // past its window, never less than it.
-      const appended = this.appendedSinceTrim.get(assetId);
-      if (appended === undefined || appended >= trimEvery(this.recordTicks)) {
+      // last trim (every checkpoint for a small window, as before).
+      //
+      // **And each asset owes one trim at a process's start, paid one asset a
+      // checkpoint.** A process that restarts before any asset appends that
+      // much would otherwise let the record grow by a hundredth per restart,
+      // for ever. The first version paid them all on the first checkpoint, and
+      // after a long outage — the record's pages no longer in memory — that one
+      // checkpoint took 12.1 s, 11.3 of them trimming, three seconds short of
+      // the catch-up bound; after fourteen hours it went past it and reopened
+      // every market. One cold trim is about 0.4 s.
+      const appended = this.appendedSinceTrim.get(assetId) ?? 0;
+      const owed = this.trimOwed.has(assetId) && !paidAtStart;
+      if (appended >= trimEvery(this.recordTicks) || owed) {
         const trimming = this.clock.now();
         await this.record?.trim(assetId, this.recordTicks);
         split.trim += this.clock.now() - trimming;
         this.appendedSinceTrim.set(assetId, 0);
+        if (this.trimOwed.delete(assetId) && owed) paidAtStart = true;
       }
     }
     // Bars that closed since the last checkpoint. On the same cadence because a
